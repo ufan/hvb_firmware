@@ -201,27 +201,48 @@ Channel 2 uses U18/U19 with identical signal mapping (HV2 domain).
 - **Boot**: BOOT0/BOOT1 via R78/R79 (1KΩ pull-down to GND)
 - **Supply**: VCC_+3V3 with multiple 100nF + 10µF decoupling caps
 
-| Function             | Signals                          |
-|----------------------|----------------------------------|
-| HV1 DAC write        | MCU_HV1_DAC_SPI2_CS/SCK/MOSI     |
-| HV2 DAC write        | MCU_HV2_DAC_SPI2_CS/SCK/MOSI     |
-| HV1 ADC read         | MCU_HV1_ADC_SPI1_CS/SCLK/MISO    |
-| HV2 ADC read         | MCU_HV2_ADC_SPI1_CS/SCLK/MISO    |
-| HV1 run/stop         | MCU_HV1_R/S                      |
-| HV2 run/stop         | MCU_HV2_R/S                      |
-| HV1 ADC gain         | MCU_HV1_ADC_GAIN0/1              |
-| HV2 ADC gain         | MCU_HV2_ADC_GAIN0/1              |
-| HV1 ADC channel sel  | MCU_HV1_ADC_A0/A1                |
-| HV2 ADC channel sel  | MCU_HV2_ADC_A0/A1                |
-| Temp/humidity        | I2C1_SDA / I2C1_SCL / I2C1_ALERT |
-| Status LED           | SYS_RUN (via D3 + R80)           |
-| System mode          | SYS_MOD0 / SYS_MOD1              |
-| RS-485 (via MAX3485) | UART_RX / UART_TX                |
-| RS-485 direction     | RS485_DIR                        |
-| UART debug port      | USART1_RX / USART1_TX            |
-| SWD debug port       | SWDIO / SWCLK                    |
+| Function | Schematic net | STM32 pin | LQFP208 pin | Direction/type | Recommended firmware peripheral | Notes |
+|----------|---------------|-----------|-------------|----------------|----------------------------------|-------|
+| RS-485 receive | UART_RX | PG9 | 178 | UART RX | USART6_RX or GPIO/UART | Net label is generic `UART_RX`; use USART6 RX on PG9 for hardware UART. |
+| RS-485 direction | RS485_DIR | PG11 | 180 | GPIO output | GPIO | Drives MAX3485 DE/RE direction control. |
+| RS-485 transmit | UART_TX | PG14 | 183 | UART TX | USART6_TX or GPIO/UART | Net label is generic `UART_TX`; use USART6 TX on PG14 for hardware UART. |
+| System mode bit 0 | SYS_MOD0 | PI5 | 206 | GPIO input | GPIO | DIP switch mode input. |
+| System mode bit 1 | SYS_MOD1 | PI7 | 208 | GPIO input | GPIO | DIP switch mode input. |
+| Run/status LED | SYS_RUN | PI12 | 19 | GPIO output | GPIO | Connected to D3 LED circuit. |
+| HV2 ADC channel select A1 | MCU_HV2_ADC_A1 | PI14 | 21 | GPIO output | GPIO | ADS1232 A1 control. |
+| HV1 ADC gain select GAIN0 | MCU_HV1_ADC_GAIN0 | PH12 | 102 | GPIO output | GPIO | ADS1232 GAIN0 control. |
+| HV2 DAC chip select | MCU_HV2_DAC_SPI2_CS | PA4 | 53 | SPI CS output | SPI1_NSS or GPIO CS | Schematic net says SPI2, but PA4 maps to SPI1_NSS, not SPI2_NSS. |
+| HV2 DAC clock | MCU_HV2_DAC_SPI2_SCK | PA5 | 54 | SPI clock | SPI1_SCK or GPIO | Schematic net says SPI2, but PA5 maps to SPI1_SCK, not SPI2_SCK. |
+| HV2 DAC data | MCU_HV2_DAC_SPI2_MOSI | PA7 | 56 | SPI MOSI | SPI1_MOSI or GPIO | AD5541 has no MISO; bit-bang GPIO is also valid. |
+| SHT31 clock | I2C1_SCL | PB8 | 198 | I2C clock | I2C1_SCL | SHT31 address is 0x44. |
+| SHT31 data | I2C1_SDA | PB9 | 199 | I2C data | I2C1_SDA | SHT31 address is 0x44. |
+| HV1 DAC chip select | MCU_HV1_DAC_SPI2_CS | PB12 | 104 | SPI CS output | SPI2_NSS or GPIO CS | HV1 DAC can use SPI2. |
+| HV1 DAC clock | MCU_HV1_DAC_SPI2_SCK | PB13 | 105 | SPI clock | SPI2_SCK | HV1 DAC can use SPI2. |
+| HV1 DAC data | MCU_HV1_DAC_SPI2_MOSI | PB15 | 107 | SPI MOSI | SPI2_MOSI | AD5541 has no MISO. |
+| HV2 run/stop | MCU_HV2_R/S | PC4 | 57 | GPIO output | GPIO | Set safe disabled state at boot. |
+| HV1 run/stop | MCU_HV1_R/S | PD9 | 109 | GPIO output | GPIO | Set safe disabled state at boot. |
+| SHT31 alert | I2C1_ALERT | PE0 | 200 | GPIO input/interrupt | GPIO interrupt | Temperature/humidity alert input. |
+| HV1 ADC channel select A1 | MCU_HV1_ADC_A1 | PE7 | 79 | GPIO output | GPIO | ADS1232 A1 control. |
+| HV1 ADC channel select A0 | MCU_HV1_ADC_A0 | PE8 | 80 | GPIO output | GPIO | ADS1232 A0 control. |
+| HV1 ADC gain select GAIN1 | MCU_HV1_ADC_GAIN1 | PE10 | 84 | GPIO output | GPIO | ADS1232 GAIN1 control. |
+| HV1 ADC control/CS | MCU_HV1_ADC_SPI1_CS | PE11 | 85 | GPIO output | GPIO or SPI4_NSS | Schematic net says SPI1, but PE11 maps to SPI4_NSS, not SPI1_NSS. |
+| HV1 ADC clock | MCU_HV1_ADC_SPI1_SCLK | PE12 | 86 | ADC clock output | GPIO or SPI4_SCK | ADS1232 custom GPIO timing is recommended. |
+| HV1 ADC data ready/data | MCU_HV1_ADC_SPI1_MISO | PE13 | 87 | ADC data input | GPIO input or SPI4_MISO | Use interrupt/poll for DRDY, then clock out data. |
+| HV2 ADC channel select A0 | MCU_HV2_ADC_A0 | PF3 | 22 | GPIO output | GPIO | ADS1232 A0 control. |
+| HV2 ADC gain select GAIN1 | MCU_HV2_ADC_GAIN1 | PF4 | 23 | GPIO output | GPIO | ADS1232 GAIN1 control. |
+| HV2 ADC control/CS | MCU_HV2_ADC_SPI1_CS | PF6 | 27 | GPIO output | GPIO or SPI5_NSS | Schematic net says SPI1, but PF6 maps to SPI5_NSS, not SPI1_NSS. |
+| HV2 ADC clock | MCU_HV2_ADC_SPI1_SCLK | PF7 | 28 | ADC clock output | GPIO or SPI5_SCK | ADS1232 custom GPIO timing is recommended. |
+| HV2 ADC data ready/data | MCU_HV2_ADC_SPI1_MISO | PF8 | 29 | ADC data input | GPIO input or SPI5_MISO | Use interrupt/poll for DRDY, then clock out data. |
+| HV2 ADC gain select GAIN0 | MCU_HV2_ADC_GAIN0 | PF10 | 31 | GPIO output | GPIO | ADS1232 GAIN0 control. |
+| SWD debug data | SWDIO | PA13/JTMS-SWDIO | 147 | Debug | SWDIO | Programming/debug header J2. |
+| SWD debug clock | SWCLK | PA14/JTCK-SWCLK | 159 | Debug | SWCLK | Programming/debug header J2. |
+| Debug/console transmit | USART1_TX | PC10 | 161 | UART TX | USART3_TX or UART4_TX | Schematic net says USART1_TX, but PC10 does not support USART1_TX. |
+| Debug/console receive | USART1_RX | PC11 | 162 | UART RX | USART3_RX or UART4_RX | Schematic net says USART1_RX, but PC11 does not support USART1_RX. |
+| Boot mode select | BOOT0 | BOOT0 | 197 | Boot strap | BOOT0 | Dedicated BOOT0 pin, pulled down through R78. |
+| Boot mode select | BOOT1 | PB2-BOOT1 | 63 | Boot strap | GPIO/BOOT1 | PB2 is BOOT1 after reset, pulled down through R79. |
+| MCU reset | NRST | NRST | 34 | Reset | Reset | Bidirectional reset pin with weak pull-up. |
 
-> **Note**: Each HV channel has its own dedicated SPI signals (separate nets, separate CMT8261N1 isolators). HV1 and HV2 do NOT share any SPI bus lines.
+> **Note**: Each HV channel has its own dedicated control nets through separate CMT8261N1 isolators. Schematic net names preserve board labels and do not always match the STM32 alternate-function peripheral number; use the recommended firmware peripheral column for firmware configuration.
 
 ---
 
@@ -268,17 +289,21 @@ Switch logic: "ON" = 0 (active-low via pull-down R94/R95 = 10KΩ).
 ## 11. Firmware Design Notes
 
 ### 11.1 Startup Sequence
-1. Read `SYS_MOD[1:0]` to determine active channel count
-2. Initialize SPI1 (ADC), SPI2 (DAC), I2C1 (SHT31), USART1 (RS485)
-3. Assert `HV1_R/S = 0` and `HV2_R/S = 0` (HV off)
-4. Write DAC code = 0 to both channels (Vadj = 0V)
-5. Initialize ADS1232 on both channels (set SPEED, GAIN, channel)
-6. Enable HV channels as required by SYS_MOD
+1. Initialize firmware peripherals according to the exact MCU pins:
+   - HV1 DAC: SPI2 on PB12/PB13/PB15, or GPIO CS with SPI2 SCK/MOSI
+   - HV2 DAC: SPI1 on PA4/PA5/PA7, or GPIO bit-bang if not using SPI1
+   - HV1 ADS1232: GPIO/custom timing on PE11/PE12/PE13, optionally SPI4-capable pins
+   - HV2 ADS1232: GPIO/custom timing on PF6/PF7/PF8, optionally SPI5-capable pins
+   - SHT31: I2C1 on PB8/PB9 with alert on PE0
+   - RS-485: USART6 on PG9/PG14 with `RS485_DIR` on PG11
+2. Assert `HV1_R/S = 0` and `HV2_R/S = 0` (HV off)
+3. Write DAC code = 0 to both channels (Vadj = 0V)
+4. Initialize ADS1232 on both channels (set SPEED, GAIN, channel)
 
 ### 11.2 HV Voltage Set (per channel)
 ```
 Target_Vadj [V] → DAC_code = round(Target_Vadj / 5.0 * 65535)
-SPI2 write 16-bit code to AD5541 (assert CS low, 16 clocks, CS high)
+Write 16-bit code to AD5541 (HV1 uses SPI2 pins; HV2 uses SPI1 pins or GPIO bit-bang)
 DAC output settles through 10Hz LPF (≈100ms settling to 99%)
 HV output follows Vadj per DW-P202 transfer function
 ```
@@ -293,7 +318,7 @@ Result is two's complement; convert to voltage:
 Apply resistor divider scale factor to get actual HV output
 
 Set A1:A0 = 00 → select current channel (AINP1/AINN1 = HV_I)
-Read similarly; apply shunt resistance (100mΩ) and amp gain
+Read similarly; apply shunt resistance and amp gain
 ```
 
 ### 11.4 ADS1232 Timing Constraints
@@ -408,3 +433,5 @@ All signals follow the pattern: `MCU_<CH>_<PERIPHERAL>_<SIGNAL>`
 - `SIGNAL`: `CS`, `SCK`, `MOSI`, `MISO`, `GAIN0`, `GAIN1`, `A0`, `A1`, `R/S`
 
 On the isolated HV side the `MCU_` prefix is dropped: `HV1_DAC_SPI2_CS`, etc.
+
+Schematic names are board net names, not guaranteed STM32 alternate-function names. Firmware should follow the exact pin map in section 7; for example, HV2 DAC nets named `SPI2` are on SPI1-capable pins, and ADS1232 nets named `SPI1` are best driven with custom GPIO timing on SPI4/SPI5-capable pins.
