@@ -1,2 +1,9 @@
 *.html
 
+build/
+build-*
+.west/
+.agents
+ai
+.codex
+skills-lock.json

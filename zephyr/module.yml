@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
+name: hvb-firmware
+build:
+  cmake: .
+  kconfig: Kconfig
+  settings:
+    board_root: .
+    dts_root: .
