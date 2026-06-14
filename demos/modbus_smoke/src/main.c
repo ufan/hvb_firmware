@@ -156,7 +156,8 @@ int main(void)
 			printk("Failed to toggle SYS_RUN GPIO: %d\n", ret);
 		}
 
-		printk("modbus smoke alive\n");
+		static int counter = 0;
+		printk("modbus server alive: %d\n", ++counter);
 		k_msleep(HEARTBEAT_INTERVAL_MS);
 	}
 }
