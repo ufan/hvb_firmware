@@ -1,0 +1,2 @@
+{"type":"server-started","port":59816,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:59816","screen_dir":"/home/yong/backup/src/xlab/jianwei/hvb_wkspc/hvb_firmware.git/.superpowers/brainstorm/3597103-1781491226/content","state_dir":"/home/yong/backup/src/xlab/jianwei/hvb_wkspc/hvb_firmware.git/.superpowers/brainstorm/3597103-1781491226/state"}
+{"type":"server-stopped","reason":"idle timeout"}

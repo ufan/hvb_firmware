@@ -1,0 +1,20 @@
+/*
+ * Copyright (c) 2026 Jianwei
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef MODBUS_ADAPTER_H
+#define MODBUS_ADAPTER_H
+
+#include <stdint.h>
+
+struct vc_domain;
+struct vc_mb_adapter;
+
+struct vc_mb_adapter *vc_mb_adapter_create(struct vc_domain *domain);
+int vc_mb_input_rd(struct vc_mb_adapter *a, uint16_t addr, uint16_t *reg);
+int vc_mb_holding_rd(struct vc_mb_adapter *a, uint16_t addr, uint16_t *reg);
+int vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr, uint16_t val);
+
+#endif

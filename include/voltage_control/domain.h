@@ -1,0 +1,183 @@
+/*
+ * Copyright (c) 2026 Jianwei
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef VOLTAGE_CONTROL_DOMAIN_H
+#define VOLTAGE_CONTROL_DOMAIN_H
+
+#include <stdint.h>
+#include <stdbool.h>
+
+#define VC_MAX_CHANNELS 6
+
+struct vc_variant_profile;
+
+enum vc_status {
+	VC_OK = 0,
+	VC_ERR_UNSUPPORTED_CHANNEL = -1,
+	VC_ERR_INVALID_VALUE = -2,
+	VC_ERR_INVALID_COMMAND = -3,
+	VC_ERR_UNSAFE_STATE = -4,
+	VC_ERR_STORAGE = -5,
+};
+
+enum vc_operating_mode {
+	VC_OPERATING_MODE_NORMAL = 0,
+	VC_OPERATING_MODE_AUTOMATIC = 1,
+};
+
+enum vc_output_action {
+	VC_OUTPUT_ACTION_NONE = 0,
+	VC_OUTPUT_ACTION_ENABLE = 1,
+	VC_OUTPUT_ACTION_DISABLE_GRACEFUL = 2,
+	VC_OUTPUT_ACTION_DISABLE_IMMEDIATE = 3,
+	VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO = 4,
+	VC_OUTPUT_ACTION_CLAMP = 5,
+};
+
+enum vc_channel_fault_command {
+	VC_CHANNEL_FAULT_COMMAND_NONE = 0,
+	VC_CHANNEL_FAULT_COMMAND_CLEAR_ACTIVE = 1,
+	VC_CHANNEL_FAULT_COMMAND_CLEAR_HISTORY = 2,
+};
+
+enum vc_protection_mode {
+	VC_PROTECTION_MODE_DISABLED = 0,
+	VC_PROTECTION_MODE_FLAG_ONLY = 1,
+	VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION = 2,
+};
+
+enum vc_recovery_policy_mode {
+	VC_RECOVERY_MANUAL_LATCH = 0,
+	VC_RECOVERY_AUTO_RETRY = 1,
+	VC_RECOVERY_AUTO_DERATE_RETRY = 2,
+	VC_RECOVERY_NEVER_RETRY = 3,
+};
+
+enum vc_param_action {
+	VC_PARAM_ACTION_NONE = 0,
+	VC_PARAM_ACTION_SAVE = 1,
+	VC_PARAM_ACTION_LOAD = 2,
+	VC_PARAM_ACTION_FACTORY_RESET = 3,
+	VC_PARAM_ACTION_SOFTWARE_RESET = 255,
+};
+
+enum vc_baud_rate_code {
+	VC_BAUD_RATE_115200 = 0,
+	VC_BAUD_RATE_9600 = 1,
+};
+
+struct vc_channel_config {
+	int16_t configured_target_voltage;
+	uint16_t ramp_up_step;
+	uint16_t ramp_up_interval;
+	uint16_t ramp_down_step;
+	uint16_t ramp_down_interval;
+	enum vc_protection_mode voltage_protection_mode;
+	enum vc_output_action voltage_protection_output_action;
+	int16_t voltage_limit_threshold;
+	enum vc_protection_mode current_protection_mode;
+	enum vc_output_action current_protection_output_action;
+	int16_t current_limit_threshold;
+	uint16_t auto_derate_step;
+	uint16_t save_target_policy;
+	uint16_t output_calib_k;
+	int16_t output_calib_b;
+	uint16_t measured_voltage_calib_k;
+	int16_t measured_voltage_calib_b;
+	uint16_t measured_current_calib_k;
+	int16_t measured_current_calib_b;
+};
+
+struct vc_system_config {
+	enum vc_operating_mode operating_mode;
+	uint16_t slave_address;
+	enum vc_baud_rate_code baud_rate_code;
+	enum vc_recovery_policy_mode recovery_policy_mode;
+	uint16_t auto_retry_delay;
+	uint16_t auto_retry_max_count;
+	uint16_t auto_retry_window;
+	uint16_t voltage_safe_band_pct;
+	uint16_t current_safe_band_pct;
+};
+
+struct vc_channel_snapshot {
+	int16_t measured_voltage;
+	int16_t measured_current;
+	int16_t operational_target_voltage;
+	uint16_t status_bits;
+	uint16_t active_fault_cause;
+	uint16_t fault_history_cause;
+	enum vc_output_action last_protection_output_action;
+	uint16_t auto_retry_count;
+	uint16_t auto_cooldown_remaining;
+	uint32_t last_fault_timestamp;
+	uint16_t channel_capability_flags;
+};
+
+struct vc_system_snapshot {
+	uint16_t protocol_major;
+	uint16_t protocol_minor;
+	uint16_t variant_id;
+	uint16_t system_capability_flags;
+	uint16_t supported_channel_count;
+	uint16_t active_channel_mask;
+	int16_t board_temperature;
+	uint16_t board_humidity;
+	uint32_t uptime;
+	uint16_t fw_version_high;
+	uint16_t fw_version_low;
+	enum vc_operating_mode active_operating_mode;
+	uint16_t system_status;
+	uint16_t system_fault_cause;
+};
+
+struct vc_domain;
+
+struct vc_domain *vc_domain_create(const struct vc_variant_profile *variant);
+
+enum vc_operating_mode vc_domain_get_operating_mode(const struct vc_domain *domain);
+enum vc_status vc_domain_set_operating_mode(struct vc_domain *domain,
+					    enum vc_operating_mode mode);
+
+enum vc_status vc_domain_get_system_config(const struct vc_domain *domain,
+					   struct vc_system_config *cfg);
+enum vc_status vc_domain_set_system_config(struct vc_domain *domain,
+					   const struct vc_system_config *cfg);
+
+enum vc_status vc_domain_get_channel_config(const struct vc_domain *domain,
+					    uint8_t channel,
+					    struct vc_channel_config *cfg);
+enum vc_status vc_domain_set_channel_config(struct vc_domain *domain,
+					    uint8_t channel,
+					    const struct vc_channel_config *cfg);
+
+enum vc_status vc_domain_get_system_snapshot(const struct vc_domain *domain,
+					     struct vc_system_snapshot *snap);
+enum vc_status vc_domain_get_channel_snapshot(const struct vc_domain *domain,
+					      uint8_t channel,
+					      struct vc_channel_snapshot *snap);
+
+enum vc_status vc_domain_channel_output_action(struct vc_domain *domain,
+					       uint8_t channel,
+					       enum vc_output_action action);
+enum vc_status vc_domain_channel_fault_command(struct vc_domain *domain,
+					       uint8_t channel,
+					       enum vc_channel_fault_command cmd);
+
+enum vc_status vc_domain_system_param_action(struct vc_domain *domain,
+					     enum vc_param_action action);
+enum vc_status vc_domain_channel_param_action(struct vc_domain *domain,
+					      uint8_t channel,
+					      enum vc_param_action action);
+
+bool vc_domain_is_channel_supported(const struct vc_domain *domain, uint8_t channel);
+uint16_t vc_domain_get_supported_channel_count(const struct vc_domain *domain);
+uint16_t vc_domain_get_active_channel_mask(const struct vc_domain *domain);
+uint16_t vc_domain_get_variant_id(const struct vc_domain *domain);
+
+void vc_domain_set_uptime(struct vc_domain *domain, uint32_t seconds);
+
+#endif

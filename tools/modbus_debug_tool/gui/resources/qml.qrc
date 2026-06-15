@@ -1,0 +1,14 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qml/main.qml</file>
+        <file>qml/ConnectionBar.qml</file>
+        <file>qml/SystemInfoTab.qml</file>
+        <file>qml/SystemConfigTab.qml</file>
+        <file>qml/ChannelTab.qml</file>
+        <file>qml/RawDebugDialog.qml</file>
+        <file>qml/components/ReadOnlyField.qml</file>
+        <file>qml/components/EditableField.qml</file>
+        <file>qml/components/EnumCombo.qml</file>
+        <file>qml/components/StatusBadge.qml</file>
+    </qresource>
+</RCC>
