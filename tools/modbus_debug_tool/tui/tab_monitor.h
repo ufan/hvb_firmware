@@ -95,7 +95,7 @@ inline Component makeMonitorTab(AppState& s) {
                 writeAsync(s, "Target V", [&s, ch, raw] {
                     return s.client.writeConfiguredTargetVoltage(ch, raw);
                 });
-            } catch (...) { s.statusMsg = "Error: invalid voltage"; }
+            } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
         };
         auto onRampUp = [&s, st, ch] {
             try {
@@ -104,7 +104,7 @@ inline Component makeMonitorTab(AppState& s) {
                 writeAsync(s, "Ramp Up", [&s, ch, step, iv] {
                     return s.client.writeRampUp(ch, step, iv);
                 });
-            } catch (...) { s.statusMsg = "Error: invalid ramp-up value"; }
+            } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-up value"; }
         };
         auto onRampDown = [&s, st, ch] {
             try {
@@ -113,7 +113,7 @@ inline Component makeMonitorTab(AppState& s) {
                 writeAsync(s, "Ramp Down", [&s, ch, step, iv] {
                     return s.client.writeRampDown(ch, step, iv);
                 });
-            } catch (...) { s.statusMsg = "Error: invalid ramp-down value"; }
+            } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-down value"; }
         };
         auto onVProt = [&s, st, ch, &kVActVals] {
             try {
@@ -123,7 +123,7 @@ inline Component makeMonitorTab(AppState& s) {
                 writeAsync(s, "V Limit", [&s, ch, mode, action, raw] {
                     return s.client.writeVoltageProtection(ch, mode, action, raw);
                 });
-            } catch (...) { s.statusMsg = "Error: invalid V-limit value"; }
+            } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid V-limit value"; }
         };
         auto onIProt = [&s, st, ch, &kIActVals] {
             try {
@@ -134,7 +134,7 @@ inline Component makeMonitorTab(AppState& s) {
                 writeAsync(s, "I Limit", [&s, ch, mode, action, raw] {
                     return s.client.writeCurrentProtection(ch, mode, action, raw);
                 });
-            } catch (...) { s.statusMsg = "Error: invalid I-limit value"; }
+            } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
         };
 
         auto tgtInp = CommitInput(&st->targetV[ch],  "+0.0",   onTarget);
