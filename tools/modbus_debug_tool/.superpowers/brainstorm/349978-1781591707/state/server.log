@@ -1,0 +1,9 @@
+{"type":"server-started","port":55540,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:55540","screen_dir":"/home/yong/backup/src/xlab/jianwei/hvb_wkspc/hvb_firmware.git/tools/modbus_debug_tool/.superpowers/brainstorm/349978-1781591707/content","state_dir":"/home/yong/backup/src/xlab/jianwei/hvb_wkspc/hvb_firmware.git/tools/modbus_debug_tool/.superpowers/brainstorm/349978-1781591707/state"}
+{"type":"screen-added","file":"/home/yong/backup/src/xlab/jianwei/hvb_wkspc/hvb_firmware.git/tools/modbus_debug_tool/.superpowers/brainstorm/349978-1781591707/content/monitor-layout.html"}
+{"type":"screen-added","file":"/home/yong/backup/src/xlab/jianwei/hvb_wkspc/hvb_firmware.git/tools/modbus_debug_tool/.superpowers/brainstorm/349978-1781591707/content/monitor-layout-b2.html"}
+{"source":"user-event","type":"click","text":"1\n      \n        Table: show ramp step only (not interval)\n        Interval lives in the action panel. The table column stays narrow.","choice":"ramp-compact","id":null,"timestamp":1781592277186}
+{"source":"user-event","type":"click","text":"4\n      \n        Target input in volts (not LSB)\n        More natural for operators. Tool converts to LSB on write.","choice":"target-v","id":null,"timestamp":1781592279136}
+{"type":"screen-added","file":"/home/yong/backup/src/xlab/jianwei/hvb_wkspc/hvb_firmware.git/tools/modbus_debug_tool/.superpowers/brainstorm/349978-1781591707/content/monitor-layout-b3.html"}
+{"type":"screen-added","file":"/home/yong/backup/src/xlab/jianwei/hvb_wkspc/hvb_firmware.git/tools/modbus_debug_tool/.superpowers/brainstorm/349978-1781591707/content/sys-ch-tabs.html"}
+{"type":"screen-added","file":"/home/yong/backup/src/xlab/jianwei/hvb_wkspc/hvb_firmware.git/tools/modbus_debug_tool/.superpowers/brainstorm/349978-1781591707/content/waiting.html"}
+{"type":"server-stopped","reason":"idle timeout"}

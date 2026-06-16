@@ -10,7 +10,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define VC_MAX_CHANNELS 6
+#define VC_MAX_CHANNELS 2
+
+#define VC_FAULT_VOLTAGE       0x0001
+#define VC_FAULT_CURRENT       0x0002
+#define VC_FAULT_MEASUREMENT   0x0004
+#define VC_FAULT_HARDWARE      0x0008
+#define VC_FAULT_INTERLOCK     0x0010
+#define VC_FAULT_RETRY_EXHAUST 0x0020
+#define VC_FAULT_CFG_INVALID   0x0040
 
 struct vc_variant_profile;
 
@@ -179,5 +187,9 @@ uint16_t vc_domain_get_active_channel_mask(const struct vc_domain *domain);
 uint16_t vc_domain_get_variant_id(const struct vc_domain *domain);
 
 void vc_domain_set_uptime(struct vc_domain *domain, uint32_t seconds);
+
+void vc_domain_tick(struct vc_domain *domain, uint32_t dt_ms,
+		    const int16_t voltage_noise[],
+		    const int16_t current_noise[]);
 
 #endif

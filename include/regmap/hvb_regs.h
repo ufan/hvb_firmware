@@ -17,7 +17,7 @@
  *
  * All registers are 16-bit (UINT16 or INT16).  Voltage and current
  * values are in raw LSBs; the variant profile provides compile-time
- * scale factors (voltage_scale in mV/LSB, current_scale in uA/LSB).
+ * scale factors (voltage_scale in mV/LSB, current_scale in nA/LSB).
  * 32-bit uptime and timestamps are split across two consecutive
  * 16-bit registers with HI/LO suffixes.
  */

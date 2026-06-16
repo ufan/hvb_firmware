@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
-project(hvb_modbus_tool LANGUAGES CXX)
+project(hvb_tool LANGUAGES CXX)
 
 option(BUILD_GUI "Build Qt Quick GUI (requires Qt 6.x)" OFF)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries (default OFF → static ModbusLib)")
 
 include(FetchContent)
 
@@ -32,8 +33,19 @@ FetchContent_Declare(tomlplusplus
 )
 FetchContent_MakeAvailable(tomlplusplus)
 
+# ftxui — C++ TUI library (monitor display)
+FetchContent_Declare(ftxui
+    GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
+    GIT_TAG v5.0.0
+)
+set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(FTXUI_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(ftxui)
+
 add_subdirectory(core)
 add_subdirectory(cli)
+add_subdirectory(tui)
+add_subdirectory(tests)
 
 if(BUILD_GUI)
     find_package(Qt6 REQUIRED COMPONENTS Core SerialPort Quick QuickControls2)

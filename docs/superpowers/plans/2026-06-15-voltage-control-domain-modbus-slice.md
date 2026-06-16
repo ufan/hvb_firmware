@@ -191,8 +191,8 @@ Channel holding block:
 - [ ] Add tests reading system input offsets 0-5: protocol `2.0`, variant id `1`, supported channel count `2`, active mask `0x0003`.
 - [ ] Add tests for system holding writes: Operating Mode at offset 0, Recovery Policy Mode at offset 3, safe-band percentages at offsets 7-8.
 - [ ] Add tests that safe-band values above `50` return `VC_MODBUS_ILLEGAL_VALUE`.
-- [ ] Add tests that channel Configured Target Voltage is at channel offsets `0-1` and requires FC10-style multiple write.
-- [ ] Add tests that Channel Output Action is at channel offset `2`, self-clears on read, and rejects Force Output Zero and Clamp from host context.
+- [ ] Add tests that channel Configured Target Voltage is at channel offset 0 (single UINT16, no multi-register packing).
+- [ ] Add tests that Channel Output Action is at channel offset 1, self-clears on read, and rejects Force Output Zero and Clamp from host context.
 - [ ] Add tests that Channel Fault Command is at channel offset `3`, self-clears on read.
 - [ ] Add tests that Current Protection Output Action rejects Clamp.
 - [ ] Add tests that reserved writes return `VC_MODBUS_ILLEGAL_ADDRESS`.
@@ -206,10 +206,7 @@ Channel holding block:
 - Modify: `lib/voltage_control/CMakeLists.txt`
 
 - [ ] Implement register address decoding for system and channel blocks.
-- [ ] Implement high-word-first INT32/UINT32 packing.
-- [ ] Implement FC06-style single-register writes for UINT16 fields only.
-- [ ] Implement FC10-style multi-register writes with full-range validation before applying any mutation.
-- [ ] Reject single-register writes to either word of 32-bit fields with `VC_MODBUS_ILLEGAL_VALUE`.
+- [ ] Implement single-16-bit register reads and writes only; no INT32/UINT32 packing.
 - [ ] Reject writes to reserved registers with `VC_MODBUS_ILLEGAL_ADDRESS`.
 - [ ] Map unsupported channel to `VC_MODBUS_ILLEGAL_ADDRESS`.
 - [ ] Map invalid enum/range/unsafe clear to `VC_MODBUS_ILLEGAL_VALUE`.

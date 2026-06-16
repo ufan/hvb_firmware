@@ -44,7 +44,7 @@ cmake --build build/win-release --config Release --target hvbctrl
 cmake -B build/linux-gui -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_GUI=ON -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x/gcc_64
 
-cmake --build build/linux-gui --target hvb_modbus_gui
+cmake --build build/linux-gui --target hvb_gui
 ```
 
 ```bat
@@ -52,7 +52,7 @@ REM Windows — Qt path may vary
 cmake -B build/win-gui -G "Visual Studio 17 2022" ^
     -DBUILD_GUI=ON -DCMAKE_PREFIX_PATH=C:/Qt/6.x/msvc2022_64
 
-cmake --build build/win-gui --config Release --target hvb_modbus_gui
+cmake --build build/win-gui --config Release --target hvb_gui
 ```
 
 ### Build Targets
@@ -61,7 +61,7 @@ cmake --build build/win-gui --config Release --target hvb_modbus_gui
 |--------|------|-------------|
 | `hvb_modbus_core` | Static library | ModbusLib, toml++ |
 | `hvbctrl` | Executable | `hvb_modbus_core`, CLI11 |
-| `hvb_modbus_gui` | Executable | `hvb_modbus_core`, Qt 6 (Core, Quick, QuickControls2) |
+| `hvb_gui` | Executable | `hvb_modbus_core`, Qt 6 (Core, Quick, QuickControls2) |
 
 ## Quick Start
 
@@ -187,7 +187,6 @@ reset                   Software reset
 raw fc04 <ADDR> <COUNT>     Raw FC04 read, hex dump
 raw fc03 <ADDR> <COUNT>     Raw FC03 read, hex dump
 raw fc06 <ADDR> <VALUE>     Raw FC06 write (uint16)
-raw fc10 <ADDR> <HI> <LO>   Raw FC10 write 32-bit (big-endian)
 ```
 
 ## GUI
@@ -228,7 +227,7 @@ raw fc10 <ADDR> <HI> <LO>   Raw FC10 write 32-bit (big-endian)
 
 ### Debug Dialog
 
-Raw Modbus access: FC03/FC04 read with hex output, FC06/FC10 write. Accessible via "Debug" button on status bar.
+Raw Modbus access: FC03/FC04 read with hex output, FC06 write. Accessible via "Debug" button on status bar.
 
 ## Packaging
 
@@ -255,10 +254,10 @@ cmake -B build/appimage -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_GUI=ON -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x/gcc_64 \
     -DCMAKE_INSTALL_PREFIX=/usr
 
-cmake --build build/appimage --target hvb_modbus_gui
+cmake --build build/appimage --target hvb_gui
 
 # Package
-linuxdeployqt build/appimage/gui/hvb_modbus_gui \
+linuxdeployqt build/appimage/gui/hvb_gui \
     -qmldir=gui/resources/qml \
     -appimage
 
@@ -272,10 +271,10 @@ REM Requires: windeployqt (ships with Qt)
 cmake -B build/win-gui -G "Visual Studio 17 2022" ^
     -DBUILD_GUI=ON -DCMAKE_PREFIX_PATH=C:/Qt/6.x/msvc2022_64
 
-cmake --build build/win-gui --config Release --target hvb_modbus_gui
+cmake --build build/win-gui --config Release --target hvb_gui
 
 REM Package
-windeployqt build/win-gui/gui/Release/hvb_modbus_gui.exe ^
+windeployqt build/win-gui/gui/Release/hvb_gui.exe ^
     --qmldir gui/resources/qml
 
 REM Distribute the Release folder as a zip
@@ -308,10 +307,10 @@ tools/modbus_debug_tool/
 
 ## Implementation Notes
 
-- **Register map**: Follows `ref/modbus_interface.md` v2 (system block + channel blocks, FC03/04/06/10)
-- **Scaling**: Voltage in Vx10, current in nA, intervals in seconds x10, calibration K as UINT16 x10000, B as INT16 x1000
+- **Register map**: Follows `ref/modbus_interface.md` v2 (system block + channel blocks, FC03/04/06)
+- **Scaling**: Voltage in 100 mV/LSB, current in 1 nA/LSB, intervals in seconds x10, calibration K as UINT16 x10000, B as INT16 x1000
 - **Output action context**: The `OutputAction` enum has context-specific validity — `Enable` is host-only, `ForceOutputZero` is protection-only, `Clamp` is voltage-protection-only. CLI and GUI validate per context.
-- **32-bit writes**: All INT32/UINT32 registers written atomically via FC10. Single-register writes to 32-bit fields are rejected at the protocol level.
+- **All registers 16-bit**: All registers are single UINT16 or INT16. Uptime and timestamp values are split across _HI/_LO 16-bit registers and reassembled on read. No FC10 required.
 - **Command registers**: Output Action, Fault Command, and Param Action registers are self-clearing (read back 0 after execution).
 - **Thread safety**: GUI uses a QThread worker for all Modbus I/O. Blocking calls never block the QML render thread.
 - **Config persistence**: Connection preferences saved to `~/.hvb_modbus_tool.toml` via toml++. Auto-created on first `--save`.
@@ -325,7 +324,7 @@ tools/modbus_debug_tool/
 - [x] System-wide recovery policy (§10.1)
 - [x] Safe band percentages (§10.1)
 - [x] UINT16 calibration K, INT16 calibration B (§5)
-- [x] Big-endian 32-bit word order (§5)
-- [x] Atomic FC10 writes for 32-bit values (§4)
+- [x] All-16-bit registers, _HI/_LO split for uptime/timestamps (§5)
+- [x] FC06 single-register writes (§4)
 - [x] Self-clearing command registers (§10.2)
 - [x] Modbus exception mapping (§12)

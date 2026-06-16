@@ -2,26 +2,29 @@
 #include "register_map.h"
 
 #include <ModbusClientPort.h>
-#include <ModbusClient.h>
 #include <Modbus.h>
 
 #include <algorithm>
+#include <cstring>
 #include <sstream>
 
 namespace hvb {
 
 struct HvbModbusClient::Impl {
     ModbusClientPort* port = nullptr;
-    ModbusClient* client = nullptr;
     int slaveId = 1;
     bool connected = false;
     std::string errorText;
     FrameCallback frameCb;
 
+    // Test mode — direct array access (bypasses Modbus RTU)
+    uint16_t* testInputRegs = nullptr;
+    uint16_t* testHoldingRegs = nullptr;
+    int testMaxAddr = 0;
+
     ~Impl() { disconnect(); }
     void disconnect() {
-        if (client) { delete client; client = nullptr; }
-        if (port) { port->close(); delete port; port = nullptr; }
+        if (port) { delete port; port = nullptr; }
         connected = false;
     }
 };
@@ -47,27 +50,46 @@ bool HvbModbusClient::connect(const std::string& portName, int baud, int slaveId
     settings.timeoutFirstByte = static_cast<uint32_t>(timeoutMs);
     settings.timeoutInterByte = std::max(10u, static_cast<uint32_t>(timeoutMs) / 10);
 
-    m_impl->port = Modbus::createClientPort(Modbus::RTU, &settings, true);
+    // Non-blocking mode: engages ModbusLib's inter-byte accumulation loop
+    // (nonBlockingRead). The blocking path does a single ::read() and treats a
+    // partial frame as complete, which truncates responses >~31 bytes (>=14
+    // registers) over USB-serial and yields spurious CRC errors. Our read/write
+    // wrappers poll until the request stops returning Status_Processing.
+    m_impl->port = Modbus::createClientPort(Modbus::RTU, &settings, false);
     if (!m_impl->port) {
         m_impl->errorText = "failed to create RTU client port";
         return false;
     }
-    m_impl->client = new ModbusClient(static_cast<uint8_t>(slaveId), m_impl->port);
     m_impl->connected = true;
     return true;
 }
 
 void HvbModbusClient::disconnect()    { m_impl->disconnect(); }
-bool HvbModbusClient::isConnected() const { return m_impl->connected && m_impl->port && m_impl->port->isOpen(); }
+bool HvbModbusClient::isConnected() const { return m_impl->connected || m_impl->testInputRegs; }
 std::string HvbModbusClient::lastError() const { return m_impl->errorText; }
 int HvbModbusClient::slaveId() const { return m_impl->slaveId; }
+
+void HvbModbusClient::attachTestArrays(uint16_t* inputRegs, uint16_t* holdingRegs, int maxAddr) {
+    m_impl->testInputRegs = inputRegs;
+    m_impl->testHoldingRegs = holdingRegs;
+    m_impl->testMaxAddr = maxAddr;
+    m_impl->connected = true;
+}
+
+void HvbModbusClient::detachTestArrays() {
+    m_impl->testInputRegs = nullptr;
+    m_impl->testHoldingRegs = nullptr;
+    m_impl->testMaxAddr = 0;
+    m_impl->connected = false;
+}
 
 // ============================================================================
 //  Internal
 // ============================================================================
 
 bool HvbModbusClient::checkConnected() {
-    if (!m_impl->connected || !m_impl->client) {
+    if (m_impl->testInputRegs || m_impl->testHoldingRegs) return true;
+    if (!m_impl->connected || !m_impl->port) {
         m_impl->errorText = "not connected";
         return false;
     }
@@ -75,13 +97,27 @@ bool HvbModbusClient::checkConnected() {
 }
 
 bool HvbModbusClient::readRegsInternal(bool holding, uint16_t addr, uint16_t count, uint16_t* out) {
+    // Test mode — direct array access
+    if (m_impl->testInputRegs || m_impl->testHoldingRegs) {
+        uint16_t* src = holding ? m_impl->testHoldingRegs : m_impl->testInputRegs;
+        if (!src || addr + count > static_cast<uint16_t>(m_impl->testMaxAddr)) {
+            m_impl->errorText = "test: address out of range";
+            return false;
+        }
+        memcpy(out, src + addr, count * sizeof(uint16_t));
+        return true;
+    }
     if (!checkConnected()) return false;
     Modbus::StatusCode s;
     auto unit = static_cast<uint8_t>(m_impl->slaveId);
-    if (holding)
-        s = m_impl->port->readHoldingRegisters(unit, addr, count, out);
-    else
-        s = m_impl->port->readInputRegisters(unit, addr, count, out);
+    // Non-blocking port: drive the request to completion. ModbusLib's internal
+    // timeout/retry logic guarantees this terminates (Good or Bad).
+    do {
+        if (holding)
+            s = m_impl->port->readHoldingRegisters(unit, addr, count, out);
+        else
+            s = m_impl->port->readInputRegisters(unit, addr, count, out);
+    } while (Modbus::StatusIsProcessing(s));
     if (!Modbus::StatusIsGood(s)) {
         m_impl->errorText = std::string("Modbus error: ") + m_impl->port->lastErrorText();
         return false;
@@ -90,16 +126,27 @@ bool HvbModbusClient::readRegsInternal(bool holding, uint16_t addr, uint16_t cou
 }
 
 bool HvbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uint16_t* values) {
+    // Test mode — direct array access
+    if (m_impl->testHoldingRegs) {
+        if (addr + count > static_cast<uint16_t>(m_impl->testMaxAddr)) {
+            m_impl->errorText = "test: address out of range";
+            return false;
+        }
+        memcpy(m_impl->testHoldingRegs + addr, values, count * sizeof(uint16_t));
+        return true;
+    }
     if (!checkConnected()) return false;
-    Modbus::StatusCode s;
     auto unit = static_cast<uint8_t>(m_impl->slaveId);
-    if (count == 1)
-        s = m_impl->port->writeSingleRegister(unit, addr, values[0]);
-    else
-        s = m_impl->port->writeMultipleRegisters(unit, addr, count, values);
-    if (!Modbus::StatusIsGood(s)) {
-        m_impl->errorText = std::string("Modbus error: ") + m_impl->port->lastErrorText();
-        return false;
+    for (uint16_t i = 0; i < count; i++) {
+        // Non-blocking port: poll until the write request completes.
+        Modbus::StatusCode s;
+        do {
+            s = m_impl->port->writeSingleRegister(unit, addr + i, values[i]);
+        } while (Modbus::StatusIsProcessing(s));
+        if (!Modbus::StatusIsGood(s)) {
+            m_impl->errorText = std::string("Modbus error: ") + m_impl->port->lastErrorText();
+            return false;
+        }
     }
     return true;
 }
@@ -178,8 +225,9 @@ ChannelConfig HvbModbusClient::readChannelConfig(int ch) {
     if (!checkConnected()) return cfg;
 
     uint16_t base = reg::chAddr(ch, 0);
-    uint16_t buf[21] = {};  // offsets 0..20
-    if (!readRegsInternal(true, base, 21, buf)) return cfg;
+    // Board limits single-read count; split into two batches
+    uint16_t buf[12] = {};
+    if (!readRegsInternal(true, base, 12, buf)) return cfg;
 
     cfg.configuredTargetVRaw = static_cast<int16_t>(buf[CH_CFG_TARGET_VOLTAGE]);
     cfg.outputAction         = static_cast<OutputAction>(buf[CH_OUTPUT_ACTION]);
@@ -193,15 +241,20 @@ ChannelConfig HvbModbusClient::readChannelConfig(int ch) {
     cfg.vLimitThresholdRaw   = static_cast<int16_t>(buf[CH_VOLTAGE_LIMIT_THRESHOLD]);
     cfg.iProtMode            = static_cast<ProtectionMode>(buf[CH_CURRENT_PROTECTION_MODE]);
     cfg.iProtOutputAction    = static_cast<OutputAction>(buf[CH_CURRENT_PROT_OUT_ACTION]);
-    cfg.iLimitThresholdRaw   = static_cast<int16_t>(buf[CH_CURRENT_LIMIT_THRESHOLD]);
-    cfg.derateStepRaw        = buf[CH_AUTO_DERATE_STEP];
-    cfg.saveTargetPolicy     = buf[CH_SAVE_TARGET_POLICY] != 0;
-    cfg.outCalK   = buf[CH_OUTPUT_CAL_K];
-    cfg.outCalB   = static_cast<int16_t>(buf[CH_OUTPUT_CAL_B]);
-    cfg.measVCalK = buf[CH_MEASURED_V_CAL_K];
-    cfg.measVCalB = static_cast<int16_t>(buf[CH_MEASURED_V_CAL_B]);
-    cfg.measICalK = buf[CH_MEASURED_I_CAL_K];
-    cfg.measICalB = static_cast<int16_t>(buf[CH_MEASURED_I_CAL_B]);
+
+    // Read second batch: offsets 12..20
+    uint16_t buf2[9] = {};
+    if (!readRegsInternal(true, base + 12, 9, buf2)) return cfg;
+
+    cfg.iLimitThresholdRaw   = static_cast<int16_t>(buf2[CH_CURRENT_LIMIT_THRESHOLD - 12]);
+    cfg.derateStepRaw        = buf2[CH_AUTO_DERATE_STEP - 12];
+    cfg.saveTargetPolicy     = buf2[CH_SAVE_TARGET_POLICY - 12] != 0;
+    cfg.outCalK   = buf2[CH_OUTPUT_CAL_K - 12];
+    cfg.outCalB   = static_cast<int16_t>(buf2[CH_OUTPUT_CAL_B - 12]);
+    cfg.measVCalK = buf2[CH_MEASURED_V_CAL_K - 12];
+    cfg.measVCalB = static_cast<int16_t>(buf2[CH_MEASURED_V_CAL_B - 12]);
+    cfg.measICalK = buf2[CH_MEASURED_I_CAL_K - 12];
+    cfg.measICalB = static_cast<int16_t>(buf2[CH_MEASURED_I_CAL_B - 12]);
     return cfg;
 }
 

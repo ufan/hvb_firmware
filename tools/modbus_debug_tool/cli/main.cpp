@@ -10,6 +10,7 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 
 // ============================================================================
@@ -69,13 +70,16 @@ static std::string formatHex(uint16_t v) {
     return ss.str();
 }
 
+extern std::string renderMonitorTable(const hvb::SystemInfo&,
+                                      const std::vector<hvb::ChannelInfo>&);
+
 // ============================================================================
 //  Globals
 // ============================================================================
 
-static volatile sig_atomic_t g_running = 1;
+static hvb::HvbModbusClient*    g_client  = nullptr;
+static volatile sig_atomic_t    g_running = 1;
 static void sigintHandler(int) { g_running = 0; }
-static hvb::HvbModbusClient* g_client = nullptr;
 
 // ============================================================================
 //  Commands
@@ -149,24 +153,16 @@ int cmdStatus() {
 
 int cmdMonitor(int intervalSec) {
     if (!g_client->isConnected()) { std::cerr << "Not connected\n"; return 1; }
+    g_running = 1;
     ::signal(SIGINT, sigintHandler);
     while (g_running) {
-        std::cout << "\033[2J\033[H";
         auto info = g_client->readSystemInfo();
-        if (g_client->isConnected())
-            std::cout << "=== Monitor [" << info.protoMajor << "." << info.protoMinor
-                      << "] Uptime: " << info.uptimeSec
-                      << "s  Mode: " << hvb::opModeName(info.activeOpMode) << " ===\n";
-        for (int ch = 0; ch < 2; ++ch) {
-            auto ci = g_client->readChannelInfo(ch);
-            if (ci.status & hvb::ChStatus::UNSUPPORTED) continue;
-            std::cout << "CH" << ch << ": V=" << formatVRaw(ci.voltageRaw)
-                      << "  I=" << formatIRaw(ci.currentRaw)
-                      << "  Target=" << formatVRaw(ci.operationalTargetVoltageRaw)
-                      << "  Fault=" << (ci.activeFault ? "YES" : "no")
-                      << "  Retry=" << ci.retryCount << "\n";
-        }
-        std::this_thread::sleep_for(std::chrono::seconds(intervalSec));
+        std::vector<hvb::ChannelInfo> channels;
+        for (int ch = 0; ch < 2; ++ch)
+            channels.push_back(g_client->readChannelInfo(ch));
+        std::cout << "\033[2J\033[H" << renderMonitorTable(info, channels) << std::flush;
+        for (int i = 0; i < intervalSec && g_running; ++i)
+            std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     std::cout << "\n";
     return 0;
@@ -255,7 +251,12 @@ int main(int argc, char** argv) {
     hvb::ConfigManager cfgMgr;
     cfgMgr.load();
 
-    // Global options
+    // ===================================================================
+    //  ALL option variables MUST be declared here — nested {} scopes
+    //  would cause stack-use-after-scope when CLI11 writes back values.
+    // ===================================================================
+
+    // Global
     std::string port;
     int baud = 115200, slaveId = 1, timeout = 500;
     bool save = false;
@@ -265,61 +266,89 @@ int main(int argc, char** argv) {
     app.add_option("-t,--timeout", timeout, "Timeout ms");
     app.add_flag("--save", save, "Save connection to config");
 
+    // Describe
+    uint32_t hexAddr = 0;
+    auto* describeCmd = app.add_subcommand("describe", "Show register metadata");
+    describeCmd->add_option("addr", hexAddr, "PDU address (hex)")->required();
+
+    // Monitor
+    int interval = 2;
+    auto* monitorCmd = app.add_subcommand("monitor", "Live polling");
+    monitorCmd->add_option("interval", interval, "Poll interval (s)");
+    monitorCmd->callback([&]() { cmdMonitor(interval); });
+
+    // System subcommand option variables
+    std::string sys_mode;
+    std::string sys_recovery_policy; int sys_recovery_d=0, sys_recovery_mx=0, sys_recovery_w=0;
+    uint16_t sys_safe_band_v=10, sys_safe_band_i=10;
+    uint16_t sys_addr_val=1;
+    uint16_t sys_baud_code=0;
+
+    // Channel subcommand option variables
+    std::string ch_output_action;
+    std::string ch_fault_cmd;
+    uint16_t ch_voltage_raw = 0;
+    uint16_t ch_ramp_up_step=0, ch_ramp_up_interval=0;
+    uint16_t ch_ramp_dn_step=0, ch_ramp_dn_interval=0;
+    std::string ch_prot_v_mode, ch_prot_v_action; uint16_t ch_prot_v_thresh=0;
+    std::string ch_prot_i_mode, ch_prot_i_action; uint16_t ch_prot_i_thresh=0;
+    uint16_t ch_derate_step=0;
+    uint16_t ch_cal_out_k=10000; uint16_t ch_cal_out_b=0;
+    uint16_t ch_cal_mv_k=10000; uint16_t ch_cal_mv_b=0;
+    uint16_t ch_cal_mi_k=10000; uint16_t ch_cal_mi_b=0;
+
+    // Raw subcommand option variables
+    uint16_t raw_fc04_addr=0, raw_fc04_count=16;
+    uint16_t raw_fc03_addr=0, raw_fc03_count=16;
+    uint32_t raw_fc06_addr=0, raw_fc06_value=0;
+
+    // ===================================================================
+    //  Subcommand definitions
+    // ===================================================================
+
     // Discovery
     auto* listCmd = app.add_subcommand("list", "Discovery")->require_subcommand(1);
     listCmd->add_subcommand("ports", "List serial ports")->callback([&]() { cmdListPorts(); });
     listCmd->add_subcommand("regs", "List register catalog")->callback([&]() { cmdListRegs(); });
 
-    auto* describeCmd = app.add_subcommand("describe", "Show register metadata");
-    uint32_t hexAddr = 0;
-    describeCmd->add_option("addr", hexAddr, "PDU address (hex)")->required();
-
     // Top-level reads
     app.add_subcommand("info", "System info dump")->callback([&]() { cmdInfo(); });
     app.add_subcommand("status", "Channel summary")->callback([&]() { cmdStatus(); });
-    auto* monitorCmd = app.add_subcommand("monitor", "Live polling");
-    int interval = 2;
-    monitorCmd->add_option("interval", interval, "Poll interval (s)");
 
     // System subcommands
     auto* sysCmd = app.add_subcommand("system", "System config read/write")->require_subcommand(1);
     sysCmd->add_subcommand("config", "Read system config")->callback([&]() { cmdSystemConfig(); });
-    {
-        auto* sc = sysCmd->add_subcommand("mode", "Set operating mode"); std::string m;
-        sc->add_option("mode", m, "NORMAL|AUTO")->required();
-        sc->callback([&]() { std::cout << (g_client->writeOperatingMode(m=="AUTO"?hvb::OpMode::Automatic:hvb::OpMode::Normal)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = sysCmd->add_subcommand("recovery", "Set recovery policy");
-        std::string p; int d=0,mx=0,w=0;
-        sc->add_option("policy", p, "MANUAL-LATCH|AUTO-RETRY|AUTO-DERATE|NEVER-RETRY")->required();
-        sc->add_option("delay", d, "Cooldown seconds")->required();
-        sc->add_option("max", mx, "Max retries")->required();
-        sc->add_option("window", w, "Retry window seconds")->required();
-        sc->callback([&]() {
-            hvb::RecoveryPolicy rp = hvb::RecoveryPolicy::ManualLatch;
-            if (p=="AUTO-RETRY") rp=hvb::RecoveryPolicy::AutoRetry;
-            else if (p=="AUTO-DERATE") rp=hvb::RecoveryPolicy::AutoDerateRetry;
-            else if (p=="NEVER-RETRY") rp=hvb::RecoveryPolicy::NeverRetry;
-            std::cout << (g_client->writeSystemRecoveryPolicy(rp,d,mx,w)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = sysCmd->add_subcommand("safe-bands", "Set safe bands");
-        uint16_t v=10, i=10;
-        sc->add_option("v-pct", v, "0-50")->required()->check(CLI::Range(0u,50u));
-        sc->add_option("i-pct", i, "0-50")->required()->check(CLI::Range(0u,50u));
-        sc->callback([&]() { std::cout << (g_client->writeSafeBands(v,i)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = sysCmd->add_subcommand("addr", "Set slave address"); uint16_t a=1;
-        sc->add_option("addr", a, "0-247")->required()->check(CLI::Range(0u,247u));
-        sc->callback([&]() { std::cout << (g_client->writeSlaveAddress(a)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = sysCmd->add_subcommand("baud", "Set baud rate"); uint16_t c=0;
-        sc->add_option("code", c, "0=115200,1=9600")->required()->check(CLI::Range(0u,1u));
-        sc->callback([&]() { std::cout << (g_client->writeBaudRateCode(c)?"OK\n":g_client->lastError()+"\n"); });
-    }
+
+    auto* sysMode = sysCmd->add_subcommand("mode", "Set operating mode");
+    sysMode->add_option("mode", sys_mode, "NORMAL|AUTO")->required();
+    sysMode->callback([&]() { std::cout << (g_client->writeOperatingMode(sys_mode=="AUTO"?hvb::OpMode::Automatic:hvb::OpMode::Normal)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* sysRecovery = sysCmd->add_subcommand("recovery", "Set recovery policy");
+    sysRecovery->add_option("policy", sys_recovery_policy, "MANUAL-LATCH|AUTO-RETRY|AUTO-DERATE|NEVER-RETRY")->required();
+    sysRecovery->add_option("delay", sys_recovery_d, "Cooldown seconds")->required();
+    sysRecovery->add_option("max", sys_recovery_mx, "Max retries")->required();
+    sysRecovery->add_option("window", sys_recovery_w, "Retry window seconds")->required();
+    sysRecovery->callback([&]() {
+        hvb::RecoveryPolicy rp = hvb::RecoveryPolicy::ManualLatch;
+        if (sys_recovery_policy=="AUTO-RETRY") rp=hvb::RecoveryPolicy::AutoRetry;
+        else if (sys_recovery_policy=="AUTO-DERATE") rp=hvb::RecoveryPolicy::AutoDerateRetry;
+        else if (sys_recovery_policy=="NEVER-RETRY") rp=hvb::RecoveryPolicy::NeverRetry;
+        std::cout << (g_client->writeSystemRecoveryPolicy(rp,sys_recovery_d,sys_recovery_mx,sys_recovery_w)?"OK\n":g_client->lastError()+"\n");
+    });
+
+    auto* sysSafeBands = sysCmd->add_subcommand("safe-bands", "Set safe bands");
+    sysSafeBands->add_option("v-pct", sys_safe_band_v, "0-50")->required()->check(CLI::Range(0u,50u));
+    sysSafeBands->add_option("i-pct", sys_safe_band_i, "0-50")->required()->check(CLI::Range(0u,50u));
+    sysSafeBands->callback([&]() { std::cout << (g_client->writeSafeBands(sys_safe_band_v,sys_safe_band_i)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* sysAddr = sysCmd->add_subcommand("addr", "Set slave address");
+    sysAddr->add_option("addr", sys_addr_val, "0-247")->required()->check(CLI::Range(0u,247u));
+    sysAddr->callback([&]() { std::cout << (g_client->writeSlaveAddress(sys_addr_val)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* sysBaud = sysCmd->add_subcommand("baud", "Set baud rate");
+    sysBaud->add_option("code", sys_baud_code, "0=115200,1=9600")->required()->check(CLI::Range(0u,1u));
+    sysBaud->callback([&]() { std::cout << (g_client->writeBaudRateCode(sys_baud_code)?"OK\n":g_client->lastError()+"\n"); });
+
     sysCmd->add_subcommand("save", "Save system params")->callback([&]() { std::cout << (g_client->sendParamAction(-1,hvb::ParamAction::Save)?"OK\n":g_client->lastError()+"\n"); });
     sysCmd->add_subcommand("load", "Load system params")->callback([&]() { std::cout << (g_client->sendParamAction(-1,hvb::ParamAction::Load)?"OK\n":g_client->lastError()+"\n"); });
     sysCmd->add_subcommand("factory", "Factory reset system")->callback([&]() { std::cout << (g_client->sendParamAction(-1,hvb::ParamAction::FactoryReset)?"OK\n":g_client->lastError()+"\n"); });
@@ -347,96 +376,84 @@ int main(int argc, char** argv) {
     chCmd->add_subcommand("config", "Configuration")->callback([&]() { cmdChannelConfig(ch); });
     chCmd->add_subcommand("cal", "Calibration")->callback([&]() { cmdChannelCal(ch); });
 
-    {
-        auto* sc = chCmd->add_subcommand("output", "Set output action"); std::string a;
-        sc->add_option("action", a, "NONE|ENABLE|DISABLE-GRACEFUL|DISABLE-IMMEDIATE")->required();
-        sc->callback([&]() {
-            hvb::OutputAction oa = hvb::OutputAction::None;
-            if (a=="ENABLE") oa=hvb::OutputAction::Enable;
-            else if (a=="DISABLE-GRACEFUL") oa=hvb::OutputAction::DisableGraceful;
-            else if (a=="DISABLE-IMMEDIATE") oa=hvb::OutputAction::DisableImmediate;
-            std::cout << (g_client->sendOutputAction(ch,oa)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = chCmd->add_subcommand("fault", "Fault command"); std::string c;
-        sc->add_option("cmd", c, "CLEAR-ACTIVE|CLEAR-HISTORY")->required();
-        sc->callback([&]() {
-            hvb::ChannelFaultCommand fc = hvb::ChannelFaultCommand::None;
-            if (c=="CLEAR-ACTIVE") fc=hvb::ChannelFaultCommand::ClearActiveFaultBlock;
-            else if (c=="CLEAR-HISTORY") fc=hvb::ChannelFaultCommand::ClearFaultHistory;
-            std::cout << (g_client->sendChannelFaultCommand(ch,fc)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = chCmd->add_subcommand("voltage", "Set configured target voltage (raw LSB)");
-        uint16_t raw = 0;
-        sc->add_option("raw", raw, "Raw LSB value")->required();
-        sc->callback([&]() { std::cout << (g_client->writeConfiguredTargetVoltage(ch,raw)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = chCmd->add_subcommand("ramp-up", "Set ramp up (raw step, interval x10s)");
-        uint16_t step=0, interval=0;
-        sc->add_option("step", step, "Raw LSB")->required();
-        sc->add_option("interval", interval, "Interval x10s")->required();
-        sc->callback([&]() { std::cout << (g_client->writeRampUp(ch,step,interval)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = chCmd->add_subcommand("ramp-down", "Set ramp down (raw step, interval x10s)");
-        uint16_t step=0, interval=0;
-        sc->add_option("step", step, "Raw LSB")->required();
-        sc->add_option("interval", interval, "Interval x10s")->required();
-        sc->callback([&]() { std::cout << (g_client->writeRampDown(ch,step,interval)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = chCmd->add_subcommand("prot-v", "Set voltage protection"); std::string m,a; uint16_t t=0;
-        sc->add_option("mode", m, "DISABLED|FLAG-ONLY|APPLY-ACTION")->required();
-        sc->add_option("action", a, "NONE|DISABLE-GRACEFUL|DISABLE-IMMEDIATE|FORCE-ZERO|CLAMP")->required();
-        sc->add_option("threshold", t, "Raw LSB")->required();
-        sc->callback([&]() {
-            hvb::ProtectionMode pm = hvb::ProtectionMode::Disabled;
-            if (m=="FLAG-ONLY") pm=hvb::ProtectionMode::FlagOnly;
-            else if (m=="APPLY-ACTION") pm=hvb::ProtectionMode::ApplyOutputAction;
-            hvb::OutputAction oa = hvb::OutputAction::None;
-            if (a=="DISABLE-GRACEFUL") oa=hvb::OutputAction::DisableGraceful;
-            else if (a=="DISABLE-IMMEDIATE") oa=hvb::OutputAction::DisableImmediate;
-            else if (a=="FORCE-ZERO") oa=hvb::OutputAction::ForceOutputZero;
-            else if (a=="CLAMP") oa=hvb::OutputAction::Clamp;
-            std::cout << (g_client->writeVoltageProtection(ch,pm,oa,t)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = chCmd->add_subcommand("prot-i", "Set current protection"); std::string m,a; uint16_t t=0;
-        sc->add_option("mode", m, "DISABLED|FLAG-ONLY|APPLY-ACTION")->required();
-        sc->add_option("action", a, "NONE|DISABLE-GRACEFUL|DISABLE-IMMEDIATE|FORCE-ZERO")->required();
-        sc->add_option("threshold", t, "Raw LSB")->required();
-        sc->callback([&]() {
-            hvb::ProtectionMode pm = hvb::ProtectionMode::Disabled;
-            if (m=="FLAG-ONLY") pm=hvb::ProtectionMode::FlagOnly;
-            else if (m=="APPLY-ACTION") pm=hvb::ProtectionMode::ApplyOutputAction;
-            hvb::OutputAction oa = hvb::OutputAction::None;
-            if (a=="DISABLE-GRACEFUL") oa=hvb::OutputAction::DisableGraceful;
-            else if (a=="DISABLE-IMMEDIATE") oa=hvb::OutputAction::DisableImmediate;
-            else if (a=="FORCE-ZERO") oa=hvb::OutputAction::ForceOutputZero;
-            std::cout << (g_client->writeCurrentProtection(ch,pm,oa,t)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = chCmd->add_subcommand("derate", "Set derate step (raw LSB)");
-        uint16_t s=0; sc->add_option("step", s, "Raw LSB")->required();
-        sc->callback([&]() { std::cout << (g_client->writeDerateStep(ch,s)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = chCmd->add_subcommand("cal-out", "Set output calibration"); uint16_t k=10000, b=0;
-        sc->add_option("k", k)->required(); sc->add_option("b", b)->required();
-        sc->callback([&]() { std::cout << (g_client->writeCalibrationOutput(ch,k,b)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = chCmd->add_subcommand("cal-meas-v", "Set meas V calibration"); uint16_t k=10000, b=0;
-        sc->add_option("k", k)->required(); sc->add_option("b", b)->required();
-        sc->callback([&]() { std::cout << (g_client->writeCalibrationMeasV(ch,k,b)?"OK\n":g_client->lastError()+"\n"); });
-    }
-    {
-        auto* sc = chCmd->add_subcommand("cal-meas-i", "Set meas I calibration"); uint16_t k=10000, b=0;
-        sc->add_option("k", k)->required(); sc->add_option("b", b)->required();
-        sc->callback([&]() { std::cout << (g_client->writeCalibrationMeasI(ch,k,b)?"OK\n":g_client->lastError()+"\n"); });
-    }
+    auto* chOutput = chCmd->add_subcommand("output", "Set output action");
+    chOutput->add_option("action", ch_output_action, "NONE|ENABLE|DISABLE-GRACEFUL|DISABLE-IMMEDIATE")->required();
+    chOutput->callback([&]() {
+        hvb::OutputAction oa = hvb::OutputAction::None;
+        if (ch_output_action=="ENABLE") oa=hvb::OutputAction::Enable;
+        else if (ch_output_action=="DISABLE-GRACEFUL") oa=hvb::OutputAction::DisableGraceful;
+        else if (ch_output_action=="DISABLE-IMMEDIATE") oa=hvb::OutputAction::DisableImmediate;
+        std::cout << (g_client->sendOutputAction(ch,oa)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* chFault = chCmd->add_subcommand("fault", "Fault command");
+    chFault->add_option("cmd", ch_fault_cmd, "CLEAR-ACTIVE|CLEAR-HISTORY")->required();
+    chFault->callback([&]() {
+        hvb::ChannelFaultCommand fc = hvb::ChannelFaultCommand::None;
+        if (ch_fault_cmd=="CLEAR-ACTIVE") fc=hvb::ChannelFaultCommand::ClearActiveFaultBlock;
+        else if (ch_fault_cmd=="CLEAR-HISTORY") fc=hvb::ChannelFaultCommand::ClearFaultHistory;
+        std::cout << (g_client->sendChannelFaultCommand(ch,fc)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* chVoltage = chCmd->add_subcommand("voltage", "Set configured target voltage (raw LSB)");
+    chVoltage->add_option("raw", ch_voltage_raw, "Raw LSB value")->required();
+    chVoltage->callback([&]() { std::cout << (g_client->writeConfiguredTargetVoltage(ch,ch_voltage_raw)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* chRampUp = chCmd->add_subcommand("ramp-up", "Set ramp up (raw step, interval x10s)");
+    chRampUp->add_option("step", ch_ramp_up_step, "Raw LSB")->required();
+    chRampUp->add_option("interval", ch_ramp_up_interval, "Interval x10s")->required();
+    chRampUp->callback([&]() { std::cout << (g_client->writeRampUp(ch,ch_ramp_up_step,ch_ramp_up_interval)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* chRampDn = chCmd->add_subcommand("ramp-down", "Set ramp down (raw step, interval x10s)");
+    chRampDn->add_option("step", ch_ramp_dn_step, "Raw LSB")->required();
+    chRampDn->add_option("interval", ch_ramp_dn_interval, "Interval x10s")->required();
+    chRampDn->callback([&]() { std::cout << (g_client->writeRampDown(ch,ch_ramp_dn_step,ch_ramp_dn_interval)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* chProtV = chCmd->add_subcommand("prot-v", "Set voltage protection");
+    chProtV->add_option("mode", ch_prot_v_mode, "DISABLED|FLAG-ONLY|APPLY-ACTION")->required();
+    chProtV->add_option("action", ch_prot_v_action, "NONE|DISABLE-GRACEFUL|DISABLE-IMMEDIATE|FORCE-ZERO|CLAMP")->required();
+    chProtV->add_option("threshold", ch_prot_v_thresh, "Raw LSB")->required();
+    chProtV->callback([&]() {
+        hvb::ProtectionMode pm = hvb::ProtectionMode::Disabled;
+        if (ch_prot_v_mode=="FLAG-ONLY") pm=hvb::ProtectionMode::FlagOnly;
+        else if (ch_prot_v_mode=="APPLY-ACTION") pm=hvb::ProtectionMode::ApplyOutputAction;
+        hvb::OutputAction oa = hvb::OutputAction::None;
+        if (ch_prot_v_action=="DISABLE-GRACEFUL") oa=hvb::OutputAction::DisableGraceful;
+        else if (ch_prot_v_action=="DISABLE-IMMEDIATE") oa=hvb::OutputAction::DisableImmediate;
+        else if (ch_prot_v_action=="FORCE-ZERO") oa=hvb::OutputAction::ForceOutputZero;
+        else if (ch_prot_v_action=="CLAMP") oa=hvb::OutputAction::Clamp;
+        std::cout << (g_client->writeVoltageProtection(ch,pm,oa,ch_prot_v_thresh)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* chProtI = chCmd->add_subcommand("prot-i", "Set current protection");
+    chProtI->add_option("mode", ch_prot_i_mode, "DISABLED|FLAG-ONLY|APPLY-ACTION")->required();
+    chProtI->add_option("action", ch_prot_i_action, "NONE|DISABLE-GRACEFUL|DISABLE-IMMEDIATE|FORCE-ZERO")->required();
+    chProtI->add_option("threshold", ch_prot_i_thresh, "Raw LSB")->required();
+    chProtI->callback([&]() {
+        hvb::ProtectionMode pm = hvb::ProtectionMode::Disabled;
+        if (ch_prot_i_mode=="FLAG-ONLY") pm=hvb::ProtectionMode::FlagOnly;
+        else if (ch_prot_i_mode=="APPLY-ACTION") pm=hvb::ProtectionMode::ApplyOutputAction;
+        hvb::OutputAction oa = hvb::OutputAction::None;
+        if (ch_prot_i_action=="DISABLE-GRACEFUL") oa=hvb::OutputAction::DisableGraceful;
+        else if (ch_prot_i_action=="DISABLE-IMMEDIATE") oa=hvb::OutputAction::DisableImmediate;
+        else if (ch_prot_i_action=="FORCE-ZERO") oa=hvb::OutputAction::ForceOutputZero;
+        std::cout << (g_client->writeCurrentProtection(ch,pm,oa,ch_prot_i_thresh)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* chDerate = chCmd->add_subcommand("derate", "Set derate step (raw LSB)");
+    chDerate->add_option("step", ch_derate_step, "Raw LSB")->required();
+    chDerate->callback([&]() { std::cout << (g_client->writeDerateStep(ch,ch_derate_step)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* chCalOut = chCmd->add_subcommand("cal-out", "Set output calibration");
+    chCalOut->add_option("k", ch_cal_out_k)->required();
+    chCalOut->add_option("b", ch_cal_out_b)->required();
+    chCalOut->callback([&]() { std::cout << (g_client->writeCalibrationOutput(ch,ch_cal_out_k,ch_cal_out_b)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* chCalMeasV = chCmd->add_subcommand("cal-meas-v", "Set meas V calibration");
+    chCalMeasV->add_option("k", ch_cal_mv_k)->required();
+    chCalMeasV->add_option("b", ch_cal_mv_b)->required();
+    chCalMeasV->callback([&]() { std::cout << (g_client->writeCalibrationMeasV(ch,ch_cal_mv_k,ch_cal_mv_b)?"OK\n":g_client->lastError()+"\n"); });
+
+    auto* chCalMeasI = chCmd->add_subcommand("cal-meas-i", "Set meas I calibration");
+    chCalMeasI->add_option("k", ch_cal_mi_k)->required();
+    chCalMeasI->add_option("b", ch_cal_mi_b)->required();
+    chCalMeasI->callback([&]() { std::cout << (g_client->writeCalibrationMeasI(ch,ch_cal_mi_k,ch_cal_mi_b)?"OK\n":g_client->lastError()+"\n"); });
 
     chCmd->add_subcommand("save", "Save channel params")->callback([&]() { std::cout << (g_client->sendParamAction(ch,hvb::ParamAction::Save)?"OK\n":g_client->lastError()+"\n"); });
     chCmd->add_subcommand("load", "Load channel params")->callback([&]() { std::cout << (g_client->sendParamAction(ch,hvb::ParamAction::Load)?"OK\n":g_client->lastError()+"\n"); });
@@ -445,51 +462,47 @@ int main(int argc, char** argv) {
     // Reset
     app.add_subcommand("reset", "Software reset")->callback([&]() { std::cout << (g_client->sendParamAction(-1,hvb::ParamAction::SoftwareReset)?"OK\n":g_client->lastError()+"\n"); });
 
-    // Raw
+    // Raw subcommands
     auto* rawCmd = app.add_subcommand("raw", "Raw Modbus")->require_subcommand(1);
-    {
-        auto* sc = rawCmd->add_subcommand("fc04", "Raw FC04 read"); uint16_t a=0,c=16;
-        sc->add_option("addr", a)->required(); sc->add_option("count", c);
-        sc->callback([&]() { cmdRawFc04(a,c); });
-    }
-    {
-        auto* sc = rawCmd->add_subcommand("fc03", "Raw FC03 read"); uint16_t a=0,c=16;
-        sc->add_option("addr", a)->required(); sc->add_option("count", c);
-        sc->callback([&]() { cmdRawFc03(a,c); });
-    }
-    {
-        auto* sc = rawCmd->add_subcommand("fc06", "Raw FC06 write"); uint32_t a=0,v=0;
-        sc->add_option("addr", a)->required(); sc->add_option("value", v)->required();
-        sc->callback([&]() { cmdRawFc06(static_cast<uint16_t>(a),static_cast<uint16_t>(v)); });
-    }
+    auto* rawFc04 = rawCmd->add_subcommand("fc04", "Raw FC04 read");
+    rawFc04->add_option("addr", raw_fc04_addr)->required();
+    rawFc04->add_option("count", raw_fc04_count);
+    rawFc04->callback([&]() { cmdRawFc04(raw_fc04_addr, raw_fc04_count); });
 
-    CLI11_PARSE(app, argc, argv);
+    auto* rawFc03 = rawCmd->add_subcommand("fc03", "Raw FC03 read");
+    rawFc03->add_option("addr", raw_fc03_addr)->required();
+    rawFc03->add_option("count", raw_fc03_count);
+    rawFc03->callback([&]() { cmdRawFc03(raw_fc03_addr, raw_fc03_count); });
 
-    // Connection resolution
+    auto* rawFc06 = rawCmd->add_subcommand("fc06", "Raw FC06 write");
+    rawFc06->add_option("addr", raw_fc06_addr)->required();
+    rawFc06->add_option("value", raw_fc06_value)->required();
+    rawFc06->callback([&]() { cmdRawFc06(static_cast<uint16_t>(raw_fc06_addr), static_cast<uint16_t>(raw_fc06_value)); });
+
+    hvb::HvbModbusClient client;
+    g_client = &client;
+
+    // Resolve port from config early (CLI args override below)
     if (port.empty() && cfgMgr.hasConnectionSettings()) {
         port = cfgMgr.port; baud = cfgMgr.baudRate; slaveId = cfgMgr.slaveId; timeout = cfgMgr.timeoutMs;
     }
+
+    // Connect after parsing but before subcommand callbacks fire
+    app.parse_complete_callback([&]() {
+        if (!port.empty()) {
+            if (!client.connect(port, baud, slaveId, timeout)) {
+                std::cerr << "Connection error: " << client.lastError() << "\n";
+                std::exit(1);
+            }
+        }
+    });
+
+    CLI11_PARSE(app, argc, argv);
+
     if (!port.empty()) {
         cfgMgr.setFromArgs(port, baud, slaveId, timeout);
         if (save) cfgMgr.save();
     }
 
-    hvb::HvbModbusClient client;
-    g_client = &client;
-
-    bool hasSub = false;
-    for (auto* sc : app.get_subcommands()) { if (sc->parsed()) { hasSub = true; break; } }
-
-    if (!port.empty() && hasSub) {
-        if (!client.connect(port, baud, slaveId, timeout)) {
-            std::cerr << "Connection error: " << client.lastError() << "\n";
-            return 1;
-        }
-    }
-
-    if (describeCmd->parsed()) cmdDescribe(static_cast<uint16_t>(hexAddr));
-    if (monitorCmd->parsed()) cmdMonitor(interval);
-
-    client.disconnect();
     return 0;
 }

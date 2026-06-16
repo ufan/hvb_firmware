@@ -22,6 +22,10 @@ public:
     std::string lastError() const;
     int slaveId() const;
 
+    // Direct test mode — inject register arrays (bypasses Modbus RTU)
+    void attachTestArrays(uint16_t* inputRegs, uint16_t* holdingRegs, int maxAddr);
+    void detachTestArrays();
+
     // High-level reads (raw LSB values)
     SystemInfo     readSystemInfo();
     ChannelInfo    readChannelInfo(int ch);

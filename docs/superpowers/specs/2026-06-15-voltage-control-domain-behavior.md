@@ -24,6 +24,10 @@ The domain uses these canonical concepts:
 | Protection Output Action | Output Action applied by a protection event |
 | Active Fault Block | Current blocking condition preventing enable/retry until cleared |
 | Fault History | Record that a fault event occurred |
+| Calibration Mode | Volatile professional mode for factory calibration and service debug |
+| Calibration Unlock | Volatile guard required before entering Calibration Mode |
+| Calibration Output Enable | Per-channel raw-output gate used only in Calibration Mode |
+| Calibration Commit | Per-channel action that persists approved calibration coefficients only |
 
 ## Operating Modes
 
@@ -46,6 +50,47 @@ Automatic startup behavior:
 | Existing Active Fault Blocks | Not retried by switching into Automatic Mode |
 
 Runtime mode changes do not disrupt currently running channels. Switching from Automatic Mode to Normal Mode cancels pending retries and converts them to manual Active Fault Blocks.
+
+### Calibration Mode
+
+Calibration Mode is a volatile professional operating mode used during factory manufacturing and service debug. It is not an end-user mode. It bypasses the normal calibrated target, ramp, automatic recovery, and calibrated protection-action loop so external factory or service tooling can directly drive raw DAC codes and capture raw ADC values.
+
+Calibration Mode is entered only after Calibration Unlock succeeds. Calibration Unlock prevents accidental entry by normal host tools; it is not cryptographic authentication. Calibration Unlock is volatile and gates entry only. Once Calibration Mode is active, calibration-only registers remain available until the mode exits.
+
+Calibration Mode entry behavior:
+
+| Rule | Behavior |
+|---|---|
+| Unlock required | Reject entry unless the volatile Calibration Unlock sequence has completed |
+| Output baseline | Immediately force all raw DAC state to zero and disable all channel outputs |
+| Ramping and retry | Cancel ramping, automatic retry, and cooldown state |
+| Existing fault history | Preserve Fault History for service diagnosis |
+| Existing calibrated fault blocks | Do not let stale voltage/current protection fault blocks prevent raw debug reads or calibration output after entry |
+| Hard safety faults | Hardware faults and interlocks still block calibration output |
+| Disable failure | If firmware cannot confirm all outputs are disabled, reject Calibration Mode entry and force a hard safe fault state |
+
+Calibration Mode exit behavior:
+
+| Rule | Behavior |
+|---|---|
+| Raw output cleanup | Force Calibration Output Enable false for every channel and raw DAC state to zero |
+| Runtime cleanup | Clear calibration-only runtime state and unlock state |
+| Normal behavior restore | Normal or Automatic behavior resumes using the current in-memory configuration |
+| Persistence | Calibration Mode itself is never persisted and must not become the boot operating mode |
+
+Calibration Mode output behavior:
+
+| Rule | Behavior |
+|---|---|
+| Raw DAC code | Native unsigned DAC device code with variant-defined maximum |
+| Raw ADC values | Signed raw ADC conversion values captured without calibration scaling |
+| Sample command | A per-channel explicit sample command captures raw voltage and raw current together |
+| Sample status | Minimum states are no valid sample, sample valid, sample busy, and sample error |
+| Single active channel | Only one channel may have Calibration Output Enable active or nonzero raw DAC output at a time |
+| Disabled channel DAC writes | While Calibration Output Enable is false, only raw DAC code zero is accepted |
+| Safety rails | Variant DAC bounds, explicit output-enable gating, hardware interlocks, and hardware faults remain active |
+
+Calibration Mode does not mutate normal protection configuration. Calibrated voltage/current protection actions are ignored only while Calibration Mode is active because coefficients may be incomplete or under test. Hard safety faults and interlocks are not ignored.
 
 ## Output Actions
 
@@ -160,6 +205,8 @@ System save/load/factory reset affects system parameters only. Channel save/load
 
 Parameter actions are synchronous for the initial implementation. Storage failure is reported to the protocol adapter as a device failure.
 
+Calibration Mode is never persisted as the boot operating mode. System save while Calibration Mode is active must preserve a non-calibration boot mode. Calibration Commit is separate from normal channel save and persists only calibration coefficients for one channel.
+
 ## Calibration Behavior
 
 Calibration is per-channel runtime state with variant-provided factory defaults.
@@ -175,6 +222,31 @@ Calibration is per-channel runtime state with variant-provided factory defaults.
 
 Channel factory reset restores that channel's calibration to variant defaults.
 
+Calibration coefficient access is mode-dependent:
+
+| Mode | Read coefficients | Write coefficients | Persist coefficients |
+|---|---|---|---|
+| Normal | Allowed | Rejected | Normal channel save does not create a calibration commit |
+| Automatic | Allowed | Rejected | Normal channel save does not create a calibration commit |
+| Calibration | Allowed | Allowed, updates RAM immediately | Per-channel Calibration Commit only |
+
+Factory and service tooling calculates calibration coefficients outside firmware. Firmware stores coefficients, applies them in Normal and Automatic modes, and exposes raw DAC/ADC access needed to derive coefficients.
+
+Writing coefficients in Calibration Mode updates the current in-memory channel configuration immediately. If the operator exits Calibration Mode, Normal or Automatic behavior uses those in-memory coefficients for the current session. If the board reboots before Calibration Commit, previously committed coefficients are restored.
+
+Calibration Commit behavior:
+
+| Rule | Behavior |
+|---|---|
+| Scope | One channel |
+| Allowed mode | Calibration Mode only |
+| Output state | Calibration Output Enable must be false and raw DAC must be zero |
+| Safety state | Hard safety fault for that channel must not be active |
+| Persisted fields | Output Calibration K/B, Measured Voltage Calibration K/B, Measured Current Calibration K/B |
+| Excluded fields | Raw DAC state, sample status, normal target/ramp/protection/recovery settings |
+
+Factory handoff and calibration-complete enforcement are future production-grade behavior. The initial implementation focuses on core raw calibration/debug behavior and must not block Normal or Automatic output solely because a factory handoff flag is absent.
+
 ## Open Decisions
 
 | Decision | Why it matters |
@@ -182,3 +254,4 @@ Channel factory reset restores that channel's calibration to variant defaults.
 | Retryable versus non-retryable fault classes | Requires product and hardware safety decisions per board variant |
 | Variant-specific calibration defaults | Factory reset needs authoritative defaults |
 | Whether Automatic Mode behavior ships in the first firmware slice | Protocol fields can exist before behavior is fully enabled, but host behavior must be clear |
+| Production factory handoff semantics | Future production firmware needs rules for calibration-complete enforcement before shipment |

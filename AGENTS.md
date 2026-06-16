@@ -23,28 +23,6 @@ This project follows a spec-driven process. Do not jump from ref docs straight i
 7. Implement test-first (Zephyr `native_posix` or `qemu_cortex_m3` where HW isn't needed)
 8. Verify before claiming completion
 
-## Setup & Build
-
-```sh
-west init -l hvb_firmware.git && west update
-west build -b jw_hvb -d build/<name> <app_dir>
-west flash                     # J-Link via SWD, 4 MHz
-```
-
-Applications: `applications/hvb_controller`, `demos/modbus_smoke`. Always use separate build directories per app (`-d build/<name>`).
-
-No CI, no tests, no lint config exist yet.
-
-## Ground Truth Documents
-
-These reference docs are authoritative for firmware behavior:
-- `ref/modbus_interface.md` — Modbus-RTU transport, register map, data encoding, and exception mapping
-- `docs/superpowers/specs/2026-06-15-voltage-control-domain-behavior.md` — protocol-neutral voltage-control domain behavior
-- `UBIQUITOUS_LANGUAGE.md` / `CONTEXT.md` — canonical domain terminology
-- `ref/board_design.md` — hardware architecture, BOM, startup sequence, signal conventions
-- `ref/pin_map.md` — validated MCU pinout, cross-checked against official STM32F4 datasheet
-
-When implementing Modbus or voltage-control behavior, consult these docs first. Keep protocol adapter behavior separate from domain behavior.
 
 ## Schematic Net Name vs. Actual Peripheral Mismatches
 
@@ -92,4 +70,7 @@ drivers/          Custom Zephyr drivers (add CMakeLists.txt + Kconfig when popul
 lib/              Shared firmware libraries (add CMakeLists.txt + Kconfig when populated)
 include/          Public headers for shared code
 ref/              Authoritative design documents and pin maps
+tests/
+docs/
+tools/
 ```

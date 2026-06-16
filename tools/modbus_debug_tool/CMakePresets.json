@@ -7,7 +7,8 @@
       "binaryDir": "${sourceDir}/build/linux-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "BUILD_GUI": "OFF"
+        "BUILD_GUI": "OFF",
+        "BUILD_SHARED_LIBS": "OFF"
       }
     },
     {
@@ -16,7 +17,8 @@
       "binaryDir": "${sourceDir}/build/linux-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "BUILD_GUI": "OFF"
+        "BUILD_GUI": "OFF",
+        "BUILD_SHARED_LIBS": "OFF"
       }
     },
     {
@@ -25,7 +27,8 @@
       "binaryDir": "${sourceDir}/build/linux-gui",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "BUILD_GUI": "ON"
+        "BUILD_GUI": "ON",
+        "BUILD_SHARED_LIBS": "OFF"
       }
     },
     {
@@ -34,7 +37,8 @@
       "binaryDir": "${sourceDir}/build/windows-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "BUILD_GUI": "OFF"
+        "BUILD_GUI": "OFF",
+        "BUILD_SHARED_LIBS": "OFF"
       }
     }
   ]

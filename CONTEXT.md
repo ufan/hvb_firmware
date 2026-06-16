@@ -68,6 +68,22 @@ _Avoid_: Manual mode
 The operating mode where configured channels may auto-start after boot and selected protection events may recover using bounded retry policy.
 _Avoid_: Auto mode when formal register names are needed
 
+**Calibration Mode**:
+The volatile professional operating mode used during factory manufacturing and service debug. It bypasses the normal calibrated voltage-control loop and exposes raw DAC/ADC control surfaces while hard safety rails remain active. Calibration Mode is not an end-user mode and must not be persisted as a boot mode.
+_Avoid_: Factory mode when discussing the domain operating mode, raw debug mode when it hides calibration coefficient workflow
+
+**Calibration Unlock**:
+The volatile two-step Modbus guard that must be completed before entering Calibration Mode. It prevents accidental entry by normal tools; it is not cryptographic authentication.
+_Avoid_: Password, login, authentication
+
+**Calibration Output Enable**:
+The per-channel runtime gate that permits raw DAC output in Calibration Mode. Only one channel may have Calibration Output Enable active at a time.
+_Avoid_: Reusing Output Enable when the control path is raw calibration rather than normal product output
+
+**Calibration Commit**:
+The per-channel action that persists approved calibration coefficients after factory or service tooling has calculated them externally. It saves calibration coefficients only, not raw debug state or temporary output values.
+_Avoid_: Channel save when the intent is specifically to persist calibration coefficients
+
 **Protocol Adapter**:
 A frontend-specific translation layer, such as Modbus, that maps protocol requests to protocol-neutral domain commands and snapshots.
 _Avoid_: UI when discussing firmware module boundaries

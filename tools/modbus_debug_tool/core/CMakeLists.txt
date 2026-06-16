@@ -1,6 +1,7 @@
 add_library(hvb_modbus_core STATIC
     config_manager.cpp
     hvb_modbus_client.cpp
+    monitor_render.cpp
     register_meta.cpp
 )
 target_include_directories(hvb_modbus_core

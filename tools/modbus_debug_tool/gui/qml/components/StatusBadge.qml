@@ -5,12 +5,12 @@ import QtQuick.Layouts
 RowLayout {
     property bool active: false
     property string label: ""
-    property string color: "green"
+    property color color: "green"
 
     spacing: 6
 
     Rectangle {
-        width: 10; height: 10; radius: 5
+        implicitWidth: 10; implicitHeight: 10; radius: 5
         color: active ? parent.color : "#ccc"
     }
     Label {
