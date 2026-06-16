@@ -76,6 +76,18 @@
 	status = "okay";
 };
 
+&i2c1 {
+	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+	status = "okay";
+
+	sht3xd_44: sht3xd@44 {
+		compatible = "sensirion,sht3xd";
+		reg = <0x44>;
+	};
+};
+
 &usart6 {
 	pinctrl-0 = <&usart6_tx_pg14 &usart6_rx_pg9>;
 	pinctrl-names = "default";
@@ -106,5 +118,13 @@
 	usart6_rx_pg9: usart6_rx_pg9 {
 		pinmux = <STM32_PINMUX('G', 9, AF8)>;
 		bias-pull-up;
+	};
+
+	i2c1_scl_pb8: i2c1_scl_pb8 {
+		pinmux = <STM32_PINMUX('B', 8, AF4)>;
+	};
+
+	i2c1_sda_pb9: i2c1_sda_pb9 {
+		pinmux = <STM32_PINMUX('B', 9, AF4)>;
 	};
 };
