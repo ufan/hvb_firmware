@@ -6,6 +6,7 @@
 
 #include "voltage_control/domain.h"
 #include "voltage_control/variant.h"
+#include "regmap/hvb_regs.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -14,6 +15,7 @@ struct vc_channel_runtime {
 	bool ramping;
 	uint32_t ramp_accum_ms;
 	uint32_t cooldown_remaining_ms;
+	uint16_t cal_max_raw_dac_limit;
 };
 
 struct vc_domain {
@@ -24,6 +26,9 @@ struct vc_domain {
 	struct vc_channel_config channels[VC_MAX_CHANNELS];
 	struct vc_channel_snapshot snapshots[VC_MAX_CHANNELS];
 	struct vc_channel_runtime runtime[VC_MAX_CHANNELS];
+	uint16_t system_fault_cause;
+	uint8_t cal_unlock_step;
+	bool cal_unlocked;
 };
 
 static bool channel_valid(const struct vc_domain *domain, uint8_t channel)
@@ -34,7 +39,67 @@ static bool channel_valid(const struct vc_domain *domain, uint8_t channel)
 static bool is_valid_operating_mode(enum vc_operating_mode mode)
 {
 	return mode == VC_OPERATING_MODE_NORMAL ||
-	       mode == VC_OPERATING_MODE_AUTOMATIC;
+	       mode == VC_OPERATING_MODE_AUTOMATIC ||
+	       mode == VC_OPERATING_MODE_CALIBRATION;
+}
+
+static bool is_entering_calibration(const struct vc_domain *domain,
+					   enum vc_operating_mode mode)
+{
+	return domain->operating_mode != VC_OPERATING_MODE_CALIBRATION &&
+	       mode == VC_OPERATING_MODE_CALIBRATION;
+}
+
+static void clear_calibration_unlock(struct vc_domain *domain)
+{
+	domain->cal_unlock_step = 0;
+	domain->cal_unlocked = false;
+}
+
+static void clear_normal_runtime_channel(struct vc_domain *domain, uint8_t channel)
+{
+	struct vc_channel_snapshot *snap = &domain->snapshots[channel];
+	struct vc_channel_runtime *rt = &domain->runtime[channel];
+	uint16_t preserved = 0;
+
+	if (snap->active_fault_cause != 0) {
+		preserved |= 0x0008;
+	}
+	if (snap->fault_history_cause != 0) {
+		preserved |= 0x0010;
+	}
+
+	rt->output_enabled = false;
+	rt->ramping = false;
+	rt->ramp_accum_ms = 0;
+	rt->cooldown_remaining_ms = 0;
+	snap->operational_target_voltage = 0;
+	snap->measured_voltage = 0;
+	snap->measured_current = 0;
+	snap->auto_cooldown_remaining = 0;
+	snap->status_bits = preserved;
+}
+
+static void reset_calibration_channel(struct vc_domain *domain, uint8_t channel,
+					      bool entering)
+{
+	struct vc_channel_snapshot *snap = &domain->snapshots[channel];
+	struct vc_channel_runtime *rt = &domain->runtime[channel];
+
+	clear_normal_runtime_channel(domain, channel);
+	snap->raw_dac_readback = 0;
+	snap->cal_output_enabled = 0;
+	rt->cal_max_raw_dac_limit = domain->variant->max_raw_dac_code;
+	snap->raw_adc_voltage = 0;
+	snap->raw_adc_current = 0;
+	snap->cal_sample_status = VC_CAL_SAMPLE_NONE;
+}
+
+static void reset_calibration_outputs(struct vc_domain *domain, bool entering)
+{
+	for (uint8_t ch = 0; ch < domain->variant->num_channels; ch++) {
+		reset_calibration_channel(domain, ch, entering);
+	}
 }
 
 static bool is_valid_recovery_policy(enum vc_recovery_policy_mode mode)
@@ -82,11 +147,40 @@ static bool is_valid_channel_fault_command(enum vc_channel_fault_command cmd)
 	       cmd <= VC_CHANNEL_FAULT_COMMAND_CLEAR_HISTORY;
 }
 
+static bool has_hard_safety_fault(const struct vc_domain *domain, uint8_t channel)
+{
+	return (domain->snapshots[channel].active_fault_cause &
+		(VC_FAULT_HARDWARE | VC_FAULT_INTERLOCK)) != 0;
+}
+
+static enum vc_status enter_calibration_mode(struct vc_domain *domain)
+{
+	reset_calibration_outputs(domain, true);
+	if (!domain->variant->calibration_output_disable_confirmed) {
+		domain->system_fault_cause |= VC_FAULT_HARDWARE;
+		clear_calibration_unlock(domain);
+		return VC_ERR_UNSAFE_STATE;
+	}
+
+	return VC_OK;
+}
+
+static bool calibration_fields_changed(const struct vc_channel_config *old_cfg,
+					      const struct vc_channel_config *new_cfg)
+{
+	return old_cfg->output_calib_k != new_cfg->output_calib_k ||
+	       old_cfg->output_calib_b != new_cfg->output_calib_b ||
+	       old_cfg->measured_voltage_calib_k != new_cfg->measured_voltage_calib_k ||
+	       old_cfg->measured_voltage_calib_b != new_cfg->measured_voltage_calib_b ||
+	       old_cfg->measured_current_calib_k != new_cfg->measured_current_calib_k ||
+	       old_cfg->measured_current_calib_b != new_cfg->measured_current_calib_b;
+}
+
 struct vc_domain *vc_domain_create(const struct vc_variant_profile *variant)
 {
 	struct vc_domain *domain;
 
-	if (!variant) {
+	if (!variant || variant->num_channels > VC_MAX_CHANNELS) {
 		return NULL;
 	}
 
@@ -104,6 +198,8 @@ struct vc_domain *vc_domain_create(const struct vc_variant_profile *variant)
 	for (int i = 0; i < variant->num_channels && i < VC_MAX_CHANNELS; i++) {
 		memcpy(&domain->channels[i], &variant->default_channel_config,
 		       sizeof(domain->channels[i]));
+		domain->runtime[i].cal_max_raw_dac_limit =
+			variant->max_raw_dac_code;
 	}
 
 	return domain;
@@ -117,8 +213,13 @@ enum vc_operating_mode vc_domain_get_operating_mode(const struct vc_domain *doma
 enum vc_status vc_domain_set_operating_mode(struct vc_domain *domain,
 					    enum vc_operating_mode mode)
 {
+	enum vc_operating_mode old_mode = domain->operating_mode;
+
 	if (!is_valid_operating_mode(mode)) {
 		return VC_ERR_INVALID_VALUE;
+	}
+	if (is_entering_calibration(domain, mode) && !domain->cal_unlocked) {
+		return VC_ERR_INVALID_COMMAND;
 	}
 
 	if (domain->operating_mode == VC_OPERATING_MODE_AUTOMATIC &&
@@ -128,8 +229,24 @@ enum vc_status vc_domain_set_operating_mode(struct vc_domain *domain,
 		}
 	}
 
+	if (mode == VC_OPERATING_MODE_CALIBRATION) {
+		enum vc_status status = enter_calibration_mode(domain);
+
+		if (status != VC_OK) {
+			return status;
+		}
+	} else if (old_mode == VC_OPERATING_MODE_CALIBRATION) {
+		reset_calibration_outputs(domain, false);
+	}
+
 	domain->operating_mode = mode;
-	domain->sys_cfg.operating_mode = mode;
+	if (mode != VC_OPERATING_MODE_CALIBRATION) {
+		domain->sys_cfg.operating_mode = mode;
+	}
+	if (mode == VC_OPERATING_MODE_CALIBRATION ||
+	    old_mode == VC_OPERATING_MODE_CALIBRATION) {
+		clear_calibration_unlock(domain);
+	}
 	return VC_OK;
 }
 
@@ -137,15 +254,21 @@ enum vc_status vc_domain_get_system_config(const struct vc_domain *domain,
 					   struct vc_system_config *cfg)
 {
 	memcpy(cfg, &domain->sys_cfg, sizeof(*cfg));
-	cfg->operating_mode = domain->operating_mode;
 	return VC_OK;
 }
 
 enum vc_status vc_domain_set_system_config(struct vc_domain *domain,
 					   const struct vc_system_config *cfg)
 {
+	enum vc_operating_mode old_mode = domain->operating_mode;
+	enum vc_operating_mode old_cfg_mode = domain->sys_cfg.operating_mode;
+
 	if (!is_valid_operating_mode(cfg->operating_mode)) {
 		return VC_ERR_INVALID_VALUE;
+	}
+	if (is_entering_calibration(domain, cfg->operating_mode) &&
+	    !domain->cal_unlocked) {
+		return VC_ERR_INVALID_COMMAND;
 	}
 	if (cfg->slave_address > 247) {
 		return VC_ERR_INVALID_VALUE;
@@ -170,8 +293,25 @@ enum vc_status vc_domain_set_system_config(struct vc_domain *domain,
 		}
 	}
 
+	if (cfg->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
+		enum vc_status status = enter_calibration_mode(domain);
+
+		if (status != VC_OK) {
+			return status;
+		}
+	} else if (old_mode == VC_OPERATING_MODE_CALIBRATION) {
+		reset_calibration_outputs(domain, false);
+	}
+
 	memcpy(&domain->sys_cfg, cfg, sizeof(*cfg));
+	if (cfg->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
+		domain->sys_cfg.operating_mode = old_cfg_mode;
+	}
 	domain->operating_mode = cfg->operating_mode;
+	if (domain->operating_mode == VC_OPERATING_MODE_CALIBRATION ||
+	    old_mode == VC_OPERATING_MODE_CALIBRATION) {
+		clear_calibration_unlock(domain);
+	}
 	return VC_OK;
 }
 
@@ -195,6 +335,10 @@ enum vc_status vc_domain_set_channel_config(struct vc_domain *domain,
 
 	if (!channel_valid(domain, channel)) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	if (domain->operating_mode != VC_OPERATING_MODE_CALIBRATION &&
+	    calibration_fields_changed(&domain->channels[channel], cfg)) {
+		return VC_ERR_INVALID_COMMAND;
 	}
 
 	max_v = domain->variant->max_voltage_raw;
@@ -237,14 +381,15 @@ enum vc_status vc_domain_get_system_snapshot(const struct vc_domain *domain,
 					     struct vc_system_snapshot *snap)
 {
 	memset(snap, 0, sizeof(*snap));
-	snap->protocol_major = 2;
-	snap->protocol_minor = 0;
+	snap->protocol_major = HVB_PROTOCOL_MAJOR;
+	snap->protocol_minor = HVB_PROTOCOL_MINOR;
 	snap->variant_id = domain->variant->variant_id;
 	snap->system_capability_flags = domain->variant->system_capability_flags;
 	snap->supported_channel_count = domain->variant->num_channels;
 	snap->active_channel_mask = domain->variant->channel_mask;
 	snap->uptime = domain->uptime_seconds;
 	snap->active_operating_mode = domain->operating_mode;
+	snap->system_fault_cause = domain->system_fault_cause;
 	return VC_OK;
 }
 
@@ -258,6 +403,155 @@ enum vc_status vc_domain_get_channel_snapshot(const struct vc_domain *domain,
 
 	memcpy(snap, &domain->snapshots[channel], sizeof(*snap));
 	snap->channel_capability_flags = domain->variant->channel_capability_flags;
+	snap->cal_max_raw_dac_limit = domain->runtime[channel].cal_max_raw_dac_limit;
+	return VC_OK;
+}
+
+enum vc_status vc_domain_calibration_unlock(struct vc_domain *domain,
+					    uint16_t value)
+{
+	if (value == CAL_UNLOCK_STEP1) {
+		domain->cal_unlock_step = 1;
+		domain->cal_unlocked = false;
+		return VC_OK;
+	}
+
+	if (value == CAL_UNLOCK_STEP2 && domain->cal_unlock_step == 1) {
+		domain->cal_unlock_step = 0;
+		domain->cal_unlocked = true;
+		return VC_OK;
+	}
+
+	clear_calibration_unlock(domain);
+	return VC_ERR_INVALID_COMMAND;
+}
+
+static enum vc_status calibration_channel_ready(const struct vc_domain *domain,
+						       uint8_t channel)
+{
+	if (!channel_valid(domain, channel)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	if (domain->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
+		return VC_ERR_INVALID_COMMAND;
+	}
+	return VC_OK;
+}
+
+enum vc_status vc_domain_calibration_set_output_enable(struct vc_domain *domain,
+						       uint8_t channel,
+						       bool enabled)
+{
+	enum vc_status status = calibration_channel_ready(domain, channel);
+
+	if (status != VC_OK) {
+		return status;
+	}
+
+	if (enabled) {
+		if (has_hard_safety_fault(domain, channel)) {
+			return VC_ERR_UNSAFE_STATE;
+		}
+		for (uint8_t ch = 0; ch < domain->variant->num_channels; ch++) {
+			if (ch == channel) {
+				continue;
+			}
+			if (domain->snapshots[ch].cal_output_enabled ||
+			    domain->snapshots[ch].raw_dac_readback != 0) {
+				return VC_ERR_UNSAFE_STATE;
+			}
+		}
+		domain->snapshots[channel].cal_output_enabled = 1;
+		return VC_OK;
+	}
+
+	domain->snapshots[channel].cal_output_enabled = 0;
+	domain->snapshots[channel].raw_dac_readback = 0;
+	domain->snapshots[channel].raw_adc_voltage = 0;
+	domain->snapshots[channel].raw_adc_current = 0;
+	domain->snapshots[channel].cal_sample_status = VC_CAL_SAMPLE_NONE;
+	return VC_OK;
+}
+
+enum vc_status vc_domain_calibration_set_raw_dac(struct vc_domain *domain,
+						 uint8_t channel,
+						 uint16_t code)
+{
+	enum vc_status status = calibration_channel_ready(domain, channel);
+	uint16_t limit;
+
+	if (status != VC_OK) {
+		return status;
+	}
+
+	limit = domain->runtime[channel].cal_max_raw_dac_limit;
+	if (code > limit) {
+		return VC_ERR_INVALID_VALUE;
+	}
+	if (code != 0 && has_hard_safety_fault(domain, channel)) {
+		return VC_ERR_UNSAFE_STATE;
+	}
+	if (code != 0 && !domain->snapshots[channel].cal_output_enabled) {
+		return VC_ERR_UNSAFE_STATE;
+	}
+
+	domain->snapshots[channel].raw_dac_readback = code;
+	return VC_OK;
+}
+
+enum vc_status vc_domain_calibration_set_max_raw_dac(struct vc_domain *domain,
+						     uint8_t channel,
+						     uint16_t limit)
+{
+	enum vc_status status = calibration_channel_ready(domain, channel);
+
+	if (status != VC_OK) {
+		return status;
+	}
+	if (limit > domain->variant->max_raw_dac_code) {
+		return VC_ERR_INVALID_VALUE;
+	}
+	if (limit < domain->snapshots[channel].raw_dac_readback) {
+		return VC_ERR_UNSAFE_STATE;
+	}
+
+	domain->runtime[channel].cal_max_raw_dac_limit = limit;
+	return VC_OK;
+}
+
+enum vc_status vc_domain_calibration_sample(struct vc_domain *domain,
+					    uint8_t channel)
+{
+	enum vc_status status = calibration_channel_ready(domain, channel);
+	struct vc_channel_snapshot *snap;
+
+	if (status != VC_OK) {
+		return status;
+	}
+
+	snap = &domain->snapshots[channel];
+	snap->raw_adc_voltage = snap->raw_dac_readback;
+	snap->raw_adc_current = 0;
+	snap->cal_sample_status = VC_CAL_SAMPLE_VALID;
+	return VC_OK;
+}
+
+enum vc_status vc_domain_calibration_commit(struct vc_domain *domain,
+					    uint8_t channel)
+{
+	enum vc_status status = calibration_channel_ready(domain, channel);
+	const struct vc_channel_snapshot *snap;
+
+	if (status != VC_OK) {
+		return status;
+	}
+
+	snap = &domain->snapshots[channel];
+	if (snap->cal_output_enabled || snap->raw_dac_readback != 0 ||
+	    has_hard_safety_fault(domain, channel)) {
+		return VC_ERR_UNSAFE_STATE;
+	}
+
 	return VC_OK;
 }
 
@@ -272,6 +566,9 @@ enum vc_status vc_domain_channel_output_action(struct vc_domain *domain,
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
 	if (!is_valid_host_output_action(action)) {
+		return VC_ERR_INVALID_COMMAND;
+	}
+	if (domain->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
 		return VC_ERR_INVALID_COMMAND;
 	}
 
@@ -681,6 +978,10 @@ void vc_domain_tick(struct vc_domain *domain, uint32_t dt_ms,
 		    const int16_t current_noise[])
 {
 	uint8_t n = domain->variant->num_channels;
+
+	if (domain->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
+		return;
+	}
 
 	for (uint8_t ch = 0; ch < n; ch++) {
 		vc_tick_ramp(domain, ch, dt_ms);

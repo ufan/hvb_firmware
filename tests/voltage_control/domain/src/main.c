@@ -10,6 +10,7 @@
 #include <zephyr/ztest.h>
 #include <stdlib.h>
 
+#include "regmap/hvb_regs.h"
 #include "voltage_control/domain.h"
 #include "voltage_control/variant.h"
 
@@ -20,6 +21,14 @@ static void *domain_setup_fresh(void)
 	struct vc_domain *d = vc_domain_create(variant);
 	zassert_not_null(d);
 	return d;
+}
+
+static void enter_calibration_mode(struct vc_domain *d)
+{
+	zassert_equal(vc_domain_calibration_unlock(d, CAL_UNLOCK_STEP1), VC_OK);
+	zassert_equal(vc_domain_calibration_unlock(d, CAL_UNLOCK_STEP2), VC_OK);
+	zassert_equal(vc_domain_set_operating_mode(d,
+			 VC_OPERATING_MODE_CALIBRATION), VC_OK);
 }
 
 ZTEST_SUITE(voltage_control_domain, NULL, NULL, NULL, NULL, NULL);
@@ -137,8 +146,384 @@ ZTEST(voltage_control_domain, test_operating_mode_validation)
 	zassert_equal(vc_domain_get_operating_mode(d),
 		      VC_OPERATING_MODE_NORMAL);
 
-	zassert_equal(vc_domain_set_operating_mode(d, 2),
+	zassert_equal(vc_domain_set_operating_mode(d, 3),
 		      VC_ERR_INVALID_VALUE);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_mode_rejected_before_unlock)
+{
+	struct vc_domain *d = domain_setup_fresh();
+
+	zassert_equal(vc_domain_set_operating_mode(d,
+			 VC_OPERATING_MODE_CALIBRATION), VC_ERR_INVALID_COMMAND);
+	zassert_equal(vc_domain_get_operating_mode(d),
+		      VC_OPERATING_MODE_NORMAL);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_unlock_allows_mode_entry)
+{
+	struct vc_domain *d = domain_setup_fresh();
+
+	zassert_equal(vc_domain_calibration_unlock(d, CAL_UNLOCK_STEP1), VC_OK);
+	zassert_equal(vc_domain_calibration_unlock(d, CAL_UNLOCK_STEP2), VC_OK);
+	zassert_equal(vc_domain_set_operating_mode(d,
+			 VC_OPERATING_MODE_CALIBRATION), VC_OK);
+	zassert_equal(vc_domain_get_operating_mode(d),
+		      VC_OPERATING_MODE_CALIBRATION);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_entry_fails_when_disable_unconfirmed)
+{
+	struct vc_variant_profile variant = *vc_hvb_get_variant();
+	struct vc_domain *d;
+	struct vc_system_snapshot snap;
+
+	variant.calibration_output_disable_confirmed = false;
+	d = vc_domain_create(&variant);
+	zassert_not_null(d);
+
+	zassert_equal(vc_domain_calibration_unlock(d, CAL_UNLOCK_STEP1), VC_OK);
+	zassert_equal(vc_domain_calibration_unlock(d, CAL_UNLOCK_STEP2), VC_OK);
+	zassert_equal(vc_domain_set_operating_mode(d,
+			 VC_OPERATING_MODE_CALIBRATION), VC_ERR_UNSAFE_STATE);
+	zassert_equal(vc_domain_get_operating_mode(d), VC_OPERATING_MODE_NORMAL);
+	zassert_equal(vc_domain_get_system_snapshot(d, &snap), VC_OK);
+	zassert_true(snap.system_fault_cause & VC_FAULT_HARDWARE);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_unlock_wrong_value_clears_sequence)
+{
+	struct vc_domain *d = domain_setup_fresh();
+
+	zassert_equal(vc_domain_calibration_unlock(d, CAL_UNLOCK_STEP1), VC_OK);
+	zassert_equal(vc_domain_calibration_unlock(d, 0), VC_ERR_INVALID_COMMAND);
+	zassert_equal(vc_domain_calibration_unlock(d, CAL_UNLOCK_STEP2),
+		      VC_ERR_INVALID_COMMAND);
+	zassert_equal(vc_domain_set_operating_mode(d,
+			 VC_OPERATING_MODE_CALIBRATION), VC_ERR_INVALID_COMMAND);
+	zassert_equal(vc_domain_get_operating_mode(d),
+		      VC_OPERATING_MODE_NORMAL);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_entry_clears_raw_outputs)
+{
+	struct vc_domain *d = domain_setup_fresh();
+	struct vc_channel_snapshot snap;
+	const struct vc_variant_profile *variant = vc_hvb_get_variant();
+
+	enter_calibration_mode(d);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 0, true), VC_OK);
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 1234), VC_OK);
+
+	zassert_equal(vc_domain_set_operating_mode(d,
+			 VC_OPERATING_MODE_NORMAL), VC_OK);
+	enter_calibration_mode(d);
+
+	for (uint8_t ch = 0; ch < vc_domain_get_supported_channel_count(d); ch++) {
+		zassert_equal(vc_domain_get_channel_snapshot(d, ch, &snap), VC_OK);
+		zassert_equal(snap.raw_dac_readback, 0);
+		zassert_equal(snap.cal_output_enabled, 0);
+		zassert_equal(snap.cal_sample_status, VC_CAL_SAMPLE_NONE);
+		zassert_equal(snap.raw_adc_voltage, 0);
+		zassert_equal(snap.raw_adc_current, 0);
+		zassert_equal(snap.cal_max_raw_dac_limit,
+			      variant->max_raw_dac_code);
+	}
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_raw_dac_requires_output_enable)
+{
+	struct vc_domain *d = domain_setup_fresh();
+	struct vc_channel_snapshot snap;
+
+	enter_calibration_mode(d);
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 1),
+		      VC_ERR_UNSAFE_STATE);
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 0), VC_OK);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 0, true), VC_OK);
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 1), VC_OK);
+	zassert_equal(vc_domain_get_channel_snapshot(d, 0, &snap), VC_OK);
+	zassert_equal(snap.raw_dac_readback, 1);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_disable_clears_sample_state)
+{
+	struct vc_domain *d = domain_setup_fresh();
+	struct vc_channel_snapshot snap;
+
+	enter_calibration_mode(d);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 0, true), VC_OK);
+	zassert_equal(vc_domain_calibration_sample(d, 0), VC_OK);
+	zassert_equal(vc_domain_get_channel_snapshot(d, 0, &snap), VC_OK);
+	zassert_equal(snap.cal_sample_status, VC_CAL_SAMPLE_VALID);
+
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 0, false), VC_OK);
+	zassert_equal(vc_domain_get_channel_snapshot(d, 0, &snap), VC_OK);
+	zassert_equal(snap.raw_adc_voltage, 0);
+	zassert_equal(snap.raw_adc_current, 0);
+	zassert_equal(snap.cal_sample_status, VC_CAL_SAMPLE_NONE);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_single_output_enabled)
+{
+	struct vc_domain *d = domain_setup_fresh();
+	struct vc_channel_snapshot snap;
+
+	enter_calibration_mode(d);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 0, true), VC_OK);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 1, true),
+		      VC_ERR_UNSAFE_STATE);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 0, false), VC_OK);
+	zassert_equal(vc_domain_get_channel_snapshot(d, 0, &snap), VC_OK);
+	zassert_equal(snap.raw_dac_readback, 0);
+	zassert_equal(snap.cal_output_enabled, 0);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 1, true), VC_OK);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_raw_dac_limit_validation)
+{
+	struct vc_variant_profile variant = *vc_hvb_get_variant();
+	struct vc_domain *d;
+	struct vc_channel_snapshot snap;
+
+	variant.max_raw_dac_code = 1000;
+	d = vc_domain_create(&variant);
+	zassert_not_null(d);
+
+	enter_calibration_mode(d);
+	zassert_equal(vc_domain_calibration_set_max_raw_dac(d, 0, 100), VC_OK);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 0, true), VC_OK);
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 101),
+		      VC_ERR_INVALID_VALUE);
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 100), VC_OK);
+	zassert_equal(vc_domain_calibration_set_max_raw_dac(d, 0, 1001),
+		      VC_ERR_INVALID_VALUE);
+	zassert_equal(vc_domain_calibration_set_max_raw_dac(d, 0, 99),
+		      VC_ERR_UNSAFE_STATE);
+
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 0), VC_OK);
+	zassert_equal(vc_domain_calibration_set_max_raw_dac(d, 0, 0), VC_OK);
+	zassert_equal(vc_domain_get_channel_snapshot(d, 0, &snap), VC_OK);
+	zassert_equal(snap.cal_max_raw_dac_limit, 0);
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 1),
+		      VC_ERR_INVALID_VALUE);
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 0), VC_OK);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_entry_disables_normal_output)
+{
+	struct vc_domain *d = domain_setup_fresh();
+	struct vc_channel_config cfg;
+	struct vc_channel_snapshot snap;
+	int16_t v_noise[VC_MAX_CHANNELS] = {0};
+	int16_t c_noise[VC_MAX_CHANNELS] = {0};
+
+	vc_domain_get_channel_config(d, 0, &cfg);
+	cfg.configured_target_voltage = 5000;
+	cfg.ramp_up_step = 0;
+	vc_domain_set_channel_config(d, 0, &cfg);
+	vc_domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE);
+	vc_domain_tick(d, 500, v_noise, c_noise);
+
+	enter_calibration_mode(d);
+
+	vc_domain_get_channel_snapshot(d, 0, &snap);
+	zassert_equal(snap.operational_target_voltage, 0);
+	zassert_equal(snap.status_bits & 0x0007, 0,
+		      "calibration entry must clear normal output/ramp status");
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_tick_does_not_ramp_to_target)
+{
+	struct vc_domain *d = domain_setup_fresh();
+	struct vc_channel_config cfg;
+	struct vc_channel_snapshot snap;
+	int16_t v_noise[VC_MAX_CHANNELS] = {100, 0};
+	int16_t c_noise[VC_MAX_CHANNELS] = {100, 0};
+
+	vc_domain_get_channel_config(d, 0, &cfg);
+	cfg.configured_target_voltage = 5000;
+	cfg.ramp_up_step = 0;
+	cfg.voltage_limit_threshold = 3000;
+	cfg.current_limit_threshold = 100;
+	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
+	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
+	vc_domain_set_channel_config(d, 0, &cfg);
+
+	enter_calibration_mode(d);
+	vc_domain_tick(d, 500, v_noise, c_noise);
+
+	vc_domain_get_channel_snapshot(d, 0, &snap);
+	zassert_equal(snap.operational_target_voltage, 0);
+	zassert_equal(snap.measured_voltage, 0);
+	zassert_equal(snap.measured_current, 0);
+	zassert_equal(snap.active_fault_cause, 0);
+	zassert_equal(snap.fault_history_cause, 0);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_rejects_normal_output_action)
+{
+	struct vc_domain *d = domain_setup_fresh();
+
+	enter_calibration_mode(d);
+	zassert_equal(vc_domain_channel_output_action(d, 0,
+			 VC_OUTPUT_ACTION_ENABLE), VC_ERR_INVALID_COMMAND);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_exit_clears_raw_output)
+{
+	struct vc_domain *d = domain_setup_fresh();
+	struct vc_channel_snapshot snap;
+	const struct vc_variant_profile *variant = vc_hvb_get_variant();
+
+	enter_calibration_mode(d);
+	zassert_equal(vc_domain_calibration_set_max_raw_dac(d, 0, 0), VC_OK);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 0, true), VC_OK);
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 0), VC_OK);
+	zassert_equal(vc_domain_set_operating_mode(d,
+			 VC_OPERATING_MODE_NORMAL), VC_OK);
+	zassert_equal(vc_domain_get_channel_snapshot(d, 0, &snap), VC_OK);
+	zassert_equal(snap.raw_dac_readback, 0);
+	zassert_equal(snap.cal_output_enabled, 0);
+	zassert_equal(snap.cal_max_raw_dac_limit, variant->max_raw_dac_code);
+	zassert_equal(snap.raw_adc_voltage, 0);
+	zassert_equal(snap.raw_adc_current, 0);
+	zassert_equal(snap.cal_sample_status, VC_CAL_SAMPLE_NONE);
+
+	enter_calibration_mode(d);
+	zassert_equal(vc_domain_get_channel_snapshot(d, 0, &snap), VC_OK);
+	zassert_equal(snap.cal_max_raw_dac_limit, variant->max_raw_dac_code);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_reject_variant_with_too_many_channels)
+{
+	struct vc_variant_profile variant = *vc_hvb_get_variant();
+
+	variant.num_channels = VC_MAX_CHANNELS + 1;
+	zassert_is_null(vc_domain_create(&variant));
+}
+
+ZTEST(voltage_control_domain, test_calibration_coefficients_require_calibration_mode)
+{
+	struct vc_domain *d = domain_setup_fresh();
+	struct vc_channel_config cfg, baseline;
+
+	zassert_equal(vc_domain_get_channel_config(d, 0, &baseline), VC_OK);
+	cfg = baseline;
+	cfg.output_calib_k++;
+	zassert_equal(vc_domain_set_channel_config(d, 0, &cfg),
+		      VC_ERR_INVALID_COMMAND);
+	cfg = baseline;
+	cfg.output_calib_b++;
+	zassert_equal(vc_domain_set_channel_config(d, 0, &cfg),
+		      VC_ERR_INVALID_COMMAND);
+	cfg = baseline;
+	cfg.measured_voltage_calib_k++;
+	zassert_equal(vc_domain_set_channel_config(d, 0, &cfg),
+		      VC_ERR_INVALID_COMMAND);
+	cfg = baseline;
+	cfg.measured_voltage_calib_b++;
+	zassert_equal(vc_domain_set_channel_config(d, 0, &cfg),
+		      VC_ERR_INVALID_COMMAND);
+	cfg = baseline;
+	cfg.measured_current_calib_k++;
+	zassert_equal(vc_domain_set_channel_config(d, 0, &cfg),
+		      VC_ERR_INVALID_COMMAND);
+	cfg = baseline;
+	cfg.measured_current_calib_b++;
+	zassert_equal(vc_domain_set_channel_config(d, 0, &cfg),
+		      VC_ERR_INVALID_COMMAND);
+	zassert_equal(vc_domain_get_channel_config(d, 0, &cfg), VC_OK);
+	zassert_equal(cfg.output_calib_k, baseline.output_calib_k);
+	zassert_equal(cfg.output_calib_b, baseline.output_calib_b);
+	zassert_equal(cfg.measured_voltage_calib_k,
+		      baseline.measured_voltage_calib_k);
+	zassert_equal(cfg.measured_voltage_calib_b,
+		      baseline.measured_voltage_calib_b);
+	zassert_equal(cfg.measured_current_calib_k,
+		      baseline.measured_current_calib_k);
+	zassert_equal(cfg.measured_current_calib_b,
+		      baseline.measured_current_calib_b);
+
+	cfg.configured_target_voltage = 1000;
+	zassert_equal(vc_domain_set_channel_config(d, 0, &cfg), VC_OK);
+	zassert_equal(vc_domain_get_channel_config(d, 0, &cfg), VC_OK);
+	zassert_equal(cfg.configured_target_voltage, 1000);
+
+	enter_calibration_mode(d);
+	cfg.output_calib_k = 10001;
+	cfg.output_calib_b = 1;
+	cfg.measured_voltage_calib_k = 10002;
+	cfg.measured_voltage_calib_b = 2;
+	cfg.measured_current_calib_k = 10003;
+	cfg.measured_current_calib_b = 3;
+	zassert_equal(vc_domain_set_channel_config(d, 0, &cfg), VC_OK);
+	zassert_equal(vc_domain_get_channel_config(d, 0, &cfg), VC_OK);
+	zassert_equal(cfg.output_calib_k, 10001);
+	zassert_equal(cfg.output_calib_b, 1);
+	zassert_equal(cfg.measured_voltage_calib_k, 10002);
+	zassert_equal(cfg.measured_voltage_calib_b, 2);
+	zassert_equal(cfg.measured_current_calib_k, 10003);
+	zassert_equal(cfg.measured_current_calib_b, 3);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_commit_preconditions)
+{
+	struct vc_domain *d = domain_setup_fresh();
+
+	zassert_equal(vc_domain_calibration_commit(d, 2),
+		      VC_ERR_UNSUPPORTED_CHANNEL);
+	zassert_equal(vc_domain_calibration_commit(d, 0),
+		      VC_ERR_INVALID_COMMAND);
+
+	enter_calibration_mode(d);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 0, true), VC_OK);
+	zassert_equal(vc_domain_calibration_commit(d, 0), VC_ERR_UNSAFE_STATE);
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 10), VC_OK);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 0, false), VC_OK);
+	zassert_equal(vc_domain_calibration_commit(d, 0), VC_OK);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_sample_requires_calibration_mode)
+{
+	struct vc_domain *d = domain_setup_fresh();
+
+	zassert_equal(vc_domain_calibration_sample(d, 2),
+		      VC_ERR_UNSUPPORTED_CHANNEL);
+	zassert_equal(vc_domain_calibration_sample(d, 0),
+		      VC_ERR_INVALID_COMMAND);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_calibration_sample_captures_raw_values)
+{
+	struct vc_domain *d = domain_setup_fresh();
+	struct vc_channel_snapshot snap;
+
+	enter_calibration_mode(d);
+	zassert_equal(vc_domain_calibration_set_output_enable(d, 0, true), VC_OK);
+	zassert_equal(vc_domain_calibration_set_raw_dac(d, 0, 123), VC_OK);
+	zassert_equal(vc_domain_calibration_sample(d, 0), VC_OK);
+	zassert_equal(vc_domain_get_channel_snapshot(d, 0, &snap), VC_OK);
+	zassert_equal(snap.cal_sample_status, VC_CAL_SAMPLE_VALID);
+	zassert_equal(snap.raw_adc_voltage, 123);
+	zassert_equal(snap.raw_adc_current, 0);
 	free(d);
 }
 
@@ -150,8 +535,8 @@ ZTEST(voltage_control_domain, test_system_snapshot)
 	struct vc_system_snapshot snap;
 
 	vc_domain_get_system_snapshot(d, &snap);
-	zassert_equal(snap.protocol_major, 2);
-	zassert_equal(snap.protocol_minor, 0);
+	zassert_equal(snap.protocol_major, HVB_PROTOCOL_MAJOR);
+	zassert_equal(snap.protocol_minor, HVB_PROTOCOL_MINOR);
 	zassert_equal(snap.variant_id, 1);
 	zassert_equal(snap.supported_channel_count, 2);
 	zassert_equal(snap.active_channel_mask, 0x0003);

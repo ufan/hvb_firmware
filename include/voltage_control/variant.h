@@ -20,6 +20,8 @@ struct vc_variant_profile {
 	int16_t max_voltage_raw;
 	int16_t min_voltage_raw;
 	int16_t max_current_raw;
+	uint16_t max_raw_dac_code;
+	bool calibration_output_disable_confirmed;
 	struct vc_channel_config default_channel_config;
 	struct vc_system_config default_system_config;
 };

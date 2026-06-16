@@ -34,6 +34,13 @@
 #define CH_BLOCK_SIZE     40
 #define EXT_BLOCK_BASE    200
 
+#define HVB_PROTOCOL_MAJOR             2
+#define HVB_PROTOCOL_MINOR             1
+
+#define SYS_CAP_AUTOMATIC_MODE         0x0001
+#define SYS_CAP_ENV_SENSOR             0x0002
+#define SYS_CAP_CALIBRATION_MODE       0x0004
+
 /* ------------------------------------------------------------------ */
 /* System input block  (FC04, offsets 0..39)                           */
 /* ------------------------------------------------------------------ */
@@ -87,7 +94,13 @@
 #define CH_LAST_FAULT_TIMESTAMP_HI    9
 #define CH_LAST_FAULT_TIMESTAMP_LO    10
 #define CH_CAPABILITY_FLAGS           11
-/* 12..39 reserved */
+#define CH_RAW_ADC_VOLTAGE_HI         12
+#define CH_RAW_ADC_VOLTAGE_LO         13
+#define CH_RAW_ADC_CURRENT_HI         14
+#define CH_RAW_ADC_CURRENT_LO         15
+#define CH_CAL_SAMPLE_STATUS          16
+#define CH_RAW_DAC_READBACK           17
+/* 18..39 reserved */
 
 /* ------------------------------------------------------------------ */
 /* Channel holding block  (FC03 / FC06, per-channel offsets 0..39)     */
@@ -114,7 +127,24 @@
 #define CH_MEASURED_V_CAL_B          18
 #define CH_MEASURED_I_CAL_K          19
 #define CH_MEASURED_I_CAL_B          20
-/* 21..38 reserved */
+#define CH_CAL_OUTPUT_ENABLE         21
+#define CH_RAW_DAC_CODE              22
+#define CH_CAL_SAMPLE_CMD            23
+#define CH_CAL_COMMIT_CMD            24
+#define CH_CAL_MAX_RAW_DAC_LIMIT     25
+/* 26..38 reserved */
 #define CH_PARAM_ACTION               39
+
+/* ------------------------------------------------------------------ */
+/* Extension holding block  (FC03 / FC06, offsets 0..79)              */
+/* ------------------------------------------------------------------ */
+
+#define EXT_CAL_UNLOCK                0
+#define EXT_CAL_UNLOCK_ABS            (EXT_BLOCK_BASE + EXT_CAL_UNLOCK)
+
+#define CAL_UNLOCK_STEP1              0xCA1B
+#define CAL_UNLOCK_STEP2              0xA11B
+#define CAL_COMMAND_NONE              0
+#define CAL_COMMAND_EXECUTE           1
 
 #endif

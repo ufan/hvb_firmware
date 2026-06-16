@@ -37,6 +37,36 @@ static bool is_extension(uint16_t addr)
 	return addr >= EXT_BLOCK_BASE && addr <= EXT_BLOCK_END;
 }
 
+static bool is_calibration_mode(struct vc_domain *d)
+{
+	return vc_domain_get_operating_mode(d) == VC_OPERATING_MODE_CALIBRATION;
+}
+
+static bool is_ch_cal_input_reg(uint16_t off)
+{
+	return off >= CH_RAW_ADC_VOLTAGE_HI && off <= CH_RAW_DAC_READBACK;
+}
+
+static bool is_ch_cal_holding_reg(uint16_t off)
+{
+	return off >= CH_CAL_OUTPUT_ENABLE && off <= CH_CAL_MAX_RAW_DAC_LIMIT;
+}
+
+static bool is_ch_calibration_coefficient_reg(uint16_t off)
+{
+	return off >= CH_OUTPUT_CAL_K && off <= CH_MEASURED_I_CAL_B;
+}
+
+static uint16_t int32_hi(int32_t value)
+{
+	return (uint16_t)((uint32_t)value >> 16);
+}
+
+static uint16_t int32_lo(int32_t value)
+{
+	return (uint16_t)((uint32_t)value & 0xFFFF);
+}
+
 static int read_sys_input(struct vc_domain *d, uint16_t off, uint16_t *reg)
 {
 	struct vc_system_snapshot snap;
@@ -74,6 +104,9 @@ static int read_ch_input(struct vc_domain *d, uint8_t ch, uint16_t off,
 	if (!vc_domain_is_channel_supported(d, ch)) {
 		return -1;
 	}
+	if (is_ch_cal_input_reg(off) && !is_calibration_mode(d)) {
+		return -1;
+	}
 
 	vc_domain_get_channel_snapshot(d, ch, &snap);
 
@@ -90,6 +123,12 @@ static int read_ch_input(struct vc_domain *d, uint8_t ch, uint16_t off,
 	case CH_LAST_FAULT_TIMESTAMP_HI:    *reg = (uint16_t)(snap.last_fault_timestamp >> 16); break;
 	case CH_LAST_FAULT_TIMESTAMP_LO:    *reg = (uint16_t)(snap.last_fault_timestamp & 0xFFFF); break;
 	case CH_CAPABILITY_FLAGS:           *reg = snap.channel_capability_flags; break;
+	case CH_RAW_ADC_VOLTAGE_HI:         *reg = int32_hi(snap.raw_adc_voltage); break;
+	case CH_RAW_ADC_VOLTAGE_LO:         *reg = int32_lo(snap.raw_adc_voltage); break;
+	case CH_RAW_ADC_CURRENT_HI:         *reg = int32_hi(snap.raw_adc_current); break;
+	case CH_RAW_ADC_CURRENT_LO:         *reg = int32_lo(snap.raw_adc_current); break;
+	case CH_CAL_SAMPLE_STATUS:          *reg = (uint16_t)snap.cal_sample_status; break;
+	case CH_RAW_DAC_READBACK:           *reg = snap.raw_dac_readback; break;
 	default:
 		if (off < CH_BLOCK_SIZE) { *reg = 0; } else { return -1; }
 		break;
@@ -128,6 +167,24 @@ static int read_ch_holding(struct vc_domain *d, uint8_t ch, uint16_t off,
 
 	if (!vc_domain_is_channel_supported(d, ch)) {
 		return -1;
+	}
+	if (is_ch_cal_holding_reg(off)) {
+		struct vc_channel_snapshot snap;
+
+		if (!is_calibration_mode(d)) {
+			return -1;
+		}
+		vc_domain_get_channel_snapshot(d, ch, &snap);
+		switch (off) {
+		case CH_CAL_OUTPUT_ENABLE:     *reg = snap.cal_output_enabled; break;
+		case CH_RAW_DAC_CODE:          *reg = snap.raw_dac_readback; break;
+		case CH_CAL_SAMPLE_CMD:        *reg = 0; break;
+		case CH_CAL_COMMIT_CMD:        *reg = 0; break;
+		case CH_CAL_MAX_RAW_DAC_LIMIT: *reg = snap.cal_max_raw_dac_limit; break;
+		default:
+			return -1;
+		}
+		return 0;
 	}
 
 	vc_domain_get_channel_config(d, ch, &cfg);
@@ -170,7 +227,7 @@ static int write_sys_holding(struct vc_domain *d, uint16_t off, uint16_t val)
 
 	switch (off) {
 	case SYS_OPERATING_MODE:
-		if (val > 1) return -1;
+		if (val > VC_OPERATING_MODE_CALIBRATION) return -1;
 		cfg.operating_mode = (enum vc_operating_mode)val;
 		break;
 	case SYS_SLAVE_ADDRESS:
@@ -216,6 +273,36 @@ static int write_ch_holding(struct vc_domain *d, uint8_t ch, uint16_t off,
 
 	if (!vc_domain_is_channel_supported(d, ch)) {
 		return -1;
+	}
+	if (is_ch_calibration_coefficient_reg(off) && !is_calibration_mode(d)) {
+		return -1;
+	}
+	if (is_ch_cal_holding_reg(off)) {
+		if (!is_calibration_mode(d)) {
+			return -1;
+		}
+		switch (off) {
+		case CH_CAL_OUTPUT_ENABLE:
+			if (val > 1) return -1;
+			return vc_domain_calibration_set_output_enable(d, ch, val != 0)
+				== VC_OK ? 0 : -1;
+		case CH_RAW_DAC_CODE:
+			return vc_domain_calibration_set_raw_dac(d, ch, val)
+				== VC_OK ? 0 : -1;
+		case CH_CAL_SAMPLE_CMD:
+			if (val == CAL_COMMAND_NONE) return 0;
+			if (val != CAL_COMMAND_EXECUTE) return -1;
+			return vc_domain_calibration_sample(d, ch) == VC_OK ? 0 : -1;
+		case CH_CAL_COMMIT_CMD:
+			if (val == CAL_COMMAND_NONE) return 0;
+			if (val != CAL_COMMAND_EXECUTE) return -1;
+			return vc_domain_calibration_commit(d, ch) == VC_OK ? 0 : -1;
+		case CH_CAL_MAX_RAW_DAC_LIMIT:
+			return vc_domain_calibration_set_max_raw_dac(d, ch, val)
+				== VC_OK ? 0 : -1;
+		default:
+			return -1;
+		}
 	}
 
 	vc_domain_get_channel_config(d, ch, &cfg);
@@ -334,6 +421,10 @@ int vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr, uint16_t val)
 	uint16_t off;
 
 	if (is_extension(addr)) {
+		if (addr == EXT_CAL_UNLOCK_ABS) {
+			return vc_domain_calibration_unlock(a->domain, val) == VC_OK ?
+				0 : -1;
+		}
 		return -1;
 	}
 

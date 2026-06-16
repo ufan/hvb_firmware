@@ -34,6 +34,14 @@ enum vc_status {
 enum vc_operating_mode {
 	VC_OPERATING_MODE_NORMAL = 0,
 	VC_OPERATING_MODE_AUTOMATIC = 1,
+	VC_OPERATING_MODE_CALIBRATION = 2,
+};
+
+enum vc_cal_sample_status {
+	VC_CAL_SAMPLE_NONE = 0,
+	VC_CAL_SAMPLE_VALID = 1,
+	VC_CAL_SAMPLE_BUSY = 2,
+	VC_CAL_SAMPLE_ERROR = 3,
 };
 
 enum vc_output_action {
@@ -123,6 +131,12 @@ struct vc_channel_snapshot {
 	uint16_t auto_cooldown_remaining;
 	uint32_t last_fault_timestamp;
 	uint16_t channel_capability_flags;
+	int32_t raw_adc_voltage;
+	int32_t raw_adc_current;
+	enum vc_cal_sample_status cal_sample_status;
+	uint16_t raw_dac_readback;
+	uint16_t cal_output_enabled;
+	uint16_t cal_max_raw_dac_limit;
 };
 
 struct vc_system_snapshot {
@@ -174,6 +188,22 @@ enum vc_status vc_domain_channel_output_action(struct vc_domain *domain,
 enum vc_status vc_domain_channel_fault_command(struct vc_domain *domain,
 					       uint8_t channel,
 					       enum vc_channel_fault_command cmd);
+
+enum vc_status vc_domain_calibration_unlock(struct vc_domain *domain,
+					    uint16_t value);
+enum vc_status vc_domain_calibration_set_output_enable(struct vc_domain *domain,
+						       uint8_t channel,
+						       bool enabled);
+enum vc_status vc_domain_calibration_set_raw_dac(struct vc_domain *domain,
+						 uint8_t channel,
+						 uint16_t code);
+enum vc_status vc_domain_calibration_sample(struct vc_domain *domain,
+					    uint8_t channel);
+enum vc_status vc_domain_calibration_commit(struct vc_domain *domain,
+					    uint8_t channel);
+enum vc_status vc_domain_calibration_set_max_raw_dac(struct vc_domain *domain,
+						     uint8_t channel,
+						     uint16_t limit);
 
 enum vc_status vc_domain_system_param_action(struct vc_domain *domain,
 					     enum vc_param_action action);

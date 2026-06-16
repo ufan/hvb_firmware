@@ -6,9 +6,12 @@
 
 #include "voltage_control/variant.h"
 
+#include "regmap/hvb_regs.h"
+
 #define HVB_VARIANT_ID 1
 
-#define HVB_SYS_CAP_FLAGS (0x0003U)
+#define HVB_SYS_CAP_FLAGS (SYS_CAP_AUTOMATIC_MODE | SYS_CAP_ENV_SENSOR | \
+			   SYS_CAP_CALIBRATION_MODE)
 #define HVB_CHAN_CAP_FLAGS (0x0007U)
 
 #define HVB_NUM_CHANNELS 2
@@ -18,6 +21,7 @@
 #define HVB_MAX_VOLTAGE_RAW 20000
 #define HVB_MIN_VOLTAGE_RAW 0
 #define HVB_MAX_CURRENT_RAW 32767
+#define HVB_MAX_RAW_DAC_CODE 0xFFFFU
 
 static const struct vc_variant_profile hvb_profile = {
 	.variant_id = HVB_VARIANT_ID,
@@ -30,6 +34,8 @@ static const struct vc_variant_profile hvb_profile = {
 	.max_voltage_raw = HVB_MAX_VOLTAGE_RAW,
 	.min_voltage_raw = HVB_MIN_VOLTAGE_RAW,
 	.max_current_raw = HVB_MAX_CURRENT_RAW,
+	.max_raw_dac_code = HVB_MAX_RAW_DAC_CODE,
+	.calibration_output_disable_confirmed = true,
 	.default_channel_config = {
 		.configured_target_voltage = 0,
 		.ramp_up_step = 50,
