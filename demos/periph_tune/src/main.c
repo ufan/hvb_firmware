@@ -5,8 +5,11 @@
  */
 
 #include <errno.h>
+#include <stdlib.h>
 
 #include <zephyr/device.h>
+#include <zephyr/drivers/dac.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
@@ -15,6 +18,24 @@
 /* SHT31 via existing Zephyr sht3xd driver on I2C1 */
 #define SHT31_NODE DT_CHILD(DT_NODELABEL(i2c1), sht3xd_44)
 static const struct device *sht31_dev = DEVICE_DT_GET_OR_NULL(SHT31_NODE);
+
+/* DAC nodes for AD5541 */
+#define DAC_HV1_NODE DT_NODELABEL(dac_hv1)
+#define DAC_HV2_NODE DT_NODELABEL(dac_hv2)
+static const struct device *dac_hv1 = DEVICE_DT_GET_OR_NULL(DAC_HV1_NODE);
+static const struct device *dac_hv2 = DEVICE_DT_GET_OR_NULL(DAC_HV2_NODE);
+
+/* HV run/stop GPIOs */
+#define HV1_EN_NODE DT_NODELABEL(hv1_en)
+#define HV2_EN_NODE DT_NODELABEL(hv2_en)
+static const struct gpio_dt_spec hv1_en = GPIO_DT_SPEC_GET_OR(HV1_EN_NODE, gpios, {0});
+static const struct gpio_dt_spec hv2_en = GPIO_DT_SPEC_GET_OR(HV2_EN_NODE, gpios, {0});
+
+/* Saved DAC codes for status display */
+static uint32_t dac1_code;
+static uint32_t dac2_code;
+
+/* ============== SHT31 ============== */
 
 static int cmd_sht31_read(const struct shell *sh, size_t argc, char **argv)
 {
@@ -51,21 +72,182 @@ static int cmd_sht31_read(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+/* ============== HV Control ============== */
+
+static int cmd_hv1_on(const struct shell *sh, size_t argc, char **argv)
+{
+	gpio_pin_set_dt(&hv1_en, 1);
+	shell_fprintf(sh, SHELL_NORMAL, "HV1 ON (PD9=1)\n");
+	return 0;
+}
+
+static int cmd_hv1_off(const struct shell *sh, size_t argc, char **argv)
+{
+	gpio_pin_set_dt(&hv1_en, 0);
+	shell_fprintf(sh, SHELL_NORMAL, "HV1 OFF (PD9=0)\n");
+	return 0;
+}
+
+static int cmd_hv2_on(const struct shell *sh, size_t argc, char **argv)
+{
+	gpio_pin_set_dt(&hv2_en, 1);
+	shell_fprintf(sh, SHELL_NORMAL, "HV2 ON (PC4=1)\n");
+	return 0;
+}
+
+static int cmd_hv2_off(const struct shell *sh, size_t argc, char **argv)
+{
+	gpio_pin_set_dt(&hv2_en, 0);
+	shell_fprintf(sh, SHELL_NORMAL, "HV2 OFF (PC4=0)\n");
+	return 0;
+}
+
+static int cmd_hv_status(const struct shell *sh, size_t argc, char **argv)
+{
+	int hv1_state = gpio_pin_get_dt(&hv1_en);
+	int hv2_state = gpio_pin_get_dt(&hv2_en);
+
+	shell_fprintf(sh, SHELL_NORMAL,
+		"HV1: %s (PD9=%d)  DAC1: %u\n"
+		"HV2: %s (PC4=%d)  DAC2: %u\n",
+		hv1_state ? "ON" : "OFF", hv1_state, dac1_code,
+		hv2_state ? "ON" : "OFF", hv2_state, dac2_code);
+	return 0;
+}
+
+/* ============== DAC ============== */
+
+static int cmd_dac1(const struct shell *sh, size_t argc, char **argv)
+{
+	uint32_t code;
+
+	if (argc < 2) {
+		shell_fprintf(sh, SHELL_ERROR, "Usage: dac1 <0-65535>\n");
+		return -EINVAL;
+	}
+
+	code = strtoul(argv[1], NULL, 0);
+	if (code > 65535) {
+		shell_fprintf(sh, SHELL_ERROR, "Code out of range (0-65535)\n");
+		return -EINVAL;
+	}
+
+	if (!device_is_ready(dac_hv1)) {
+		shell_fprintf(sh, SHELL_ERROR, "DAC1 not ready\n");
+		return -ENODEV;
+	}
+
+	dac_write_value(dac_hv1, 0, code);
+	dac1_code = code;
+	shell_fprintf(sh, SHELL_NORMAL, "DAC1: %u (%.3f V)\n", code,
+		code * 5.0 / 65535.0);
+	return 0;
+}
+
+static int cmd_dac2(const struct shell *sh, size_t argc, char **argv)
+{
+	uint32_t code;
+
+	if (argc < 2) {
+		shell_fprintf(sh, SHELL_ERROR, "Usage: dac2 <0-65535>\n");
+		return -EINVAL;
+	}
+
+	code = strtoul(argv[1], NULL, 0);
+	if (code > 65535) {
+		shell_fprintf(sh, SHELL_ERROR, "Code out of range (0-65535)\n");
+		return -EINVAL;
+	}
+
+	if (!device_is_ready(dac_hv2)) {
+		shell_fprintf(sh, SHELL_ERROR, "DAC2 not ready\n");
+		return -ENODEV;
+	}
+
+	dac_write_value(dac_hv2, 0, code);
+	dac2_code = code;
+	shell_fprintf(sh, SHELL_NORMAL, "DAC2: %u (%.3f V)\n", code,
+		code * 5.0 / 65535.0);
+	return 0;
+}
+
+/* ============== Shell Registration ============== */
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_sht31,
 	SHELL_CMD(read, NULL, "Read temperature and humidity", cmd_sht31_read),
 	SHELL_SUBCMD_SET_END
 );
 
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_hv1,
+	SHELL_CMD(on, NULL, "Enable HV1 output", cmd_hv1_on),
+	SHELL_CMD(off, NULL, "Disable HV1 output", cmd_hv1_off),
+	SHELL_SUBCMD_SET_END
+);
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_hv2,
+	SHELL_CMD(on, NULL, "Enable HV2 output", cmd_hv2_on),
+	SHELL_CMD(off, NULL, "Disable HV2 output", cmd_hv2_off),
+	SHELL_SUBCMD_SET_END
+);
+
 SHELL_CMD_REGISTER(sht31, &sub_sht31, "SHT31 temperature/humidity sensor", NULL);
+SHELL_CMD_REGISTER(hv1, &sub_hv1, "HV1 run/stop control", NULL);
+SHELL_CMD_REGISTER(hv2, &sub_hv2, "HV2 run/stop control", NULL);
+SHELL_CMD_REGISTER(hv_status, NULL, "Show HV state and DAC codes", cmd_hv_status);
+SHELL_CMD_REGISTER(dac1, NULL, "Set HV1 DAC code <0-65535>", cmd_dac1);
+SHELL_CMD_REGISTER(dac2, NULL, "Set HV2 DAC code <0-65535>", cmd_dac2);
 
 int main(void)
 {
+	int ret;
+
 	printk("=== periph_tune: jw_hvb peripheral tuning shell ===\n");
 
 	if (!device_is_ready(sht31_dev)) {
-		printk("SHT31 device not ready\n");
+		printk("SHT31: NOT READY\n");
 	} else {
-		printk("SHT31 ready on I2C1 addr 0x44\n");
+		printk("SHT31: ready on I2C1 addr 0x44\n");
+	}
+
+	if (!device_is_ready(dac_hv1)) {
+		printk("DAC1: NOT READY\n");
+	} else {
+		printk("DAC1: ready on SPI2 PB12/PB13/PB15\n");
+	}
+
+	if (!device_is_ready(dac_hv2)) {
+		printk("DAC2: NOT READY\n");
+	} else {
+		printk("DAC2: ready on SPI1 PA4/PA5/PA7\n");
+	}
+
+	/* Init HV control GPIOs — safe = off */
+	ret = gpio_pin_configure_dt(&hv1_en, GPIO_OUTPUT_INACTIVE);
+	if (ret < 0) {
+		printk("HV1 GPIO config failed: %d\n", ret);
+	}
+
+	ret = gpio_pin_configure_dt(&hv2_en, GPIO_OUTPUT_INACTIVE);
+	if (ret < 0) {
+		printk("HV2 GPIO config failed: %d\n", ret);
+	}
+
+	/* Ensure DAC output starts at 0V */
+	struct dac_channel_cfg dac_cfg = {
+		.channel_id = 0,
+		.resolution = 16,
+	};
+
+	if (device_is_ready(dac_hv1)) {
+		dac_channel_setup(dac_hv1, &dac_cfg);
+		dac_write_value(dac_hv1, 0, 0);
+		dac1_code = 0;
+	}
+
+	if (device_is_ready(dac_hv2)) {
+		dac_channel_setup(dac_hv2, &dac_cfg);
+		dac_write_value(dac_hv2, 0, 0);
+		dac2_code = 0;
 	}
 
 	printk("Type 'help' for commands\n");

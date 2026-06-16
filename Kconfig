@@ -2,7 +2,7 @@
 
 menu "HVB firmware shared code"
 
-osource "$(ZEPHYR_HVB_FIRMWARE_MODULE_DIR)/drivers/Kconfig"
-osource "$(ZEPHYR_HVB_FIRMWARE_MODULE_DIR)/lib/Kconfig"
+osource "drivers/Kconfig"
+osource "lib/Kconfig"
 
 endmenu

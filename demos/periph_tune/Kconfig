@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
+osource "$(srctree)/Kconfig"
+
+menu "HVB firmware shared code"
+
+osource "$(APPLICATION_SOURCE_DIR)/../../drivers/dac/ad5541/Kconfig"
+
+endmenu

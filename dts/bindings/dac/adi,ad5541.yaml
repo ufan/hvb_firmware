@@ -1,0 +1,14 @@
+# Copyright (c) 2026 Jianwei
+# SPDX-License-Identifier: Apache-2.0
+
+description: AD5541 16-bit SPI DAC (write-only)
+
+compatible: "adi,ad5541"
+
+include: [base.yaml, spi-device.yaml]
+
+properties:
+  vref-mv:
+    type: int
+    default: 5000
+    description: Reference voltage in mV

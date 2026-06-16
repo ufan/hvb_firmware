@@ -33,6 +33,14 @@
 			label = "SYS_RUN";
 		};
 	};
+
+	hv1_en: hv1_en {
+		gpios = <&gpiod 9 GPIO_ACTIVE_HIGH>;
+	};
+
+	hv2_en: hv2_en {
+		gpios = <&gpioc 4 GPIO_ACTIVE_HIGH>;
+	};
 };
 
 &clk_hse {
@@ -65,6 +73,14 @@
 	status = "okay";
 };
 
+&gpioc {
+	status = "okay";
+};
+
+&gpiod {
+	status = "okay";
+};
+
 &usart3 {
 	/*
 	 * The debug header nets are named USART1_TX/RX in the schematic, but
@@ -85,6 +101,34 @@
 	sht3xd_44: sht3xd@44 {
 		compatible = "sensirion,sht3xd";
 		reg = <0x44>;
+	};
+};
+
+/* SPI1 — HV2 AD5541 DAC */
+&spi1 {
+	pinctrl-0 = <&spi1_nss_pa4 &spi1_sck_pa5 &spi1_mosi_pa7>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	dac_hv2: dac@0 {
+		compatible = "adi,ad5541";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
+	};
+};
+
+/* SPI2 — HV1 AD5541 DAC */
+&spi2 {
+	pinctrl-0 = <&spi2_nss_pb12 &spi2_sck_pb13 &spi2_mosi_pb15>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpiob 12 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	dac_hv1: dac@0 {
+		compatible = "adi,ad5541";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
 	};
 };
 
@@ -126,5 +170,29 @@
 
 	i2c1_sda_pb9: i2c1_sda_pb9 {
 		pinmux = <STM32_PINMUX('B', 9, AF4)>;
+	};
+
+	spi1_nss_pa4: spi1_nss_pa4 {
+		pinmux = <STM32_PINMUX('A', 4, AF5)>;
+	};
+
+	spi1_sck_pa5: spi1_sck_pa5 {
+		pinmux = <STM32_PINMUX('A', 5, AF5)>;
+	};
+
+	spi1_mosi_pa7: spi1_mosi_pa7 {
+		pinmux = <STM32_PINMUX('A', 7, AF5)>;
+	};
+
+	spi2_nss_pb12: spi2_nss_pb12 {
+		pinmux = <STM32_PINMUX('B', 12, AF5)>;
+	};
+
+	spi2_sck_pb13: spi2_sck_pb13 {
+		pinmux = <STM32_PINMUX('B', 13, AF5)>;
+	};
+
+	spi2_mosi_pb15: spi2_mosi_pb15 {
+		pinmux = <STM32_PINMUX('B', 15, AF5)>;
 	};
 };

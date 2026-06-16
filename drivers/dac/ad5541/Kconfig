@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config AD5541
+	bool "AD5541 16-bit SPI DAC driver"
+	default y
+	depends on DT_HAS_ADI_AD5541_ENABLED
+	select SPI
+	help
+	  Enable the AD5541 16-bit write-only SPI DAC driver.
