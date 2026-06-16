@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
     auto screen = ScreenInteractive::Fullscreen();
     int  activeTab   = 0;
     bool showModal   = false;
-    bool connecting  = false;
+    std::atomic<bool> connecting{false};
     std::string statusMsg;
     std::mutex  statusMutex;
     hvb::tui::ScannedData data;
@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
     auto doConnect = [&] {
         if (modalPort.empty() || connecting) return;
         connecting = true;
-        statusMsg  = "Connecting to " + modalPort + "...";
+        { std::lock_guard<std::mutex> lk(statusMutex); statusMsg = "Connecting to " + modalPort + "..."; }
         screen.PostEvent(Event::Custom);
         std::thread([&] {
             int baud = 115200, slave = 1;
@@ -88,7 +88,8 @@ int main(int argc, char** argv) {
                 for (int ch = 0; ch < 2; ++ch) data.chCfg[ch]  = g_client.readChannelConfig(ch);
                 data.valid = true;
             }
-            statusMsg  = ok ? "Connected " + modalPort : "Connect failed: " + g_client.lastError();
+            { std::lock_guard<std::mutex> lk(statusMutex);
+              statusMsg = ok ? "Connected " + modalPort : "Connect failed: " + g_client.lastError(); }
             connecting = false;
             showModal  = false;
             screen.PostEvent(Event::Custom);
@@ -125,9 +126,11 @@ int main(int argc, char** argv) {
 
     // topBar: visual only — tabSelector rendered here but NOT in focus chain
     auto topBar = Renderer([&] {
+        std::string msg;
+        { std::lock_guard<std::mutex> lk(statusMutex); msg = statusMsg; }
         std::string connStr = g_connected
             ? ("\xe2\x97\x8f Connected " + modalPort)   // ● Connected
-            : (statusMsg.empty() ? "\xe2\x97\x8b Disconnected" : statusMsg);
+            : (msg.empty() ? "\xe2\x97\x8b Disconnected" : msg);
         return hbox({
             text(" HVB TUI ") | bold,
             separator(),
@@ -186,7 +189,8 @@ int main(int argc, char** argv) {
                 for (int i = 0; i < 2; ++i) data.chCfg[i]  = g_client.readChannelConfig(i);
                 data.valid = true;
             }
-            statusMsg = ok ? "" : "Connect failed: " + g_client.lastError();
+            { std::lock_guard<std::mutex> lk(statusMutex);
+              statusMsg = ok ? "" : "Connect failed: " + g_client.lastError(); }
             screen.PostEvent(Event::Custom);
         }).detach();
     }
