@@ -1,20 +1,16 @@
 #include "hvb_modbus_client.h"
 #include "config_manager.h"
-#include "register_map.h"
-#include "types.h"
+#include "tab_monitor.h"
+#include "tab_system.h"
+#include "tab_channel.h"
 
-#include <ftxui/dom/elements.hpp>
-#include <ftxui/dom/table.hpp>
-#include <ftxui/screen/screen.hpp>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 
-#include <iostream>
-#include <thread>
-#include <chrono>
-#include <sstream>
-#include <iomanip>
 #include <atomic>
+#include <chrono>
+#include <mutex>
+#include <thread>
 
 using namespace ftxui;
 
@@ -22,174 +18,6 @@ static hvb::HvbModbusClient g_client;
 static hvb::ConfigManager   g_cfg;
 static std::atomic<bool>    g_connected{false};
 static int g_pollInterval = 2;
-
-// ============================================================================
-//  Helpers
-// ============================================================================
-
-static std::string fmtV(uint16_t raw) {
-    double v = hvb::reg::voltageToV(raw);
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%+.1f V", v);
-    return buf;
-}
-
-static std::string fmtI(uint16_t raw) {
-    double a = hvb::reg::currentToA(raw) * 1e6;
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%+.1f uA", a);
-    return buf;
-}
-
-struct ScannedData {
-    hvb::SystemInfo   sysInfo{};
-    hvb::ChannelInfo  chInfo[2]{};
-    hvb::SystemConfig sysCfg{};
-    hvb::ChannelConfig chCfg[2]{};
-    bool valid = false;
-};
-
-static ScannedData pollData() {
-    ScannedData d;
-    if (!g_client.isConnected()) return d;
-    d.sysInfo = g_client.readSystemInfo();
-    for (int ch = 0; ch < 2; ++ch) d.chInfo[ch] = g_client.readChannelInfo(ch);
-    d.sysCfg  = g_client.readSystemConfig();
-    for (int ch = 0; ch < 2; ++ch) d.chCfg[ch]  = g_client.readChannelConfig(ch);
-    d.valid = g_client.isConnected();
-    return d;
-}
-
-// ============================================================================
-//  Tab renderers
-// ============================================================================
-
-static Element renderMonitor(const ScannedData& d) {
-    if (!d.valid) return text(" Not connected — press 'c' to connect ") | center | border;
-
-    std::vector<std::vector<std::string>> rows;
-    rows.push_back({"CH", "Vmeas", "Imeas", "Target", "Status", "Fault", "Retry"});
-    for (int ch = 0; ch < 2; ++ch) {
-        const auto& ci = d.chInfo[ch];
-        if (ci.status & hvb::ChStatus::UNSUPPORTED) {
-            rows.push_back({std::to_string(ch), "(unsupported)", "", "", "", "", ""});
-            continue;
-        }
-        bool on    = ci.status & hvb::ChStatus::OUTPUT_DRIVE_NONZERO;
-        bool fault = ci.activeFault != 0;
-        rows.push_back({
-            std::to_string(ch),
-            fmtV(ci.voltageRaw), fmtI(ci.currentRaw),
-            fmtV(ci.operationalTargetVoltageRaw),
-            on ? "ON" : "OFF",
-            fault ? "YES" : "--",
-            std::to_string(ci.retryCount)
-        });
-    }
-
-    auto table = Table(rows);
-    table.SelectAll().Border(LIGHT);
-    table.SelectAll().Separator(LIGHT);
-    table.SelectRows(0, 0).Decorate(bold);
-    table.SelectRows(0, 0).Separator(HEAVY);
-
-    std::string title = " HVB Monitor [" + std::to_string(d.sysInfo.protoMajor) + "." +
-        std::to_string(d.sysInfo.protoMinor) + "]  Uptime: " +
-        std::to_string(d.sysInfo.uptimeSec) + "s  Mode: " +
-        hvb::opModeName(d.sysInfo.activeOpMode) + " ";
-
-    return vbox({
-        text(title) | bold | center,
-        separator(),
-        table.Render() | center,
-    }) | border;
-}
-
-static Element renderSystemInfo(const ScannedData& d) {
-    if (!d.valid) return text(" Not connected ") | center | border;
-    const auto& s = d.sysInfo;
-    std::vector<std::vector<std::string>> rows;
-    auto add = [&](const std::string& k, const std::string& v) { rows.push_back({k, v}); };
-
-    add("Protocol",    std::to_string(s.protoMajor) + "." + std::to_string(s.protoMinor));
-    add("Variant ID",  std::to_string(s.variantId));
-    add("Channels",    std::to_string(s.supportedChannels) +
-        " (mask 0x" + (std::ostringstream{} << std::hex << s.activeChMask).str() + ")");
-    add("Op Mode",     hvb::opModeName(s.activeOpMode));
-    add("Temp Raw",    std::to_string(s.boardTempRaw));
-    add("Humidity Raw",std::to_string(s.boardHumidityRaw));
-    add("Uptime",      std::to_string(s.uptimeSec) + " s");
-    add("FW Version",  "0x" + (std::ostringstream{} << std::hex << s.fwVersion).str());
-    add("Sys Status",  "0x" + (std::ostringstream{} << std::hex << s.sysStatus).str());
-    add("Fault Cause", "0x" + (std::ostringstream{} << std::hex << s.faultCause).str());
-    rows.push_back({"Cap Flags",
-        (s.sysCapFlags & hvb::SysCap::AUTO_MODE_SUPPORTED ? "[Auto] " : "") +
-        std::string(s.sysCapFlags & hvb::SysCap::ENV_SENSOR_PRESENT ? "[Env]" : "")});
-
-    auto table = Table(rows);
-    table.SelectAll().Border(LIGHT);
-    table.SelectColumn(0).Separator(LIGHT);
-    return vbox({
-        text(" System Info ") | bold | center, separator(), table.Render(),
-    }) | border;
-}
-
-static Element renderChannelDetail(const ScannedData& d, int ch) {
-    if (!d.valid) return text(" Not connected ") | center | border;
-    const auto& ci = d.chInfo[ch];
-    const auto& cc = d.chCfg[ch];
-    if (ci.status & hvb::ChStatus::UNSUPPORTED)
-        return text(" Channel " + std::to_string(ch) + " unsupported ") | center | border;
-
-    std::vector<std::vector<std::string>> rows;
-    auto add = [&](const std::string& k, const std::string& v) { rows.push_back({k, v}); };
-    auto yn  = [](bool b) { return b ? "YES" : "no"; };
-
-    add("Measured V",    fmtV(ci.voltageRaw));
-    add("Measured I",    fmtI(ci.currentRaw));
-    add("Op Target V",   fmtV(ci.operationalTargetVoltageRaw));
-    add("Output Drive",  yn(ci.status & hvb::ChStatus::OUTPUT_DRIVE_NONZERO));
-    add("Output Enable", yn(ci.status & hvb::ChStatus::OUTPUT_ENABLE_ACTIVE));
-    add("Ramping",       yn(ci.status & hvb::ChStatus::RAMPING_ACTIVE));
-    add("Active Fault",  yn(ci.status & hvb::ChStatus::ACTIVE_FAULT));
-    add("Fault History", yn(ci.status & hvb::ChStatus::FAULT_HISTORY));
-    add("Cooldown",      yn(ci.status & hvb::ChStatus::COOLDOWN_ACTIVE));
-    add("Retry Exhausted", yn(ci.status & hvb::ChStatus::RETRY_EXHAUSTED));
-
-    if (ci.activeFault) {
-        std::string faults;
-        if (ci.activeFault & hvb::FaultCause::VOLTAGE_LIMIT)       faults += "VL ";
-        if (ci.activeFault & hvb::FaultCause::CURRENT_LIMIT)       faults += "CL ";
-        if (ci.activeFault & hvb::FaultCause::MEASUREMENT_INVALID) faults += "MI ";
-        if (ci.activeFault & hvb::FaultCause::OUTPUT_HW_FAULT)     faults += "HW ";
-        add("Fault Causes", faults);
-    }
-
-    add("", "");
-    add("Target V (raw)",  std::to_string(cc.configuredTargetVRaw));
-    add("V Limit (raw)",   std::to_string(cc.vLimitThresholdRaw));
-    add("I Limit (raw)",   std::to_string(cc.iLimitThresholdRaw));
-    add("Ramp Up",  std::to_string(cc.rampUpStepRaw) + " / " + std::to_string(cc.rampUpInterval));
-    add("Ramp Down",std::to_string(cc.rampDownStepRaw) + " / " + std::to_string(cc.rampDownInterval));
-    add("Derate Step", std::to_string(cc.derateStepRaw));
-    add("", "");
-    add("Output Cal", "K=" + std::to_string(cc.outCalK) + " B=" + std::to_string(cc.outCalB));
-    add("Meas V Cal", "K=" + std::to_string(cc.measVCalK) + " B=" + std::to_string(cc.measVCalB));
-    add("Meas I Cal", "K=" + std::to_string(cc.measICalK) + " B=" + std::to_string(cc.measICalB));
-
-    auto table = Table(rows);
-    table.SelectAll().Border(LIGHT);
-    table.SelectColumn(0).Separator(LIGHT);
-    return vbox({
-        text(" Channel " + std::to_string(ch) + " ") | bold | center,
-        separator(),
-        table.Render(),
-    }) | border;
-}
-
-// ============================================================================
-//  Main
-// ============================================================================
 
 int main(int argc, char** argv) {
     g_cfg.load();
@@ -205,26 +33,31 @@ int main(int argc, char** argv) {
         else if (a == "-s" && i+1 < argc) g_pollInterval = std::stoi(argv[++i]);
     }
 
-    // Seed modal inputs from args > config
-    std::string modalPort    = portArg.empty()  ? (g_cfg.port.empty() ? "/dev/ttyUSB0" : g_cfg.port) : portArg;
+    std::string modalPort    = portArg.empty() ? (g_cfg.port.empty() ? "/dev/ttyUSB0" : g_cfg.port) : portArg;
     std::string modalBaud    = std::to_string(baudArg != 115200 ? baudArg : g_cfg.baudRate);
     std::string modalSlaveId = std::to_string(slaveArg != 1     ? slaveArg : g_cfg.slaveId);
 
     auto screen = ScreenInteractive::Fullscreen();
-    int  activeTab    = 0;
-    bool showModal    = false;
-    bool connecting   = false;
+    int  activeTab   = 0;
+    bool showModal   = false;
+    bool connecting  = false;
     std::string statusMsg;
-    ScannedData data;
+    std::mutex  statusMutex;
+    hvb::tui::ScannedData data;
     std::atomic<bool> running{true};
 
-    // ----------------------------------------------------------------
-    //  Poll thread: runs every g_pollInterval seconds while connected
-    // ----------------------------------------------------------------
+    // AppState bundles everything the tab factories need
+    hvb::tui::AppState appState{g_client, g_connected, data, statusMsg, statusMutex, screen};
+
+    // ---- Poll thread ----
     std::thread pollThread([&] {
         while (running) {
             if (g_connected) {
-                data = pollData();
+                data.sysInfo = g_client.readSystemInfo();
+                for (int ch = 0; ch < 2; ++ch) data.chInfo[ch] = g_client.readChannelInfo(ch);
+                data.sysCfg  = g_client.readSystemConfig();
+                for (int ch = 0; ch < 2; ++ch) data.chCfg[ch]  = g_client.readChannelConfig(ch);
+                data.valid = g_client.isConnected();
                 if (running) screen.PostEvent(Event::Custom);
             }
             for (int i = 0; i < g_pollInterval * 10 && running; ++i)
@@ -232,36 +65,32 @@ int main(int argc, char** argv) {
         }
     });
 
-    // ----------------------------------------------------------------
-    //  Connection modal
-    // ----------------------------------------------------------------
-    auto portInput    = Input(&modalPort,    "e.g. /dev/ttyUSB0");
-    auto baudInput    = Input(&modalBaud,    "115200");
-    auto slaveInput   = Input(&modalSlaveId, "1");
+    // ---- Connection modal ----
+    auto portInput  = Input(&modalPort,    "e.g. /dev/ttyUSB0");
+    auto baudInput  = Input(&modalBaud,    "115200");
+    auto slaveInput = Input(&modalSlaveId, "1");
 
     auto doConnect = [&] {
         if (modalPort.empty() || connecting) return;
-        connecting  = true;
-        statusMsg   = "Connecting to " + modalPort + "...";
+        connecting = true;
+        statusMsg  = "Connecting to " + modalPort + "...";
         screen.PostEvent(Event::Custom);
-
-        // Connect on a background thread so the render loop stays alive
         std::thread([&] {
-            int baud  = 115200, slave = 1, tmo = timeoutArg;
+            int baud = 115200, slave = 1;
             try { baud  = std::stoi(modalBaud);    } catch (...) {}
             try { slave = std::stoi(modalSlaveId); } catch (...) {}
-
-            bool ok = g_client.connect(modalPort, baud, slave, tmo);
+            bool ok = g_client.connect(modalPort, baud, slave, timeoutArg);
             g_connected = ok;
-            statusMsg   = ok ? "Connected " + modalPort
-                             : "Connect failed: " + g_client.lastError();
-            connecting  = false;
-            showModal   = false;
-
             if (ok) {
-                // Immediate poll so data appears right away
-                data = pollData();
+                data.sysInfo = g_client.readSystemInfo();
+                for (int ch = 0; ch < 2; ++ch) data.chInfo[ch] = g_client.readChannelInfo(ch);
+                data.sysCfg  = g_client.readSystemConfig();
+                for (int ch = 0; ch < 2; ++ch) data.chCfg[ch]  = g_client.readChannelConfig(ch);
+                data.valid = true;
             }
+            statusMsg  = ok ? "Connected " + modalPort : "Connect failed: " + g_client.lastError();
+            connecting = false;
+            showModal  = false;
             screen.PostEvent(Event::Custom);
         }).detach();
     };
@@ -270,15 +99,10 @@ int main(int argc, char** argv) {
         Button("Connect", doConnect),
         Button("Cancel",  [&] { showModal = false; }),
     });
-
-    auto modalForm = Container::Vertical({
-        portInput, baudInput, slaveInput, modalButtons,
-    });
-
+    auto modalForm = Container::Vertical({portInput, baudInput, slaveInput, modalButtons});
     auto modalRenderer = Renderer(modalForm, [&] {
         return vbox({
-            text(" Connect to HVB ") | bold | center,
-            separator(),
+            text(" Connect to HVB ") | bold | center, separator(),
             hbox({ text("Port    : "), portInput->Render()  }),
             hbox({ text("Baud    : "), baudInput->Render()  }),
             hbox({ text("Slave ID: "), slaveInput->Render() }),
@@ -288,75 +112,81 @@ int main(int argc, char** argv) {
         }) | border | size(WIDTH, EQUAL, 50);
     });
 
-    // ----------------------------------------------------------------
-    //  Main layout
-    // ----------------------------------------------------------------
-    std::vector<std::string> tabTitles = {"Monitor", "System", "CH0", "CH1"};
+    // ---- Tab content (tab factories) ----
+    std::vector<std::string> tabTitles = {"Mon", "Sys", "CH0", "CH1"};
     auto tabSelector = Toggle(&tabTitles, &activeTab);
 
     auto tabContent = Container::Tab({
-        Renderer([&] { return renderMonitor(data);           }),
-        Renderer([&] { return renderSystemInfo(data);        }),
-        Renderer([&] { return renderChannelDetail(data, 0);  }),
-        Renderer([&] { return renderChannelDetail(data, 1);  }),
+        hvb::tui::makeMonitorTab(appState),
+        hvb::tui::makeSystemTab(appState),
+        hvb::tui::makeChannelTab(appState, 0),
+        hvb::tui::makeChannelTab(appState, 1),
     }, &activeTab);
 
+    // topBar: visual only — tabSelector rendered here but NOT in focus chain
     auto topBar = Renderer([&] {
-        std::string connStatus = g_connected
-            ? ("Connected " + modalPort) : (statusMsg.empty() ? "Disconnected" : statusMsg);
+        std::string connStr = g_connected
+            ? ("\xe2\x97\x8f Connected " + modalPort)   // ● Connected
+            : (statusMsg.empty() ? "\xe2\x97\x8b Disconnected" : statusMsg);
         return hbox({
             text(" HVB TUI ") | bold,
-            filler(),
-            text(connStatus) | (g_connected ? color(Color::Green) : color(Color::Red)),
-            filler(),
+            separator(),
+            text(" " + connStr + " ") | (g_connected ? color(Color::Green) : color(Color::Red)),
+            separator(),
             tabSelector->Render(),
             filler(),
-            text(" q:quit  r:refresh  c:connect  d:disconnect ") | dim,
+            text(" q:quit  r:poll  c:connect  d:disconnect  1-4:tabs ") | dim,
         });
     });
 
-    auto mainContainer = Container::Vertical({topBar, tabSelector, tabContent});
+    // mainContainer: topBar (visual) + tabContent (interactive only)
+    // tabSelector is NOT added here so ↑/↓ always reach the active tab
+    auto mainContainer = Container::Vertical({topBar, tabContent});
 
     auto root = mainContainer
         | Modal(modalRenderer, &showModal)
         | CatchEvent([&](Event e) {
-            // When the modal is open, let its Input components handle all
-            // character events — otherwise 'd', 'r', 'q', etc. are stolen
-            // before reaching the focused text field.
             if (showModal) {
                 if (e == Event::Escape) { showModal = false; return true; }
                 return false;
             }
-            if (e == Event::Character('q')) {
-                running = false;
-                screen.ExitLoopClosure()();
-                return true;
-            }
+            if (e == Event::Character('q')) { running = false; screen.ExitLoopClosure()(); return true; }
             if (e == Event::Character('r')) {
-                if (g_connected) { data = pollData(); }
+                if (g_connected) {
+                    data.sysInfo = g_client.readSystemInfo();
+                    for (int i = 0; i < 2; ++i) data.chInfo[i] = g_client.readChannelInfo(i);
+                    data.sysCfg  = g_client.readSystemConfig();
+                    for (int i = 0; i < 2; ++i) data.chCfg[i]  = g_client.readChannelConfig(i);
+                    data.valid = true;
+                }
                 return true;
             }
-            if (e == Event::Character('c')) {
-                if (!g_connected && !connecting) showModal = true;
-                return true;
-            }
+            if (e == Event::Character('c')) { if (!g_connected && !connecting) showModal = true; return true; }
             if (e == Event::Character('d')) {
-                g_client.disconnect();
-                g_connected = false;
-                statusMsg   = "Disconnected";
+                g_client.disconnect(); g_connected = false; data.valid = false;
+                { std::lock_guard<std::mutex> lk(statusMutex); statusMsg = "Disconnected"; }
                 return true;
             }
+            if (e == Event::Character('1')) { activeTab = 0; return true; }
+            if (e == Event::Character('2')) { activeTab = 1; return true; }
+            if (e == Event::Character('3')) { activeTab = 2; return true; }
+            if (e == Event::Character('4')) { activeTab = 3; return true; }
             return false;
         });
 
-    // Auto-connect if port was supplied on command line
+    // Auto-connect if port given on command line
     if (!portArg.empty()) {
-        showModal = false;
         std::thread([&] {
             bool ok = g_client.connect(portArg, baudArg, slaveArg, timeoutArg);
             g_connected = ok;
-            statusMsg   = ok ? "" : "Connect failed: " + g_client.lastError();
-            if (ok) data = pollData();
+            if (ok) {
+                data.sysInfo = g_client.readSystemInfo();
+                for (int i = 0; i < 2; ++i) data.chInfo[i] = g_client.readChannelInfo(i);
+                data.sysCfg  = g_client.readSystemConfig();
+                for (int i = 0; i < 2; ++i) data.chCfg[i]  = g_client.readChannelConfig(i);
+                data.valid = true;
+            }
+            statusMsg = ok ? "" : "Connect failed: " + g_client.lastError();
             screen.PostEvent(Event::Custom);
         }).detach();
     }
