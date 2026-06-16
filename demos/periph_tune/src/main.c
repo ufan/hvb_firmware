@@ -5,7 +5,6 @@
  */
 
 #include <errno.h>
-#include <stdlib.h>
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/sensor.h>
@@ -33,8 +32,17 @@ static int cmd_sht31_read(const struct shell *sh, size_t argc, char **argv)
 		return ret;
 	}
 
-	sensor_channel_get(sht31_dev, SENSOR_CHAN_AMBIENT_TEMP, &temp);
-	sensor_channel_get(sht31_dev, SENSOR_CHAN_HUMIDITY, &hum);
+	ret = sensor_channel_get(sht31_dev, SENSOR_CHAN_AMBIENT_TEMP, &temp);
+	if (ret < 0) {
+		shell_fprintf(sh, SHELL_ERROR, "SHT31 temp read failed: %d\n", ret);
+		return ret;
+	}
+
+	ret = sensor_channel_get(sht31_dev, SENSOR_CHAN_HUMIDITY, &hum);
+	if (ret < 0) {
+		shell_fprintf(sh, SHELL_ERROR, "SHT31 humidity read failed: %d\n", ret);
+		return ret;
+	}
 
 	shell_fprintf(sh, SHELL_NORMAL,
 		"T=%.2f C  H=%.2f %%\n",
@@ -61,6 +69,5 @@ int main(void)
 	}
 
 	printk("Type 'help' for commands\n");
-	printk("HV modules DISABLED at boot — use 'hv1 on' / 'hv2 on' to enable\n");
 	return 0;
 }
