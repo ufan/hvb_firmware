@@ -8,30 +8,33 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
-using namespace ftxui;
-
 namespace hvb::tui {
+
+using namespace ftxui;
 
 struct AppState {
     hvb::HvbModbusClient&     client;
     std::atomic<bool>&        connected;
     ScannedData&              data;
     std::string&              statusMsg;
+    std::mutex&               statusMutex;  // guards statusMsg cross-thread writes
     ftxui::ScreenInteractive& screen;
 };
 
 // Dispatch fn on a background thread; update statusMsg on completion.
 // fn must not capture any stack locals that may be destroyed before it runs.
 inline void writeAsync(AppState& s, const std::string& label, std::function<bool()> fn) {
-    s.statusMsg = "Writing " + label + "...";
+    { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Writing " + label + "..."; }
     s.screen.PostEvent(Event::Custom);
     std::thread([&s, label, fn = std::move(fn)]() mutable {
         bool ok = fn();
-        s.statusMsg = ok ? ("OK: " + label) : ("Error: " + s.client.lastError());
+        { std::lock_guard<std::mutex> lk(s.statusMutex);
+          s.statusMsg = ok ? ("OK: " + label) : ("Error: " + s.client.lastError()); }
         s.screen.PostEvent(Event::Custom);
     }).detach();
 }
@@ -56,15 +59,15 @@ inline Component InlineCycler(std::vector<std::string> opts,
     auto optsPtr = std::make_shared<std::vector<std::string>>(std::move(opts));
     auto bopt    = ButtonOption{};
     bopt.transform = [sel, optsPtr](const EntryState& es) -> Element {
-        std::string lbl = "[" + optsPtr->at(*sel) + " \xe2\x96\xbe]"; // UTF-8 ▾
+        std::string lbl = "[" + optsPtr->at(*sel) + " \xe2\x96\xbe]"; // UTF-8 U+25BE ▾
         auto e = text(lbl);
         if (es.focused) e = e | inverted;
         return e;
     };
     // onClick: cycle forward (mouse-click support)
-    auto btn = Button("", [sel, optsPtr] { *sel = (*sel + 1) % (int)optsPtr->size(); }, bopt);
+    auto btn = Button("", [sel, optsPtr] { *sel = (*sel + 1) % static_cast<int>(optsPtr->size()); }, bopt);
     return CatchEvent(btn, [sel, optsPtr, onCommit](Event e) {
-        int n = (int)optsPtr->size();
+        int n = static_cast<int>(optsPtr->size());
         if (e == Event::Character(' ') || e == Event::ArrowRight) {
             *sel = (*sel + 1) % n; return true;
         }
