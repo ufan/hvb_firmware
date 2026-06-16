@@ -72,7 +72,7 @@ static int ads1232_read_raw(const struct device *dev, int32_t *result)
 	gpio_pin_set_dt(&cfg->pwdn, 0);
 	k_sleep(K_MSEC(1));
 
-	timeout = 200;
+	timeout = 310;
 	while (gpio_pin_get_dt(&cfg->drdy) && timeout > 0) {
 		k_sleep(K_USEC(500));
 		timeout--;

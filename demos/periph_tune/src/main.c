@@ -38,9 +38,7 @@ static const struct device *adc_hv1 = DEVICE_DT_GET_OR_NULL(ADC_HV1_NODE);
 static const struct device *adc_hv2 = DEVICE_DT_GET_OR_NULL(ADC_HV2_NODE);
 
 static uint8_t adc1_gain_val = 1;
-static int32_t adc1_last_raw;
 static uint8_t adc2_gain_val = 1;
-static int32_t adc2_last_raw;
 
 /* Saved DAC codes for status display */
 static uint32_t dac1_code;
@@ -214,11 +212,10 @@ static int cmd_adc1_read(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	sensor_channel_get(adc_hv1, SENSOR_CHAN_VOLTAGE, &val);
-	adc1_last_raw = val.val1;
 
 	shell_fprintf(sh, SHELL_NORMAL,
-		"ADC1: raw=%d  %.3f V  (gain=%u)\n",
-		val.val1, sensor_value_to_double(&val), adc1_gain_val);
+		"ADC1: V=%.3f  gain=%u\n",
+		sensor_value_to_double(&val), adc1_gain_val);
 	return 0;
 }
 
@@ -239,11 +236,10 @@ static int cmd_adc2_read(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	sensor_channel_get(adc_hv2, SENSOR_CHAN_VOLTAGE, &val);
-	adc2_last_raw = val.val1;
 
 	shell_fprintf(sh, SHELL_NORMAL,
-		"ADC2: raw=%d  %.3f V  (gain=%u)\n",
-		val.val1, sensor_value_to_double(&val), adc2_gain_val);
+		"ADC2: V=%.3f  gain=%u\n",
+		sensor_value_to_double(&val), adc2_gain_val);
 	return 0;
 }
 
@@ -251,6 +247,7 @@ static int cmd_adc1_gain(const struct shell *sh, size_t argc, char **argv)
 {
 	uint32_t gain;
 	struct sensor_value val;
+	int ret;
 
 	if (argc < 2) {
 		shell_fprintf(sh, SHELL_ERROR,
@@ -272,7 +269,11 @@ static int cmd_adc1_gain(const struct shell *sh, size_t argc, char **argv)
 
 	val.val1 = (int32_t)gain;
 	val.val2 = 0;
-	sensor_attr_set(adc_hv1, SENSOR_CHAN_ALL, SENSOR_ATTR_PRIV_START, &val);
+	ret = sensor_attr_set(adc_hv1, SENSOR_CHAN_ALL, SENSOR_ATTR_PRIV_START, &val);
+	if (ret < 0) {
+		shell_fprintf(sh, SHELL_ERROR, "ADC1 gain set failed: %d\n", ret);
+		return ret;
+	}
 	adc1_gain_val = (uint8_t)gain;
 
 	shell_fprintf(sh, SHELL_NORMAL, "ADC1 gain set to %u\n", gain);
@@ -283,6 +284,7 @@ static int cmd_adc2_gain(const struct shell *sh, size_t argc, char **argv)
 {
 	uint32_t gain;
 	struct sensor_value val;
+	int ret;
 
 	if (argc < 2) {
 		shell_fprintf(sh, SHELL_ERROR,
@@ -304,7 +306,11 @@ static int cmd_adc2_gain(const struct shell *sh, size_t argc, char **argv)
 
 	val.val1 = (int32_t)gain;
 	val.val2 = 0;
-	sensor_attr_set(adc_hv2, SENSOR_CHAN_ALL, SENSOR_ATTR_PRIV_START, &val);
+	ret = sensor_attr_set(adc_hv2, SENSOR_CHAN_ALL, SENSOR_ATTR_PRIV_START, &val);
+	if (ret < 0) {
+		shell_fprintf(sh, SHELL_ERROR, "ADC2 gain set failed: %d\n", ret);
+		return ret;
+	}
 	adc2_gain_val = (uint8_t)gain;
 
 	shell_fprintf(sh, SHELL_NORMAL, "ADC2 gain set to %u\n", gain);
@@ -314,10 +320,9 @@ static int cmd_adc2_gain(const struct shell *sh, size_t argc, char **argv)
 static int cmd_adc_status(const struct shell *sh, size_t argc, char **argv)
 {
 	shell_fprintf(sh, SHELL_NORMAL,
-		"ADC1: gain=%u  last_raw=%d\n"
-		"ADC2: gain=%u  last_raw=%d\n",
-		adc1_gain_val, adc1_last_raw,
-		adc2_gain_val, adc2_last_raw);
+		"ADC1: gain=%u\n"
+		"ADC2: gain=%u\n",
+		adc1_gain_val, adc2_gain_val);
 	return 0;
 }
 

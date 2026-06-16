@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Jianwei
 
 config ADS1232
 	bool "ADS1232 24-bit delta-sigma ADC driver"
