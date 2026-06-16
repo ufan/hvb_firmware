@@ -1,4 +1,4 @@
 # SPDX-License-Identifier: Apache-2.0
 
-osource "dac/ad5541/Kconfig"
-osource "sensor/ads1232/Kconfig"
+rsource "dac/ad5541/Kconfig"
+rsource "sensor/ads1232/Kconfig"

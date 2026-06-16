@@ -45,8 +45,8 @@
 	/* HV1 ADS1232 ADC — GPIO bit-bang, not SPI */
 	ads1232_hv1: ads1232_hv1 {
 		compatible = "ti,ads1232";
-		status = "okay";
-		drdy-gpios = <&gpioe 13 GPIO_PULL_UP>;
+		status = "disabled";
+		drdy-gpios = <&gpioe 13 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 		sclk-gpios = <&gpioe 12 GPIO_ACTIVE_HIGH>;
 		pwdn-gpios = <&gpioe 11 GPIO_ACTIVE_LOW>;
 		a0-gpios = <&gpioe 8 GPIO_ACTIVE_HIGH>;
@@ -58,8 +58,8 @@
 	/* HV2 ADS1232 ADC */
 	ads1232_hv2: ads1232_hv2 {
 		compatible = "ti,ads1232";
-		status = "okay";
-		drdy-gpios = <&gpiof 8 GPIO_PULL_UP>;
+		status = "disabled";
+		drdy-gpios = <&gpiof 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 		sclk-gpios = <&gpiof 7 GPIO_ACTIVE_HIGH>;
 		pwdn-gpios = <&gpiof 6 GPIO_ACTIVE_LOW>;
 		a0-gpios = <&gpiof 3 GPIO_ACTIVE_HIGH>;

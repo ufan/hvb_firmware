@@ -3,6 +3,7 @@
 name: hvb-firmware
 build:
   cmake: .
+  kconfig: Kconfig
   settings:
     board_root: .
     dts_root: .
