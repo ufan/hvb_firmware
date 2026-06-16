@@ -79,12 +79,18 @@ inline Component makeChannelTab(AppState& s, int ch) {
     };
     auto onCal = [&s, st, ch] {
         try {
-            auto ok  = s.client.writeCalibrationOutput(ch, (uint16_t)std::stoul(st->outK),  (int16_t)std::stoi(st->outB));
-            ok &= s.client.writeCalibrationMeasV(ch, (uint16_t)std::stoul(st->measVK), (int16_t)std::stoi(st->measVB));
-            ok &= s.client.writeCalibrationMeasI(ch, (uint16_t)std::stoul(st->measIK), (int16_t)std::stoi(st->measIB));
-            { std::lock_guard<std::mutex> lk(s.statusMutex);
-              s.statusMsg = ok ? "OK: Calibration" : "Error: " + s.client.lastError(); }
-            s.screen.PostEvent(Event::Custom);
+            auto kOut = (uint16_t)std::stoul(st->outK);
+            auto bOut = (int16_t)std::stoi(st->outB);
+            auto kMeasV = (uint16_t)std::stoul(st->measVK);
+            auto bMeasV = (int16_t)std::stoi(st->measVB);
+            auto kMeasI = (uint16_t)std::stoul(st->measIK);
+            auto bMeasI = (int16_t)std::stoi(st->measIB);
+            writeAsync(s, "Calibration", [&s, ch, kOut, bOut, kMeasV, bMeasV, kMeasI, bMeasI] {
+                auto ok  = s.client.writeCalibrationOutput(ch, kOut, bOut);
+                ok &= s.client.writeCalibrationMeasV(ch, kMeasV, bMeasV);
+                ok &= s.client.writeCalibrationMeasI(ch, kMeasI, bMeasI);
+                return ok;
+            });
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid calibration value"; }
     };
     auto onSaveTarget = [&s, st, ch] {
@@ -136,7 +142,9 @@ inline Component makeChannelTab(AppState& s, int ch) {
         if (s.data.valid) {
             const auto& ci = s.data.chInfo[ch];
             if (ci.status & ChStatus::UNSUPPORTED) {
-                liveBar = text("  Channel " + std::to_string(ch) + " unsupported") | bold;
+                return window(text(" CH" + std::to_string(ch) + " "), vbox({
+                    text(" Channel " + std::to_string(ch) + " unsupported ") | bold | center,
+                }));
             } else {
                 char lastFault[24] = "--";
                 if (ci.lastFaultTimestamp > 0)
