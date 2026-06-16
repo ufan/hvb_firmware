@@ -25,8 +25,6 @@ target_include_directories(hvb_tests PRIVATE
 target_link_libraries(hvb_tests PRIVATE
     hvb_modbus_core
     Catch2::Catch2WithMain
-    ftxui::screen
-    ftxui::dom
 )
 
 target_compile_features(hvb_tests PRIVATE cxx_std_17)

@@ -12,6 +12,7 @@ TEST_CASE("statusBadge") {
     CHECK(statusBadge(ChStatus::ACTIVE_FAULT) == "FAULT");
     CHECK(statusBadge(ChStatus::COOLDOWN_ACTIVE) == "COOL");
     CHECK(statusBadge(ChStatus::UNSUPPORTED) == "UNSUP");
+    CHECK(statusBadge(ChStatus::RETRY_EXHAUSTED) == "RETRY-X");
 }
 
 TEST_CASE("faultStr") {
