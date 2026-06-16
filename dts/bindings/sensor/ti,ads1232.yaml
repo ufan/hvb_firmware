@@ -1,0 +1,44 @@
+# Copyright (c) 2026 Jianwei
+# SPDX-License-Identifier: Apache-2.0
+
+description: TI ADS1232 24-bit Delta-Sigma ADC
+
+compatible: "ti,ads1232"
+
+include: [base.yaml]
+
+properties:
+  drdy-gpios:
+    type: phandle-array
+    required: true
+    description: Data ready / data out pin
+
+  sclk-gpios:
+    type: phandle-array
+    required: true
+    description: Serial clock output
+
+  pwdn-gpios:
+    type: phandle-array
+    required: true
+    description: Power down / chip select (active low)
+
+  a0-gpios:
+    type: phandle-array
+    required: false
+    description: Channel select A0
+
+  a1-gpios:
+    type: phandle-array
+    required: false
+    description: Channel select A1
+
+  gain0-gpios:
+    type: phandle-array
+    required: false
+    description: PGA gain select GAIN0
+
+  gain1-gpios:
+    type: phandle-array
+    required: false
+    description: PGA gain select GAIN1

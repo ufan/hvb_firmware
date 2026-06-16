@@ -31,6 +31,17 @@ static const struct device *dac_hv2 = DEVICE_DT_GET_OR_NULL(DAC_HV2_NODE);
 static const struct gpio_dt_spec hv1_en = GPIO_DT_SPEC_GET_OR(HV1_EN_NODE, gpios, {0});
 static const struct gpio_dt_spec hv2_en = GPIO_DT_SPEC_GET_OR(HV2_EN_NODE, gpios, {0});
 
+/* ADS1232 ADC nodes */
+#define ADC_HV1_NODE DT_NODELABEL(ads1232_hv1)
+#define ADC_HV2_NODE DT_NODELABEL(ads1232_hv2)
+static const struct device *adc_hv1 = DEVICE_DT_GET_OR_NULL(ADC_HV1_NODE);
+static const struct device *adc_hv2 = DEVICE_DT_GET_OR_NULL(ADC_HV2_NODE);
+
+static uint8_t adc1_gain_val = 1;
+static int32_t adc1_last_raw;
+static uint8_t adc2_gain_val = 1;
+static int32_t adc2_last_raw;
+
 /* Saved DAC codes for status display */
 static uint32_t dac1_code;
 static uint32_t dac2_code;
@@ -184,6 +195,132 @@ static int cmd_dac2(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+/* ============== ADC ============== */
+
+static int cmd_adc1_read(const struct shell *sh, size_t argc, char **argv)
+{
+	struct sensor_value val;
+	int ret;
+
+	if (!device_is_ready(adc_hv1)) {
+		shell_fprintf(sh, SHELL_ERROR, "ADC1 not ready\n");
+		return -ENODEV;
+	}
+
+	ret = sensor_sample_fetch(adc_hv1);
+	if (ret < 0) {
+		shell_fprintf(sh, SHELL_ERROR, "ADC1 fetch failed: %d\n", ret);
+		return ret;
+	}
+
+	sensor_channel_get(adc_hv1, SENSOR_CHAN_VOLTAGE, &val);
+	adc1_last_raw = val.val1;
+
+	shell_fprintf(sh, SHELL_NORMAL,
+		"ADC1: raw=%d  %.3f V  (gain=%u)\n",
+		val.val1, sensor_value_to_double(&val), adc1_gain_val);
+	return 0;
+}
+
+static int cmd_adc2_read(const struct shell *sh, size_t argc, char **argv)
+{
+	struct sensor_value val;
+	int ret;
+
+	if (!device_is_ready(adc_hv2)) {
+		shell_fprintf(sh, SHELL_ERROR, "ADC2 not ready\n");
+		return -ENODEV;
+	}
+
+	ret = sensor_sample_fetch(adc_hv2);
+	if (ret < 0) {
+		shell_fprintf(sh, SHELL_ERROR, "ADC2 fetch failed: %d\n", ret);
+		return ret;
+	}
+
+	sensor_channel_get(adc_hv2, SENSOR_CHAN_VOLTAGE, &val);
+	adc2_last_raw = val.val1;
+
+	shell_fprintf(sh, SHELL_NORMAL,
+		"ADC2: raw=%d  %.3f V  (gain=%u)\n",
+		val.val1, sensor_value_to_double(&val), adc2_gain_val);
+	return 0;
+}
+
+static int cmd_adc1_gain(const struct shell *sh, size_t argc, char **argv)
+{
+	uint32_t gain;
+	struct sensor_value val;
+
+	if (argc < 2) {
+		shell_fprintf(sh, SHELL_ERROR,
+			"Usage: adc1 gain <1|2|64|128>\n");
+		return -EINVAL;
+	}
+
+	gain = strtoul(argv[1], NULL, 0);
+	if (gain != 1 && gain != 2 && gain != 64 && gain != 128) {
+		shell_fprintf(sh, SHELL_ERROR,
+			"Invalid gain %u (valid: 1, 2, 64, 128)\n", gain);
+		return -EINVAL;
+	}
+
+	if (!device_is_ready(adc_hv1)) {
+		shell_fprintf(sh, SHELL_ERROR, "ADC1 not ready\n");
+		return -ENODEV;
+	}
+
+	val.val1 = (int32_t)gain;
+	val.val2 = 0;
+	sensor_attr_set(adc_hv1, SENSOR_CHAN_ALL, SENSOR_ATTR_PRIV_START, &val);
+	adc1_gain_val = (uint8_t)gain;
+
+	shell_fprintf(sh, SHELL_NORMAL, "ADC1 gain set to %u\n", gain);
+	return 0;
+}
+
+static int cmd_adc2_gain(const struct shell *sh, size_t argc, char **argv)
+{
+	uint32_t gain;
+	struct sensor_value val;
+
+	if (argc < 2) {
+		shell_fprintf(sh, SHELL_ERROR,
+			"Usage: adc2 gain <1|2|64|128>\n");
+		return -EINVAL;
+	}
+
+	gain = strtoul(argv[1], NULL, 0);
+	if (gain != 1 && gain != 2 && gain != 64 && gain != 128) {
+		shell_fprintf(sh, SHELL_ERROR,
+			"Invalid gain %u (valid: 1, 2, 64, 128)\n", gain);
+		return -EINVAL;
+	}
+
+	if (!device_is_ready(adc_hv2)) {
+		shell_fprintf(sh, SHELL_ERROR, "ADC2 not ready\n");
+		return -ENODEV;
+	}
+
+	val.val1 = (int32_t)gain;
+	val.val2 = 0;
+	sensor_attr_set(adc_hv2, SENSOR_CHAN_ALL, SENSOR_ATTR_PRIV_START, &val);
+	adc2_gain_val = (uint8_t)gain;
+
+	shell_fprintf(sh, SHELL_NORMAL, "ADC2 gain set to %u\n", gain);
+	return 0;
+}
+
+static int cmd_adc_status(const struct shell *sh, size_t argc, char **argv)
+{
+	shell_fprintf(sh, SHELL_NORMAL,
+		"ADC1: gain=%u  last_raw=%d\n"
+		"ADC2: gain=%u  last_raw=%d\n",
+		adc1_gain_val, adc1_last_raw,
+		adc2_gain_val, adc2_last_raw);
+	return 0;
+}
+
 /* ============== Shell Registration ============== */
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_sht31,
@@ -209,6 +346,22 @@ SHELL_CMD_REGISTER(hv2, &sub_hv2, "HV2 run/stop control", NULL);
 SHELL_CMD_REGISTER(hv_status, NULL, "Show HV state and DAC codes", cmd_hv_status);
 SHELL_CMD_REGISTER(dac1, NULL, "Set HV1 DAC code <0-65535>", cmd_dac1);
 SHELL_CMD_REGISTER(dac2, NULL, "Set HV2 DAC code <0-65535>", cmd_dac2);
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_adc1,
+	SHELL_CMD(read, NULL, "Read ADC1 raw value", cmd_adc1_read),
+	SHELL_CMD(gain, NULL, "Set ADC1 PGA gain <1|2|64|128>", cmd_adc1_gain),
+	SHELL_SUBCMD_SET_END
+);
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_adc2,
+	SHELL_CMD(read, NULL, "Read ADC2 raw value", cmd_adc2_read),
+	SHELL_CMD(gain, NULL, "Set ADC2 PGA gain <1|2|64|128>", cmd_adc2_gain),
+	SHELL_SUBCMD_SET_END
+);
+
+SHELL_CMD_REGISTER(adc1, &sub_adc1, "ADS1232 ADC channel 1", NULL);
+SHELL_CMD_REGISTER(adc2, &sub_adc2, "ADS1232 ADC channel 2", NULL);
+SHELL_CMD_REGISTER(adc_status, NULL, "Show ADC configuration", cmd_adc_status);
 
 int main(void)
 {
@@ -273,6 +426,18 @@ int main(void)
 			printk("DAC2 init write failed: %d\n", ret);
 		}
 		dac2_code = 0;
+	}
+
+	if (!device_is_ready(adc_hv1)) {
+		printk("ADC1: NOT READY\n");
+	} else {
+		printk("ADC1: ready on PE11/PE12/PE13 (GPIO bit-bang)\n");
+	}
+
+	if (!device_is_ready(adc_hv2)) {
+		printk("ADC2: NOT READY\n");
+	} else {
+		printk("ADC2: ready on PF6/PF7/PF8 (GPIO bit-bang)\n");
 	}
 
 	printk("Type 'help' for commands\n");

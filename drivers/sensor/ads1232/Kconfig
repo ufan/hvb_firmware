@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config ADS1232
+	bool "ADS1232 24-bit delta-sigma ADC driver"
+	default y
+	depends on DT_HAS_TI_ADS1232_ENABLED
+	help
+	  Enable the TI ADS1232 24-bit delta-sigma ADC driver.
+	  Uses GPIO bit-bang protocol (not SPI).

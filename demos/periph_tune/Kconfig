@@ -5,5 +5,6 @@ osource "$(srctree)/Kconfig"
 menu "HVB firmware shared code"
 
 osource "$(APPLICATION_SOURCE_DIR)/../../drivers/dac/ad5541/Kconfig"
+osource "$(APPLICATION_SOURCE_DIR)/../../drivers/sensor/ads1232/Kconfig"
 
 endmenu
