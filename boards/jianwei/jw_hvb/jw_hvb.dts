@@ -81,6 +81,14 @@
 	status = "okay";
 };
 
+&gpioa {
+	status = "okay";
+};
+
+&gpiob {
+	status = "okay";
+};
+
 &usart3 {
 	/*
 	 * The debug header nets are named USART1_TX/RX in the schematic, but
@@ -106,7 +114,7 @@
 
 /* SPI1 — HV2 AD5541 DAC */
 &spi1 {
-	pinctrl-0 = <&spi1_nss_pa4 &spi1_sck_pa5 &spi1_mosi_pa7>;
+	pinctrl-0 = <&spi1_sck_pa5 &spi1_mosi_pa7>;
 	pinctrl-names = "default";
 	cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>;
 	status = "okay";
@@ -120,7 +128,7 @@
 
 /* SPI2 — HV1 AD5541 DAC */
 &spi2 {
-	pinctrl-0 = <&spi2_nss_pb12 &spi2_sck_pb13 &spi2_mosi_pb15>;
+	pinctrl-0 = <&spi2_sck_pb13 &spi2_mosi_pb15>;
 	pinctrl-names = "default";
 	cs-gpios = <&gpiob 12 GPIO_ACTIVE_LOW>;
 	status = "okay";

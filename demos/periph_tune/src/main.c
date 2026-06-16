@@ -107,11 +107,14 @@ static int cmd_hv_status(const struct shell *sh, size_t argc, char **argv)
 	int hv1_state = gpio_pin_get_dt(&hv1_en);
 	int hv2_state = gpio_pin_get_dt(&hv2_en);
 
+	const char *hv1_str = (hv1_state > 0) ? "ON" : (hv1_state == 0) ? "OFF" : "ERR";
+	const char *hv2_str = (hv2_state > 0) ? "ON" : (hv2_state == 0) ? "OFF" : "ERR";
+
 	shell_fprintf(sh, SHELL_NORMAL,
 		"HV1: %s (PD9=%d)  DAC1: %u\n"
 		"HV2: %s (PC4=%d)  DAC2: %u\n",
-		hv1_state ? "ON" : "OFF", hv1_state, dac1_code,
-		hv2_state ? "ON" : "OFF", hv2_state, dac2_code);
+		hv1_str, hv1_state, dac1_code,
+		hv2_str, hv2_state, dac2_code);
 	return 0;
 }
 
@@ -119,6 +122,7 @@ static int cmd_hv_status(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_dac1(const struct shell *sh, size_t argc, char **argv)
 {
+	int ret;
 	uint32_t code;
 
 	if (argc < 2) {
@@ -137,7 +141,11 @@ static int cmd_dac1(const struct shell *sh, size_t argc, char **argv)
 		return -ENODEV;
 	}
 
-	dac_write_value(dac_hv1, 0, code);
+	ret = dac_write_value(dac_hv1, 0, code);
+	if (ret < 0) {
+		shell_fprintf(sh, SHELL_ERROR, "DAC1 write failed: %d\n", ret);
+		return ret;
+	}
 	dac1_code = code;
 	shell_fprintf(sh, SHELL_NORMAL, "DAC1: %u (%.3f V)\n", code,
 		code * 5.0 / 65535.0);
@@ -146,6 +154,7 @@ static int cmd_dac1(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_dac2(const struct shell *sh, size_t argc, char **argv)
 {
+	int ret;
 	uint32_t code;
 
 	if (argc < 2) {
@@ -164,7 +173,11 @@ static int cmd_dac2(const struct shell *sh, size_t argc, char **argv)
 		return -ENODEV;
 	}
 
-	dac_write_value(dac_hv2, 0, code);
+	ret = dac_write_value(dac_hv2, 0, code);
+	if (ret < 0) {
+		shell_fprintf(sh, SHELL_ERROR, "DAC2 write failed: %d\n", ret);
+		return ret;
+	}
 	dac2_code = code;
 	shell_fprintf(sh, SHELL_NORMAL, "DAC2: %u (%.3f V)\n", code,
 		code * 5.0 / 65535.0);
@@ -239,14 +252,26 @@ int main(void)
 	};
 
 	if (device_is_ready(dac_hv1)) {
-		dac_channel_setup(dac_hv1, &dac_cfg);
-		dac_write_value(dac_hv1, 0, 0);
+		ret = dac_channel_setup(dac_hv1, &dac_cfg);
+		if (ret < 0) {
+			printk("DAC1 setup failed: %d\n", ret);
+		}
+		ret = dac_write_value(dac_hv1, 0, 0);
+		if (ret < 0) {
+			printk("DAC1 init write failed: %d\n", ret);
+		}
 		dac1_code = 0;
 	}
 
 	if (device_is_ready(dac_hv2)) {
-		dac_channel_setup(dac_hv2, &dac_cfg);
-		dac_write_value(dac_hv2, 0, 0);
+		ret = dac_channel_setup(dac_hv2, &dac_cfg);
+		if (ret < 0) {
+			printk("DAC2 setup failed: %d\n", ret);
+		}
+		ret = dac_write_value(dac_hv2, 0, 0);
+		if (ret < 0) {
+			printk("DAC2 init write failed: %d\n", ret);
+		}
 		dac2_code = 0;
 	}
 
