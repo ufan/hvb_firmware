@@ -24,6 +24,7 @@ TEST_CASE("faultStr") {
 TEST_CASE("protCompact") {
     CHECK(protCompact(ProtectionMode::Disabled,          OutputAction::None)             == "Disabled");
     CHECK(protCompact(ProtectionMode::FlagOnly,          OutputAction::None)             == "FlagOnly");
+    CHECK(protCompact(ProtectionMode::ApplyOutputAction, OutputAction::DisableGraceful)  == "Apply/Dis-Gr");
     CHECK(protCompact(ProtectionMode::ApplyOutputAction, OutputAction::DisableImmediate) == "Apply/Dis-Im");
     CHECK(protCompact(ProtectionMode::ApplyOutputAction, OutputAction::ForceOutputZero)  == "Apply/Force0");
     CHECK(protCompact(ProtectionMode::ApplyOutputAction, OutputAction::Clamp)            == "Apply/Clamp");
@@ -40,4 +41,10 @@ TEST_CASE("fmtCurrentUA") {
     CHECK(fmtCurrentUA(32767) == "+32.767 uA");
     CHECK(fmtCurrentUA(0)     == "+0.000 uA");
     CHECK(fmtCurrentUA(-1000) == "-1.000 uA");
+}
+
+TEST_CASE("fmtInterval") {
+    CHECK(fmtInterval(0)   == "0.0 s");
+    CHECK(fmtInterval(10)  == "1.0 s");
+    CHECK(fmtInterval(100) == "10.0 s");
 }
