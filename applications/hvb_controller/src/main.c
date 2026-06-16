@@ -74,6 +74,7 @@ static int init_modbus_server(void)
 int main(void)
 {
 	struct vc_domain *domain;
+	struct vc_system_snapshot system_snapshot;
 	const struct vc_variant_profile *variant;
 	int ret;
 
@@ -99,6 +100,7 @@ int main(void)
 		printk("Failed to create voltage-control domain\n");
 		return 0;
 	}
+	vc_domain_get_system_snapshot(domain, &system_snapshot);
 
 	mb = vc_mb_adapter_create(domain);
 	if (!mb) {
@@ -116,7 +118,7 @@ int main(void)
 	       " variant=%u channels=%u protocol=%u.%u\n",
 	       vc_domain_get_variant_id(domain),
 	       vc_domain_get_supported_channel_count(domain),
-	       2, 0);
+	       system_snapshot.protocol_major, system_snapshot.protocol_minor);
 
 	while (1) {
 		ret = gpio_pin_toggle_dt(&sys_run);

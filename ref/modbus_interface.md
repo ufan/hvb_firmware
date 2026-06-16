@@ -11,7 +11,7 @@ Product-domain behavior is specified separately in `docs/superpowers/specs/2026-
 
 The shared register-offset header `include/regmap/hvb_regs.h` is the single source of truth for register layout. Both firmware and host application can include or parse this header.
 
-Protocol major version `2` is not backward-compatible with the older register map. Host tools must read the protocol version before interpreting registers.
+Protocol major version `2` is not backward-compatible with the older register map. Host tools must read the protocol version before interpreting registers. Protocol minor version `1` adds Calibration Mode and its calibration-only registers.
 
 ## 2. Architecture Boundary
 
@@ -81,6 +81,8 @@ Protocol v2 fixed units for non-voltage/current quantities:
 | Calibration B | x1000, INT16, default 0 |
 | Safe-band percentage | UINT16 percent, range 0-50, default 10 |
 
+Signed 32-bit raw ADC values are split across two consecutive 16-bit registers with `_HI` / `_LO` suffixes: `value = sign_extend((HI << 16) | LO)`.
+
 ## 6. Address Space
 
 ```text
@@ -127,6 +129,7 @@ There is no distinction between supported-but-inactive and unsupported in protoc
 |---:|---|---|
 | 0 | Normal | Domain Operating Mode value; see domain behavior spec |
 | 1 | Automatic | Domain Operating Mode value; see domain behavior spec |
+| 2 | Calibration | Volatile factory/service mode; requires Calibration Unlock and is not persisted |
 
 Runtime semantics are defined in the domain behavior spec.
 
@@ -215,6 +218,7 @@ Recovery behavior is defined in the domain behavior spec.
 |---:|---:|---|
 | 0 | 0x0001 | Automatic mode supported |
 | 1 | 0x0002 | Environment sensor present |
+| 2 | 0x0004 | Calibration Mode supported |
 
 ### 8.10 Channel Capability Flags
 
@@ -223,6 +227,27 @@ Recovery behavior is defined in the domain behavior spec.
 | 0 | 0x0001 | Separate Output Enable control present |
 | 1 | 0x0002 | Current measurement present |
 | 2 | 0x0004 | Automatic recovery supported |
+
+### 8.11 Calibration Sample Status
+
+| Value | Name | Meaning |
+|---:|---|---|
+| 0 | No valid sample | No captured raw sample is available since Calibration Mode entry or channel disable |
+| 1 | Sample valid | Raw ADC voltage/current registers contain a valid captured sample |
+| 2 | Sample busy | A raw sample command is in progress |
+| 3 | Sample error | The last raw sample command failed |
+
+### 8.12 Calibration Unlock
+
+Calibration Unlock is a volatile global guard for entering Calibration Mode. It is not cryptographic authentication.
+
+| Step | Register | Value |
+|---:|---|---:|
+| 1 | Calibration Unlock | `0xCA1B` |
+| 2 | Calibration Unlock | `0xA11B` |
+| 3 | System Operating Mode | `2` |
+
+A wrong Calibration Unlock value clears unlock progress. Successful entry to Calibration Mode clears unlock progress. The Calibration Unlock register always reads as `0`.
 
 ## 9. Input Registers - FC04
 
@@ -233,7 +258,7 @@ Input registers expose read-only domain snapshots maintained by services. Readin
 | Offset | Abs | Name | Type | Description |
 |---:|---:|---|---|---|
 | 0 | 0 | Protocol Major | UINT16 | Value 2 |
-| 1 | 1 | Protocol Minor | UINT16 | Value 0 |
+| 1 | 1 | Protocol Minor | UINT16 | Value 1 when Calibration Mode registers are supported |
 | 2 | 2 | Variant ID | UINT16 | Board/product variant identifier |
 | 3 | 3 | System Capability Flags | UINT16 | See system capability flags |
 | 4 | 4 | Supported Channel Count | UINT16 | Number of channels addressable by this variant |
@@ -265,7 +290,13 @@ Input registers expose read-only domain snapshots maintained by services. Readin
 | 9 | Last Fault Timestamp HI | UINT16 | Uptime when last fault event was recorded, high word |
 | 10 | Last Fault Timestamp LO | UINT16 | Uptime when last fault event was recorded, low word |
 | 11 | Channel Capability Flags | UINT16 | See channel capability flags |
-| 12-39 | Reserved | UINT16 | Read as 0 |
+| 12 | Raw ADC Voltage HI | INT32_HI | Calibration Mode only, captured raw voltage ADC code |
+| 13 | Raw ADC Voltage LO | INT32_LO | Calibration Mode only, captured raw voltage ADC code |
+| 14 | Raw ADC Current HI | INT32_HI | Calibration Mode only, captured raw current ADC code |
+| 15 | Raw ADC Current LO | INT32_LO | Calibration Mode only, captured raw current ADC code |
+| 16 | Calibration Sample Status | UINT16 | Calibration Mode only, see calibration sample status enum |
+| 17 | Raw DAC Readback | UINT16 | Calibration Mode only, last written native DAC code |
+| 18-39 | Reserved | UINT16 | Read as 0 |
 
 ## 10. Holding Registers - FC03 / FC06
 
@@ -275,7 +306,7 @@ Holding registers expose writable configuration and self-clearing commands. Comm
 
 | Offset | Abs | Name | Access | Type | Range | Description |
 |---:|---:|---|---|---|---|---|
-| 0 | 0 | Operating Mode | RW | UINT16 | 0-1 | Normal or Automatic |
+| 0 | 0 | Operating Mode | RW | UINT16 | 0-2 | Normal, Automatic, or Calibration |
 | 1 | 1 | Slave Address | RW | UINT16 | 0-247 | Effective after save and restart |
 | 2 | 2 | Baud Rate Code | RW | UINT16 | 0-1 | 0 = 115200, 1 = 9600; effective after save and restart |
 | 3 | 3 | Recovery Policy Mode | RW | UINT16 | 0-3 | System-wide recovery policy |
@@ -312,7 +343,12 @@ Holding registers expose writable configuration and self-clearing commands. Comm
 | 18 | Measured Voltage Calibration B | RW | INT16 | x1000 | Voltage measurement offset |
 | 19 | Measured Current Calibration K | RW | UINT16 | x10000 | Current measurement slope |
 | 20 | Measured Current Calibration B | RW | INT16 | x1000 | Current measurement offset |
-| 21-38 | Reserved | R | UINT16 | - | Read as 0, reject writes |
+| 21 | Calibration Output Enable | RW | UINT16 | 0-1 | Calibration Mode only; readable state, enables raw output gate for this channel |
+| 22 | Raw DAC Code | RW | UINT16 | variant-defined | Calibration Mode only; native DAC code |
+| 23 | Calibration Sample Command | RW | UINT16 | command | Calibration Mode only; captures raw voltage/current ADC sample, reads as 0 after execution |
+| 24 | Calibration Commit Command | RW | UINT16 | command | Calibration Mode only; persists this channel's calibration coefficients, reads as 0 after execution |
+| 25 | Calibration Max Raw DAC Limit | RW | UINT16 | variant-defined | Calibration Mode only; optional temporary limit at or below variant max |
+| 26-38 | Reserved | R | UINT16 | - | Read as 0, reject writes |
 | 39 | Channel Param Action | RW | UINT16 | enum | Save/load/factory reset/software reset for this channel |
 
 ## 11. Adapter Requirements
@@ -328,8 +364,14 @@ The Modbus adapter must translate register access into protocol-neutral domain o
 | Reserved registers | Writes return exception `0x02`; reads return 0 where specified |
 | Unsupported channels | Access returns exception `0x02` |
 | Self-clearing commands | Command registers read back as 0 after execution |
+| Calibration-only access | Raw ADC/DAC/debug registers reject access outside Calibration Mode according to exception mapping |
+| Calibration coefficient writes | Coefficient registers are readable in all modes and writable only in Calibration Mode |
+| Calibration unlock | `CAL_UNLOCK` writes update volatile unlock progress and always read back 0 |
+| Calibration mode persistence | System save must not persist Calibration Mode as boot operating mode |
 
 Product behavior for operating modes, recovery, safe bands, fault handling, target changes, persistence, and calibration is defined in `docs/superpowers/specs/2026-06-15-voltage-control-domain-behavior.md`.
+
+Calibration command registers use value `1` to execute the command unless a future minor version assigns additional command values. Value `0` is accepted as no-op and reads back as `0`. Other values return exception `0x03` Illegal Data Value.
 
 ## 12. Exception Mapping
 
@@ -352,6 +394,7 @@ Broadcast writes are processed without a response. Broadcast reads are ignored a
 | Physical channels | 2, fixed by firmware/hardware configuration |
 | SYS_MOD selection | Not used initially |
 | Default operating mode | Normal |
+| Calibration Mode | Supported in protocol 2.1, volatile, unlock required |
 | Default recovery policy | Manual latch |
 | Default safe-band percentages | 10 for voltage, 10 for current |
 | OTA block | Reserved, not implemented initially |
@@ -359,7 +402,12 @@ Broadcast writes are processed without a response. Broadcast reads are ignored a
 
 ## 14. Reserved Extension Block
 
-Holding registers 200-279 are reserved for future extension. Initial firmware should reject writes to this block with `0x02` unless a later spec assigns behavior.
+Protocol `2.1` assigns the first extension holding register for Calibration Unlock.
+
+| Offset | Abs | Name | Access | Type | Range | Description |
+|---:|---:|---|---|---|---|---|
+| 0 | 200 | Calibration Unlock | RW | UINT16 | command | Global two-step guard for entering Calibration Mode; reads as 0 |
+| 1-79 | 201 | Reserved | R | UINT16 | - | Read as 0, reject writes |
 
 Planned extension candidates include OTA, variant descriptor strings, extended calibration tables, and protocol bridge diagnostics.
 
@@ -371,3 +419,4 @@ Planned extension candidates include OTA, variant descriptor strings, extended c
 | Firmware version encoding | Host tools need to display versions consistently |
 | Whether automatic mode behavior ships in the first firmware slice | Registers can exist before behavior is fully enabled, but host behavior must be clear |
 | Variant-specific output/measurement calibration defaults | Factory reset needs authoritative defaults |
+| Production factory handoff registers | Deferred until calibration-complete enforcement is designed |

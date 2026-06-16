@@ -6,9 +6,12 @@
 
 #include "voltage_control/variant.h"
 
+#include "regmap/hvb_regs.h"
+
 #define HVB_VARIANT_ID 1
 
-#define HVB_SYS_CAP_FLAGS (0x0003U)
+#define HVB_SYS_CAP_FLAGS (SYS_CAP_AUTOMATIC_MODE | SYS_CAP_ENV_SENSOR | \
+			   SYS_CAP_CALIBRATION_MODE)
 #define HVB_CHAN_CAP_FLAGS (0x0007U)
 
 #define HVB_NUM_CHANNELS 2
@@ -18,6 +21,7 @@
 #define HVB_MAX_VOLTAGE_RAW 20000
 #define HVB_MIN_VOLTAGE_RAW 0
 #define HVB_MAX_CURRENT_RAW 32767
+#define HVB_MAX_RAW_DAC_CODE 0xFFFFU
 
 static const struct vc_variant_profile hvb_profile = {
 	.variant_id = HVB_VARIANT_ID,
@@ -30,19 +34,21 @@ static const struct vc_variant_profile hvb_profile = {
 	.max_voltage_raw = HVB_MAX_VOLTAGE_RAW,
 	.min_voltage_raw = HVB_MIN_VOLTAGE_RAW,
 	.max_current_raw = HVB_MAX_CURRENT_RAW,
+	.max_raw_dac_code = HVB_MAX_RAW_DAC_CODE,
+	.calibration_output_disable_confirmed = true,
 	.default_channel_config = {
 		.configured_target_voltage = 0,
-		.ramp_up_step = 0,
-		.ramp_up_interval = 0,
-		.ramp_down_step = 0,
-		.ramp_down_interval = 0,
+		.ramp_up_step = 50,
+		.ramp_up_interval = 1,
+		.ramp_down_step = 50,
+		.ramp_down_interval = 1,
 		.voltage_protection_mode = VC_PROTECTION_MODE_DISABLED,
 		.voltage_protection_output_action = VC_OUTPUT_ACTION_NONE,
 		.voltage_limit_threshold = HVB_MAX_VOLTAGE_RAW,
 		.current_protection_mode = VC_PROTECTION_MODE_DISABLED,
 		.current_protection_output_action = VC_OUTPUT_ACTION_NONE,
 		.current_limit_threshold = HVB_MAX_CURRENT_RAW,
-		.auto_derate_step = 0,
+		.auto_derate_step = 3,
 		.save_target_policy = 0,
 		.output_calib_k = 10000,
 		.output_calib_b = 0,
@@ -56,9 +62,9 @@ static const struct vc_variant_profile hvb_profile = {
 		.slave_address = 1,
 		.baud_rate_code = VC_BAUD_RATE_115200,
 		.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
-		.auto_retry_delay = 0,
-		.auto_retry_max_count = 0,
-		.auto_retry_window = 0,
+		.auto_retry_delay = 1,
+		.auto_retry_max_count = 5,
+		.auto_retry_window = 5,
 		.voltage_safe_band_pct = 10,
 		.current_safe_band_pct = 10,
 	},

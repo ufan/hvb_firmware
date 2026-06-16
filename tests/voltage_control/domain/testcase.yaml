@@ -1,0 +1,4 @@
+tests:
+  voltage_control.domain:
+    platform_allow: native_posix
+    tags: voltage_control

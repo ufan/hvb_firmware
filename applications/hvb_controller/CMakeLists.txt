@@ -2,6 +2,9 @@
 
 cmake_minimum_required(VERSION 3.20.0)
 
+get_filename_component(HVB_FIRMWARE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOLUTE)
+list(APPEND ZEPHYR_EXTRA_MODULES ${HVB_FIRMWARE_ROOT})
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(hvb_controller)
 
