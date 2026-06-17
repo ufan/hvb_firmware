@@ -19,16 +19,9 @@ struct ad5541_config {
 	struct spi_dt_spec bus;
 };
 
-struct ad5541_data {
-	uint32_t channel_count;
-	uint32_t resolution;
-};
-
 static int ad5541_channel_setup(const struct device *dev,
 				const struct dac_channel_cfg *channel_cfg)
 {
-	struct ad5541_data *data = dev->data;
-
 	if (channel_cfg->channel_id != 0) {
 		LOG_ERR("Unsupported channel %u", channel_cfg->channel_id);
 		return -ENOTSUP;
@@ -38,8 +31,6 @@ static int ad5541_channel_setup(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	data->channel_count = 1;
-	data->resolution = channel_cfg->resolution;
 	return 0;
 }
 
@@ -71,15 +62,11 @@ static int ad5541_write_value(const struct device *dev, uint8_t channel,
 static int ad5541_init(const struct device *dev)
 {
 	const struct ad5541_config *config = dev->config;
-	struct ad5541_data *data = dev->data;
 
 	if (!spi_is_ready_dt(&config->bus)) {
 		LOG_ERR("SPI bus not ready");
 		return -ENODEV;
 	}
-
-	data->channel_count = 1;
-	data->resolution = 16;
 
 	LOG_DBG("AD5541 initialized");
 	return 0;
@@ -100,10 +87,8 @@ static const struct dac_driver_api ad5541_api = {
 			0),						\
 	};								\
 									\
-	static struct ad5541_data ad5541_data_##n;			\
-									\
 	DEVICE_DT_INST_DEFINE(n, ad5541_init, NULL,			\
-		&ad5541_data_##n, &ad5541_config_##n,			\
+		NULL, &ad5541_config_##n,				\
 		POST_KERNEL, CONFIG_DAC_INIT_PRIORITY,			\
 		&ad5541_api);
 
