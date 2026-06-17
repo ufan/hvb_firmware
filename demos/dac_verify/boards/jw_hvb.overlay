@@ -1,0 +1,3 @@
+&ads1232_hv1 {
+	status = "okay";
+};
