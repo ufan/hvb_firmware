@@ -93,14 +93,13 @@ static int cmd_hv(const struct shell *sh, size_t argc, char **argv)
 
 /* ---- watch support ---- */
 
-static volatile bool watch_stop;
-
-static void watch_bypass_cb(const struct shell *sh, uint8_t *data, size_t len)
+static bool watch_has_key(const struct shell *sh)
 {
-	ARG_UNUSED(data);
-	ARG_UNUSED(len);
-	watch_stop = true;
-	shell_set_bypass(sh, NULL);
+	uint8_t c;
+	size_t cnt = 0;
+
+	sh->iface->api->read(sh->iface, &c, 1, &cnt);
+	return cnt > 0;
 }
 
 /* ---- adc read / adc gain <g> ---- */
@@ -162,11 +161,9 @@ static int cmd_adc_watch(const struct shell *sh, size_t argc, char **argv)
 		}
 	}
 
-	watch_stop = false;
-	shell_set_bypass(sh, watch_bypass_cb);
 	shell_fprintf(sh, SHELL_NORMAL, "press any key to stop\n");
 
-	while (!watch_stop) {
+	while (true) {
 		adc_seq.channels = BIT(0) | BIT(1);
 		int ret = adc_read(adc_dev, &adc_seq);
 
@@ -183,7 +180,12 @@ static int cmd_adc_watch(const struct shell *sh, size_t argc, char **argv)
 					gain_val);
 			}
 		}
-		k_sleep(K_MSEC(interval_ms));
+		for (int i = 0; i < interval_ms / 50; i++) {
+			k_sleep(K_MSEC(50));
+			if (watch_has_key(sh)) {
+				return 0;
+			}
+		}
 	}
 	return 0;
 }

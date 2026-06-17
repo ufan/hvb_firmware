@@ -11,10 +11,35 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/dac.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/sys/printk.h>
+
+/*
+ * On warm reset the SHT31 stays in periodic mode from the previous session.
+ * The Zephyr sht3xd driver init sends CLEAR_STATUS which is NACKed in that
+ * state.  Send a break command before the driver runs to force idle mode.
+ */
+#define SHT3XD_CMD_BREAK 0x3093
+#define SHT3XD_I2C_ADDR  0x44
+
+static int sht31_pre_init(void)
+{
+	const struct device *i2c = DEVICE_DT_GET(DT_NODELABEL(i2c1));
+
+	if (!device_is_ready(i2c)) {
+		return -ENODEV;
+	}
+	uint8_t cmd[2] = { SHT3XD_CMD_BREAK >> 8, SHT3XD_CMD_BREAK & 0xFF };
+
+	i2c_write(i2c, cmd, sizeof(cmd), SHT3XD_I2C_ADDR);
+	k_busy_wait(1000);
+	return 0;
+}
+
+SYS_INIT(sht31_pre_init, POST_KERNEL, 80);
 
 /* SHT31 via existing Zephyr sht3xd driver on I2C1 */
 #define SHT31_NODE DT_CHILD(DT_NODELABEL(i2c1), sht3xd_44)
@@ -37,14 +62,13 @@ static uint32_t dac2_code;
 
 /* ============== Watch support ============== */
 
-static volatile bool watch_stop;
-
-static void watch_bypass_cb(const struct shell *sh, uint8_t *data, size_t len)
+static bool watch_has_key(const struct shell *sh)
 {
-	ARG_UNUSED(data);
-	ARG_UNUSED(len);
-	watch_stop = true;
-	shell_set_bypass(sh, NULL);
+	uint8_t c;
+	size_t cnt = 0;
+
+	sh->iface->api->read(sh->iface, &c, 1, &cnt);
+	return cnt > 0;
 }
 
 /* ============== SHT31 ============== */
@@ -98,11 +122,9 @@ static int cmd_sht31_watch(const struct shell *sh, size_t argc, char **argv)
 		return -ENODEV;
 	}
 
-	watch_stop = false;
-	shell_set_bypass(sh, watch_bypass_cb);
 	shell_fprintf(sh, SHELL_NORMAL, "press any key to stop\n");
 
-	while (!watch_stop) {
+	while (true) {
 		struct sensor_value temp, hum;
 		int ret = sensor_sample_fetch(sht31_dev);
 
@@ -118,7 +140,12 @@ static int cmd_sht31_watch(const struct shell *sh, size_t argc, char **argv)
 				sensor_value_to_double(&temp),
 				sensor_value_to_double(&hum));
 		}
-		k_sleep(K_MSEC(interval_ms));
+		for (int i = 0; i < interval_ms / 50; i++) {
+			k_sleep(K_MSEC(50));
+			if (watch_has_key(sh)) {
+				return 0;
+			}
+		}
 	}
 	return 0;
 }
