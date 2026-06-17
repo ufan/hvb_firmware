@@ -91,6 +91,18 @@ static int cmd_hv(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+/* ---- watch support ---- */
+
+static volatile bool watch_stop;
+
+static void watch_bypass_cb(const struct shell *sh, uint8_t *data, size_t len)
+{
+	ARG_UNUSED(data);
+	ARG_UNUSED(len);
+	watch_stop = true;
+	shell_set_bypass(sh, NULL);
+}
+
 /* ---- adc read / adc gain <g> ---- */
 
 static int cmd_adc_gain(const struct shell *sh, size_t argc, char **argv)
@@ -139,11 +151,49 @@ static int cmd_adc_read_both(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+static int cmd_adc_watch(const struct shell *sh, size_t argc, char **argv)
+{
+	int interval_ms = 1000;
+
+	if (argc >= 2) {
+		interval_ms = atoi(argv[1]);
+		if (interval_ms < 100) {
+			interval_ms = 100;
+		}
+	}
+
+	watch_stop = false;
+	shell_set_bypass(sh, watch_bypass_cb);
+	shell_fprintf(sh, SHELL_NORMAL, "press any key to stop\n");
+
+	while (!watch_stop) {
+		adc_seq.channels = BIT(0) | BIT(1);
+		int ret = adc_read(adc_dev, &adc_seq);
+
+		if (ret < 0) {
+			shell_fprintf(sh, SHELL_ERROR, "read: %d\n", ret);
+		} else {
+			for (int ch = 0; ch < 2; ch++) {
+				int64_t mv = (int64_t)adc_buf[ch] * 5000LL /
+					     ((int64_t)gain_val * 8388607LL);
+				shell_fprintf(sh, SHELL_NORMAL,
+					"ch%d: raw=0x%08x  %" PRId64
+					" mV  (gain=%d)\n",
+					ch, (uint32_t)adc_buf[ch], mv,
+					gain_val);
+			}
+		}
+		k_sleep(K_MSEC(interval_ms));
+	}
+	return 0;
+}
+
 /* ---- shell registration ---- */
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_adc,
 	SHELL_CMD(read, NULL, "Read both ADC channels", cmd_adc_read_both),
 	SHELL_CMD_ARG(gain, NULL, "gain [<1|2>]", cmd_adc_gain, 1, 1),
+	SHELL_CMD_ARG(watch, NULL, "Watch ADC [interval_ms]", cmd_adc_watch, 1, 1),
 	SHELL_SUBCMD_SET_END
 );
 
