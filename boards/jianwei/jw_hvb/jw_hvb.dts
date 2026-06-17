@@ -34,15 +34,18 @@
 		};
 	};
 
+	/* HV enable outputs — ACTIVE_LOW (safety-critical: physical HIGH = disabled, LOW = enabled)
+	   GPIO_OUTPUT_INACTIVE at boot drives pins HIGH, keeping HV modules safely OFF until
+	   explicitly enabled by firmware. */
 	hv_enables {
 		compatible = "gpio-leds";
 
 		hv1_en: hv1_en {
-			gpios = <&gpiod 9 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpiod 9 GPIO_ACTIVE_LOW>;
 		};
 
 		hv2_en: hv2_en {
-			gpios = <&gpioc 4 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpioc 4 GPIO_ACTIVE_LOW>;
 		};
 	};
 
@@ -57,6 +60,7 @@
 		a1-gpios = <&gpioe 7 GPIO_ACTIVE_HIGH>;
 		gain0-gpios = <&gpioh 12 GPIO_ACTIVE_HIGH>;
 		gain1-gpios = <&gpioe 10 GPIO_ACTIVE_HIGH>;
+		gain = <1>;
 	};
 
 	/* HV2 ADS1232 ADC */
@@ -70,6 +74,7 @@
 		a1-gpios = <&gpioi 14 GPIO_ACTIVE_HIGH>;
 		gain0-gpios = <&gpiof 10 GPIO_ACTIVE_HIGH>;
 		gain1-gpios = <&gpiof 4 GPIO_ACTIVE_HIGH>;
+		gain = <1>;
 	};
 };
 

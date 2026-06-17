@@ -23,11 +23,17 @@ struct ads1232_config {
 	struct gpio_dt_spec a1;
 	struct gpio_dt_spec gain0;
 	struct gpio_dt_spec gain1;
+	uint8_t init_gain;
+	bool runtime_gain;
 };
 
-struct ads1232_data {
-	enum adc_gain pga_gain[2];
-};
+static enum adc_gain ads1232_int_to_gain(int g)
+{
+	switch (g) {
+	case 2:   return ADC_GAIN_2;
+	default:  return ADC_GAIN_1;
+	}
+}
 
 static void ads1232_set_gain_gpios(const struct ads1232_config *cfg, enum adc_gain gain)
 {
@@ -35,97 +41,57 @@ static void ads1232_set_gain_gpios(const struct ads1232_config *cfg, enum adc_ga
 		return;
 	}
 
-	/* Table 7-3: GAIN[1:0] 00=1x, 01=2x, 10=64x, 11=128x */
+	/* Table 7-3: GAIN[1:0] 00=1x, 01=2x */
 	switch (gain) {
-	case ADC_GAIN_1:
-		gpio_pin_set_dt(&cfg->gain1, 0);
-		gpio_pin_set_dt(&cfg->gain0, 0);
-		break;
 	case ADC_GAIN_2:
-		gpio_pin_set_dt(&cfg->gain1, 0);
-		gpio_pin_set_dt(&cfg->gain0, 1);
-		break;
-	case ADC_GAIN_64:
-		gpio_pin_set_dt(&cfg->gain1, 1);
-		gpio_pin_set_dt(&cfg->gain0, 0);
-		break;
-	case ADC_GAIN_128:
-		gpio_pin_set_dt(&cfg->gain1, 1);
 		gpio_pin_set_dt(&cfg->gain0, 1);
 		break;
 	default:
-		LOG_WRN("unsupported gain %d, keeping current", gain);
+		gpio_pin_set_dt(&cfg->gain0, 0);
 		break;
 	}
+	gpio_pin_set_dt(&cfg->gain1, 0);
 }
 
 static int ads1232_channel_setup(const struct device *dev,
 				 const struct adc_channel_cfg *channel_cfg)
 {
 	const struct ads1232_config *cfg = dev->config;
-	struct ads1232_data *data = dev->data;
 
-	/* ADS1232: ch0 (A0=0 → AINP1/AINN1), ch1 (A0=1 → AINP2/AINN2) */
 	if (channel_cfg->channel_id > 1) {
 		return -EINVAL;
 	}
 
-	/* Update A0 for channel selection (Table 7-1) */
-	if (cfg->a0.port) {
-		gpio_pin_set_dt(&cfg->a0, channel_cfg->channel_id & 1);
+	if (cfg->runtime_gain) {
+		ads1232_set_gain_gpios(cfg, channel_cfg->gain);
 	}
-
-	ads1232_set_gain_gpios(cfg, channel_cfg->gain);
-	data->pga_gain[channel_cfg->channel_id] = channel_cfg->gain;
 
 	return 0;
 }
 
-static int ads1232_read(const struct device *dev,
-			const struct adc_sequence *sequence)
+static int ads1232_read_one(const struct ads1232_config *cfg, int ch,
+			    int32_t *out)
 {
-	const struct ads1232_config *cfg = dev->config;
-	struct ads1232_data *data = dev->data;
 	int32_t val = 0;
 	int timeout;
-	int32_t *buf = (int32_t *)sequence->buffer;
-	int ch;
 
-	if (sequence->buffer_size < sizeof(int32_t)) {
-		return -ENOMEM;
-	}
-
-	/* One channel at a time; BIT(0)=ch0 (AINP1), BIT(1)=ch1 (AINP2) */
-	switch (sequence->channels) {
-	case BIT(0):
-		ch = 0;
-		break;
-	case BIT(1):
-		ch = 1;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	/* Set A0 and restore this channel's gain (Table 7-1, Table 7-3) */
+	// A0/A1 to select channel per Table 7-2. With GPIO_ACTIVE_LOW, set(1)=physical LOW=AINx.
 	if (cfg->a0.port) {
 		gpio_pin_set_dt(&cfg->a0, ch);
 	}
-	ads1232_set_gain_gpios(cfg, data->pga_gain[ch]);
 
 	/*
 	 * Wait for DRDY to assert (physical LOW = data ready).
 	 * With GPIO_ACTIVE_LOW: gpio_pin_get_dt returns 1 when physical LOW.
-	 * Timeout is 600 ms: covers 10 SPS (100 ms/conv) plus 4-conversion
-	 * filter settling after a channel or gain change (§7.3.7, Table 7-5).
+	 * Settling is ~401 ms at 10 SPS (§7.3.7, Table 7-5).
 	 */
-	timeout = 1200; /* 1200 × 500 µs = 600 ms */
+	timeout = 420;
 	while (!gpio_pin_get_dt(&cfg->drdy) && timeout > 0) {
-		k_sleep(K_USEC(500));
+		k_sleep(K_MSEC(1));
 		timeout--;
 	}
 	if (timeout == 0) {
-		LOG_ERR("DRDY timeout");
+		LOG_ERR("ch%d DRDY timeout", ch);
 		return -ETIMEDOUT;
 	}
 
@@ -156,14 +122,47 @@ static int ads1232_read(const struct device *dev,
 		val |= (int32_t)0xFF000000;
 	}
 
-	*buf = val;
+	*out = val;
+	return 0;
+}
+
+static int ads1232_read(const struct device *dev,
+			const struct adc_sequence *sequence)
+{
+	const struct ads1232_config *cfg = dev->config;
+	int32_t *buf = (int32_t *)sequence->buffer;
+	int num_ch;
+	int ret;
+
+	if (sequence->channels == 0 || (sequence->channels & ~(BIT(0) | BIT(1)))) {
+		return -EINVAL;
+	}
+
+	num_ch = !!(sequence->channels & BIT(0)) + !!(sequence->channels & BIT(1));
+	if (sequence->buffer_size < num_ch * sizeof(int32_t)) {
+		return -ENOMEM;
+	}
+
+	if (sequence->channels & BIT(0)) {
+		ret = ads1232_read_one(cfg, 0, buf++);
+		if (ret < 0) {
+			return ret;
+		}
+	}
+
+	if (sequence->channels & BIT(1)) {
+		ret = ads1232_read_one(cfg, 1, buf++);
+		if (ret < 0) {
+			return ret;
+		}
+	}
+
 	return 0;
 }
 
 static int ads1232_init(const struct device *dev)
 {
 	const struct ads1232_config *cfg = dev->config;
-	struct ads1232_data *data = dev->data;
 	int ret;
 
 	if (!device_is_ready(cfg->drdy.port)) {
@@ -214,9 +213,8 @@ static int ads1232_init(const struct device *dev)
 	k_busy_wait(30);                  /* t17 ≥ 26 µs */
 	gpio_pin_set_dt(&cfg->pwdn, 0);  /* physical HIGH: start converting */
 
-	data->pga_gain[0] = ADC_GAIN_1;
-	data->pga_gain[1] = ADC_GAIN_1;
-	ads1232_set_gain_gpios(cfg, ADC_GAIN_1);
+	/* Set initial gain if specified. */
+	ads1232_set_gain_gpios(cfg, ads1232_int_to_gain(cfg->init_gain));
 
 	LOG_INF("%s ready", dev->name);
 	return 0;
@@ -237,12 +235,12 @@ static const struct adc_driver_api ads1232_api = {
 		.a1    = GPIO_DT_SPEC_INST_GET_OR(n, a1_gpios, {0}),	\
 		.gain0 = GPIO_DT_SPEC_INST_GET_OR(n, gain0_gpios, {0}),\
 		.gain1 = GPIO_DT_SPEC_INST_GET_OR(n, gain1_gpios, {0}),\
+		.init_gain = DT_INST_PROP(n, gain),			\
+		.runtime_gain = DT_INST_PROP(n, runtime_gain),		\
 	};								\
 									\
-	static struct ads1232_data ads1232_data_##n;			\
-									\
 	DEVICE_DT_INST_DEFINE(n, ads1232_init, NULL,			\
-		&ads1232_data_##n, &ads1232_config_##n,			\
+		NULL, &ads1232_config_##n,				\
 		POST_KERNEL, CONFIG_ADC_INIT_PRIORITY,			\
 		&ads1232_api);
 

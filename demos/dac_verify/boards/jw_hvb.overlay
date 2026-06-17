@@ -1,7 +1,4 @@
 &ads1232_hv1 {
 	status = "okay";
-};
-
-&ads1232_hv2 {
-	status = "okay";
+	// runtime-gain;
 };

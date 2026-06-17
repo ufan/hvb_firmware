@@ -42,3 +42,16 @@ properties:
     type: phandle-array
     required: false
     description: PGA gain select GAIN1
+
+  gain:
+    type: int
+    required: true
+    enum: [1, 2]
+    description: PGA gain multiplier applied at init.
+
+  runtime-gain:
+    type: boolean
+    description: |
+      Allow PGA gain to be changed at runtime via adc_channel_setup().
+      When absent, gain is fixed at the value of the gain property and
+      adc_channel_setup() ignores the gain field.
