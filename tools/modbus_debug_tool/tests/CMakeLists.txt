@@ -13,6 +13,7 @@ add_executable(hvb_tests
     test_error_handling.cpp
     test_monitor_output.cpp
     test_tui_format.cpp
+    test_calibration.cpp
 )
 
 target_include_directories(hvb_tests PRIVATE
