@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config HVB_VC_CHANNEL
+	bool "HVB virtual voltage channel provider"
+	default y
+	depends on DT_HAS_JIANWEI_HVB_VC_CHANNEL_ENABLED
+	select VC_CHANNEL_PROVIDER
+	help
+	  Virtual voltage channel provider for Jianwei HVB boards.
+	  Wraps AD5541 DAC and ADS1232 ADC devices.

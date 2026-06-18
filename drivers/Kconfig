@@ -2,3 +2,4 @@
 
 rsource "dac/ad5541/Kconfig"
 rsource "sensor/ads1232/Kconfig"
+rsource "voltage_control/Kconfig"
