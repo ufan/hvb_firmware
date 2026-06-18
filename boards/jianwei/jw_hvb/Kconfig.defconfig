@@ -3,4 +3,7 @@ if BOARD_JW_HVB
 config BOARD
 	default "jw_hvb"
 
+config HVB_VC_CHANNEL
+	default y
+
 endif # BOARD_JW_HVB
