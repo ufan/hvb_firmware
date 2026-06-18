@@ -113,7 +113,8 @@ int cmdInfo() {
     printSep("Variant ID:", std::to_string(info.variantId));
     printSep("Cap Flags:", std::to_string(info.sysCapFlags) + " "
         + (info.sysCapFlags & hvb::SysCap::AUTO_MODE_SUPPORTED ? "[Auto]" : "")
-        + (info.sysCapFlags & hvb::SysCap::ENV_SENSOR_PRESENT ? "[Env]" : ""));
+        + (info.sysCapFlags & hvb::SysCap::ENV_SENSOR_PRESENT ? "[Env]" : "")
+        + (info.sysCapFlags & hvb::SysCap::CALIBRATION_MODE ? "[Cal]" : ""));
     printSep("Channels:", std::to_string(info.supportedChannels) + " (mask " + formatHex(info.activeChMask) + ")");
     printSep("Board Temp:", std::to_string(info.boardTempRaw) + " raw");
     printSep("Humidity:", std::to_string(info.boardHumidityRaw) + " raw");
@@ -247,7 +248,7 @@ int cmdRawFc06(uint16_t addr, uint16_t value) {
 // ============================================================================
 
 int main(int argc, char** argv) {
-    CLI::App app{"HVB Modbus Debug Tool"};
+    CLI::App app{"HVB Demo App"};
     hvb::ConfigManager cfgMgr;
     cfgMgr.load();
 
@@ -293,9 +294,6 @@ int main(int argc, char** argv) {
     std::string ch_prot_v_mode, ch_prot_v_action; uint16_t ch_prot_v_thresh=0;
     std::string ch_prot_i_mode, ch_prot_i_action; uint16_t ch_prot_i_thresh=0;
     uint16_t ch_derate_step=0;
-    uint16_t ch_cal_out_k=10000; uint16_t ch_cal_out_b=0;
-    uint16_t ch_cal_mv_k=10000; uint16_t ch_cal_mv_b=0;
-    uint16_t ch_cal_mi_k=10000; uint16_t ch_cal_mi_b=0;
 
     // Raw subcommand option variables
     uint16_t raw_fc04_addr=0, raw_fc04_count=16;
@@ -439,21 +437,6 @@ int main(int argc, char** argv) {
     auto* chDerate = chCmd->add_subcommand("derate", "Set derate step (raw LSB)");
     chDerate->add_option("step", ch_derate_step, "Raw LSB")->required();
     chDerate->callback([&]() { std::cout << (g_client->writeDerateStep(ch,ch_derate_step)?"OK\n":g_client->lastError()+"\n"); });
-
-    auto* chCalOut = chCmd->add_subcommand("cal-out", "Set output calibration");
-    chCalOut->add_option("k", ch_cal_out_k)->required();
-    chCalOut->add_option("b", ch_cal_out_b)->required();
-    chCalOut->callback([&]() { std::cout << (g_client->writeCalibrationOutput(ch,ch_cal_out_k,ch_cal_out_b)?"OK\n":g_client->lastError()+"\n"); });
-
-    auto* chCalMeasV = chCmd->add_subcommand("cal-meas-v", "Set meas V calibration");
-    chCalMeasV->add_option("k", ch_cal_mv_k)->required();
-    chCalMeasV->add_option("b", ch_cal_mv_b)->required();
-    chCalMeasV->callback([&]() { std::cout << (g_client->writeCalibrationMeasV(ch,ch_cal_mv_k,ch_cal_mv_b)?"OK\n":g_client->lastError()+"\n"); });
-
-    auto* chCalMeasI = chCmd->add_subcommand("cal-meas-i", "Set meas I calibration");
-    chCalMeasI->add_option("k", ch_cal_mi_k)->required();
-    chCalMeasI->add_option("b", ch_cal_mi_b)->required();
-    chCalMeasI->callback([&]() { std::cout << (g_client->writeCalibrationMeasI(ch,ch_cal_mi_k,ch_cal_mi_b)?"OK\n":g_client->lastError()+"\n"); });
 
     chCmd->add_subcommand("save", "Save channel params")->callback([&]() { std::cout << (g_client->sendParamAction(ch,hvb::ParamAction::Save)?"OK\n":g_client->lastError()+"\n"); });
     chCmd->add_subcommand("load", "Load channel params")->callback([&]() { std::cout << (g_client->sendParamAction(ch,hvb::ParamAction::Load)?"OK\n":g_client->lastError()+"\n"); });

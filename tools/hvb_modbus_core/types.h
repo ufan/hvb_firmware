@@ -10,8 +10,16 @@ namespace hvb {
 // ============================================================================
 
 enum class OpMode : uint16_t {
-    Normal    = 0,
-    Automatic = 1,
+    Normal      = 0,
+    Automatic   = 1,
+    Calibration = 2,
+};
+
+enum class CalibrationSampleStatus : uint16_t {
+    NoSample = 0,
+    Valid    = 1,
+    Busy     = 2,
+    Error    = 3,
 };
 
 enum class OutputAction : uint16_t {
@@ -84,6 +92,7 @@ namespace FaultCause {
 namespace SysCap {
     inline constexpr uint16_t AUTO_MODE_SUPPORTED = 0x0001;
     inline constexpr uint16_t ENV_SENSOR_PRESENT  = 0x0002;
+    inline constexpr uint16_t CALIBRATION_MODE    = 0x0004;
 }
 
 namespace ChCap {
@@ -124,6 +133,10 @@ struct ChannelInfo {
     int cooldownSec = 0;
     uint32_t lastFaultTimestamp = 0;
     uint16_t chCapFlags = 0;
+    int32_t rawAdcVoltage = 0;
+    int32_t rawAdcCurrent = 0;
+    CalibrationSampleStatus sampleStatus = CalibrationSampleStatus::NoSample;
+    uint16_t rawDacReadback = 0;
 };
 
 struct SystemConfig {
@@ -160,6 +173,19 @@ struct ChannelConfig {
     int16_t measVCalB = 0;
     uint16_t measICalK = 10000;
     int16_t measICalB = 0;
+    bool calOutputEnabled = false;
+    uint16_t rawDacCode = 0;
+    uint16_t maxRawDacLimit = 4095;
+};
+
+struct CalibrationSnapshot {
+    bool outputEnabled = false;
+    uint16_t rawDacCode = 0;
+    uint16_t maxRawDacLimit = 0;
+    uint16_t rawDacReadback = 0;
+    CalibrationSampleStatus sampleStatus = CalibrationSampleStatus::NoSample;
+    int32_t rawAdcVoltage = 0;
+    int32_t rawAdcCurrent = 0;
 };
 
 // ============================================================================
@@ -188,8 +214,19 @@ inline bool isValidOutputAction(OutputAction action, ActionContext ctx) {
 
 inline const char* opModeName(OpMode m) {
     switch (m) {
-    case OpMode::Normal:    return "Normal";
-    case OpMode::Automatic: return "Automatic";
+    case OpMode::Normal:      return "Normal";
+    case OpMode::Automatic:   return "Automatic";
+    case OpMode::Calibration: return "Calibration";
+    }
+    return "?";
+}
+
+inline const char* calSampleStatusName(CalibrationSampleStatus s) {
+    switch (s) {
+    case CalibrationSampleStatus::NoSample: return "NoSample";
+    case CalibrationSampleStatus::Valid:    return "Valid";
+    case CalibrationSampleStatus::Busy:     return "Busy";
+    case CalibrationSampleStatus::Error:    return "Error";
     }
     return "?";
 }

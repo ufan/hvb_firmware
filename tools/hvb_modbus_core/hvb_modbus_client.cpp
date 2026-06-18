@@ -183,8 +183,8 @@ ChannelInfo HvbModbusClient::readChannelInfo(int ch) {
     if (!checkConnected()) return info;
 
     uint16_t base = reg::chAddr(ch, 0);
-    uint16_t buf[12] = {};  // offsets 0..11
-    if (!readRegsInternal(false, base, 12, buf)) return info;
+    uint16_t buf[18] = {};  // offsets 0..17
+    if (!readRegsInternal(false, base, 18, buf)) return info;
 
     info.voltageRaw                   = static_cast<int16_t>(buf[CH_MEASURED_VOLTAGE]);
     info.currentRaw                   = static_cast<int16_t>(buf[CH_MEASURED_CURRENT]);
@@ -198,6 +198,12 @@ ChannelInfo HvbModbusClient::readChannelInfo(int ch) {
     info.lastFaultTimestamp           = reg::uint32FromRegs(buf[CH_LAST_FAULT_TIMESTAMP_HI],
                                                             buf[CH_LAST_FAULT_TIMESTAMP_LO]);
     info.chCapFlags                   = buf[CH_CAPABILITY_FLAGS];
+    info.rawAdcVoltage               = reg::int32FromRegs(buf[CH_RAW_ADC_VOLTAGE_HI],
+                                                           buf[CH_RAW_ADC_VOLTAGE_LO]);
+    info.rawAdcCurrent               = reg::int32FromRegs(buf[CH_RAW_ADC_CURRENT_HI],
+                                                           buf[CH_RAW_ADC_CURRENT_LO]);
+    info.sampleStatus                = static_cast<CalibrationSampleStatus>(buf[CH_CAL_SAMPLE_STATUS]);
+    info.rawDacReadback              = buf[CH_RAW_DAC_READBACK];
     return info;
 }
 
@@ -242,19 +248,27 @@ ChannelConfig HvbModbusClient::readChannelConfig(int ch) {
     cfg.iProtMode            = static_cast<ProtectionMode>(buf[CH_CURRENT_PROTECTION_MODE]);
     cfg.iProtOutputAction    = static_cast<OutputAction>(buf[CH_CURRENT_PROT_OUT_ACTION]);
 
-    // Read second batch: offsets 12..20
-    uint16_t buf2[9] = {};
-    if (!readRegsInternal(true, base + 12, 9, buf2)) return cfg;
+    // Batch 2: offsets 12..23
+    uint16_t buf2[12] = {};
+    if (!readRegsInternal(true, base + 12, 12, buf2)) return cfg;
 
     cfg.iLimitThresholdRaw   = static_cast<int16_t>(buf2[CH_CURRENT_LIMIT_THRESHOLD - 12]);
     cfg.derateStepRaw        = buf2[CH_AUTO_DERATE_STEP - 12];
     cfg.saveTargetPolicy     = buf2[CH_SAVE_TARGET_POLICY - 12] != 0;
-    cfg.outCalK   = buf2[CH_OUTPUT_CAL_K - 12];
-    cfg.outCalB   = static_cast<int16_t>(buf2[CH_OUTPUT_CAL_B - 12]);
-    cfg.measVCalK = buf2[CH_MEASURED_V_CAL_K - 12];
-    cfg.measVCalB = static_cast<int16_t>(buf2[CH_MEASURED_V_CAL_B - 12]);
-    cfg.measICalK = buf2[CH_MEASURED_I_CAL_K - 12];
-    cfg.measICalB = static_cast<int16_t>(buf2[CH_MEASURED_I_CAL_B - 12]);
+    cfg.outCalK              = buf2[CH_OUTPUT_CAL_K - 12];
+    cfg.outCalB              = static_cast<int16_t>(buf2[CH_OUTPUT_CAL_B - 12]);
+    cfg.measVCalK            = buf2[CH_MEASURED_V_CAL_K - 12];
+    cfg.measVCalB            = static_cast<int16_t>(buf2[CH_MEASURED_V_CAL_B - 12]);
+    cfg.measICalK            = buf2[CH_MEASURED_I_CAL_K - 12];
+    cfg.measICalB            = static_cast<int16_t>(buf2[CH_MEASURED_I_CAL_B - 12]);
+    cfg.calOutputEnabled     = buf2[CH_CAL_OUTPUT_ENABLE - 12] != 0;
+    cfg.rawDacCode           = buf2[CH_RAW_DAC_CODE - 12];
+
+    // Batch 3: offsets 24..25
+    uint16_t buf3[2] = {};
+    if (!readRegsInternal(true, base + 24, 2, buf3)) return cfg;
+
+    cfg.maxRawDacLimit       = buf3[CH_CAL_MAX_RAW_DAC_LIMIT - 24];
     return cfg;
 }
 
@@ -358,6 +372,70 @@ bool HvbModbusClient::writeCalibrationMeasI(int ch, uint16_t k, int16_t b) {
 
 #undef CHW
 #undef CHWN
+
+// ============================================================================
+//  Calibration Mode operations (v2.1)
+// ============================================================================
+
+bool HvbModbusClient::unlockCalibrationStep(uint16_t value) {
+    return writeRegsInternal(reg::extAddr(EXT_CAL_UNLOCK), 1, &value);
+}
+
+bool HvbModbusClient::enterCalibrationMode() {
+    return writeOperatingMode(OpMode::Calibration);
+}
+
+bool HvbModbusClient::exitCalibrationMode(OpMode targetMode) {
+    if (targetMode == OpMode::Calibration) {
+        m_impl->errorText = "target mode cannot be Calibration";
+        return false;
+    }
+    return writeOperatingMode(targetMode);
+}
+
+bool HvbModbusClient::writeCalibrationOutputEnable(int ch, bool enable) {
+    uint16_t v = enable ? 1 : 0;
+    return writeRegsInternal(reg::chAddr(ch, CH_CAL_OUTPUT_ENABLE), 1, &v);
+}
+
+bool HvbModbusClient::writeRawDacCode(int ch, uint16_t code) {
+    return writeRegsInternal(reg::chAddr(ch, CH_RAW_DAC_CODE), 1, &code);
+}
+
+bool HvbModbusClient::sendCalibrationSampleCommand(int ch) {
+    uint16_t v = CAL_COMMAND_EXECUTE;
+    return writeRegsInternal(reg::chAddr(ch, CH_CAL_SAMPLE_CMD), 1, &v);
+}
+
+bool HvbModbusClient::sendCalibrationCommitCommand(int ch) {
+    uint16_t v = CAL_COMMAND_EXECUTE;
+    return writeRegsInternal(reg::chAddr(ch, CH_CAL_COMMIT_CMD), 1, &v);
+}
+
+bool HvbModbusClient::writeCalibrationMaxDacLimit(int ch, uint16_t limit) {
+    return writeRegsInternal(reg::chAddr(ch, CH_CAL_MAX_RAW_DAC_LIMIT), 1, &limit);
+}
+
+CalibrationSnapshot HvbModbusClient::readCalibrationSnapshot(int ch) {
+    CalibrationSnapshot snap;
+    if (!checkConnected()) return snap;
+
+    uint16_t ibuf[6] = {};
+    if (!readRegsInternal(false, reg::chAddr(ch, CH_RAW_ADC_VOLTAGE_HI), 6, ibuf)) return snap;
+
+    snap.rawAdcVoltage  = reg::int32FromRegs(ibuf[0], ibuf[1]);
+    snap.rawAdcCurrent  = reg::int32FromRegs(ibuf[2], ibuf[3]);
+    snap.sampleStatus   = static_cast<CalibrationSampleStatus>(ibuf[4]);
+    snap.rawDacReadback = ibuf[5];
+
+    uint16_t hbuf[5] = {};
+    if (!readRegsInternal(true, reg::chAddr(ch, CH_CAL_OUTPUT_ENABLE), 5, hbuf)) return snap;
+
+    snap.outputEnabled  = hbuf[0] != 0;
+    snap.rawDacCode     = hbuf[1];
+    snap.maxRawDacLimit = hbuf[4];
+    return snap;
+}
 
 // ============================================================================
 //  Low-level

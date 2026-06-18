@@ -17,9 +17,20 @@ inline constexpr uint16_t chAddr(int ch, uint16_t off) {
     return static_cast<uint16_t>(CH_BLOCK_BASE(ch)) + off;
 }
 
+// Extension block address helper
+inline constexpr uint16_t extAddr(uint16_t off) {
+    return EXT_BLOCK_BASE + off;
+}
+
 // UINT32 packing for uptime/timestamps (HI at lower address, LO at higher)
 inline uint32_t uint32FromRegs(uint16_t hi, uint16_t lo) {
     return (static_cast<uint32_t>(hi) << 16) | lo;
+}
+
+// INT32 signed packing for raw ADC values
+inline int32_t int32FromRegs(uint16_t hi, uint16_t lo) {
+    uint32_t u = (static_cast<uint32_t>(hi) << 16) | lo;
+    return static_cast<int32_t>(u);
 }
 
 // UINT16 scaling model — variant profile provides compile-time scales (§5)

@@ -27,9 +27,9 @@ void VirtualBoard::setVariantDefaults() {
 
     // System input
     inputRegs[reg::sysAddr(0) + SYS_PROTOCOL_MAJOR] = 2;
-    inputRegs[reg::sysAddr(0) + SYS_PROTOCOL_MINOR] = 0;
+    inputRegs[reg::sysAddr(0) + SYS_PROTOCOL_MINOR] = 1;
     inputRegs[reg::sysAddr(0) + SYS_VARIANT_ID] = 1;
-    inputRegs[reg::sysAddr(0) + SYS_CAPABILITY_FLAGS] = 0x0003; // Auto + Env
+    inputRegs[reg::sysAddr(0) + SYS_CAPABILITY_FLAGS] = 0x0007; // Auto + Env + Cal
     inputRegs[reg::sysAddr(0) + SYS_SUPPORTED_CHANNELS] = 2;
     inputRegs[reg::sysAddr(0) + SYS_ACTIVE_CHANNEL_MASK] = 0x0003;
     inputRegs[reg::sysAddr(0) + SYS_BOARD_TEMPERATURE] = 254;  // 25.4 °C
@@ -57,6 +57,7 @@ void VirtualBoard::setVariantDefaults() {
         holdingRegs[base + CH_MEASURED_V_CAL_B] = 0;
         holdingRegs[base + CH_MEASURED_I_CAL_K] = 10000;
         holdingRegs[base + CH_MEASURED_I_CAL_B] = 0;
+        holdingRegs[base + CH_CAL_MAX_RAW_DAC_LIMIT] = 4095;
 
         inputRegs[base + CH_CAPABILITY_FLAGS] = 0x0007; // OutEn + CurrMeas + AutoRec
     }

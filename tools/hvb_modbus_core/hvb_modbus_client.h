@@ -53,6 +53,17 @@ public:
     bool writeCalibrationMeasV(int ch, uint16_t k, int16_t b);
     bool writeCalibrationMeasI(int ch, uint16_t k, int16_t b);
 
+    // Calibration Mode operations (v2.1)
+    bool unlockCalibrationStep(uint16_t value);
+    bool enterCalibrationMode();
+    bool exitCalibrationMode(OpMode targetMode);
+    bool writeCalibrationOutputEnable(int ch, bool enable);
+    bool writeRawDacCode(int ch, uint16_t code);
+    bool sendCalibrationSampleCommand(int ch);
+    bool sendCalibrationCommitCommand(int ch);
+    bool writeCalibrationMaxDacLimit(int ch, uint16_t limit);
+    CalibrationSnapshot readCalibrationSnapshot(int ch);
+
     // Low-level
     bool readInputRegs(uint16_t addr, uint16_t count, uint16_t* out);
     bool readHoldingRegs(uint16_t addr, uint16_t count, uint16_t* out);

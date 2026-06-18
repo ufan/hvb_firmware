@@ -1,0 +1,2 @@
+module HvbTheme
+singleton HvbTheme 1.0 HvbTheme.qml
