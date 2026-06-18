@@ -9,8 +9,15 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <zephyr/device.h>
 
 #define VC_MAX_CHANNELS 2
+
+struct vc_channel_entry {
+	const struct device *dev;
+	uint8_t            index;
+	uint16_t           capabilities;
+};
 
 #define VC_FAULT_VOLTAGE       0x0001
 #define VC_FAULT_CURRENT       0x0002
@@ -20,8 +27,6 @@
 #define VC_FAULT_RETRY_EXHAUST 0x0020
 #define VC_FAULT_CFG_INVALID   0x0040
 
-struct vc_variant_profile;
-
 enum vc_status {
 	VC_OK = 0,
 	VC_ERR_UNSUPPORTED_CHANNEL = -1,
@@ -29,6 +34,7 @@ enum vc_status {
 	VC_ERR_INVALID_COMMAND = -3,
 	VC_ERR_UNSAFE_STATE = -4,
 	VC_ERR_STORAGE = -5,
+	VC_ERR_UNSUPPORTED_CAPABILITY = -6,
 };
 
 enum vc_operating_mode {
@@ -158,7 +164,8 @@ struct vc_system_snapshot {
 
 struct domain;
 
-struct domain *domain_create(const struct vc_variant_profile *variant);
+struct domain *domain_create(const struct vc_channel_entry *channels,
+			     size_t count);
 
 enum vc_operating_mode domain_get_operating_mode(const struct domain *domain);
 enum vc_status domain_set_operating_mode(struct domain *domain,
