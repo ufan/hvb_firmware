@@ -28,7 +28,7 @@ static std::string homeDir() {
 }
 
 std::string ConfigManager::defaultPath() {
-    return homeDir() + "/.hvb_modbus_tool.toml";
+    return homeDir() + "/.hvb_demo_app.toml";
 }
 
 bool ConfigManager::load() {
