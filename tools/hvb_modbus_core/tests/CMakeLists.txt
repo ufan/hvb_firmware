@@ -1,9 +1,3 @@
-FetchContent_Declare(Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v3.7.1
-)
-FetchContent_MakeAvailable(Catch2)
-
 add_executable(hvb_tests
     test_connection.cpp
     test_system_reads.cpp
@@ -18,7 +12,7 @@ add_executable(hvb_tests
 
 target_include_directories(hvb_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../core
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${MODBUSLIB_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../include
 )

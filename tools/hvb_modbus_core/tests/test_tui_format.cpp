@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "../tui/tui_format.h"
+#include "../../hvb_demo_app/tui/tui_format.h"
 
 using namespace hvb::tui;
 using namespace hvb;
