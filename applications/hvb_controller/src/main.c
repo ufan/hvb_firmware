@@ -73,7 +73,7 @@ static int init_modbus_server(void)
 
 int main(void)
 {
-	struct vc_domain *domain;
+	struct domain *domain;
 	struct vc_system_snapshot system_snapshot;
 	const struct vc_variant_profile *variant;
 	int ret;
@@ -95,12 +95,12 @@ int main(void)
 		return 0;
 	}
 
-	domain = vc_domain_create(variant);
+	domain = domain_create(variant);
 	if (!domain) {
 		printk("Failed to create voltage-control domain\n");
 		return 0;
 	}
-	vc_domain_get_system_snapshot(domain, &system_snapshot);
+	domain_get_system_snapshot(domain, &system_snapshot);
 
 	mb = vc_mb_adapter_create(domain);
 	if (!mb) {
@@ -116,8 +116,8 @@ int main(void)
 
 	printk("hvb_controller ready: slave=1 USART6 115200 8N1 RS485_DIR=PG11"
 	       " variant=%u channels=%u protocol=%u.%u hardware_runtime=pending\n",
-	       vc_domain_get_variant_id(domain),
-	       vc_domain_get_supported_channel_count(domain),
+	       domain_get_variant_id(domain),
+	       domain_get_supported_channel_count(domain),
 	       system_snapshot.protocol_major, system_snapshot.protocol_minor);
 
 	while (1) {
@@ -126,7 +126,7 @@ int main(void)
 			printk("Failed to toggle SYS_RUN GPIO: %d\n", ret);
 		}
 
-		vc_domain_set_uptime(domain, (uint32_t)(k_uptime_get() / 1000));
+		domain_set_uptime(domain, (uint32_t)(k_uptime_get() / 1000));
 		k_msleep(HEARTBEAT_INTERVAL_MS);
 	}
 }

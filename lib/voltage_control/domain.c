@@ -18,7 +18,7 @@ struct vc_channel_runtime {
 	uint16_t cal_max_raw_dac_limit;
 };
 
-struct vc_domain {
+struct domain {
 	const struct vc_variant_profile *variant;
 	enum vc_operating_mode operating_mode;
 	uint32_t uptime_seconds;
@@ -31,7 +31,7 @@ struct vc_domain {
 	bool cal_unlocked;
 };
 
-static bool channel_valid(const struct vc_domain *domain, uint8_t channel)
+static bool channel_valid(const struct domain *domain, uint8_t channel)
 {
 	return channel < domain->variant->num_channels;
 }
@@ -43,20 +43,20 @@ static bool is_valid_operating_mode(enum vc_operating_mode mode)
 	       mode == VC_OPERATING_MODE_CALIBRATION;
 }
 
-static bool is_entering_calibration(const struct vc_domain *domain,
+static bool is_entering_calibration(const struct domain *domain,
 					   enum vc_operating_mode mode)
 {
 	return domain->operating_mode != VC_OPERATING_MODE_CALIBRATION &&
 	       mode == VC_OPERATING_MODE_CALIBRATION;
 }
 
-static void clear_calibration_unlock(struct vc_domain *domain)
+static void clear_calibration_unlock(struct domain *domain)
 {
 	domain->cal_unlock_step = 0;
 	domain->cal_unlocked = false;
 }
 
-static void clear_normal_runtime_channel(struct vc_domain *domain, uint8_t channel)
+static void clear_normal_runtime_channel(struct domain *domain, uint8_t channel)
 {
 	struct vc_channel_snapshot *snap = &domain->snapshots[channel];
 	struct vc_channel_runtime *rt = &domain->runtime[channel];
@@ -80,7 +80,7 @@ static void clear_normal_runtime_channel(struct vc_domain *domain, uint8_t chann
 	snap->status_bits = preserved;
 }
 
-static void reset_calibration_channel(struct vc_domain *domain, uint8_t channel,
+static void reset_calibration_channel(struct domain *domain, uint8_t channel,
 					      bool entering)
 {
 	struct vc_channel_snapshot *snap = &domain->snapshots[channel];
@@ -95,7 +95,7 @@ static void reset_calibration_channel(struct vc_domain *domain, uint8_t channel,
 	snap->cal_sample_status = VC_CAL_SAMPLE_NONE;
 }
 
-static void reset_calibration_outputs(struct vc_domain *domain, bool entering)
+static void reset_calibration_outputs(struct domain *domain, bool entering)
 {
 	for (uint8_t ch = 0; ch < domain->variant->num_channels; ch++) {
 		reset_calibration_channel(domain, ch, entering);
@@ -147,13 +147,13 @@ static bool is_valid_channel_fault_command(enum vc_channel_fault_command cmd)
 	       cmd <= VC_CHANNEL_FAULT_COMMAND_CLEAR_HISTORY;
 }
 
-static bool has_hard_safety_fault(const struct vc_domain *domain, uint8_t channel)
+static bool has_hard_safety_fault(const struct domain *domain, uint8_t channel)
 {
 	return (domain->snapshots[channel].active_fault_cause &
 		(VC_FAULT_HARDWARE | VC_FAULT_INTERLOCK)) != 0;
 }
 
-static enum vc_status enter_calibration_mode(struct vc_domain *domain)
+static enum vc_status enter_calibration_mode(struct domain *domain)
 {
 	reset_calibration_outputs(domain, true);
 	if (!domain->variant->calibration_output_disable_confirmed) {
@@ -176,9 +176,9 @@ static bool calibration_fields_changed(const struct vc_channel_config *old_cfg,
 	       old_cfg->measured_current_calib_b != new_cfg->measured_current_calib_b;
 }
 
-struct vc_domain *vc_domain_create(const struct vc_variant_profile *variant)
+struct domain *domain_create(const struct vc_variant_profile *variant)
 {
-	struct vc_domain *domain;
+	struct domain *domain;
 
 	if (!variant || variant->num_channels > VC_MAX_CHANNELS) {
 		return NULL;
@@ -205,12 +205,12 @@ struct vc_domain *vc_domain_create(const struct vc_variant_profile *variant)
 	return domain;
 }
 
-enum vc_operating_mode vc_domain_get_operating_mode(const struct vc_domain *domain)
+enum vc_operating_mode domain_get_operating_mode(const struct domain *domain)
 {
 	return domain->operating_mode;
 }
 
-enum vc_status vc_domain_set_operating_mode(struct vc_domain *domain,
+enum vc_status domain_set_operating_mode(struct domain *domain,
 					    enum vc_operating_mode mode)
 {
 	enum vc_operating_mode old_mode = domain->operating_mode;
@@ -250,14 +250,14 @@ enum vc_status vc_domain_set_operating_mode(struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_get_system_config(const struct vc_domain *domain,
+enum vc_status domain_get_system_config(const struct domain *domain,
 					   struct vc_system_config *cfg)
 {
 	memcpy(cfg, &domain->sys_cfg, sizeof(*cfg));
 	return VC_OK;
 }
 
-enum vc_status vc_domain_set_system_config(struct vc_domain *domain,
+enum vc_status domain_set_system_config(struct domain *domain,
 					   const struct vc_system_config *cfg)
 {
 	enum vc_operating_mode old_mode = domain->operating_mode;
@@ -315,7 +315,7 @@ enum vc_status vc_domain_set_system_config(struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_get_channel_config(const struct vc_domain *domain,
+enum vc_status domain_get_channel_config(const struct domain *domain,
 					    uint8_t channel,
 					    struct vc_channel_config *cfg)
 {
@@ -327,7 +327,7 @@ enum vc_status vc_domain_get_channel_config(const struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_set_channel_config(struct vc_domain *domain,
+enum vc_status domain_set_channel_config(struct domain *domain,
 					    uint8_t channel,
 					    const struct vc_channel_config *cfg)
 {
@@ -377,7 +377,7 @@ enum vc_status vc_domain_set_channel_config(struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_get_system_snapshot(const struct vc_domain *domain,
+enum vc_status domain_get_system_snapshot(const struct domain *domain,
 					     struct vc_system_snapshot *snap)
 {
 	memset(snap, 0, sizeof(*snap));
@@ -393,7 +393,7 @@ enum vc_status vc_domain_get_system_snapshot(const struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_get_channel_snapshot(const struct vc_domain *domain,
+enum vc_status domain_get_channel_snapshot(const struct domain *domain,
 					      uint8_t channel,
 					      struct vc_channel_snapshot *snap)
 {
@@ -407,7 +407,7 @@ enum vc_status vc_domain_get_channel_snapshot(const struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_calibration_unlock(struct vc_domain *domain,
+enum vc_status domain_calibration_unlock(struct domain *domain,
 					    uint16_t value)
 {
 	if (value == CAL_UNLOCK_STEP1) {
@@ -426,7 +426,7 @@ enum vc_status vc_domain_calibration_unlock(struct vc_domain *domain,
 	return VC_ERR_INVALID_COMMAND;
 }
 
-static enum vc_status calibration_channel_ready(const struct vc_domain *domain,
+static enum vc_status calibration_channel_ready(const struct domain *domain,
 						       uint8_t channel)
 {
 	if (!channel_valid(domain, channel)) {
@@ -438,7 +438,7 @@ static enum vc_status calibration_channel_ready(const struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_calibration_set_output_enable(struct vc_domain *domain,
+enum vc_status domain_calibration_set_output_enable(struct domain *domain,
 						       uint8_t channel,
 						       bool enabled)
 {
@@ -473,7 +473,7 @@ enum vc_status vc_domain_calibration_set_output_enable(struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_calibration_set_raw_dac(struct vc_domain *domain,
+enum vc_status domain_calibration_set_raw_dac(struct domain *domain,
 						 uint8_t channel,
 						 uint16_t code)
 {
@@ -499,7 +499,7 @@ enum vc_status vc_domain_calibration_set_raw_dac(struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_calibration_set_max_raw_dac(struct vc_domain *domain,
+enum vc_status domain_calibration_set_max_raw_dac(struct domain *domain,
 						     uint8_t channel,
 						     uint16_t limit)
 {
@@ -519,7 +519,7 @@ enum vc_status vc_domain_calibration_set_max_raw_dac(struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_calibration_sample(struct vc_domain *domain,
+enum vc_status domain_calibration_sample(struct domain *domain,
 					    uint8_t channel)
 {
 	enum vc_status status = calibration_channel_ready(domain, channel);
@@ -536,7 +536,7 @@ enum vc_status vc_domain_calibration_sample(struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_calibration_commit(struct vc_domain *domain,
+enum vc_status domain_calibration_commit(struct domain *domain,
 					    uint8_t channel)
 {
 	enum vc_status status = calibration_channel_ready(domain, channel);
@@ -555,7 +555,7 @@ enum vc_status vc_domain_calibration_commit(struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_channel_output_action(struct vc_domain *domain,
+enum vc_status domain_channel_output_action(struct domain *domain,
 					       uint8_t channel,
 					       enum vc_output_action action)
 {
@@ -597,7 +597,7 @@ enum vc_status vc_domain_channel_output_action(struct vc_domain *domain,
 	return VC_OK;
 }
 
-static bool vc_is_safe_to_clear_active(const struct vc_domain *domain,
+static bool vc_is_safe_to_clear_active(const struct domain *domain,
 				       uint8_t channel,
 				       uint16_t fault_bits)
 {
@@ -623,7 +623,7 @@ static bool vc_is_safe_to_clear_active(const struct vc_domain *domain,
 	return true;
 }
 
-enum vc_status vc_domain_channel_fault_command(struct vc_domain *domain,
+enum vc_status domain_channel_fault_command(struct domain *domain,
 					       uint8_t channel,
 					       enum vc_channel_fault_command cmd)
 {
@@ -660,7 +660,7 @@ enum vc_status vc_domain_channel_fault_command(struct vc_domain *domain,
 	return VC_OK;
 }
 
-enum vc_status vc_domain_system_param_action(struct vc_domain *domain,
+enum vc_status domain_system_param_action(struct domain *domain,
 					     enum vc_param_action action)
 {
 	switch (action) {
@@ -677,7 +677,7 @@ enum vc_status vc_domain_system_param_action(struct vc_domain *domain,
 	}
 }
 
-enum vc_status vc_domain_channel_param_action(struct vc_domain *domain,
+enum vc_status domain_channel_param_action(struct domain *domain,
 					      uint8_t channel,
 					      enum vc_param_action action)
 {
@@ -699,35 +699,35 @@ enum vc_status vc_domain_channel_param_action(struct vc_domain *domain,
 	}
 }
 
-bool vc_domain_is_channel_supported(const struct vc_domain *domain,
+bool domain_is_channel_supported(const struct domain *domain,
 				    uint8_t channel)
 {
 	return channel_valid(domain, channel);
 }
 
-uint16_t vc_domain_get_supported_channel_count(const struct vc_domain *domain)
+uint16_t domain_get_supported_channel_count(const struct domain *domain)
 {
 	return domain->variant->num_channels;
 }
 
-uint16_t vc_domain_get_active_channel_mask(const struct vc_domain *domain)
+uint16_t domain_get_active_channel_mask(const struct domain *domain)
 {
 	return domain->variant->channel_mask;
 }
 
-uint16_t vc_domain_get_variant_id(const struct vc_domain *domain)
+uint16_t domain_get_variant_id(const struct domain *domain)
 {
 	return domain->variant->variant_id;
 }
 
-void vc_domain_set_uptime(struct vc_domain *domain, uint32_t seconds)
+void domain_set_uptime(struct domain *domain, uint32_t seconds)
 {
 	domain->uptime_seconds = seconds;
 }
 
 /* ---- Tick sub-functions ---- */
 
-static void vc_tick_ramp(struct vc_domain *domain, uint8_t ch, uint32_t dt_ms)
+static void vc_tick_ramp(struct domain *domain, uint8_t ch, uint32_t dt_ms)
 {
 	struct vc_channel_config *cfg = &domain->channels[ch];
 	struct vc_channel_snapshot *snap = &domain->snapshots[ch];
@@ -788,7 +788,7 @@ static void vc_tick_ramp(struct vc_domain *domain, uint8_t ch, uint32_t dt_ms)
 	}
 }
 
-static void vc_tick_measure(struct vc_domain *domain, uint8_t ch,
+static void vc_tick_measure(struct domain *domain, uint8_t ch,
 			    int16_t v_noise, int16_t i_noise)
 {
 	struct vc_channel_snapshot *snap = &domain->snapshots[ch];
@@ -840,7 +840,7 @@ static void start_cooldown(struct vc_channel_runtime *rt,
 		(uint32_t)sys->auto_retry_delay * 1000;
 }
 
-static bool should_start_cooldown(const struct vc_domain *domain)
+static bool should_start_cooldown(const struct domain *domain)
 {
 	const struct vc_system_config *sys = &domain->sys_cfg;
 
@@ -849,7 +849,7 @@ static bool should_start_cooldown(const struct vc_domain *domain)
 	       sys->recovery_policy_mode != VC_RECOVERY_NEVER_RETRY;
 }
 
-static void vc_tick_protection(struct vc_domain *domain, uint8_t ch)
+static void vc_tick_protection(struct domain *domain, uint8_t ch)
 {
 	struct vc_channel_config *cfg = &domain->channels[ch];
 	struct vc_channel_snapshot *snap = &domain->snapshots[ch];
@@ -913,7 +913,7 @@ static void vc_tick_protection(struct vc_domain *domain, uint8_t ch)
 	}
 }
 
-static void vc_tick_recovery(struct vc_domain *domain, uint8_t ch,
+static void vc_tick_recovery(struct domain *domain, uint8_t ch,
 			     uint32_t dt_ms)
 {
 	struct vc_channel_runtime *rt = &domain->runtime[ch];
@@ -940,7 +940,7 @@ static void vc_tick_recovery(struct vc_domain *domain, uint8_t ch,
 	}
 }
 
-static void vc_tick_status_bits(struct vc_domain *domain, uint8_t ch)
+static void vc_tick_status_bits(struct domain *domain, uint8_t ch)
 {
 	struct vc_channel_runtime *rt = &domain->runtime[ch];
 	struct vc_channel_snapshot *snap = &domain->snapshots[ch];
@@ -973,7 +973,7 @@ static void vc_tick_status_bits(struct vc_domain *domain, uint8_t ch)
 
 /* ---- Public tick entry ---- */
 
-void vc_domain_tick(struct vc_domain *domain, uint32_t dt_ms,
+void domain_tick(struct domain *domain, uint32_t dt_ms,
 		    const int16_t voltage_noise[],
 		    const int16_t current_noise[])
 {

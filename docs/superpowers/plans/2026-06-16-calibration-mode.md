@@ -123,19 +123,19 @@ Extend `struct vc_channel_snapshot` with calibration readback fields.
 Add these declarations near the existing domain command APIs.
 
 ```c
-enum vc_status vc_domain_calibration_unlock(struct vc_domain *domain,
+enum vc_status domain_calibration_unlock(struct domain *domain,
 						    uint16_t value);
-enum vc_status vc_domain_calibration_set_output_enable(struct vc_domain *domain,
+enum vc_status domain_calibration_set_output_enable(struct domain *domain,
 							       uint8_t channel,
 							       bool enabled);
-enum vc_status vc_domain_calibration_set_raw_dac(struct vc_domain *domain,
+enum vc_status domain_calibration_set_raw_dac(struct domain *domain,
 							 uint8_t channel,
 							 uint16_t code);
-enum vc_status vc_domain_calibration_sample(struct vc_domain *domain,
+enum vc_status domain_calibration_sample(struct domain *domain,
 						    uint8_t channel);
-enum vc_status vc_domain_calibration_commit(struct vc_domain *domain,
+enum vc_status domain_calibration_commit(struct domain *domain,
 						    uint8_t channel);
-enum vc_status vc_domain_calibration_set_max_raw_dac(struct vc_domain *domain,
+enum vc_status domain_calibration_set_max_raw_dac(struct domain *domain,
 							     uint8_t channel,
 							     uint16_t limit);
 ```
@@ -168,38 +168,38 @@ Add tests that verify unlock gating, wrong sequence clearing, and entry to Calib
 ```c
 ZTEST(voltage_control_domain, test_calibration_mode_requires_unlock)
 {
-	struct vc_domain *domain = vc_domain_create(&hvb_variant_profile);
+	struct domain *domain = domain_create(&hvb_variant_profile);
 
-	zassert_equal(vc_domain_set_operating_mode(domain,
+	zassert_equal(domain_set_operating_mode(domain,
 						 VC_OPERATING_MODE_CALIBRATION),
 		      VC_ERR_INVALID_COMMAND);
-	zassert_equal(vc_domain_get_operating_mode(domain),
+	zassert_equal(domain_get_operating_mode(domain),
 		      VC_OPERATING_MODE_NORMAL);
 }
 
 ZTEST(voltage_control_domain, test_calibration_unlock_sequence_allows_entry)
 {
-	struct vc_domain *domain = vc_domain_create(&hvb_variant_profile);
+	struct domain *domain = domain_create(&hvb_variant_profile);
 
-	zassert_equal(vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP1), VC_OK);
-	zassert_equal(vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP2), VC_OK);
-	zassert_equal(vc_domain_set_operating_mode(domain,
+	zassert_equal(domain_calibration_unlock(domain, CAL_UNLOCK_STEP1), VC_OK);
+	zassert_equal(domain_calibration_unlock(domain, CAL_UNLOCK_STEP2), VC_OK);
+	zassert_equal(domain_set_operating_mode(domain,
 						 VC_OPERATING_MODE_CALIBRATION),
 		      VC_OK);
-	zassert_equal(vc_domain_get_operating_mode(domain),
+	zassert_equal(domain_get_operating_mode(domain),
 		      VC_OPERATING_MODE_CALIBRATION);
 }
 
 ZTEST(voltage_control_domain, test_wrong_calibration_unlock_value_clears_sequence)
 {
-	struct vc_domain *domain = vc_domain_create(&hvb_variant_profile);
+	struct domain *domain = domain_create(&hvb_variant_profile);
 
-	zassert_equal(vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP1), VC_OK);
-	zassert_equal(vc_domain_calibration_unlock(domain, 0x1234),
+	zassert_equal(domain_calibration_unlock(domain, CAL_UNLOCK_STEP1), VC_OK);
+	zassert_equal(domain_calibration_unlock(domain, 0x1234),
 		      VC_ERR_INVALID_VALUE);
-	zassert_equal(vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP2),
+	zassert_equal(domain_calibration_unlock(domain, CAL_UNLOCK_STEP2),
 		      VC_ERR_INVALID_VALUE);
-	zassert_equal(vc_domain_set_operating_mode(domain,
+	zassert_equal(domain_set_operating_mode(domain,
 						 VC_OPERATING_MODE_CALIBRATION),
 		      VC_ERR_INVALID_COMMAND);
 }
@@ -213,17 +213,17 @@ Expected: FAIL or compile error because Calibration Mode APIs and constants are 
 
 - [ ] **Step 3: Implement minimal unlock state**
 
-In `lib/voltage_control/domain.c`, add unlock progress to `struct vc_domain`.
+In `lib/voltage_control/domain.c`, add unlock progress to `struct domain`.
 
 ```c
 	uint8_t cal_unlock_step;
 	enum vc_operating_mode persisted_operating_mode;
 ```
 
-Implement `vc_domain_calibration_unlock`.
+Implement `domain_calibration_unlock`.
 
 ```c
-enum vc_status vc_domain_calibration_unlock(struct vc_domain *domain,
+enum vc_status domain_calibration_unlock(struct domain *domain,
 						    uint16_t value)
 {
 	if (value == CAL_UNLOCK_STEP1) {
@@ -241,7 +241,7 @@ enum vc_status vc_domain_calibration_unlock(struct vc_domain *domain,
 }
 ```
 
-Update `is_valid_operating_mode` to accept `VC_OPERATING_MODE_CALIBRATION`, and update `vc_domain_set_operating_mode` so Calibration Mode requires `cal_unlock_step == 2`.
+Update `is_valid_operating_mode` to accept `VC_OPERATING_MODE_CALIBRATION`, and update `domain_set_operating_mode` so Calibration Mode requires `cal_unlock_step == 2`.
 
 - [ ] **Step 4: Run tests to verify green**
 
@@ -269,39 +269,39 @@ Add tests for entry cleanup, raw DAC gating, and single-active-channel enforceme
 ```c
 ZTEST(voltage_control_domain, test_entering_calibration_clears_raw_outputs)
 {
-	struct vc_domain *domain = vc_domain_create(&hvb_variant_profile);
+	struct domain *domain = domain_create(&hvb_variant_profile);
 	struct vc_channel_snapshot snap;
 
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
-	zassert_equal(vc_domain_set_operating_mode(domain,
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
+	zassert_equal(domain_set_operating_mode(domain,
 						 VC_OPERATING_MODE_CALIBRATION), VC_OK);
-	zassert_equal(vc_domain_get_channel_snapshot(domain, 0, &snap), VC_OK);
+	zassert_equal(domain_get_channel_snapshot(domain, 0, &snap), VC_OK);
 	zassert_equal(snap.raw_dac_readback, 0);
 	zassert_equal(snap.cal_output_enabled, 0);
 }
 
 ZTEST(voltage_control_domain, test_raw_dac_nonzero_requires_calibration_output_enable)
 {
-	struct vc_domain *domain = vc_domain_create(&hvb_variant_profile);
+	struct domain *domain = domain_create(&hvb_variant_profile);
 
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
-	vc_domain_set_operating_mode(domain, VC_OPERATING_MODE_CALIBRATION);
-	zassert_equal(vc_domain_calibration_set_raw_dac(domain, 0, 100),
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
+	domain_set_operating_mode(domain, VC_OPERATING_MODE_CALIBRATION);
+	zassert_equal(domain_calibration_set_raw_dac(domain, 0, 100),
 		      VC_ERR_UNSAFE_STATE);
-	zassert_equal(vc_domain_calibration_set_raw_dac(domain, 0, 0), VC_OK);
+	zassert_equal(domain_calibration_set_raw_dac(domain, 0, 0), VC_OK);
 }
 
 ZTEST(voltage_control_domain, test_only_one_calibration_output_enabled)
 {
-	struct vc_domain *domain = vc_domain_create(&hvb_variant_profile);
+	struct domain *domain = domain_create(&hvb_variant_profile);
 
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
-	vc_domain_set_operating_mode(domain, VC_OPERATING_MODE_CALIBRATION);
-	zassert_equal(vc_domain_calibration_set_output_enable(domain, 0, true), VC_OK);
-	zassert_equal(vc_domain_calibration_set_output_enable(domain, 1, true),
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
+	domain_set_operating_mode(domain, VC_OPERATING_MODE_CALIBRATION);
+	zassert_equal(domain_calibration_set_output_enable(domain, 0, true), VC_OK);
+	zassert_equal(domain_calibration_set_output_enable(domain, 1, true),
 		      VC_ERR_UNSAFE_STATE);
 }
 ```
@@ -328,14 +328,14 @@ Add to `struct vc_channel_runtime`.
 Implement helper behavior in `domain.c`.
 
 ```c
-static void disable_calibration_output(struct vc_domain *domain, uint8_t ch)
+static void disable_calibration_output(struct domain *domain, uint8_t ch)
 {
 	domain->runtime[ch].cal_output_enabled = false;
 	domain->runtime[ch].raw_dac_code = 0;
 	domain->runtime[ch].cal_sample_status = VC_CAL_SAMPLE_NONE;
 }
 
-static void disable_all_calibration_outputs(struct vc_domain *domain)
+static void disable_all_calibration_outputs(struct domain *domain)
 {
 	for (int i = 0; i < domain->variant->num_channels; i++) {
 		disable_calibration_output(domain, i);
@@ -350,7 +350,7 @@ Implement the raw DAC and output-enable APIs with these rules: require Calibrati
 
 - [ ] **Step 4: Populate snapshots**
 
-In `vc_domain_get_channel_snapshot`, copy runtime raw fields into `struct vc_channel_snapshot`.
+In `domain_get_channel_snapshot`, copy runtime raw fields into `struct vc_channel_snapshot`.
 
 ```c
 	snap->raw_adc_voltage = rt->raw_adc_voltage;
@@ -380,31 +380,31 @@ Add tests that reject coefficient writes outside Calibration Mode and accept the
 ```c
 ZTEST(voltage_control_domain, test_calibration_coefficients_writable_only_in_calibration_mode)
 {
-	struct vc_domain *domain = vc_domain_create(&hvb_variant_profile);
+	struct domain *domain = domain_create(&hvb_variant_profile);
 	struct vc_channel_config cfg;
 
-	vc_domain_get_channel_config(domain, 0, &cfg);
+	domain_get_channel_config(domain, 0, &cfg);
 	cfg.output_calib_k = 11000;
-	zassert_equal(vc_domain_set_channel_config(domain, 0, &cfg),
+	zassert_equal(domain_set_channel_config(domain, 0, &cfg),
 		      VC_ERR_INVALID_COMMAND);
 
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
-	vc_domain_set_operating_mode(domain, VC_OPERATING_MODE_CALIBRATION);
-	zassert_equal(vc_domain_set_channel_config(domain, 0, &cfg), VC_OK);
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
+	domain_set_operating_mode(domain, VC_OPERATING_MODE_CALIBRATION);
+	zassert_equal(domain_set_channel_config(domain, 0, &cfg), VC_OK);
 }
 
 ZTEST(voltage_control_domain, test_calibration_commit_requires_idle_raw_output)
 {
-	struct vc_domain *domain = vc_domain_create(&hvb_variant_profile);
+	struct domain *domain = domain_create(&hvb_variant_profile);
 
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
-	vc_domain_set_operating_mode(domain, VC_OPERATING_MODE_CALIBRATION);
-	vc_domain_calibration_set_output_enable(domain, 0, true);
-	zassert_equal(vc_domain_calibration_commit(domain, 0), VC_ERR_UNSAFE_STATE);
-	vc_domain_calibration_set_output_enable(domain, 0, false);
-	zassert_equal(vc_domain_calibration_commit(domain, 0), VC_OK);
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
+	domain_set_operating_mode(domain, VC_OPERATING_MODE_CALIBRATION);
+	domain_calibration_set_output_enable(domain, 0, true);
+	zassert_equal(domain_calibration_commit(domain, 0), VC_ERR_UNSAFE_STATE);
+	domain_calibration_set_output_enable(domain, 0, false);
+	zassert_equal(domain_calibration_commit(domain, 0), VC_OK);
 }
 ```
 
@@ -416,7 +416,7 @@ Expected: FAIL because coefficient restriction and commit logic are not implemen
 
 - [ ] **Step 3: Implement coefficient change detection**
 
-In `vc_domain_set_channel_config`, compare calibration fields against current channel config.
+In `domain_set_channel_config`, compare calibration fields against current channel config.
 
 ```c
 static bool calibration_fields_changed(const struct vc_channel_config *old_cfg,
@@ -435,7 +435,7 @@ Reject changed calibration fields unless `domain->operating_mode == VC_OPERATING
 
 - [ ] **Step 4: Implement Calibration Commit stub behavior**
 
-Implement `vc_domain_calibration_commit` as a synchronous domain action. Until real storage is wired, return `VC_OK` after validating mode, channel, output disabled, raw DAC zero, and no hard safety fault. Preserve the storage integration point for the later NVM slice.
+Implement `domain_calibration_commit` as a synchronous domain action. Until real storage is wired, return `VC_OK` after validating mode, channel, output disabled, raw DAC zero, and no hard safety fault. Preserve the storage integration point for the later NVM slice.
 
 - [ ] **Step 5: Run tests to verify green**
 
@@ -457,14 +457,14 @@ Add a test for sample status. The initial implementation may capture simulated z
 ```c
 ZTEST(voltage_control_domain, test_calibration_sample_captures_raw_values)
 {
-	struct vc_domain *domain = vc_domain_create(&hvb_variant_profile);
+	struct domain *domain = domain_create(&hvb_variant_profile);
 	struct vc_channel_snapshot snap;
 
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
-	vc_domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
-	vc_domain_set_operating_mode(domain, VC_OPERATING_MODE_CALIBRATION);
-	zassert_equal(vc_domain_calibration_sample(domain, 0), VC_OK);
-	zassert_equal(vc_domain_get_channel_snapshot(domain, 0, &snap), VC_OK);
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP1);
+	domain_calibration_unlock(domain, CAL_UNLOCK_STEP2);
+	domain_set_operating_mode(domain, VC_OPERATING_MODE_CALIBRATION);
+	zassert_equal(domain_calibration_sample(domain, 0), VC_OK);
+	zassert_equal(domain_get_channel_snapshot(domain, 0, &snap), VC_OK);
 	zassert_equal(snap.cal_sample_status, VC_CAL_SAMPLE_VALID);
 }
 ```
@@ -477,10 +477,10 @@ Expected: FAIL because sample command is not implemented.
 
 - [ ] **Step 3: Implement minimal sample behavior**
 
-Implement `vc_domain_calibration_sample` to require Calibration Mode and supported channel, then set raw values and status.
+Implement `domain_calibration_sample` to require Calibration Mode and supported channel, then set raw values and status.
 
 ```c
-enum vc_status vc_domain_calibration_sample(struct vc_domain *domain,
+enum vc_status domain_calibration_sample(struct domain *domain,
 						    uint8_t channel)
 {
 	if (!channel_valid(domain, channel)) {
@@ -550,24 +550,24 @@ In `read_ch_holding`, return calibration output enable, raw DAC readback, comman
 
 ```c
 case CH_CAL_OUTPUT_ENABLE:
-	return vc_domain_calibration_set_output_enable(d, ch, val != 0) == VC_OK ? 0 : -1;
+	return domain_calibration_set_output_enable(d, ch, val != 0) == VC_OK ? 0 : -1;
 case CH_RAW_DAC_CODE:
-	return vc_domain_calibration_set_raw_dac(d, ch, val) == VC_OK ? 0 : -1;
+	return domain_calibration_set_raw_dac(d, ch, val) == VC_OK ? 0 : -1;
 case CH_CAL_SAMPLE_CMD:
 	if (val == CAL_COMMAND_NONE) return 0;
 	if (val != CAL_COMMAND_EXECUTE) return -1;
-	return vc_domain_calibration_sample(d, ch) == VC_OK ? 0 : -1;
+	return domain_calibration_sample(d, ch) == VC_OK ? 0 : -1;
 case CH_CAL_COMMIT_CMD:
 	if (val == CAL_COMMAND_NONE) return 0;
 	if (val != CAL_COMMAND_EXECUTE) return -1;
-	return vc_domain_calibration_commit(d, ch) == VC_OK ? 0 : -1;
+	return domain_calibration_commit(d, ch) == VC_OK ? 0 : -1;
 case CH_CAL_MAX_RAW_DAC_LIMIT:
-	return vc_domain_calibration_set_max_raw_dac(d, ch, val) == VC_OK ? 0 : -1;
+	return domain_calibration_set_max_raw_dac(d, ch, val) == VC_OK ? 0 : -1;
 ```
 
 - [ ] **Step 4: Map extension block unlock register**
 
-Handle absolute address `EXT_CAL_UNLOCK_ABS` in holding read/write paths. Reads return `0`. Writes call `vc_domain_calibration_unlock`.
+Handle absolute address `EXT_CAL_UNLOCK_ABS` in holding read/write paths. Reads return `0`. Writes call `domain_calibration_unlock`.
 
 - [ ] **Step 5: Preserve exception mapping**
 
@@ -650,4 +650,4 @@ Expected: diff contains only Calibration Mode related changes.
 
 - Spec coverage: This plan covers Calibration Mode enum value, unlock, volatile entry/exit, raw DAC/ADC controls, coefficient write restrictions, Calibration Commit, Modbus protocol `2.1`, and deferred production factory handoff.
 - Placeholder scan: No task relies on unspecified behavior. Hardware ADC/DAC integration is intentionally scoped as a later service connection; the initial domain sample behavior is explicit.
-- Type consistency: `VC_OPERATING_MODE_CALIBRATION`, `vc_domain_calibration_*`, `VC_CAL_SAMPLE_*`, `CH_CAL_*`, and `EXT_CAL_UNLOCK_ABS` names are used consistently across tasks.
+- Type consistency: `VC_OPERATING_MODE_CALIBRATION`, `domain_calibration_*`, `VC_CAL_SAMPLE_*`, `CH_CAL_*`, and `EXT_CAL_UNLOCK_ABS` names are used consistently across tasks.

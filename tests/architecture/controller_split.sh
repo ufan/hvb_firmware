@@ -18,4 +18,4 @@ if rg -n "sys_rand32_get|gen_noise|CONFIG_TEST_RANDOM_GENERATOR|CONFIG_TIMER_RAN
 	exit 1
 fi
 
-rg -n "sys_rand32_get|gen_noise|vc_domain_tick" "$sim_main" >/dev/null
+rg -n "sys_rand32_get|gen_noise|domain_tick" "$sim_main" >/dev/null

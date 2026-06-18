@@ -9,10 +9,10 @@
 
 #include <stdint.h>
 
-struct vc_domain;
+struct domain;
 struct vc_mb_adapter;
 
-struct vc_mb_adapter *vc_mb_adapter_create(struct vc_domain *domain);
+struct vc_mb_adapter *vc_mb_adapter_create(struct domain *domain);
 int vc_mb_input_rd(struct vc_mb_adapter *a, uint16_t addr, uint16_t *reg);
 int vc_mb_holding_rd(struct vc_mb_adapter *a, uint16_t addr, uint16_t *reg);
 int vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr, uint16_t val);

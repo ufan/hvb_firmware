@@ -171,7 +171,7 @@ Channel holding block:
 
 - [ ] Implement HVB variant profile: variant id `1`, 2 channels, active mask `0x0003`, Automatic mode supported, environment sensor present, voltage range `0..20000` V x10.
 - [ ] Implement domain initialization with Normal mode, Manual Latch recovery, safe-band defaults `10`, safe target `0`, calibration defaults `K=10000`, `B=0`.
-- [ ] Implement `vc_domain_set_operating_mode`; switching modes must not change currently running channel state.
+- [ ] Implement `domain_set_operating_mode`; switching modes must not change currently running channel state.
 - [ ] Implement output action validation by context.
 - [ ] Implement channel output actions: Enable, Disable Graceful, Disable Immediate. Force Output Zero and Clamp are rejected for host action context.
 - [ ] Implement channel fault commands: clear active only when safe, clear history always if domain policy allows.

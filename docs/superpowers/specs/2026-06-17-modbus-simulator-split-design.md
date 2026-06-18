@@ -13,7 +13,7 @@ The Modbus register adapter is shared library code under `lib/voltage_control/` 
 
 `applications/hvb_controller` is the production app. It initializes the domain and Modbus server, updates uptime, and keeps the heartbeat LED alive. It does not call the simulated domain tick path until a hardware-backed runtime service is added.
 
-`demos/modbus_sim` is the explicit Modbus simulator. It uses USART6/RS-485 and the normal Modbus adapter, then drives `vc_domain_tick()` with randomized telemetry noise. Host tools can use it as a real-wire simulator without treating that behavior as production firmware.
+`demos/modbus_sim` is the explicit Modbus simulator. It uses USART6/RS-485 and the normal Modbus adapter, then drives `domain_tick()` with randomized telemetry noise. Host tools can use it as a real-wire simulator without treating that behavior as production firmware.
 
 ## Verification
 

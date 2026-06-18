@@ -156,69 +156,69 @@ struct vc_system_snapshot {
 	uint16_t system_fault_cause;
 };
 
-struct vc_domain;
+struct domain;
 
-struct vc_domain *vc_domain_create(const struct vc_variant_profile *variant);
+struct domain *domain_create(const struct vc_variant_profile *variant);
 
-enum vc_operating_mode vc_domain_get_operating_mode(const struct vc_domain *domain);
-enum vc_status vc_domain_set_operating_mode(struct vc_domain *domain,
+enum vc_operating_mode domain_get_operating_mode(const struct domain *domain);
+enum vc_status domain_set_operating_mode(struct domain *domain,
 					    enum vc_operating_mode mode);
 
-enum vc_status vc_domain_get_system_config(const struct vc_domain *domain,
+enum vc_status domain_get_system_config(const struct domain *domain,
 					   struct vc_system_config *cfg);
-enum vc_status vc_domain_set_system_config(struct vc_domain *domain,
+enum vc_status domain_set_system_config(struct domain *domain,
 					   const struct vc_system_config *cfg);
 
-enum vc_status vc_domain_get_channel_config(const struct vc_domain *domain,
+enum vc_status domain_get_channel_config(const struct domain *domain,
 					    uint8_t channel,
 					    struct vc_channel_config *cfg);
-enum vc_status vc_domain_set_channel_config(struct vc_domain *domain,
+enum vc_status domain_set_channel_config(struct domain *domain,
 					    uint8_t channel,
 					    const struct vc_channel_config *cfg);
 
-enum vc_status vc_domain_get_system_snapshot(const struct vc_domain *domain,
+enum vc_status domain_get_system_snapshot(const struct domain *domain,
 					     struct vc_system_snapshot *snap);
-enum vc_status vc_domain_get_channel_snapshot(const struct vc_domain *domain,
+enum vc_status domain_get_channel_snapshot(const struct domain *domain,
 					      uint8_t channel,
 					      struct vc_channel_snapshot *snap);
 
-enum vc_status vc_domain_channel_output_action(struct vc_domain *domain,
+enum vc_status domain_channel_output_action(struct domain *domain,
 					       uint8_t channel,
 					       enum vc_output_action action);
-enum vc_status vc_domain_channel_fault_command(struct vc_domain *domain,
+enum vc_status domain_channel_fault_command(struct domain *domain,
 					       uint8_t channel,
 					       enum vc_channel_fault_command cmd);
 
-enum vc_status vc_domain_calibration_unlock(struct vc_domain *domain,
+enum vc_status domain_calibration_unlock(struct domain *domain,
 					    uint16_t value);
-enum vc_status vc_domain_calibration_set_output_enable(struct vc_domain *domain,
+enum vc_status domain_calibration_set_output_enable(struct domain *domain,
 						       uint8_t channel,
 						       bool enabled);
-enum vc_status vc_domain_calibration_set_raw_dac(struct vc_domain *domain,
+enum vc_status domain_calibration_set_raw_dac(struct domain *domain,
 						 uint8_t channel,
 						 uint16_t code);
-enum vc_status vc_domain_calibration_sample(struct vc_domain *domain,
+enum vc_status domain_calibration_sample(struct domain *domain,
 					    uint8_t channel);
-enum vc_status vc_domain_calibration_commit(struct vc_domain *domain,
+enum vc_status domain_calibration_commit(struct domain *domain,
 					    uint8_t channel);
-enum vc_status vc_domain_calibration_set_max_raw_dac(struct vc_domain *domain,
+enum vc_status domain_calibration_set_max_raw_dac(struct domain *domain,
 						     uint8_t channel,
 						     uint16_t limit);
 
-enum vc_status vc_domain_system_param_action(struct vc_domain *domain,
+enum vc_status domain_system_param_action(struct domain *domain,
 					     enum vc_param_action action);
-enum vc_status vc_domain_channel_param_action(struct vc_domain *domain,
+enum vc_status domain_channel_param_action(struct domain *domain,
 					      uint8_t channel,
 					      enum vc_param_action action);
 
-bool vc_domain_is_channel_supported(const struct vc_domain *domain, uint8_t channel);
-uint16_t vc_domain_get_supported_channel_count(const struct vc_domain *domain);
-uint16_t vc_domain_get_active_channel_mask(const struct vc_domain *domain);
-uint16_t vc_domain_get_variant_id(const struct vc_domain *domain);
+bool domain_is_channel_supported(const struct domain *domain, uint8_t channel);
+uint16_t domain_get_supported_channel_count(const struct domain *domain);
+uint16_t domain_get_active_channel_mask(const struct domain *domain);
+uint16_t domain_get_variant_id(const struct domain *domain);
 
-void vc_domain_set_uptime(struct vc_domain *domain, uint32_t seconds);
+void domain_set_uptime(struct domain *domain, uint32_t seconds);
 
-void vc_domain_tick(struct vc_domain *domain, uint32_t dt_ms,
+void domain_tick(struct domain *domain, uint32_t dt_ms,
 		    const int16_t voltage_noise[],
 		    const int16_t current_noise[]);
 

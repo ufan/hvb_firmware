@@ -11,7 +11,7 @@
 #define EXT_BLOCK_END 279
 
 struct vc_mb_adapter {
-	struct vc_domain *domain;
+	struct domain *domain;
 };
 
 static bool addr_decode(uint16_t addr, bool *is_sys, uint8_t *ch, uint16_t *off)
@@ -38,9 +38,9 @@ static bool is_extension(uint16_t addr)
 	return addr >= EXT_BLOCK_BASE && addr <= EXT_BLOCK_END;
 }
 
-static bool is_calibration_mode(struct vc_domain *d)
+static bool is_calibration_mode(struct domain *d)
 {
-	return vc_domain_get_operating_mode(d) == VC_OPERATING_MODE_CALIBRATION;
+	return domain_get_operating_mode(d) == VC_OPERATING_MODE_CALIBRATION;
 }
 
 static bool is_ch_cal_input_reg(uint16_t off)
@@ -68,11 +68,11 @@ static uint16_t int32_lo(int32_t value)
 	return (uint16_t)((uint32_t)value & 0xFFFF);
 }
 
-static int read_sys_input(struct vc_domain *d, uint16_t off, uint16_t *reg)
+static int read_sys_input(struct domain *d, uint16_t off, uint16_t *reg)
 {
 	struct vc_system_snapshot snap;
 
-	vc_domain_get_system_snapshot(d, &snap);
+	domain_get_system_snapshot(d, &snap);
 
 	switch (off) {
 	case SYS_PROTOCOL_MAJOR:        *reg = snap.protocol_major; break;
@@ -97,19 +97,19 @@ static int read_sys_input(struct vc_domain *d, uint16_t off, uint16_t *reg)
 	return 0;
 }
 
-static int read_ch_input(struct vc_domain *d, uint8_t ch, uint16_t off,
+static int read_ch_input(struct domain *d, uint8_t ch, uint16_t off,
 			 uint16_t *reg)
 {
 	struct vc_channel_snapshot snap;
 
-	if (!vc_domain_is_channel_supported(d, ch)) {
+	if (!domain_is_channel_supported(d, ch)) {
 		return -1;
 	}
 	if (is_ch_cal_input_reg(off) && !is_calibration_mode(d)) {
 		return -1;
 	}
 
-	vc_domain_get_channel_snapshot(d, ch, &snap);
+	domain_get_channel_snapshot(d, ch, &snap);
 
 	switch (off) {
 	case CH_MEASURED_VOLTAGE:          *reg = (uint16_t)snap.measured_voltage; break;
@@ -137,11 +137,11 @@ static int read_ch_input(struct vc_domain *d, uint8_t ch, uint16_t off,
 	return 0;
 }
 
-static int read_sys_holding(struct vc_domain *d, uint16_t off, uint16_t *reg)
+static int read_sys_holding(struct domain *d, uint16_t off, uint16_t *reg)
 {
 	struct vc_system_config cfg;
 
-	vc_domain_get_system_config(d, &cfg);
+	domain_get_system_config(d, &cfg);
 
 	switch (off) {
 	case SYS_OPERATING_MODE:         *reg = cfg.operating_mode; break;
@@ -161,12 +161,12 @@ static int read_sys_holding(struct vc_domain *d, uint16_t off, uint16_t *reg)
 	return 0;
 }
 
-static int read_ch_holding(struct vc_domain *d, uint8_t ch, uint16_t off,
+static int read_ch_holding(struct domain *d, uint8_t ch, uint16_t off,
 			   uint16_t *reg)
 {
 	struct vc_channel_config cfg;
 
-	if (!vc_domain_is_channel_supported(d, ch)) {
+	if (!domain_is_channel_supported(d, ch)) {
 		return -1;
 	}
 	if (is_ch_cal_holding_reg(off)) {
@@ -175,7 +175,7 @@ static int read_ch_holding(struct vc_domain *d, uint8_t ch, uint16_t off,
 		if (!is_calibration_mode(d)) {
 			return -1;
 		}
-		vc_domain_get_channel_snapshot(d, ch, &snap);
+		domain_get_channel_snapshot(d, ch, &snap);
 		switch (off) {
 		case CH_CAL_OUTPUT_ENABLE:     *reg = snap.cal_output_enabled; break;
 		case CH_RAW_DAC_CODE:          *reg = snap.raw_dac_readback; break;
@@ -188,7 +188,7 @@ static int read_ch_holding(struct vc_domain *d, uint8_t ch, uint16_t off,
 		return 0;
 	}
 
-	vc_domain_get_channel_config(d, ch, &cfg);
+	domain_get_channel_config(d, ch, &cfg);
 
 	switch (off) {
 	case CH_CFG_TARGET_VOLTAGE:        *reg = (uint16_t)cfg.configured_target_voltage; break;
@@ -220,11 +220,11 @@ static int read_ch_holding(struct vc_domain *d, uint8_t ch, uint16_t off,
 	return 0;
 }
 
-static int write_sys_holding(struct vc_domain *d, uint16_t off, uint16_t val)
+static int write_sys_holding(struct domain *d, uint16_t off, uint16_t val)
 {
 	struct vc_system_config cfg;
 
-	vc_domain_get_system_config(d, &cfg);
+	domain_get_system_config(d, &cfg);
 
 	switch (off) {
 	case SYS_OPERATING_MODE:
@@ -258,21 +258,21 @@ static int write_sys_holding(struct vc_domain *d, uint16_t off, uint16_t val)
 		return -1;
 	}
 
-	return vc_domain_set_system_config(d, &cfg) == VC_OK ? 0 : -1;
+	return domain_set_system_config(d, &cfg) == VC_OK ? 0 : -1;
 }
 
-static int write_sys_param_action(struct vc_domain *d, uint16_t val)
+static int write_sys_param_action(struct domain *d, uint16_t val)
 {
 	if (val > 3 && val != 255) return -1;
-	return vc_domain_system_param_action(d, (enum vc_param_action)val) == VC_OK ? 0 : -1;
+	return domain_system_param_action(d, (enum vc_param_action)val) == VC_OK ? 0 : -1;
 }
 
-static int write_ch_holding(struct vc_domain *d, uint8_t ch, uint16_t off,
+static int write_ch_holding(struct domain *d, uint8_t ch, uint16_t off,
 			    uint16_t val)
 {
 	struct vc_channel_config cfg;
 
-	if (!vc_domain_is_channel_supported(d, ch)) {
+	if (!domain_is_channel_supported(d, ch)) {
 		return -1;
 	}
 	if (is_ch_calibration_coefficient_reg(off) && !is_calibration_mode(d)) {
@@ -285,28 +285,28 @@ static int write_ch_holding(struct vc_domain *d, uint8_t ch, uint16_t off,
 		switch (off) {
 		case CH_CAL_OUTPUT_ENABLE:
 			if (val > 1) return -1;
-			return vc_domain_calibration_set_output_enable(d, ch, val != 0)
+			return domain_calibration_set_output_enable(d, ch, val != 0)
 				== VC_OK ? 0 : -1;
 		case CH_RAW_DAC_CODE:
-			return vc_domain_calibration_set_raw_dac(d, ch, val)
+			return domain_calibration_set_raw_dac(d, ch, val)
 				== VC_OK ? 0 : -1;
 		case CH_CAL_SAMPLE_CMD:
 			if (val == CAL_COMMAND_NONE) return 0;
 			if (val != CAL_COMMAND_EXECUTE) return -1;
-			return vc_domain_calibration_sample(d, ch) == VC_OK ? 0 : -1;
+			return domain_calibration_sample(d, ch) == VC_OK ? 0 : -1;
 		case CH_CAL_COMMIT_CMD:
 			if (val == CAL_COMMAND_NONE) return 0;
 			if (val != CAL_COMMAND_EXECUTE) return -1;
-			return vc_domain_calibration_commit(d, ch) == VC_OK ? 0 : -1;
+			return domain_calibration_commit(d, ch) == VC_OK ? 0 : -1;
 		case CH_CAL_MAX_RAW_DAC_LIMIT:
-			return vc_domain_calibration_set_max_raw_dac(d, ch, val)
+			return domain_calibration_set_max_raw_dac(d, ch, val)
 				== VC_OK ? 0 : -1;
 		default:
 			return -1;
 		}
 	}
 
-	vc_domain_get_channel_config(d, ch, &cfg);
+	domain_get_channel_config(d, ch, &cfg);
 
 	switch (off) {
 	case CH_CFG_TARGET_VOLTAGE:      cfg.configured_target_voltage = (int16_t)val; break;
@@ -351,28 +351,28 @@ static int write_ch_holding(struct vc_domain *d, uint8_t ch, uint16_t off,
 		return -1;
 	}
 
-	return vc_domain_set_channel_config(d, ch, &cfg) == VC_OK ? 0 : -1;
+	return domain_set_channel_config(d, ch, &cfg) == VC_OK ? 0 : -1;
 }
 
-static int write_ch_output_action(struct vc_domain *d, uint8_t ch,
+static int write_ch_output_action(struct domain *d, uint8_t ch,
 				  uint16_t val)
 {
 	if (val > 3) return -1;
-	return vc_domain_channel_output_action(d, ch, (enum vc_output_action)val)
+	return domain_channel_output_action(d, ch, (enum vc_output_action)val)
 		== VC_OK ? 0 : -1;
 }
 
-static int write_ch_fault_cmd(struct vc_domain *d, uint8_t ch, uint16_t val)
+static int write_ch_fault_cmd(struct domain *d, uint8_t ch, uint16_t val)
 {
 	if (val > 2) return -1;
-	return vc_domain_channel_fault_command(d, ch,
+	return domain_channel_fault_command(d, ch,
 		(enum vc_channel_fault_command)val) == VC_OK ? 0 : -1;
 }
 
-static int write_ch_param_action(struct vc_domain *d, uint8_t ch, uint16_t val)
+static int write_ch_param_action(struct domain *d, uint8_t ch, uint16_t val)
 {
 	if (val > 3 && val != 255) return -1;
-	return vc_domain_channel_param_action(d, ch,
+	return domain_channel_param_action(d, ch,
 		(enum vc_param_action)val) == VC_OK ? 0 : -1;
 }
 
@@ -423,7 +423,7 @@ int vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr, uint16_t val)
 
 	if (is_extension(addr)) {
 		if (addr == EXT_CAL_UNLOCK_ABS) {
-			return vc_domain_calibration_unlock(a->domain, val) == VC_OK ?
+			return domain_calibration_unlock(a->domain, val) == VC_OK ?
 				0 : -1;
 		}
 		return -1;
@@ -440,7 +440,7 @@ int vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr, uint16_t val)
 		return write_sys_holding(a->domain, off, val);
 	}
 
-	if (!vc_domain_is_channel_supported(a->domain, ch)) {
+	if (!domain_is_channel_supported(a->domain, ch)) {
 		return -1;
 	}
 
@@ -458,7 +458,7 @@ int vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr, uint16_t val)
 	return write_ch_holding(a->domain, ch, off, val);
 }
 
-struct vc_mb_adapter *vc_mb_adapter_create(struct vc_domain *domain)
+struct vc_mb_adapter *vc_mb_adapter_create(struct domain *domain)
 {
 	static struct vc_mb_adapter adapter;
 	adapter.domain = domain;
