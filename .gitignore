@@ -7,6 +7,7 @@ build-*
 ai
 .codex
 .cache/
+.vscode/
 skills-lock.json
 datasheets
 tools/modbus_debug_tool/bin/
