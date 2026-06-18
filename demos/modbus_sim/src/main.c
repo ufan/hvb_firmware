@@ -15,7 +15,7 @@
 
 #include "voltage_control/domain.h"
 #include "voltage_control/modbus_adapter.h"
-#include "voltage_control/variant.h"
+#include "voltage_control/vc_channel.h"
 
 #define HEARTBEAT_INTERVAL_MS 500
 #define MODBUS_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_modbus_serial)
@@ -32,19 +32,19 @@ static int16_t gen_noise(int16_t amplitude)
 
 static int input_reg_rd(uint16_t addr, uint16_t *reg)
 {
-	int r = vc_mb_input_rd(mb, addr, reg);
+	enum vc_mb_result r = vc_mb_input_rd(mb, addr, reg);
 	return r ? -EINVAL : 0;
 }
 
 static int holding_reg_rd(uint16_t addr, uint16_t *reg)
 {
-	int r = vc_mb_holding_rd(mb, addr, reg);
+	enum vc_mb_result r = vc_mb_holding_rd(mb, addr, reg);
 	return r ? -EINVAL : 0;
 }
 
 static int holding_reg_wr(uint16_t addr, uint16_t reg)
 {
-	int r = vc_mb_holding_wr(mb, addr, reg);
+	enum vc_mb_result r = vc_mb_holding_wr(mb, addr, reg);
 	return r ? -EINVAL : 0;
 }
 
@@ -83,7 +83,6 @@ int main(void)
 {
 	struct domain *domain;
 	struct vc_system_snapshot system_snapshot;
-	const struct vc_variant_profile *variant;
 	int ret;
 
 	if (!gpio_is_ready_dt(&sys_run)) {
@@ -97,13 +96,18 @@ int main(void)
 		return 0;
 	}
 
-	variant = vc_hvb_get_variant();
-	if (!variant) {
-		printk("Failed to get HVB variant profile\n");
-		return 0;
-	}
+	static const struct vc_channel_entry hvb_channels[] = {
+		{ .dev = NULL, .index = 0,
+		  .capabilities = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+				  CH_CAP_VOLTAGE_MEASUREMENT |
+				  CH_CAP_CURRENT_MEASUREMENT },
+		{ .dev = NULL, .index = 1,
+		  .capabilities = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+				  CH_CAP_VOLTAGE_MEASUREMENT |
+				  CH_CAP_CURRENT_MEASUREMENT },
+	};
 
-	domain = domain_create(variant);
+	domain = domain_create(hvb_channels, 2);
 	if (!domain) {
 		printk("Failed to create voltage-control domain\n");
 		return 0;
