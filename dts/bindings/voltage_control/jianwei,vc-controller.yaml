@@ -1,0 +1,16 @@
+# Copyright (c) 2026 Jianwei
+# SPDX-License-Identifier: Apache-2.0
+
+description: Virtual Channel controller — owns the ordered channel list
+
+compatible: "jianwei,vc-controller"
+
+include: base.yaml
+
+properties:
+  channels:
+    type: phandle-array
+    required: true
+    description: |
+      Ordered list of VC channel device phandles. The order defines
+      the channel index domain-side.

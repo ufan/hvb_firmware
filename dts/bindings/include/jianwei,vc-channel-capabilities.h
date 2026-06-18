@@ -1,0 +1,14 @@
+/* Copyright (c) 2026 Jianwei
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef JIANWEI_VC_CHANNEL_CAPABILITIES_H
+#define JIANWEI_VC_CHANNEL_CAPABILITIES_H
+
+#define CH_CAP_OUTPUT_ENABLE           0x0001
+#define CH_CAP_RAW_OUTPUT_DRIVE        0x0002
+#define CH_CAP_VOLTAGE_MEASUREMENT     0x0004
+#define CH_CAP_CURRENT_MEASUREMENT     0x0008
+#define CH_CAP_HARDWARE_STATUS         0x0010
+
+#endif /* JIANWEI_VC_CHANNEL_CAPABILITIES_H */

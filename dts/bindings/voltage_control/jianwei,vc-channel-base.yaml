@@ -1,0 +1,30 @@
+# Copyright (c) 2026 Jianwei
+# SPDX-License-Identifier: Apache-2.0
+
+description: Virtual Channel base node — per-channel hardware capabilities
+
+compatible: "jianwei,vc-channel-base"
+
+include: base.yaml
+
+properties:
+  channel-index:
+    type: int
+    required: true
+    description: |
+      Zero-based channel index. Must match the position in the
+      controller's channels phandle array.
+
+  capabilities:
+    type: int
+    required: true
+    description: |
+      Bitmask of CH_CAP_* flags. Static board-design facts;
+      not runtime-selectable.
+
+  enable-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      GPIO that gates channel output. Mandatory because on/off is
+      the minimum virtual channel capability.
