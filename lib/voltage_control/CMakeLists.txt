@@ -3,7 +3,6 @@
 zephyr_library()
 zephyr_library_sources(
 	domain.c
-	hvb_variant.c
 	modbus_adapter.c
 )
 zephyr_library_sources_ifdef(CONFIG_VC_CHANNEL_CONTROLLER controller.c)
