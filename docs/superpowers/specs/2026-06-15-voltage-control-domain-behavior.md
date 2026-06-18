@@ -128,6 +128,8 @@ Current protection is evaluated before voltage protection. If current and voltag
 
 Protection uses calibrated measured voltage/current values, not raw ADC values.
 
+Measurement freshness is capability-aware. Channel capabilities are static board-design facts derived from devicetree/Kconfig composition, not runtime-selectable behavior. Missing measurement capability is not a stale measurement fault; instead, the build-composed capability model constrains which protection modes and frontend-accessible policy fields are valid for that channel. When a channel has measurement capability and that evidence becomes stale, stale handling follows the relevant Protection Mode: Disabled reports stale status without evaluating that protection, Flag Only records Fault History without creating an Active Fault Block, and Apply Output Action records Fault History, creates an Active Fault Block, and applies the configured Protection Output Action. Stale measurement evidence uses `VC_FAULT_MEASUREMENT` in fault cause reporting.
+
 ## Fault Lifecycle
 
 An Active Fault Block prevents enable and automatic retry until the domain clears it according to safety rules. Fault History records that a fault occurred and remains visible until explicitly cleared.
@@ -214,6 +216,14 @@ Calibration Mode is never persisted as the boot operating mode. System save whil
 
 Calibration is per-channel runtime state with variant-provided factory defaults.
 
+Calibration subfeatures are capability-specific. System Calibration Mode support does not imply every channel has every raw calibration path. Raw DAC controls require raw output drive capability, raw voltage sample/readback requires voltage measurement capability, raw current sample/readback requires current measurement capability, and coefficient fields are valid only for paths that exist in the build-composed channel capability model. Unsupported calibration registers return the frontend's unsupported-address behavior rather than fake values.
+
+Calibration coefficient registers for unsupported paths are unsupported for both reads and writes. For example, a channel without current measurement capability does not expose current-measurement calibration coefficients, even as neutral defaults.
+
+The per-channel Calibration Sample Command captures all supported raw measurement paths for that channel. A voltage-only channel captures voltage, a current-only channel captures current, and a channel with both capabilities captures both. If the channel has no raw measurement capability, the sample command is unsupported for that channel.
+
+Calibration Sample Status is channel-capability aware. `VALID` means all supported raw measurement paths for that channel succeeded. `ERROR` means one or more supported raw measurement paths failed, and raw values from that sample should not be trusted. Unsupported measurement paths are not failures and their raw readback registers are unsupported for that channel.
+
 | Calibration | Type | Applies to |
 |---|---|---|
 | Output Calibration K | UINT16 x10000 | Configured/Operational Target Voltage to Output Drive Level path |
@@ -245,7 +255,7 @@ Calibration Commit behavior:
 | Allowed mode | Calibration Mode only |
 | Output state | Calibration Output Enable must be false and raw DAC must be zero |
 | Safety state | Hard safety fault for that channel must not be active |
-| Persisted fields | Output Calibration K/B, Measured Voltage Calibration K/B, Measured Current Calibration K/B |
+| Persisted fields | Supported output and measurement calibration coefficients for the channel |
 | Excluded fields | Raw DAC state, sample status, normal target/ramp/protection/recovery settings |
 
 Factory handoff and calibration-complete enforcement are future production-grade behavior. The initial implementation focuses on core raw calibration/debug behavior and must not block Normal or Automatic output solely because a factory handoff flag is absent.

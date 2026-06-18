@@ -122,24 +122,25 @@ Channel holding block:
 
 | Offset | Name |
 |---:|---|
-| 0-1 | Configured Target Voltage |
-| 2 | Channel Output Action |
-| 3 | Channel Fault Command |
+| 0 | Channel Output Action |
+| 1 | Channel Fault Command |
+| 2 | Channel Param Action |
+| 3 | Configured Target Voltage |
 | 4 | Ramp Up Step |
 | 5 | Ramp Up Interval |
 | 6 | Ramp Down Step |
 | 7 | Ramp Down Interval |
 | 8 | Voltage Protection Mode |
 | 9 | Voltage Protection Output Action |
-| 10-11 | Voltage Limit Threshold |
-| 12 | Current Protection Mode |
-| 13 | Current Protection Output Action |
-| 14-15 | Current Limit Threshold |
-| 16 | Auto Derate Step |
-| 17 | Save Target Policy |
-| 18-23 | Calibration, K as UINT16 and B as INT16 |
-| 24-38 | Reserved |
-| 39 | Channel Param Action |
+| 10 | Voltage Limit Threshold |
+| 11 | Current Protection Mode |
+| 12 | Current Protection Output Action |
+| 13 | Current Limit Threshold |
+| 14 | Auto Derate Step |
+| 15 | Save Target Policy |
+| 16-21 | Calibration, K as UINT16 and B as INT16 |
+| 22-26 | Calibration raw controls and commands |
+| 27-39 | Reserved |
 
 ## Task 1: Domain And Variant Test Scaffold
 
@@ -191,9 +192,9 @@ Channel holding block:
 - [ ] Add tests reading system input offsets 0-5: protocol `2.0`, variant id `1`, supported channel count `2`, active mask `0x0003`.
 - [ ] Add tests for system holding writes: Operating Mode at offset 0, Recovery Policy Mode at offset 3, safe-band percentages at offsets 7-8.
 - [ ] Add tests that safe-band values above `50` return `VC_MODBUS_ILLEGAL_VALUE`.
-- [ ] Add tests that channel Configured Target Voltage is at channel offset 0 (single UINT16, no multi-register packing).
-- [ ] Add tests that Channel Output Action is at channel offset 1, self-clears on read, and rejects Force Output Zero and Clamp from host context.
-- [ ] Add tests that Channel Fault Command is at channel offset `3`, self-clears on read.
+- [ ] Add tests that channel Configured Target Voltage is at channel offset 3 (single UINT16, no multi-register packing).
+- [ ] Add tests that Channel Output Action is at channel offset 0, self-clears on read, and rejects Force Output Zero and Clamp from host context.
+- [ ] Add tests that Channel Fault Command is at channel offset `1`, self-clears on read.
 - [ ] Add tests that Current Protection Output Action rejects Clamp.
 - [ ] Add tests that reserved writes return `VC_MODBUS_ILLEGAL_ADDRESS`.
 - [ ] Run: `west build -b native_posix -d build/test-modbus-adapter tests/voltage_control/modbus_adapter`.

@@ -33,8 +33,8 @@ A Zephyr-style implementation of a Virtual Voltage Channel using devicetree-deri
 _Avoid_: Driver when discussing the product-facing channel boundary
 
 **Channel Capability**:
-A declared ability of a Virtual Voltage Channel, such as on/off, raw output drive, voltage measurement, current measurement, raw calibration access, or hardware status.
-_Avoid_: Inferring capability from C function presence
+A static board-design ability of a Virtual Voltage Channel, such as on/off, raw output drive, voltage measurement, current measurement, raw calibration access, or hardware status. Capabilities are derived from devicetree/Kconfig composition and are not dynamically negotiated at runtime.
+_Avoid_: Inferring capability from C function presence; treating capability as runtime configuration
 
 **Configured Target Voltage**:
 The host- or configuration-provided target voltage stored in channel settings.
@@ -113,7 +113,7 @@ A complete versioned runtime intent published by the Domain Runtime Library for 
 _Avoid_: Partial config update when crossing the domain/channel boundary
 
 **Measurement Snapshot**:
-Raw hardware evidence published by a Virtual Channel Provider, including publication generation and measurement timestamp concepts.
+Raw hardware evidence published by a Virtual Channel Provider, including publication generation and measurement timestamp concepts. It is already-published evidence, not a blocking request to acquire new hardware data.
 _Avoid_: Domain snapshot when the data has not yet been interpreted by product policy
 
 **Domain Snapshot**:

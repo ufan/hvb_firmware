@@ -61,11 +61,11 @@ Add the protocol and register constants below near the existing block definition
 #define CH_CAL_SAMPLE_STATUS           16
 #define CH_RAW_DAC_READBACK            17
 
-#define CH_CAL_OUTPUT_ENABLE           21
-#define CH_RAW_DAC_CODE                22
-#define CH_CAL_SAMPLE_CMD              23
-#define CH_CAL_COMMIT_CMD              24
-#define CH_CAL_MAX_RAW_DAC_LIMIT       25
+#define CH_CAL_OUTPUT_ENABLE           22
+#define CH_RAW_DAC_CODE                23
+#define CH_CAL_SAMPLE_CMD              24
+#define CH_CAL_COMMIT_CMD              25
+#define CH_CAL_MAX_RAW_DAC_LIMIT       26
 
 #define EXT_CAL_UNLOCK                 0
 #define EXT_CAL_UNLOCK_ABS             (EXT_BLOCK_BASE + EXT_CAL_UNLOCK)

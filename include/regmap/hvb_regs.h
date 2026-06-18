@@ -5,7 +5,10 @@
  *
  * Shared Modbus register offset definitions for Jianwei voltage-control
  * boards.  No Zephyr dependencies.  Usable by both firmware and host
- * application.
+ * application.  This file is the protocol address dictionary only;
+ * board/channel capability support is defined by the build-composed
+ * variant model, and unsupported capability-specific registers may return
+ * protocol exceptions even though their offsets are defined here.
  *
  * Protocol major version 2, register-block layout:
  *   0      System block           input + holding, 40 registers
@@ -40,6 +43,12 @@
 #define SYS_CAP_AUTOMATIC_MODE         0x0001
 #define SYS_CAP_ENV_SENSOR             0x0002
 #define SYS_CAP_CALIBRATION_MODE       0x0004
+
+#define CH_CAP_OUTPUT_ENABLE           0x0001
+#define CH_CAP_RAW_OUTPUT_DRIVE        0x0002
+#define CH_CAP_VOLTAGE_MEASUREMENT     0x0004
+#define CH_CAP_CURRENT_MEASUREMENT     0x0008
+#define CH_CAP_HARDWARE_STATUS         0x0010
 
 /* ------------------------------------------------------------------ */
 /* System input block  (FC04, offsets 0..39)                           */
@@ -82,18 +91,18 @@
 /* Channel input block  (FC04, per-channel offsets 0..39)              */
 /* ------------------------------------------------------------------ */
 
-#define CH_MEASURED_VOLTAGE           0
-#define CH_MEASURED_CURRENT           1
-#define CH_OPER_TARGET_VOLTAGE        2
-#define CH_STATUS_BITS                3
-#define CH_ACTIVE_FAULT_CAUSE         4
-#define CH_FAULT_HISTORY_CAUSE        5
-#define CH_LAST_PROT_OUT_ACTION       6
-#define CH_AUTO_RETRY_COUNT           7
-#define CH_AUTO_COOLDOWN_REMAINING    8
-#define CH_LAST_FAULT_TIMESTAMP_HI    9
-#define CH_LAST_FAULT_TIMESTAMP_LO    10
-#define CH_CAPABILITY_FLAGS           11
+#define CH_STATUS_BITS                0
+#define CH_ACTIVE_FAULT_CAUSE         1
+#define CH_FAULT_HISTORY_CAUSE        2
+#define CH_LAST_PROT_OUT_ACTION       3
+#define CH_AUTO_RETRY_COUNT           4
+#define CH_AUTO_COOLDOWN_REMAINING    5
+#define CH_LAST_FAULT_TIMESTAMP_HI    6
+#define CH_LAST_FAULT_TIMESTAMP_LO    7
+#define CH_OPER_TARGET_VOLTAGE        8
+#define CH_CAPABILITY_FLAGS           9
+#define CH_MEASURED_VOLTAGE           10
+#define CH_MEASURED_CURRENT           11
 #define CH_RAW_ADC_VOLTAGE_HI         12
 #define CH_RAW_ADC_VOLTAGE_LO         13
 #define CH_RAW_ADC_CURRENT_HI         14
@@ -106,34 +115,34 @@
 /* Channel holding block  (FC03 / FC06, per-channel offsets 0..39)     */
 /* ------------------------------------------------------------------ */
 
-#define CH_CFG_TARGET_VOLTAGE         0
-#define CH_OUTPUT_ACTION              1
-#define CH_FAULT_CMD                  2
-#define CH_RAMP_UP_STEP               3
-#define CH_RAMP_UP_INTERVAL           4
-#define CH_RAMP_DOWN_STEP             5
-#define CH_RAMP_DOWN_INTERVAL         6
-#define CH_VOLTAGE_PROTECTION_MODE    7
-#define CH_VOLTAGE_PROT_OUT_ACTION    8
-#define CH_VOLTAGE_LIMIT_THRESHOLD    9
-#define CH_CURRENT_PROTECTION_MODE    10
-#define CH_CURRENT_PROT_OUT_ACTION    11
-#define CH_CURRENT_LIMIT_THRESHOLD    12
-#define CH_AUTO_DERATE_STEP           13
-#define CH_SAVE_TARGET_POLICY         14
-#define CH_OUTPUT_CAL_K              15
-#define CH_OUTPUT_CAL_B              16
-#define CH_MEASURED_V_CAL_K          17
-#define CH_MEASURED_V_CAL_B          18
-#define CH_MEASURED_I_CAL_K          19
-#define CH_MEASURED_I_CAL_B          20
-#define CH_CAL_OUTPUT_ENABLE         21
-#define CH_RAW_DAC_CODE              22
-#define CH_CAL_SAMPLE_CMD            23
-#define CH_CAL_COMMIT_CMD            24
-#define CH_CAL_MAX_RAW_DAC_LIMIT     25
-/* 26..38 reserved */
-#define CH_PARAM_ACTION               39
+#define CH_OUTPUT_ACTION              0
+#define CH_FAULT_CMD                  1
+#define CH_PARAM_ACTION               2
+#define CH_CFG_TARGET_VOLTAGE         3
+#define CH_RAMP_UP_STEP               4
+#define CH_RAMP_UP_INTERVAL           5
+#define CH_RAMP_DOWN_STEP             6
+#define CH_RAMP_DOWN_INTERVAL         7
+#define CH_VOLTAGE_PROTECTION_MODE    8
+#define CH_VOLTAGE_PROT_OUT_ACTION    9
+#define CH_VOLTAGE_LIMIT_THRESHOLD    10
+#define CH_CURRENT_PROTECTION_MODE    11
+#define CH_CURRENT_PROT_OUT_ACTION    12
+#define CH_CURRENT_LIMIT_THRESHOLD    13
+#define CH_AUTO_DERATE_STEP           14
+#define CH_SAVE_TARGET_POLICY         15
+#define CH_OUTPUT_CAL_K               16
+#define CH_OUTPUT_CAL_B               17
+#define CH_MEASURED_V_CAL_K           18
+#define CH_MEASURED_V_CAL_B           19
+#define CH_MEASURED_I_CAL_K           20
+#define CH_MEASURED_I_CAL_B           21
+#define CH_CAL_OUTPUT_ENABLE          22
+#define CH_RAW_DAC_CODE               23
+#define CH_CAL_SAMPLE_CMD             24
+#define CH_CAL_COMMIT_CMD             25
+#define CH_CAL_MAX_RAW_DAC_LIMIT      26
+/* 27..39 reserved */
 
 /* ------------------------------------------------------------------ */
 /* Extension holding block  (FC03 / FC06, offsets 0..79)              */

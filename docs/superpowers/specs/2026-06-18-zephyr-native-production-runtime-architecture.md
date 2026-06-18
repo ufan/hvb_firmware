@@ -61,8 +61,9 @@ The mandatory virtual channel capability is on/off control. Other capabilities a
 - Raw output drive set.
 - Raw voltage measurement.
 - Raw current measurement.
-- Raw calibration access.
 - Hardware status/fault reporting.
+
+Calibration-mode raw access is derived from system Calibration Mode support plus the relevant raw output and measurement capabilities; it is not a separate broad channel capability.
 
 The channel layer reports raw hardware evidence and accepts raw channel commands. It does not implement product policy. In particular, it does not own protection latching, recovery decisions, calibrated unit policy, Modbus behavior, or user-facing state.
 
@@ -112,6 +113,12 @@ Adapter Command
 
 An adapter command is frontend-specific. A domain command is product intent, such as set target, enable/disable, clear fault, enter Calibration Mode, or save parameters. The domain validates the command against product rules and channel capabilities. When command handling changes runtime behavior, the domain publishes a complete runtime configuration snapshot rather than partial field updates. The virtual channel runtime applies the latest complete snapshot at a safe boundary and executes raw channel commands as needed.
 
+Frontend command completion means the domain has accepted or rejected the command and, when accepted, has made the resulting Runtime Config Snapshot available to virtual channel runtimes. It does not mean the physical channel has completed the requested action or that measured output has reached the Configured Target Voltage. Progress remains visible through Domain Snapshots, including Operational Target Voltage during ramping or derating.
+
+Domain Snapshots must make command progress and physical evidence explicit enough that host tools do not infer physical completion from write success. At minimum, the read model must distinguish accepted intent, runtime progress such as ramping or cooldown, the current Operational Target Voltage, measured voltage/current evidence and freshness, and any Active Fault Block. Status bits should be standardized for in-progress state and stale measurement state before production host tooling depends on them.
+
+Freshness is tracked per evidence source and projected into host-visible per-channel status. For example, voltage measurement, current measurement, hardware status, and provider availability may each become stale or unavailable independently. Freshness only applies to evidence sources that a channel advertises as capabilities; an on/off-only channel must not be treated as stale just because it has no voltage or current measurement capability. A single global stale bit is insufficient because it hides partial channel degradation and makes host diagnostics ambiguous.
+
 ### Measurement Path
 
 ```text
@@ -121,7 +128,7 @@ Virtual Channel Measurement Snapshot
   -> Adapter Response
 ```
 
-Virtual channel measurement snapshots are raw hardware evidence. They include the concepts of `generation` and `timestamp`. `generation` identifies a new publication even if values did not change. `timestamp` supports freshness and stale-data policy. The domain consumes measurement evidence, applies calibration and product policy, updates protection/recovery state, and publishes the host-visible read model.
+Virtual channel measurement snapshots are raw hardware evidence. They include the concepts of `generation` and `timestamp`. `generation` identifies a new publication even if values did not change. `timestamp` supports freshness and stale-data policy. The domain consumes already-published measurement evidence, applies calibration and product policy, updates protection/recovery state, and publishes the host-visible read model. Measurement acquisition must not block host request handling or the domain policy path; slow hardware sampling publishes later snapshots instead of stalling domain execution.
 
 Adapter reads return the latest coherent Domain Snapshot. Reads do not synchronously trigger hardware sampling. This keeps Modbus, shell, and future UI behavior consistent and avoids making protocol latency depend on slow measurement hardware.
 
@@ -139,11 +146,19 @@ Adapter reads return the latest coherent Domain Snapshot. Reads do not synchrono
 
 ## Capability And Unit Model
 
-The domain sees each virtual channel through advertised capabilities and limits. Capabilities are data, not inferred from which C function happens to be non-null. Devicetree and Kconfig should be used to derive channel count, available channel providers, and static capabilities where practical.
+The domain sees each virtual channel through static board-design capabilities and limits. Capabilities are data, not inferred from which C function happens to be non-null, and they are not dynamically negotiated at runtime. Devicetree and Kconfig derive channel count, available channel providers, static capabilities, and the allowed protection-policy surface for each board build. The domain runtime accepts that build-composed capability model as input and only exposes or accepts policies that are valid for it.
 
 Virtual Channel Providers report raw units. The domain applies calibration coefficients and exposes product units. This keeps calibration policy reusable and prevents each board backend from embedding product semantics differently.
 
-If a frontend requests behavior that the channel does not support, the domain rejects the command and the adapter maps that result into its frontend-specific error shape. For Modbus, unsupported channel access or unsupported addressable behavior should continue to map to protocol-defined exceptions.
+If a frontend requests behavior outside the build-composed capability and policy surface, the domain rejects the command and the adapter maps that result into its frontend-specific error shape. For Modbus, the register map header remains a stable protocol address dictionary; offsets do not change per board build. Capability-specific registers that are address-defined but unsupported for a board or channel map to protocol-defined exceptions rather than fake disabled behavior.
+
+Capability enforcement exists at two boundaries. Protocol adapters gate frontend addressability and representation, such as returning Modbus `0x02` for unsupported capability-specific registers. The domain runtime independently validates semantic commands and configuration against the same build-composed capability model so non-Modbus frontends cannot bypass product rules. Domain validation distinguishes nonexistent channel indexes from existing channels that lack a capability; capability misses return `VC_ERR_UNSUPPORTED_CAPABILITY`.
+
+Domain errors are mapped to adapter results through a shared translation. Unsupported channel and unsupported capability errors map to illegal-address protocol exceptions. Invalid-value, invalid-command, and unsafe-state errors map to illegal-data exceptions. Storage failures map to device-failure exceptions. Each adapter translates domain errors consistently to its frontend error representation.
+
+For Modbus, `CH_CAPABILITY_FLAGS` is the primary per-channel discovery mechanism for physical/provider capabilities. The shared register map header defines stable `CH_CAP_*` bits so host tools can hide unsupported controls before touching capability-specific registers. Variant ID and protocol version identify the product/profile, but host tools should not infer per-channel support from variant ID alone. Product policy features such as Automatic Mode or Calibration Mode belong in system/product capability surfaces, not in `CH_CAPABILITY_FLAGS`. Calibration register availability is derived from `SYS_CAP_CALIBRATION_MODE` plus the relevant raw output and measurement capability bits, rather than a broad per-channel calibration bit.
+
+Modbus channel blocks keep core/discovery fields in a contiguous front range and capability-specific fields in the tail. Supported channels must allow broad reads of the core/discovery range. Tail block reads fail as unsupported if any included register is unsupported for that channel, so host tools should read `CH_CAPABILITY_FLAGS` first and then select capability-specific tail groups.
 
 ## Concurrency Model
 
@@ -165,9 +180,9 @@ Safe startup is mandatory. Physical outputs must be safe before adapters can acc
 Failure rules:
 
 - Missing mandatory virtual channel provider prevents that channel from becoming available.
-- Missing optional capability disables only the related behavior.
+- Missing optional capability disables the related behavior at build composition time. Missing measurement capability is different from stale measurement evidence.
 - Unsupported capability causes the domain command to fail.
-- Stale measurements are represented in the Domain Snapshot and are not treated as fresh evidence.
+- Stale measurements are represented in the Domain Snapshot and are not treated as fresh evidence. Stale evidence can only affect behavior for capabilities the channel advertises and that the configured product policy requires.
 - Channel hardware faults become domain-visible fault evidence.
 - Storage failure returns a domain error and must not silently mutate saved/effective runtime state.
 

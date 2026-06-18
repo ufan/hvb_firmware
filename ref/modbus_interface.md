@@ -224,18 +224,24 @@ Recovery behavior is defined in the domain behavior spec.
 
 | Bit | Mask | Meaning |
 |---:|---:|---|
-| 0 | 0x0001 | Separate Output Enable control present |
-| 1 | 0x0002 | Current measurement present |
-| 2 | 0x0004 | Automatic recovery supported |
+| 0 | 0x0001 | Output Enable control present |
+| 1 | 0x0002 | Raw output drive present |
+| 2 | 0x0004 | Voltage measurement present |
+| 3 | 0x0008 | Current measurement present |
+| 4 | 0x0010 | Hardware status/fault evidence present |
+
+`CH_CAPABILITY_FLAGS` is the primary per-channel discovery register for physical/provider capabilities. Host tools should read it before showing capability-specific controls or accessing capability-specific registers. Product policy features such as Automatic Mode or Calibration Mode are not channel capability bits. Calibration register availability is derived from `SYS_CAP_CALIBRATION_MODE` plus the relevant raw output and measurement capability bits. Capability-specific registers whose offsets are defined by the protocol but unsupported by the current channel return `0x02` Illegal Data Address for both reads and writes.
 
 ### 8.11 Calibration Sample Status
 
 | Value | Name | Meaning |
 |---:|---|---|
 | 0 | No valid sample | No captured raw sample is available since Calibration Mode entry or channel disable |
-| 1 | Sample valid | Raw ADC voltage/current registers contain a valid captured sample |
+| 1 | Sample valid | All supported raw measurement paths for the channel succeeded |
 | 2 | Sample busy | A raw sample command is in progress |
-| 3 | Sample error | The last raw sample command failed |
+| 3 | Sample error | One or more supported raw measurement paths failed; raw values from that sample should not be trusted |
+
+Unsupported measurement paths are not sample failures. Host tools use `CH_CAPABILITY_FLAGS` to decide which raw readback registers are meaningful and supported for the channel.
 
 ### 8.12 Calibration Unlock
 
@@ -278,18 +284,18 @@ Input registers expose read-only Domain Snapshots maintained by the Domain Runti
 
 | Offset | Name | Type | Description |
 |---:|---|---|---|
-| 0 | Measured Voltage | INT16 | Calibrated measured output voltage, raw LSBs |
-| 1 | Measured Current | INT16 | Calibrated measured output current, raw LSBs |
-| 2 | Operational Target Voltage | INT16 | Current runtime target, raw LSBs |
-| 3 | Channel Status Bits | UINT16 | See channel status bits |
-| 4 | Active Fault Cause | UINT16 | Fault bits currently blocking operation |
-| 5 | Fault History Cause | UINT16 | Fault bits observed since last history clear |
-| 6 | Last Protection Output Action | UINT16 | Last protection output action applied |
-| 7 | Auto Retry Count | UINT16 | Retries inside current sliding retry window |
-| 8 | Auto Cooldown Remaining | UINT16 | Seconds until retry is allowed, else 0 |
-| 9 | Last Fault Timestamp HI | UINT16 | Uptime when last fault event was recorded, high word |
-| 10 | Last Fault Timestamp LO | UINT16 | Uptime when last fault event was recorded, low word |
-| 11 | Channel Capability Flags | UINT16 | See channel capability flags |
+| 0 | Channel Status Bits | UINT16 | See channel status bits |
+| 1 | Active Fault Cause | UINT16 | Fault bits currently blocking operation |
+| 2 | Fault History Cause | UINT16 | Fault bits observed since last history clear |
+| 3 | Last Protection Output Action | UINT16 | Last protection output action applied |
+| 4 | Auto Retry Count | UINT16 | Retries inside current sliding retry window |
+| 5 | Auto Cooldown Remaining | UINT16 | Seconds until retry is allowed, else 0 |
+| 6 | Last Fault Timestamp HI | UINT16 | Uptime when last fault event was recorded, high word |
+| 7 | Last Fault Timestamp LO | UINT16 | Uptime when last fault event was recorded, low word |
+| 8 | Operational Target Voltage | INT16 | Current runtime target, raw LSBs |
+| 9 | Channel Capability Flags | UINT16 | See channel capability flags |
+| 10 | Measured Voltage | INT16 | Calibrated measured output voltage, raw LSBs; requires voltage measurement capability |
+| 11 | Measured Current | INT16 | Calibrated measured output current, raw LSBs; requires current measurement capability |
 | 12 | Raw ADC Voltage HI | INT32_HI | Calibration Mode only, captured raw voltage ADC code |
 | 13 | Raw ADC Voltage LO | INT32_LO | Calibration Mode only, captured raw voltage ADC code |
 | 14 | Raw ADC Current HI | INT32_HI | Calibration Mode only, captured raw current ADC code |
@@ -322,38 +328,42 @@ Holding registers expose writable configuration and self-clearing commands. Comm
 
 | Offset | Name | Access | Type | Range | Description |
 |---:|---|---|---|---|---|
-| 0 | Configured Target Voltage | RW | INT16 | variant-defined | Host/configured target voltage, raw LSBs |
-| 1 | Channel Output Action | RW | UINT16 | context-valid | Self-clearing host output action |
-| 2 | Channel Fault Command | RW | UINT16 | 0-2 | Self-clearing fault command |
-| 3 | Ramp Up Step | RW | UINT16 | variant-defined | Step size per ramp-up step, raw LSBs |
-| 4 | Ramp Up Interval | RW | UINT16 | seconds x10 | Delay per ramp-up step |
-| 5 | Ramp Down Step | RW | UINT16 | variant-defined | Step size per ramp-down step, raw LSBs |
-| 6 | Ramp Down Interval | RW | UINT16 | seconds x10 | Delay per ramp-down step |
-| 7 | Voltage Protection Mode | RW | UINT16 | 0-2 | Disabled, Flag Only, or Apply Output Action |
-| 8 | Voltage Protection Output Action | RW | UINT16 | context-valid | Protection action; Clamp allowed for voltage only |
-| 9 | Voltage Limit Threshold | RW | INT16 | variant-defined | Voltage threshold, raw LSBs |
-| 10 | Current Protection Mode | RW | UINT16 | 0-2 | Disabled, Flag Only, or Apply Output Action |
-| 11 | Current Protection Output Action | RW | UINT16 | context-valid | Clamp invalid for current protection |
-| 12 | Current Limit Threshold | RW | INT16 | variant-defined | Current threshold, raw LSBs |
-| 13 | Auto Derate Step | RW | UINT16 | variant-defined | Per-channel target reduction per retry, raw LSBs |
-| 14 | Save Target Policy | RW | UINT16 | 0-1 | 0 saves safe target default, 1 saves configured target |
-| 15 | Output Calibration K | RW | UINT16 | x10000 | Output path slope |
-| 16 | Output Calibration B | RW | INT16 | x1000 | Output path offset |
-| 17 | Measured Voltage Calibration K | RW | UINT16 | x10000 | Voltage measurement slope |
-| 18 | Measured Voltage Calibration B | RW | INT16 | x1000 | Voltage measurement offset |
-| 19 | Measured Current Calibration K | RW | UINT16 | x10000 | Current measurement slope |
-| 20 | Measured Current Calibration B | RW | INT16 | x1000 | Current measurement offset |
-| 21 | Calibration Output Enable | RW | UINT16 | 0-1 | Calibration Mode only; readable state, enables raw output gate for this channel |
-| 22 | Raw DAC Code | RW | UINT16 | variant-defined | Calibration Mode only; native DAC code |
-| 23 | Calibration Sample Command | RW | UINT16 | command | Calibration Mode only; captures raw voltage/current ADC sample, reads as 0 after execution |
-| 24 | Calibration Commit Command | RW | UINT16 | command | Calibration Mode only; persists this channel's calibration coefficients, reads as 0 after execution |
-| 25 | Calibration Max Raw DAC Limit | RW | UINT16 | variant-defined | Calibration Mode only; optional temporary limit at or below variant max |
-| 26-38 | Reserved | R | UINT16 | - | Read as 0, reject writes |
-| 39 | Channel Param Action | RW | UINT16 | enum | Save/load/factory reset/software reset for this channel |
+| 0 | Channel Output Action | RW | UINT16 | context-valid | Self-clearing host output action |
+| 1 | Channel Fault Command | RW | UINT16 | 0-2 | Self-clearing fault command |
+| 2 | Channel Param Action | RW | UINT16 | enum | Save/load/factory reset/software reset for this channel |
+| 3 | Configured Target Voltage | RW | INT16 | variant-defined | Host/configured target voltage, raw LSBs |
+| 4 | Ramp Up Step | RW | UINT16 | variant-defined | Step size per ramp-up step, raw LSBs |
+| 5 | Ramp Up Interval | RW | UINT16 | seconds x10 | Delay per ramp-up step |
+| 6 | Ramp Down Step | RW | UINT16 | variant-defined | Step size per ramp-down step, raw LSBs |
+| 7 | Ramp Down Interval | RW | UINT16 | seconds x10 | Delay per ramp-down step |
+| 8 | Voltage Protection Mode | RW | UINT16 | 0-2 | Disabled, Flag Only, or Apply Output Action; requires voltage measurement capability |
+| 9 | Voltage Protection Output Action | RW | UINT16 | context-valid | Protection action; Clamp allowed for voltage only; requires voltage measurement capability |
+| 10 | Voltage Limit Threshold | RW | INT16 | variant-defined | Voltage threshold, raw LSBs; requires voltage measurement capability |
+| 11 | Current Protection Mode | RW | UINT16 | 0-2 | Disabled, Flag Only, or Apply Output Action; requires current measurement capability |
+| 12 | Current Protection Output Action | RW | UINT16 | context-valid | Clamp invalid for current protection; requires current measurement capability |
+| 13 | Current Limit Threshold | RW | INT16 | variant-defined | Current threshold, raw LSBs; requires current measurement capability |
+| 14 | Auto Derate Step | RW | UINT16 | variant-defined | Per-channel target reduction per retry, raw LSBs |
+| 15 | Save Target Policy | RW | UINT16 | 0-1 | 0 saves safe target default, 1 saves configured target |
+| 16 | Output Calibration K | RW | UINT16 | x10000 | Output path slope; requires raw output drive capability |
+| 17 | Output Calibration B | RW | INT16 | x1000 | Output path offset; requires raw output drive capability |
+| 18 | Measured Voltage Calibration K | RW | UINT16 | x10000 | Voltage measurement slope; requires voltage measurement capability |
+| 19 | Measured Voltage Calibration B | RW | INT16 | x1000 | Voltage measurement offset; requires voltage measurement capability |
+| 20 | Measured Current Calibration K | RW | UINT16 | x10000 | Current measurement slope; requires current measurement capability |
+| 21 | Measured Current Calibration B | RW | INT16 | x1000 | Current measurement offset; requires current measurement capability |
+| 22 | Calibration Output Enable | RW | UINT16 | 0-1 | Calibration Mode only; requires raw output drive capability; readable state, enables raw output gate for this channel |
+| 23 | Raw DAC Code | RW | UINT16 | variant-defined | Calibration Mode only; requires raw output drive capability; native DAC code |
+| 24 | Calibration Sample Command | RW | UINT16 | command | Calibration Mode only; captures supported raw ADC samples, reads as 0 after execution |
+| 25 | Calibration Commit Command | RW | UINT16 | command | Calibration Mode only; persists this channel's calibration coefficients, reads as 0 after execution |
+| 26 | Calibration Max Raw DAC Limit | RW | UINT16 | variant-defined | Calibration Mode only; requires raw output drive capability; optional temporary limit at or below variant max |
+| 27-39 | Reserved | R | UINT16 | - | Read as 0, reject writes |
 
 ## 11. Adapter Requirements
 
 The Modbus adapter must translate register access into protocol-neutral domain operations without implementing product behavior itself.
+
+The Modbus register map is a stable protocol address dictionary. Board and channel capabilities are static build-composed facts derived from devicetree/Kconfig and the variant model; they do not change register offsets. Capability-specific registers whose offsets are defined by the protocol but unsupported by the current board/channel return `0x02` Illegal Data Address for both reads and writes instead of pretending the feature exists with disabled values.
+
+Channel blocks are arranged so the front core/discovery ranges are safe for broad reads. For supported channels, channel input offsets `0..9` are always readable. Channel holding offsets `0..2` are command/core registers. Capability-specific tail registers may be unsupported for a channel; a block read that includes any unsupported capability-specific tail register returns `0x02` Illegal Data Address for the whole request. Reserved registers remain readable as `0` and reject writes with `0x02`.
 
 | Adapter requirement | Behavior |
 |---|---|
@@ -363,6 +373,7 @@ The Modbus adapter must translate register access into protocol-neutral domain o
 | Domain rejection mapping | Domain invalid value or unsafe state maps to exception `0x03` unless a more specific mapping applies |
 | Reserved registers | Writes return exception `0x02`; reads return 0 where specified |
 | Unsupported channels | Access returns exception `0x02` |
+| Unsupported capability-specific registers | Reads and writes return exception `0x02` unless a later protocol version defines more specific behavior |
 | Self-clearing commands | Command registers read back as 0 after execution |
 | Calibration-only access | Raw ADC/DAC/debug registers reject access outside Calibration Mode according to exception mapping |
 | Calibration coefficient writes | Coefficient registers are readable in all modes and writable only in Calibration Mode |

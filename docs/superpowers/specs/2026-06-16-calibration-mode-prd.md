@@ -85,8 +85,10 @@ Authoritative behavior should be added to the existing domain and protocol specs
 - Raw DAC code is a `UINT16` native DAC device code with a variant-defined maximum.
 - Raw ADC voltage and current values are signed 32-bit values exposed as split Modbus registers.
 - Initial raw ADC workflow is explicit sample command first, not continuous raw telemetry.
-- One per-channel sample command captures both raw voltage and raw current values.
+- One per-channel sample command captures all supported raw measurement paths for that channel.
+- Calibration subfeatures are capability-specific. Channels may support only a subset of raw output drive, voltage measurement, and current measurement paths; unsupported calibration registers return unsupported-address behavior instead of fake values.
 - Sample status uses four initial states: no valid sample, sample valid, sample busy, and sample error.
+- Sample valid means all supported raw measurement paths for the channel succeeded. Sample error means at least one supported raw measurement path failed. Unsupported paths are not treated as failed paths.
 - Only one channel may have calibration output enabled or nonzero raw DAC output at a time.
 - Calibration output enable is a readable/writable state register.
 - While calibration output is disabled, only raw DAC code `0` may be written.
