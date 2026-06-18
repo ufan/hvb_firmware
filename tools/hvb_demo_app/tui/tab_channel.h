@@ -22,7 +22,6 @@ inline Component makeChannelTab(AppState& s, int ch) {
     struct St {
         std::string targetV, vThr, iThr;
         std::string ruStep, ruInt, rdStep, rdInt, derateStep;
-        std::string outK, outB, measVK, measVB, measIK, measIB;
         int vModeIdx = 0, vActIdx = 0;
         int iModeIdx = 0, iActIdx = 0;
         int saveTargetIdx = 0;
@@ -77,22 +76,6 @@ inline Component makeChannelTab(AppState& s, int ch) {
             });
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
     };
-    auto onCal = [&s, st, ch] {
-        try {
-            auto kOut = (uint16_t)std::stoul(st->outK);
-            auto bOut = (int16_t)std::stoi(st->outB);
-            auto kMeasV = (uint16_t)std::stoul(st->measVK);
-            auto bMeasV = (int16_t)std::stoi(st->measVB);
-            auto kMeasI = (uint16_t)std::stoul(st->measIK);
-            auto bMeasI = (int16_t)std::stoi(st->measIB);
-            writeAsync(s, "Calibration", [&s, ch, kOut, bOut, kMeasV, bMeasV, kMeasI, bMeasI] {
-                auto ok  = s.client.writeCalibrationOutput(ch, kOut, bOut);
-                ok &= s.client.writeCalibrationMeasV(ch, kMeasV, bMeasV);
-                ok &= s.client.writeCalibrationMeasI(ch, kMeasI, bMeasI);
-                return ok;
-            });
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid calibration value"; }
-    };
     auto onSaveTarget = [&s, st, ch] {
         bool save = st->saveTargetIdx != 0;
         writeAsync(s, "SaveTarget", [&s, ch, save] { return s.client.writeSaveTargetPolicy(ch, save); });
@@ -110,12 +93,6 @@ inline Component makeChannelTab(AppState& s, int ch) {
     auto iModeC    = InlineCycler(kProtModes, &st->iModeIdx, onIProt);
     auto iActC     = InlineCycler(kIActNames, &st->iActIdx,  onIProt);
     auto iThrInp   = CommitInput(&st->iThr,    "0.000", onIProt);
-    auto outKInp   = CommitInput(&st->outK,    "10000", onCal);
-    auto outBInp   = CommitInput(&st->outB,    "0",     onCal);
-    auto measVKInp = CommitInput(&st->measVK,  "10000", onCal);
-    auto measVBInp = CommitInput(&st->measVB,  "0",     onCal);
-    auto measIKInp = CommitInput(&st->measIK,  "10000", onCal);
-    auto measIBInp = CommitInput(&st->measIB,  "0",     onCal);
     auto saveTgtC  = InlineCycler(kSaveTarget, &st->saveTargetIdx, onSaveTarget);
 
     auto bEnable  = ActionButton("Enable",    [&s,ch]{ writeAsync(s,"Enable",    [&s,ch]{ return s.client.sendOutputAction(ch, OutputAction::Enable); }); });
@@ -132,7 +109,6 @@ inline Component makeChannelTab(AppState& s, int ch) {
         ruStepInp, ruIntInp, rdStepInp, rdIntInp, derInp,
         vModeC, vActC, vThrInp,
         iModeC, iActC, iThrInp,
-        outKInp, outBInp, measVKInp, measVBInp, measIKInp, measIBInp,
         saveTgtC, bSave, bLoad, bFactory, bClrAct, bClrHist,
     });
 
@@ -186,11 +162,16 @@ inline Component makeChannelTab(AppState& s, int ch) {
             text("   Threshold: "), iThrInp->Render(), text(" \xc2\xb5\x41"), // µA
         }));
 
-        auto calPanel = window(text(" Calibration "), vbox({
-            hbox({ text("Output  K: "), outKInp->Render(), text("  B: "), outBInp->Render() }),
-            hbox({ text("Meas V  K: "), measVKInp->Render(), text("  B: "), measVBInp->Render() }),
-            hbox({ text("Meas I  K: "), measIKInp->Render(), text("  B: "), measIBInp->Render() }),
-        }));
+        Element calInfo = text(" No data ") | dim;
+        if (s.data.valid) {
+            const auto& cc = s.data.chCfg[ch];
+            calInfo = vbox({
+                hbox({ text("Output  K: "), text(std::to_string(cc.outCalK)) | bold, text("  B: "), text(std::to_string(cc.outCalB)) | bold }),
+                hbox({ text("Meas V  K: "), text(std::to_string(cc.measVCalK)) | bold, text("  B: "), text(std::to_string(cc.measVCalB)) | bold }),
+                hbox({ text("Meas I  K: "), text(std::to_string(cc.measICalK)) | bold, text("  B: "), text(std::to_string(cc.measICalB)) | bold }),
+            });
+        }
+        auto calPanel = window(text(" Calibration (read-only) "), calInfo);
 
         auto persistPanel = window(text(" Persistence "), vbox({
             hbox({ text("Save Target: "), saveTgtC->Render() }),
