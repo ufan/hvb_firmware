@@ -28,6 +28,9 @@ The domain uses these canonical concepts:
 | Calibration Unlock | Volatile guard required before entering Calibration Mode |
 | Calibration Output Enable | Per-channel raw-output gate used only in Calibration Mode |
 | Calibration Commit | Per-channel action that persists approved calibration coefficients only |
+| Virtual Voltage Channel | Board-provided channel abstraction consumed by the Domain Runtime Library |
+| Measurement Snapshot | Raw channel evidence published by a Virtual Channel Provider |
+| Domain Snapshot | Host-visible product state produced by the Domain Runtime Library |
 
 ## Operating Modes
 
@@ -181,7 +184,7 @@ The target used for voltage recovery is the relevant runtime target selected by 
 
 ## Target Changes While Running
 
-Writing Configured Target Voltage while running is accepted if the value is valid for the variant. The channel service treats the new value as a new target and ramps up or down according to ramp settings.
+Writing Configured Target Voltage while running is accepted if the value is valid for the variant. The Domain Runtime Library treats the new value as a new target, updates runtime intent, and ramps up or down according to ramp settings; Virtual Channel Providers only apply the resulting raw channel commands.
 
 A host target write does not reset derated/cooldown state while an Active Fault Block or automatic cooldown is present.
 

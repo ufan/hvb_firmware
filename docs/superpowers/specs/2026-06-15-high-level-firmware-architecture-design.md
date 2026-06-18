@@ -9,6 +9,8 @@ This document defines the conceptual runtime architecture for Jianwei voltage-co
 
 Detailed protocol-neutral behavior is specified in `docs/superpowers/specs/2026-06-15-voltage-control-domain-behavior.md`. Modbus register layout is specified in `ref/modbus_interface.md`.
 
+Implementation terminology and Zephyr-native composition details are refined by `docs/superpowers/specs/2026-06-18-zephyr-native-production-runtime-architecture.md`. In case of terminology conflict, that later spec supersedes this document's older `Runtime Services` and `channel_service` wording.
+
 The current HVB controller is the first concrete product variant using this architecture. The architecture must remain reusable across future Jianwei voltage-control boards whose DAC, ADC, sensing, channel count, voltage range, precision, and communication hardware may differ.
 
 The shared architecture covers protocol access, product domain model, channel control, safety supervision, persistence, environmental telemetry, status indication, variant configuration, and hardware support boundaries.
@@ -17,41 +19,32 @@ OTA is intentionally treated as an extension point. This architecture should lea
 
 ## Architecture Summary
 
-The firmware uses a protocol-neutral voltage-control domain core surrounded by Zephyr-first runtime services, protocol adapters, and board-variant hardware support.
+The firmware uses a Zephyr-native voltage-control domain runtime library surrounded by frontend adapters and board-variant virtual voltage channel providers.
 
 ```text
-Protocol Adapters
-  - Modbus over RS-485 now
-  - Ethernet/Bluetooth later
+Frontend Adapters
+  - Modbus and shell now
+  - CAN/TCP/IP/local UI later
         |
         v
-Protocol-neutral Voltage-Control Domain API
-        |
-        v
-Voltage-Control Domain Core
-  - product state
-  - command validation
-  - operating mode
-  - supported-channel model
-  - variant capability model
-  - safety constraints
-  - recovery policy
+Zephyr-native Domain Runtime Library
+  - product state and host-visible snapshots
+  - command validation and operating modes
+  - channel capability interpretation
+  - ramping, protection, recovery, calibration policy
   - persistence semantics
         |
         v
-Runtime Services
-  - channel services
-  - safety supervisor
-  - parameter store
-  - environment/status services
+Virtual Voltage Channel Providers
+  - board-variant channel abstraction
+  - on/off mandatory; raw drive, measurement, calibration, status capability-gated
         |
         v
-Zephyr-first Hardware / Variant Support
-  - Zephyr Modbus, GPIO, SPI, I2C, sensor, settings/NVS, logging
-  - custom code only for unsupported device behavior
+Zephyr Devices / Drivers / Services
+  - GPIO, DAC, ADC, sensor, SPI, I2C, Modbus, shell, settings/NVS, logging
 ```
 
-The selected architecture is a domain core with Zephyr services. Zephyr provides standard operating-system, driver, and protocol facilities wherever possible. Product-family code owns voltage-control behavior, protocol adaptation, and hardware behavior that Zephyr does not already cover cleanly. Board-specific code is isolated behind variant profiles and hardware support modules.
+The selected architecture is a Zephyr-native domain runtime library with virtual voltage channel providers. Zephyr provides standard operating-system, driver, protocol, build, and composition facilities wherever possible. Product-family code owns voltage-control behavior and frontend adaptation. Board-specific channel behavior is isolated behind virtual voltage channel providers described by devicetree and enabled by Kconfig.
 
 ## Product Family Model
 
@@ -67,7 +60,7 @@ The firmware architecture serves the Jianwei voltage-control board family, not o
 | Communication hardware | RS-485 today, Ethernet or Bluetooth later |
 | Board revision | Pin, peripheral, and component changes between hardware versions |
 
-The shared domain must model product capabilities rather than named chips. Board variants provide a capability/profile description that tells the shared application which channels exist, what ranges and precision they support, which safety actions are available, and which hardware support modules implement output and measurement.
+The shared domain must model product capabilities rather than named chips. Board variants provide devicetree/Kconfig-backed Virtual Channel Providers and product capability/default descriptions that tell the shared application which channels exist, what ranges and precision they support, and which channel capabilities are available.
 
 ```text
 Shared voltage-control firmware
@@ -81,7 +74,7 @@ Shared voltage-control firmware
   -> board-specific hardware support
 ```
 
-The HVB variant can use AD5541, ADS1232, SHT31, HV run/stop GPIOs, and RS-485 Modbus. Another variant may use different parts while preserving the same protocol-adapter, domain, safety, persistence, and service architecture.
+The HVB variant can implement Virtual Channel Providers using AD5541, ADS1232, SHT31, HV run/stop GPIOs, and RS-485 Modbus. Another variant may use different parts while preserving the same Frontend Adapter, Domain Runtime Library, persistence, and virtual channel architecture.
 
 ## Design Principles
 
@@ -97,7 +90,7 @@ Zephyr is the chosen RTOS because it fits the voltage-control board family in th
 | Driver and sensor sharing | Standard driver, sensor, bus, storage, logging, and protocol subsystems reduce custom code and make hardware variants easier to add |
 | MCU separation from core logic | Devicetree and Zephyr device APIs keep STM32-specific pin/peripheral details outside the product domain, allowing the voltage-control core to stay mostly MCU-independent |
 
-This reinforces the main boundary rule: product behavior belongs in the voltage-control domain and services; MCU, board, and chip details belong in Zephyr board definitions, devicetree, drivers, and small hardware support modules.
+This reinforces the main boundary rule: product behavior belongs in the Domain Runtime Library; board-specific channel behavior belongs in Virtual Voltage Channel Providers; MCU, board, and chip details belong in Zephyr board definitions, devicetree, drivers, and provider implementations.
 
 Preferred ownership:
 
@@ -111,7 +104,8 @@ Preferred ownership:
 | NVM/settings | Zephyr settings/NVS if suitable |
 | Timers, threads, work | Zephyr kernel primitives |
 | Logging | Zephyr logging |
-| Product state and safety policy | Voltage-control domain/services |
+| Product state and safety policy | Domain Runtime Library |
+| Board-specific channel abstraction | Virtual Voltage Channel Providers over Zephyr APIs |
 | Variant-specific chip behavior | Custom support over Zephyr APIs when no suitable Zephyr driver exists |
 
 ### Protocol Adapters Are UI Boundaries
@@ -129,22 +123,23 @@ The domain exposes protocol-neutral and board-family-neutral commands and querie
 | Read channel telemetry | Query measured voltage, current, status, and fault state |
 | Save/load/factory reset parameters | Execute persistence actions through product semantics |
 
-Future Ethernet or Bluetooth frontends must translate their protocol-specific requests into the same domain API used by the Modbus adapter.
+Future CAN, TCP/IP, Bluetooth, shell, or local UI frontends must translate frontend-specific requests into the same Domain Runtime Library facade used by the Modbus adapter.
 
 ```text
 RS-485 Modbus -> modbus_adapter   \
-Ethernet API  -> ethernet_adapter  -> voltage_control_domain_api
-Bluetooth API -> ble_adapter      /
+Shell         -> shell_adapter     -> Domain Runtime Library facade
+CAN/TCP/IP    -> future adapters  /
 ```
 
 ### Hardware Support Is Policy-Free
 
-Low-level hardware support must remain hardware-shaped. DAC, ADC, GPIO, sensor, and board-mode support should not know about protocol registers, calibration persistence, ramping policy, or safety policy. Hardware modules may be chip-specific, but they must implement product-family interfaces such as output control and measurement acquisition.
+Low-level hardware support must remain hardware-shaped. DAC, ADC, GPIO, sensor, and board-mode support should not know about protocol registers, calibration persistence, ramping policy, or safety policy. Board-specific Virtual Channel Providers compose those hardware pieces into product-facing channel capabilities without owning product policy.
 
 Examples:
 
 | Hardware support | Owns | Must not own |
 |---|---|---|
+| Virtual Channel Provider | Channel on/off, raw drive, raw measurement, raw calibration/status capabilities over Zephyr APIs | Product policy, frontend behavior, calibrated unit semantics |
 | Output hardware support | DAC/PWM/output write behavior over Zephyr APIs | Voltage ramping or limit behavior |
 | Measurement hardware support | ADC/sample acquisition, raw measurement capture | Calibration policy or fault limits |
 | Run/stop GPIO support | Board output-enable access where available | Deciding when output is allowed |
@@ -158,11 +153,10 @@ Examples:
 | `voltage_control_app` | Boot orchestration, safe startup, variant selection, service startup, top-level lifecycle |
 | Zephyr Modbus server | RTU transport, UART, CRC, frame handling, RS-485 DE handling via devicetree |
 | `modbus_adapter` | Register map, access rules, exception mapping, translation between Modbus and domain commands/snapshots |
-| `voltage_control_domain_api` | Protocol-neutral command/query boundary for all present and future frontends |
-| `voltage_control_domain` | Product state, operating mode, variant capability model, supported-channel model, command validation, recovery policy, safety constraints, persistence semantics |
-| `variant_profile` | Board-specific capabilities: channel count, ranges, precision, available safety actions, hardware bindings |
-| `channel_service` | Per-channel ramp/control loop, measurement polling, calibration application, local fault detection |
-| `safety_supervisor` | Final safe-state authority, fault latching, global safety invariants |
+| Domain Runtime Library facade | Zephyr-native command/query boundary for all present and future frontend adapters |
+| Domain Runtime Library internals | Product state, operating mode, channel capability model, command validation, ramping, protection, recovery, calibration policy, persistence semantics, host-visible snapshots |
+| Virtual Voltage Channel Provider | Board-specific channel abstraction: on/off mandatory; raw drive, raw measurement, raw calibration/status capability-gated |
+| `variant_profile` | Product-family defaults and limits that may be derived from devicetree/Kconfig and channel capabilities |
 | `param_store` | Save/load/factory reset using Zephyr storage/settings where suitable |
 | `env_service` | Board temperature/humidity sampling through Zephyr sensor/I2C support |
 | `status_service` | SYS_RUN LED/status indication through Zephyr GPIO/LED APIs |
@@ -173,12 +167,12 @@ Examples:
 Dependency direction:
 
 ```text
-Protocol adapters -> voltage_control_domain_api -> voltage_control_domain
-Runtime services  -> voltage_control_domain, variant_profile, and hardware support
-Hardware support  -> Zephyr APIs/devicetree
+Frontend Adapters -> Domain Runtime Library facade -> Domain Runtime Library
+Domain Runtime Library -> Virtual Voltage Channel Providers and Zephyr services
+Virtual Voltage Channel Providers -> Zephyr APIs/devicetree/device model
 ```
 
-The domain should not depend on devicetree, GPIO pins, SPI/I2C devices, specific DAC/ADC part numbers, Zephyr Modbus callback details, or thread timing details. It may use fixed-point product units, such as voltage and current in variant-defined explicit units, because those are product units rather than protocol-specific encodings.
+The Domain Runtime Library may use Zephyr-native facilities such as devicetree-derived configuration, Kconfig, device handles, workqueues, settings, and logging. It should not depend on specific GPIO pins, SPI/I2C peripheral numbers, DAC/ADC part numbers, Zephyr Modbus callback details, or board-private timing assumptions. Those belong in board devicetree, drivers, and Virtual Channel Providers.
 
 ## Runtime Data Flow
 
@@ -199,7 +193,7 @@ Modbus write
 ```text
 Modbus read
   -> Zephyr Modbus server receives RTU request
-  -> modbus_adapter queries protocol-neutral domain snapshot
+  -> modbus_adapter queries protocol-neutral Domain Snapshot
   -> adapter packs product state into Modbus register values
   -> Zephyr Modbus server returns RTU response
 ```
@@ -216,13 +210,11 @@ Ethernet/Bluetooth request
 ### Channel Control Tick
 
 ```text
-channel service tick
-  -> read current channel targets, variant capabilities, and supervisor constraints
-  -> sample measurement hardware through variant-selected support
-  -> apply calibration
-  -> update measured voltage/current snapshot
-  -> detect local current/voltage limit crossings
-  -> request ramp, Output Drive Level, and Output Enable changes subject to supervisor authority
+virtual channel measurement/update
+  -> Virtual Channel Provider publishes raw Measurement Snapshot
+  -> Domain Runtime Library applies calibration, freshness, protection, recovery, and ramping policy
+  -> Domain Runtime Library publishes host-visible Domain Snapshot
+  -> Domain Runtime Library emits raw channel commands/config snapshots back to Virtual Channel Providers
 ```
 
 Raw Modbus register integers live at the Modbus adapter boundary. Product state is represented with named domain fields, variant capabilities, and product units, not register offsets.
@@ -255,8 +247,8 @@ normal mode
 automatic mode
   -> validate automatic-start configuration per channel
   -> request channel enable through domain command path
-  -> channel service ramps using configured ramp policy
-  -> safety supervisor remains final authority
+  -> Domain Runtime Library applies configured ramp policy and emits raw channel commands through Virtual Channel Providers
+  -> Domain Runtime Library protection policy remains final authority
 ```
 
 Operating mode is part of the shared voltage-control model. Runtime mode changes do not disrupt currently running channels. Switching to Automatic does not retry existing Active Fault Blocks. Switching from Automatic to Normal cancels pending retries and converts them to manual Active Fault Blocks. Different board variants may restrict or disable automatic mode if the hardware cannot support safe automatic recovery.
@@ -285,7 +277,7 @@ Safety supervisor
   prevents stale frontend state from re-enabling unsafe output
 ```
 
-The channel service is closest to measurement and control timing, so it detects threshold crossings every measurement cycle. It records fault evidence and may execute immediate local actions defined by channel configuration and variant capabilities, such as clamp Operational Target Voltage, ramp down, force Output Drive Level to zero, or disable Output Enable.
+Virtual Channel Providers are closest to measurement and hardware timing, so they publish Measurement Snapshots as quickly as their hardware permits and apply raw channel commands from the Domain Runtime Library. The Domain Runtime Library consumes those snapshots, detects threshold crossings, records fault evidence, applies protection/recovery policy, and emits safe-state raw commands such as force output zero or disable Output Enable.
 
 Fault evidence, protection action, and recovery policy are separate concepts:
 
@@ -329,7 +321,7 @@ Automatic recovery should be controlled by explicit policy fields rather than hi
 
 Automatic retry must be conservative. In Normal mode, runtime behavior is always manual latch even if auto-retry settings are configured. Auto-retry applies only to faults detected while Automatic mode is already active. Current is evaluated before voltage; if both current and voltage faults occur in one cycle, current determines the protection output action. Protection uses calibrated measured voltage/current values, not raw ADC values.
 
-The safety supervisor is the final authority. If a fault requires safe state, it wins over frontend intent. For example, even if a frontend requests channel enable, an Active Fault Block forces the variant's safe output state, such as run/stop low and Output Drive Level zero on HVB, until the defined clear/recovery path occurs.
+Domain Runtime Library protection policy is the final authority. If a fault requires safe state, it wins over frontend intent. For example, even if a frontend requests channel enable, an Active Fault Block forces the variant's safe output state, such as run/stop low and Output Drive Level zero on HVB, until the defined clear/recovery path occurs.
 
 Safety invariants:
 
@@ -355,7 +347,7 @@ Startup follows a safe-first sequence:
 3. Write safe Output Drive Level values, such as DAC code zero for HVB, to all physically present outputs before any enable path is available.
 4. Establish the initial supported channel set from firmware/hardware configuration; do not sample SYS_MOD in the initial implementation.
 5. Load persistent parameters, excluding volatile runtime enable state.
-6. Initialize domain state and safety supervisor state.
+6. Initialize domain state, protection policy state, and provider links.
 7. Evaluate operating mode.
 8. Start channel, environment, status, and protocol services.
 9. In Automatic mode only, request automatic channel start through the normal domain command path for channels with nonzero Configured Target Voltage after safety and configuration checks pass. Startup sequencing is variant-defined; HVB defaults to parallel startup unless hardware constraints require sequencing.
@@ -389,7 +381,7 @@ Protocol command registers, such as Modbus parameter-action and channel action r
 
 ### Additional Protocols
 
-Ethernet and Bluetooth frontends can be added as protocol adapters. They must call the same `voltage_control_domain_api` commands and queries as the Modbus adapter. They must not bypass the domain, channel services, or safety supervisor to control hardware directly.
+CAN, TCP/IP, Bluetooth, shell, display, or button frontends can be added as Frontend Adapters. They must call the same Domain Runtime Library facade as the Modbus adapter. They must not bypass the domain to call Virtual Channel Providers or hardware directly.
 
 ### Board Variants
 

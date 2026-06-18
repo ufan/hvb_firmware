@@ -43,6 +43,12 @@ Build the current Modbus RTU smoke demo:
 west build -b jw_hvb demos/modbus_smoke
 ```
 
+Build the Modbus RTU simulator used for host-tool and new-board bring-up:
+
+```sh
+west build -b jw_hvb demos/modbus_sim
+```
+
 Use a separate build directory when switching between applications:
 
 ```sh

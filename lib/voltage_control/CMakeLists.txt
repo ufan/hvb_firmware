@@ -4,6 +4,7 @@ zephyr_library()
 zephyr_library_sources(
 	domain.c
 	hvb_variant.c
+	modbus_adapter.c
 )
 
 zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../include)

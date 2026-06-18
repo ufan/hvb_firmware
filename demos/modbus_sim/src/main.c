@@ -10,6 +10,7 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
 #include <zephyr/modbus/modbus.h>
+#include <zephyr/random/random.h>
 #include <zephyr/sys/printk.h>
 
 #include "voltage_control/domain.h"
@@ -21,6 +22,13 @@
 
 static const struct gpio_dt_spec sys_run = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 static struct vc_mb_adapter *mb;
+
+static int16_t gen_noise(int16_t amplitude)
+{
+	uint32_t r = sys_rand32_get();
+
+	return (int16_t)(r % (uint32_t)(amplitude * 2 + 1)) - amplitude;
+}
 
 static int input_reg_rd(uint16_t addr, uint16_t *reg)
 {
@@ -114,8 +122,8 @@ int main(void)
 		return 0;
 	}
 
-	printk("hvb_controller ready: slave=1 USART6 115200 8N1 RS485_DIR=PG11"
-	       " variant=%u channels=%u protocol=%u.%u hardware_runtime=pending\n",
+	printk("modbus_sim ready: slave=1 USART6 115200 8N1 RS485_DIR=PG11"
+	       " variant=%u channels=%u protocol=%u.%u simulated_runtime=1\n",
 	       vc_domain_get_variant_id(domain),
 	       vc_domain_get_supported_channel_count(domain),
 	       system_snapshot.protocol_major, system_snapshot.protocol_minor);
@@ -127,6 +135,15 @@ int main(void)
 		}
 
 		vc_domain_set_uptime(domain, (uint32_t)(k_uptime_get() / 1000));
+
+		int16_t v_noise[VC_MAX_CHANNELS], i_noise[VC_MAX_CHANNELS];
+		uint8_t n = vc_domain_get_supported_channel_count(domain);
+		for (uint8_t ch = 0; ch < n; ch++) {
+			v_noise[ch] = gen_noise(5);
+			i_noise[ch] = gen_noise(20);
+		}
+		vc_domain_tick(domain, HEARTBEAT_INTERVAL_MS, v_noise, i_noise);
+
 		k_msleep(HEARTBEAT_INTERVAL_MS);
 	}
 }

@@ -19,8 +19,8 @@ Protocol major version `2` is not backward-compatible with the older register ma
 RS-485 Modbus RTU
   -> Zephyr Modbus serial server
   -> Modbus adapter
-  -> voltage-control domain API
-  -> voltage-control domain / services / safety supervisor
+  -> Domain Runtime Library facade
+  -> Domain Runtime Library
 ```
 
 The Modbus adapter owns register layout, function-code access rules, register packing, command readback, and Modbus exception mapping. It must not own product validation, ramping, limit detection, safe-state override, persistence policy, UART framing, CRC, or RS-485 DE timing.
@@ -115,7 +115,7 @@ There is no distinction between supported-but-inactive and unsupported in protoc
 | Term | Meaning |
 |---|---|
 | Configured Target Voltage | Domain field exposed in channel holding registers |
-| Operational Target Voltage | Domain snapshot exposed in channel input registers |
+| Operational Target Voltage | Domain Snapshot exposed in channel input registers |
 | Output Drive Level | Domain status exposed by channel status bits |
 | Output Enable | Domain status exposed by channel status bits |
 | Active Fault Block | Domain status exposed in channel input registers |
@@ -251,7 +251,7 @@ A wrong Calibration Unlock value clears unlock progress. Successful entry to Cal
 
 ## 9. Input Registers - FC04
 
-Input registers expose read-only domain snapshots maintained by services. Reading input registers does not require synchronous hardware sampling during the Modbus request.
+Input registers expose read-only Domain Snapshots maintained by the Domain Runtime Library from the latest channel evidence. Reading input registers does not require synchronous hardware sampling during the Modbus request.
 
 ### 9.1 System Input Block - base 0
 
@@ -358,7 +358,7 @@ The Modbus adapter must translate register access into protocol-neutral domain o
 | Adapter requirement | Behavior |
 |---|---|
 | Domain command mapping | Writable command registers call domain APIs and read back 0 after execution |
-| Domain snapshot mapping | Input registers expose cached domain snapshots maintained by services |
+| Domain snapshot mapping | Input registers expose cached Domain Snapshots maintained by the Domain Runtime Library |
 | Range validation | Adapter validates protocol enum/range shape before calling domain where possible |
 | Domain rejection mapping | Domain invalid value or unsafe state maps to exception `0x03` unless a more specific mapping applies |
 | Reserved registers | Writes return exception `0x02`; reads return 0 where specified |

@@ -11,3 +11,4 @@ datasheets
 tools/modbus_debug_tool/bin/
 tools/modbus_debug_tool/build/
 .worktrees/
+.superpowers/

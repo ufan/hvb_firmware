@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "voltage_control/modbus_adapter.h"
 #include "voltage_control/domain.h"
 #include "regmap/hvb_regs.h"
 

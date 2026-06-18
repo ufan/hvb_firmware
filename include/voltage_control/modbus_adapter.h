@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef MODBUS_ADAPTER_H
-#define MODBUS_ADAPTER_H
+#ifndef VOLTAGE_CONTROL_MODBUS_ADAPTER_H
+#define VOLTAGE_CONTROL_MODBUS_ADAPTER_H
 
 #include <stdint.h>
 

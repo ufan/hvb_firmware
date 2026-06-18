@@ -6,7 +6,7 @@ get_filename_component(HVB_FIRMWARE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../.. ABSOL
 list(APPEND ZEPHYR_EXTRA_MODULES ${HVB_FIRMWARE_ROOT})
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(hvb_controller)
+project(modbus_sim)
 
 target_include_directories(app PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/../../include

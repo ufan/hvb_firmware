@@ -20,6 +20,22 @@ _Avoid_: Board config, hardware config when discussing product capabilities
 One independently controlled voltage output path with its own target, telemetry, protection settings, and runtime state.
 _Avoid_: Output, rail, module when independence matters
 
+**Domain Runtime Library**:
+The Zephyr-native reusable product-policy library that owns voltage-control modes, validation, ramping, protection, recovery, calibration policy, persistence semantics, and host-visible snapshots.
+_Avoid_: Zephyr-free domain, protocol domain, app framework
+
+**Virtual Voltage Channel**:
+A board-variant-provided abstraction for one controllable voltage channel that exposes channel capabilities and raw hardware evidence to the Domain Runtime Library.
+_Avoid_: Channel service when the intent is the channel abstraction, hardware support when product capabilities matter
+
+**Virtual Channel Provider**:
+A Zephyr-style implementation of a Virtual Voltage Channel using devicetree-derived configuration, runtime data, and API callbacks.
+_Avoid_: Driver when discussing the product-facing channel boundary
+
+**Channel Capability**:
+A declared ability of a Virtual Voltage Channel, such as on/off, raw output drive, voltage measurement, current measurement, raw calibration access, or hardware status.
+_Avoid_: Inferring capability from C function presence
+
 **Configured Target Voltage**:
 The host- or configuration-provided target voltage stored in channel settings.
 _Avoid_: Setpoint, ambiguous command wording
@@ -87,3 +103,19 @@ _Avoid_: Channel save when the intent is specifically to persist calibration coe
 **Protocol Adapter**:
 A frontend-specific translation layer, such as Modbus, that maps protocol requests to protocol-neutral domain commands and snapshots.
 _Avoid_: UI when discussing firmware module boundaries
+
+**Frontend Adapter**:
+A user- or host-facing adapter, such as Modbus, embedded shell, future CAN/TCP/IP, or local display/buttons, that submits commands to and reads snapshots from the Domain Runtime Library.
+_Avoid_: Direct channel-service access
+
+**Runtime Config Snapshot**:
+A complete versioned runtime intent published by the Domain Runtime Library for Virtual Channel Providers to apply.
+_Avoid_: Partial config update when crossing the domain/channel boundary
+
+**Measurement Snapshot**:
+Raw hardware evidence published by a Virtual Channel Provider, including publication generation and measurement timestamp concepts.
+_Avoid_: Domain snapshot when the data has not yet been interpreted by product policy
+
+**Domain Snapshot**:
+The host-visible product read model produced by the Domain Runtime Library after applying calibration, freshness, protection, recovery, and status policy.
+_Avoid_: Raw measurement snapshot
