@@ -1,18 +1,20 @@
+#include "FactorySession.h"
+#include "FactoryCommands.h"
 #include <cli/cli.h>
 #include <cli/loopscheduler.h>
 #include <cli/clilocalsession.h>
 #include <iostream>
 
 int main() {
-    auto rootMenu = std::make_unique<cli::Menu>("factory");
-    rootMenu->Insert("info", [](std::ostream& out) {
-        out << "HVB Factory Calibration Tool v0.1\n";
-    }, "Show tool version");
+    hvb::factory::FactorySession session;
+    auto rootMenu = hvb::factory::buildRootMenu(session);
 
     cli::Cli app(std::move(rootMenu));
     cli::LoopScheduler sched;
-    cli::CliLocalTerminalSession session(app, sched, std::cout);
-    session.ExitAction([&sched](auto& out) {
+    cli::CliLocalTerminalSession localSession(app, sched, std::cout);
+    localSession.ExitAction([&sched, &session](auto& out) {
+        session.stopWatch();
+        session.disconnect();
         out << "Goodbye.\n";
         sched.Stop();
     });

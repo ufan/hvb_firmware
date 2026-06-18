@@ -1,4 +1,8 @@
-add_executable(hvb_factory_tui main.cpp)
+add_executable(hvb_factory_tui
+    main.cpp
+    FactorySession.cpp
+    FactoryCommands.cpp
+)
 target_include_directories(hvb_factory_tui PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../hvb_modbus_core
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../include
