@@ -3,5 +3,6 @@
 menu "HVB firmware shared code"
 
 rsource "drivers/Kconfig"
+rsource "lib/Kconfig"
 
 endmenu

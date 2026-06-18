@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config VC_CHANNEL_PROVIDER
+	bool "VC channel provider support"
+	help
+	  Enable the virtual voltage channel provider subsystem.
+	  Selected by concrete provider drivers when DTS nodes exist.
+
+config VC_CHANNEL_CONTROLLER
+	bool "VC channel controller aggregation"
+	default y
+	depends on DT_HAS_JIANWEI_VC_CONTROLLER_ENABLED
+	select VC_CHANNEL_PROVIDER
+	help
+	  Enable compile-time channel table aggregation from the
+	  vc-controller DTS node.

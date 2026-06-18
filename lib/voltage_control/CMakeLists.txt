@@ -6,5 +6,6 @@ zephyr_library_sources(
 	hvb_variant.c
 	modbus_adapter.c
 )
+zephyr_library_sources_ifdef(CONFIG_VC_CHANNEL_CONTROLLER controller.c)
 
 zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../include)

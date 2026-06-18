@@ -1,0 +1,29 @@
+include: jianwei,vc-channel-base.yaml
+
+properties:
+  dac:
+    type: phandle
+    required: true
+    description: Phandle to the DAC device for raw output drive.
+
+  adc:
+    type: phandle
+    required: true
+    description: Phandle to the ADC device for voltage/current measurement.
+
+  interlock-gpios:
+    type: phandle-array
+    required: false
+    description: GPIO that reports hardware interlock status.
+
+  max-raw-dac:
+    type: int
+    required: true
+    default: 0xFFFF
+    description: Maximum raw DAC code for this channel.
+
+  sample-rate-ms:
+    type: int
+    required: false
+    default: 100
+    description: Target measurement sampling period in milliseconds.
