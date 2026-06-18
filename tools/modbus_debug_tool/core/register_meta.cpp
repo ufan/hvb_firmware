@@ -20,14 +20,14 @@ const std::vector<RegDesc> SYSTEM_INPUT = {
     {10, "Firmware Version HI",   "uint16", "packed",  "FW version encoding, high word", 1.0},
     {11, "Firmware Version LO",   "uint16", "packed",  "FW version encoding, low word", 1.0},
     {12, "Active Operating Mode", "uint16", "enum",    "Current domain operating mode", 1.0, false, false, -1,
-        {"Normal", "Automatic"}},
+        {"Normal", "Automatic", "Calibration"}},
     {13, "System Status",         "uint16", "bitmask", "Global status flags", 1.0},
     {14, "System Fault Cause",    "uint16", "bitmask", "Global fault summary", 1.0},
 };
 
 const std::vector<RegDesc> SYSTEM_HOLDING = {
-    {0,  "Operating Mode",        "uint16", "enum",    "Normal or Automatic", 1.0, true, false, -1,
-        {"Normal", "Automatic"}},
+    {0,  "Operating Mode",        "uint16", "enum",    "Normal, Automatic, or Calibration", 1.0, true, false, -1,
+        {"Normal", "Automatic", "Calibration"}},
     {1,  "Slave Address",         "uint16", "",        "Modbus slave address (0-247)", 1.0, true},
     {2,  "Baud Rate Code",        "uint16", "enum",    "0=115200, 1=9600", 1.0, true, false, -1,
         {"115200", "9600"}},
@@ -55,6 +55,13 @@ const std::vector<RegDesc> CHANNEL_INPUT = {
     {9,  "Last Fault TS HI",      "uint16", "seconds", "Uptime of last fault event (high)", 1.0},
     {10, "Last Fault TS LO",      "uint16", "seconds", "Uptime of last fault event (low)", 1.0},
     {11, "Channel Capability Flags","uint16","bitmask","Channel capability flags", 1.0},
+    {12, "Raw ADC Voltage HI",    "int32_hi","lsb",    "Calibration Mode — raw ADC voltage (high)", 1.0},
+    {13, "Raw ADC Voltage LO",    "int32_lo","lsb",    "Calibration Mode — raw ADC voltage (low)", 1.0},
+    {14, "Raw ADC Current HI",    "int32_hi","lsb",    "Calibration Mode — raw ADC current (high)", 1.0},
+    {15, "Raw ADC Current LO",    "int32_lo","lsb",    "Calibration Mode — raw ADC current (low)", 1.0},
+    {16, "Cal Sample Status",     "uint16", "enum",    "Calibration Mode — sample status", 1.0, false, false, -1,
+        {"NoSample", "Valid", "Busy", "Error"}},
+    {17, "Raw DAC Readback",      "uint16", "lsb",     "Calibration Mode — last written DAC code", 1.0},
 };
 
 const std::vector<RegDesc> CHANNEL_HOLDING = {
@@ -85,6 +92,13 @@ const std::vector<RegDesc> CHANNEL_HOLDING = {
     {18, "Meas V Calibration B",  "uint16", "x1000",   "Voltage measurement offset", 1.0, true},
     {19, "Meas I Calibration K",  "uint16", "x10000",  "Current measurement slope", 1.0, true},
     {20, "Meas I Calibration B",  "uint16", "x1000",   "Current measurement offset", 1.0, true},
+    {21, "Cal Output Enable",     "uint16", "bool",    "Calibration Mode — raw output gate", 1.0, true},
+    {22, "Raw DAC Code",          "uint16", "lsb",     "Calibration Mode — native DAC code", 1.0, true},
+    {23, "Cal Sample Command",    "uint16", "enum",    "Calibration Mode — write 1 to capture ADC", 1.0, true, true, -1,
+        {"None", "Execute"}},
+    {24, "Cal Commit Command",    "uint16", "enum",    "Calibration Mode — write 1 to persist", 1.0, true, true, -1,
+        {"None", "Execute"}},
+    {25, "Cal Max Raw DAC Limit", "uint16", "lsb",     "Calibration Mode — temporary max DAC code", 1.0, true},
     {39, "Channel Param Action",  "uint16", "enum",    "Save/Load/Factory/Reset per channel", 1.0, true, true, -1,
         {"None", "Save", "Load", "FactoryReset"}},
 };
@@ -141,13 +155,13 @@ std::string formatRegisterCatalog() {
            << (d.writable ? " [RW]" : " [R]")
            << (d.selfClearing ? " [CLR]" : "") << ")\n";
     }
-    ss << "\n=== Channel Input Registers (FC04, per-channel offsets 0..11) ===\n";
+    ss << "\n=== Channel Input Registers (FC04, per-channel offsets 0..17) ===\n";
     for (const auto& d : CHANNEL_INPUT) {
         ss << "  0x" << std::hex << std::setw(2) << std::setfill('0') << d.address
            << std::dec << "  " << d.name << " (" << d.type
            << (d.unit[0] ? ", " : "") << d.unit << ")\n";
     }
-    ss << "\n=== Channel Holding Registers (FC03/06/10, per-channel offsets 0..39) ===\n";
+    ss << "\n=== Channel Holding Registers (FC03/06, per-channel offsets 0..25) ===\n";
     for (const auto& d : CHANNEL_HOLDING) {
         ss << "  0x" << std::hex << std::setw(2) << std::setfill('0') << d.address
            << std::dec << "  " << d.name << " (" << d.type
