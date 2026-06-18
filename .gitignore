@@ -6,6 +6,7 @@ build-*
 .agents
 ai
 .codex
+.cache/
 skills-lock.json
 datasheets
 tools/modbus_debug_tool/bin/
