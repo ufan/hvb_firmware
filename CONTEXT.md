@@ -33,7 +33,7 @@ A Zephyr-style implementation of a Virtual Voltage Channel using devicetree-deri
 _Avoid_: Driver when discussing the product-facing channel boundary
 
 **Channel Capability**:
-A static board-design ability of a Virtual Voltage Channel, such as on/off, raw output drive, voltage measurement, current measurement, raw calibration access, or hardware status. Capabilities are derived from devicetree/Kconfig composition and are not dynamically negotiated at runtime.
+A static board-design ability of a Virtual Voltage Channel, such as on/off, raw output drive, voltage measurement, current measurement, or hardware status. Capabilities are derived from devicetree/Kconfig composition and are not dynamically negotiated at runtime. Calibration surfaces derive from Calibration Mode plus the relevant raw output or measurement capability.
 _Avoid_: Inferring capability from C function presence; treating capability as runtime configuration
 
 **Configured Target Voltage**:
