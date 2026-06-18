@@ -48,8 +48,9 @@ FetchContent_Declare(Catch2
 )
 FetchContent_MakeAvailable(Catch2)
 
-add_subdirectory(hvb_modbus_core)
-add_subdirectory(hvb_demo_app)
+if(BUILD_GUI)
+    find_package(Qt6 REQUIRED COMPONENTS Core SerialPort Quick QuickControls2)
+endif()
 
 if(BUILD_FACTORY)
     # daniele77/cli — header-only Cisco-style REPL
@@ -58,9 +59,11 @@ if(BUILD_FACTORY)
         GIT_TAG v2.2.0
     )
     FetchContent_MakeAvailable(daniele77cli)
-    add_subdirectory(hvb_factory_tool)
 endif()
 
-if(BUILD_GUI)
-    find_package(Qt6 REQUIRED COMPONENTS Core SerialPort Quick QuickControls2)
+add_subdirectory(hvb_modbus_core)
+add_subdirectory(hvb_demo_app)
+
+if(BUILD_FACTORY)
+    add_subdirectory(hvb_factory_tool)
 endif()
