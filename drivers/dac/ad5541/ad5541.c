@@ -68,7 +68,7 @@ static int ad5541_init(const struct device *dev)
 		return -ENODEV;
 	}
 
-	LOG_DBG("AD5541 initialized");
+	LOG_INF("%s ready", dev->name);
 	return 0;
 }
 

@@ -27,6 +27,10 @@ struct ads1232_config {
 	bool runtime_gain;
 };
 
+struct ads1232_data {
+	struct k_mutex lock;
+};
+
 static enum adc_gain ads1232_int_to_gain(int g)
 {
 	switch (g) {
@@ -130,6 +134,7 @@ static int ads1232_read(const struct device *dev,
 			const struct adc_sequence *sequence)
 {
 	const struct ads1232_config *cfg = dev->config;
+	struct ads1232_data *data = dev->data;
 	int32_t *buf = (int32_t *)sequence->buffer;
 	int num_ch;
 	int ret;
@@ -143,27 +148,35 @@ static int ads1232_read(const struct device *dev,
 		return -ENOMEM;
 	}
 
+	k_mutex_lock(&data->lock, K_FOREVER);
+
 	if (sequence->channels & BIT(0)) {
 		ret = ads1232_read_one(cfg, 0, buf++);
 		if (ret < 0) {
-			return ret;
+			goto unlock;
 		}
 	}
 
 	if (sequence->channels & BIT(1)) {
 		ret = ads1232_read_one(cfg, 1, buf++);
 		if (ret < 0) {
-			return ret;
+			goto unlock;
 		}
 	}
 
-	return 0;
+	ret = 0;
+unlock:
+	k_mutex_unlock(&data->lock);
+	return ret;
 }
 
 static int ads1232_init(const struct device *dev)
 {
 	const struct ads1232_config *cfg = dev->config;
+	struct ads1232_data *data = dev->data;
 	int ret;
+
+	k_mutex_init(&data->lock);
 
 	if (!device_is_ready(cfg->drdy.port)) {
 		LOG_ERR("DRDY GPIO port not ready");
@@ -216,7 +229,7 @@ static int ads1232_init(const struct device *dev)
 	/* Set initial gain if specified. */
 	ads1232_set_gain_gpios(cfg, ads1232_int_to_gain(cfg->init_gain));
 
-	LOG_INF("%s ready", dev->name);
+	LOG_DBG("%s ready", dev->name);
 	return 0;
 }
 
@@ -227,6 +240,7 @@ static const struct adc_driver_api ads1232_api = {
 };
 
 #define ADS1232_INIT(n)							\
+	static struct ads1232_data ads1232_data_##n;			\
 	static const struct ads1232_config ads1232_config_##n = {	\
 		.drdy  = GPIO_DT_SPEC_INST_GET(n, drdy_gpios),		\
 		.sclk  = GPIO_DT_SPEC_INST_GET(n, sclk_gpios),		\
@@ -240,7 +254,7 @@ static const struct adc_driver_api ads1232_api = {
 	};								\
 									\
 	DEVICE_DT_INST_DEFINE(n, ads1232_init, NULL,			\
-		NULL, &ads1232_config_##n,				\
+		&ads1232_data_##n, &ads1232_config_##n,			\
 		POST_KERNEL, CONFIG_ADC_INIT_PRIORITY,			\
 		&ads1232_api);
 
