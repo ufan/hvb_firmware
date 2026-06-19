@@ -35,9 +35,47 @@ struct vc_runtime {
 static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 						  const struct vc_runtime_command *cmd)
 {
-	ARG_UNUSED(runtime);
-	ARG_UNUSED(cmd);
-	return VC_ERR_INVALID_COMMAND;
+	switch (cmd->type) {
+	case VC_RUNTIME_CMD_SET_OPERATING_MODE:
+		return domain_set_operating_mode(runtime->domain, cmd->payload.operating_mode);
+	case VC_RUNTIME_CMD_SET_SYSTEM_CONFIG:
+		return domain_set_system_config(runtime->domain, &cmd->payload.system_config);
+	case VC_RUNTIME_CMD_SET_CHANNEL_CONFIG:
+		return domain_set_channel_config(runtime->domain, cmd->channel,
+						 &cmd->payload.channel_config);
+	case VC_RUNTIME_CMD_OUTPUT_ACTION:
+		return domain_channel_output_action(runtime->domain, cmd->channel,
+						    cmd->payload.output_action);
+	case VC_RUNTIME_CMD_FAULT_COMMAND:
+		return domain_channel_fault_command(runtime->domain, cmd->channel,
+						    cmd->payload.fault_command);
+	case VC_RUNTIME_CMD_CALIBRATION_UNLOCK:
+		return domain_calibration_unlock(runtime->domain,
+						 cmd->payload.calibration_unlock_value);
+	case VC_RUNTIME_CMD_CALIBRATION_OUTPUT_ENABLE:
+		return domain_calibration_set_output_enable(runtime->domain, cmd->channel,
+							    cmd->payload.calibration_output_enable);
+	case VC_RUNTIME_CMD_CALIBRATION_RAW_DAC:
+		return domain_calibration_set_raw_dac(runtime->domain, cmd->channel,
+						      cmd->payload.calibration_raw_dac);
+	case VC_RUNTIME_CMD_CALIBRATION_SAMPLE:
+		return domain_calibration_sample(runtime->domain, cmd->channel);
+	case VC_RUNTIME_CMD_CALIBRATION_COMMIT:
+		return domain_calibration_commit(runtime->domain, cmd->channel);
+	case VC_RUNTIME_CMD_CALIBRATION_MAX_RAW_DAC:
+		return domain_calibration_set_max_raw_dac(runtime->domain, cmd->channel,
+							 cmd->payload.calibration_max_raw_dac);
+	case VC_RUNTIME_CMD_SYSTEM_PARAM_ACTION:
+		return domain_system_param_action(runtime->domain, cmd->payload.param_action);
+	case VC_RUNTIME_CMD_CHANNEL_PARAM_ACTION:
+		return domain_channel_param_action(runtime->domain, cmd->channel,
+						   cmd->payload.param_action);
+	case VC_RUNTIME_CMD_SET_UPTIME:
+		domain_set_uptime(runtime->domain, cmd->payload.uptime_seconds);
+		return VC_OK;
+	default:
+		return VC_ERR_INVALID_COMMAND;
+	}
 }
 
 static void vc_runtime_worker(void *p1, void *p2, void *p3)
@@ -121,6 +159,59 @@ void vc_runtime_destroy(struct vc_runtime *runtime)
 	k_sem_give(&runtime->wake);
 	(void)k_thread_join(&runtime->thread, K_FOREVER);
 	free(runtime);
+}
+
+enum vc_status vc_runtime_submit_command(struct vc_runtime *runtime,
+					 const struct vc_runtime_command *cmd,
+					 k_timeout_t timeout)
+{
+	struct vc_runtime_work_item work;
+	struct k_sem result_sem;
+	enum vc_status result = VC_ERR_UNSAFE_STATE;
+
+	if (runtime == NULL || cmd == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	work.command = *cmd;
+	work.command.result = &result;
+	work.command.result_sem = &result_sem;
+	k_sem_init(&result_sem, 0, 1);
+
+	if (k_msgq_put(&runtime->command_queue, &work, timeout) != 0) {
+		return VC_ERR_UNSAFE_STATE;
+	}
+	k_sem_give(&runtime->wake);
+
+	if (k_sem_take(&result_sem, timeout) != 0) {
+		return VC_ERR_UNSAFE_STATE;
+	}
+
+	return result;
+}
+
+enum vc_status vc_runtime_set_operating_mode(struct vc_runtime *runtime,
+					     enum vc_operating_mode mode,
+					     k_timeout_t timeout)
+{
+	struct vc_runtime_command cmd = {
+		.type = VC_RUNTIME_CMD_SET_OPERATING_MODE,
+		.payload.operating_mode = mode,
+	};
+
+	return vc_runtime_submit_command(runtime, &cmd, timeout);
+}
+
+enum vc_status vc_runtime_set_uptime(struct vc_runtime *runtime,
+				     uint32_t seconds,
+				     k_timeout_t timeout)
+{
+	struct vc_runtime_command cmd = {
+		.type = VC_RUNTIME_CMD_SET_UPTIME,
+		.payload.uptime_seconds = seconds,
+	};
+
+	return vc_runtime_submit_command(runtime, &cmd, timeout);
 }
 
 enum vc_status vc_runtime_submit_measurement(

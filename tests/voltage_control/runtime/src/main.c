@@ -167,3 +167,35 @@ ZTEST(voltage_control_runtime, test_fake_provider_apply_safe_state)
 	zassert_equal(state.output, 0);
 	zassert_false(state.enabled);
 }
+
+ZTEST(voltage_control_runtime, test_runtime_set_operating_mode_is_processed_by_worker)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_runtime *rt;
+
+	zassert_not_null(d);
+	rt = vc_runtime_create(d);
+	zassert_not_null(rt);
+
+	zassert_equal(vc_runtime_set_operating_mode(rt, VC_OPERATING_MODE_AUTOMATIC, K_SECONDS(1)), VC_OK);
+	zassert_equal(domain_get_operating_mode(d), VC_OPERATING_MODE_AUTOMATIC);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_runtime_submit_command_rejects_null)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_runtime *rt;
+
+	zassert_not_null(d);
+	rt = vc_runtime_create(d);
+	zassert_not_null(rt);
+
+	zassert_equal(vc_runtime_submit_command(NULL, NULL, K_NO_WAIT), VC_ERR_INVALID_VALUE);
+	zassert_equal(vc_runtime_submit_command(rt, NULL, K_NO_WAIT), VC_ERR_INVALID_VALUE);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}
