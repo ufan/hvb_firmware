@@ -183,9 +183,7 @@ enum vc_status vc_runtime_submit_command(struct vc_runtime *runtime,
 	}
 	k_sem_give(&runtime->wake);
 
-	if (k_sem_take(&result_sem, timeout) != 0) {
-		return VC_ERR_UNSAFE_STATE;
-	}
+	k_sem_take(&result_sem, K_FOREVER);
 
 	return result;
 }
