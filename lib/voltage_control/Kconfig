@@ -47,6 +47,7 @@ config VC_RUNTIME_THREAD_STACK_SIZE
 config VC_RUNTIME_THREAD_PRIORITY
 	int "VC runtime worker priority"
 	default 5
+	range 1 15
 	depends on VC_RUNTIME
 	help
 	  Zephyr thread priority for the voltage-control runtime worker.

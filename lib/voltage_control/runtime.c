@@ -27,7 +27,6 @@ struct vc_runtime {
 	struct k_msgq evidence_queue;
 	struct k_sem wake;
 	struct k_thread thread;
-	k_tid_t tid;
 	bool stop_requested;
 	char command_buffer[CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH * sizeof(struct vc_runtime_work_item)];
 	char evidence_buffer[CONFIG_VC_RUNTIME_EVIDENCE_QUEUE_DEPTH * sizeof(struct vc_runtime_evidence_item)];
@@ -104,10 +103,10 @@ struct vc_runtime *vc_runtime_create(struct domain *domain)
 		    sizeof(struct vc_runtime_work_item), CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH);
 	k_msgq_init(&runtime->evidence_queue, runtime->evidence_buffer,
 		    sizeof(struct vc_runtime_evidence_item), CONFIG_VC_RUNTIME_EVIDENCE_QUEUE_DEPTH);
-	runtime->tid = k_thread_create(&runtime->thread, vc_runtime_stack,
-				       K_KERNEL_STACK_SIZEOF(vc_runtime_stack),
-				       vc_runtime_worker, runtime, NULL, NULL,
-				       CONFIG_VC_RUNTIME_THREAD_PRIORITY, 0, K_NO_WAIT);
+	(void)k_thread_create(&runtime->thread, vc_runtime_stack,
+			       K_KERNEL_STACK_SIZEOF(vc_runtime_stack),
+			       vc_runtime_worker, runtime, NULL, NULL,
+			       CONFIG_VC_RUNTIME_THREAD_PRIORITY, 0, K_NO_WAIT);
 
 	return runtime;
 }
