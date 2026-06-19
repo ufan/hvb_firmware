@@ -79,6 +79,19 @@ static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 	}
 }
 
+static void vc_runtime_publish_all_configs(struct vc_runtime *runtime)
+{
+	uint16_t count = domain_get_supported_channel_count(runtime->domain);
+
+	for (uint8_t ch = 0; ch < count; ch++) {
+		struct vc_runtime_config_snapshot cfg;
+
+		if (domain_get_runtime_config(runtime->domain, ch, &cfg) == VC_OK) {
+			(void)vc_provider_bus_publish_config(ch, &cfg);
+		}
+	}
+}
+
 static void vc_runtime_worker(void *p1, void *p2, void *p3)
 {
 	struct vc_runtime *runtime = p1;
@@ -97,6 +110,7 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 
 			k_mutex_lock(&runtime->lock, K_FOREVER);
 			result = vc_runtime_dispatch_command(runtime, &work.command);
+			vc_runtime_publish_all_configs(runtime);
 			k_mutex_unlock(&runtime->lock);
 
 			if (work.command.result != NULL) {
@@ -110,12 +124,14 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 		while (vc_provider_bus_take_measurement(&evidence.measurement) == VC_OK) {
 			k_mutex_lock(&runtime->lock, K_FOREVER);
 			(void)domain_consume_measurement(runtime->domain, &evidence.measurement);
+			vc_runtime_publish_all_configs(runtime);
 			k_mutex_unlock(&runtime->lock);
 		}
 
 		if (wake_ret == -EAGAIN) {
 			k_mutex_lock(&runtime->lock, K_FOREVER);
 			domain_tick(runtime->domain, CONFIG_VC_RUNTIME_TICK_INTERVAL_MS, NULL, NULL);
+			vc_runtime_publish_all_configs(runtime);
 			k_mutex_unlock(&runtime->lock);
 		}
 	}
@@ -139,6 +155,7 @@ struct vc_runtime *vc_runtime_create(struct domain *domain)
 	k_mutex_init(&runtime->lock);
 	k_sem_init(&runtime->wake, 0, 1);
 	vc_provider_bus_init();
+	vc_runtime_publish_all_configs(runtime);
 	k_msgq_init(&runtime->command_queue, runtime->command_buffer,
 		    sizeof(struct vc_runtime_work_item), CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH);
 	k_msgq_init(&runtime->evidence_queue, runtime->evidence_buffer,

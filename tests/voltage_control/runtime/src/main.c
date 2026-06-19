@@ -296,3 +296,48 @@ ZTEST(voltage_control_runtime, test_provider_bus_publish_config_posts_message)
 	zassert_equal(msg.channel, 0);
 	zassert_equal(msg.config_version, 9);
 }
+
+ZTEST(voltage_control_runtime, test_runtime_create_publishes_initial_provider_config)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_runtime *rt;
+	const struct vc_runtime_config_snapshot *cfg;
+
+	zassert_not_null(d);
+	rt = vc_runtime_create(d);
+	zassert_not_null(rt);
+
+	cfg = vc_provider_bus_acquire_config(0);
+	zassert_not_null(cfg);
+	zassert_equal(cfg->channel, 0);
+	zassert_true(cfg->version >= 1);
+	zassert_true(cfg->force_safe_state);
+	vc_provider_bus_release_config(0);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_runtime_command_posts_provider_config_message)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_runtime *rt;
+	struct vc_provider_msg msg;
+
+	zassert_not_null(d);
+	rt = vc_runtime_create(d);
+	zassert_not_null(rt);
+
+	/* Drain initial config messages so we see only the command-triggered one */
+	while (vc_provider_bus_take_message(&msg, K_NO_WAIT) == VC_OK) {
+	}
+
+	zassert_equal(vc_runtime_set_operating_mode(rt, VC_OPERATING_MODE_AUTOMATIC, K_SECONDS(1)), VC_OK);
+	zassert_equal(vc_provider_bus_take_message(&msg, K_SECONDS(1)), VC_OK);
+	zassert_equal(msg.type, VC_PROVIDER_MSG_CONFIG_CHANGED);
+	zassert_equal(msg.channel, 0);
+	zassert_true(msg.config_version >= 1);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}
