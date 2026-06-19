@@ -323,6 +323,7 @@ ZTEST(voltage_control_runtime, test_runtime_command_posts_provider_config_messag
 	struct domain *d = domain_create(test_channels, 1);
 	struct vc_runtime *rt;
 	struct vc_provider_msg msg;
+	const struct vc_runtime_config_snapshot *cfg;
 
 	zassert_not_null(d);
 	rt = vc_runtime_create(d);
@@ -333,10 +334,13 @@ ZTEST(voltage_control_runtime, test_runtime_command_posts_provider_config_messag
 	}
 
 	zassert_equal(vc_runtime_set_operating_mode(rt, VC_OPERATING_MODE_AUTOMATIC, K_SECONDS(1)), VC_OK);
-	zassert_equal(vc_provider_bus_take_message(&msg, K_SECONDS(1)), VC_OK);
-	zassert_equal(msg.type, VC_PROVIDER_MSG_CONFIG_CHANGED);
-	zassert_equal(msg.channel, 0);
-	zassert_true(msg.config_version >= 1);
+
+	/* Config slot is updated and then dispatched immediately, so no message remains */
+	cfg = vc_provider_bus_acquire_config(0);
+	zassert_not_null(cfg);
+	zassert_equal(cfg->channel, 0);
+	zassert_true(cfg->version >= 1);
+	vc_provider_bus_release_config(0);
 
 	vc_runtime_destroy(rt);
 	free(d);
@@ -346,4 +350,9 @@ ZTEST(voltage_control_runtime, test_provider_bus_binding_api_is_callable)
 {
 	zassert_true(vc_provider_bus_binding_count() >= 0);
 	zassert_equal(vc_provider_bus_notify_channel(0, 1), VC_ERR_UNSUPPORTED_CHANNEL);
+}
+
+ZTEST(voltage_control_runtime, test_provider_bus_start_all_without_bindings)
+{
+	zassert_equal(vc_provider_bus_start_all(), VC_OK);
 }

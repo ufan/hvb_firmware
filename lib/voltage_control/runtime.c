@@ -88,6 +88,7 @@ static void vc_runtime_publish_all_configs(struct vc_runtime *runtime)
 
 		if (domain_get_runtime_config(runtime->domain, ch, &cfg) == VC_OK) {
 			(void)vc_provider_bus_publish_config(ch, &cfg);
+			(void)vc_provider_bus_dispatch_one(K_NO_WAIT);
 		}
 	}
 }

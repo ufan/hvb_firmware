@@ -20,6 +20,7 @@
 #include "regmap/hvb_regs.h"
 #include "voltage_control/domain.h"
 #include "voltage_control/modbus_adapter.h"
+#include "voltage_control/provider_bus.h"
 #include "voltage_control/runtime.h"
 #include "voltage_control/vc_channel.h"
 
@@ -113,6 +114,12 @@ int main(void)
 	runtime = vc_runtime_create(domain);
 	if (!runtime) {
 		printk("Failed to create runtime\n");
+		return 0;
+	}
+
+	ret = vc_provider_bus_start_all();
+	if (ret != VC_OK) {
+		printk("Failed to start provider bus: %d\n", ret);
 		return 0;
 	}
 
