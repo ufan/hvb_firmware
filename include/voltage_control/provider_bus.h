@@ -53,4 +53,9 @@ enum vc_status vc_provider_bus_take_measurement(struct vc_measurement_snapshot *
 enum vc_status vc_provider_bus_take_message(struct vc_provider_msg *msg,
 					    k_timeout_t timeout);
 
+size_t vc_provider_bus_binding_count(void);
+enum vc_status vc_provider_bus_start_all(void);
+enum vc_status vc_provider_bus_notify_channel(uint8_t channel, uint32_t version);
+enum vc_status vc_provider_bus_dispatch_one(k_timeout_t timeout);
+
 #endif

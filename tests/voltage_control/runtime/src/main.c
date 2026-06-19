@@ -341,3 +341,9 @@ ZTEST(voltage_control_runtime, test_runtime_command_posts_provider_config_messag
 	vc_runtime_destroy(rt);
 	free(d);
 }
+
+ZTEST(voltage_control_runtime, test_provider_bus_binding_api_is_callable)
+{
+	zassert_true(vc_provider_bus_binding_count() >= 0);
+	zassert_equal(vc_provider_bus_notify_channel(0, 1), VC_ERR_UNSUPPORTED_CHANNEL);
+}

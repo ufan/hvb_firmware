@@ -114,3 +114,66 @@ enum vc_status vc_provider_bus_take_measurement(struct vc_measurement_snapshot *
 
 	return VC_OK;
 }
+
+#include "voltage_control/vc_channel.h"
+
+size_t vc_provider_bus_binding_count(void)
+{
+	size_t count = 0;
+	STRUCT_SECTION_FOREACH(vc_provider_binding, binding) {
+		ARG_UNUSED(binding);
+		count++;
+	}
+	return count;
+}
+
+enum vc_status vc_provider_bus_start_all(void)
+{
+	STRUCT_SECTION_FOREACH(vc_provider_binding, binding) {
+		const struct vc_channel_api *api = binding->dev->api;
+
+		if (api != NULL && api->start != NULL) {
+			int ret = api->start(binding->dev);
+			if (ret < 0) {
+				return VC_ERR_UNSAFE_STATE;
+			}
+		}
+	}
+	return VC_OK;
+}
+
+enum vc_status vc_provider_bus_notify_channel(uint8_t channel, uint32_t version)
+{
+	STRUCT_SECTION_FOREACH(vc_provider_binding, binding) {
+		if (binding->channel == channel) {
+			const struct vc_channel_api *api = binding->dev->api;
+
+			if (api != NULL && api->notify_config_changed != NULL) {
+				int ret = api->notify_config_changed(binding->dev, version);
+				return ret < 0 ? VC_ERR_UNSAFE_STATE : VC_OK;
+			}
+			return VC_OK;
+		}
+	}
+	return VC_ERR_UNSUPPORTED_CHANNEL;
+}
+
+enum vc_status vc_provider_bus_dispatch_one(k_timeout_t timeout)
+{
+	struct vc_provider_msg msg;
+	enum vc_status status = vc_provider_bus_take_message(&msg, timeout);
+
+	if (status != VC_OK) {
+		return status;
+	}
+
+	switch (msg.type) {
+	case VC_PROVIDER_MSG_CONFIG_CHANGED:
+	case VC_PROVIDER_MSG_SAMPLE_NOW:
+		return vc_provider_bus_notify_channel(msg.channel, msg.config_version);
+	case VC_PROVIDER_MSG_STOP:
+		return VC_OK;
+	default:
+		return VC_ERR_INVALID_VALUE;
+	}
+}
