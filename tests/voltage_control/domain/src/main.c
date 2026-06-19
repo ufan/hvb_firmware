@@ -1569,3 +1569,37 @@ ZTEST(voltage_control_domain, test_current_fault_voltage_flag_only)
 		"voltage flag-only still records fault history");
 	free(d);
 }
+
+ZTEST(voltage_control_domain, test_smf_preserves_calibration_output_rejection)
+{
+	struct domain *d = domain_setup_fresh();
+
+	zassert_equal(domain_calibration_unlock(d, CAL_UNLOCK_STEP1), VC_OK);
+	zassert_equal(domain_calibration_unlock(d, CAL_UNLOCK_STEP2), VC_OK);
+	zassert_equal(domain_set_operating_mode(d, VC_OPERATING_MODE_CALIBRATION), VC_OK);
+	zassert_equal(domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE),
+		      VC_ERR_INVALID_COMMAND);
+
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_smf_preserves_fault_safe_runtime_config)
+{
+	struct domain *d = domain_setup_fresh();
+	struct vc_measurement_snapshot meas = {
+		.channel = 0,
+		.generation = 1,
+		.present_mask = VC_MEAS_PRESENT_PROVIDER_STATUS,
+		.provider_status = VC_PROVIDER_STATUS_INTERLOCK,
+		.provider_fault_cause = VC_FAULT_INTERLOCK,
+	};
+	struct vc_runtime_config_snapshot cfg;
+
+	zassert_equal(domain_consume_measurement(d, &meas), VC_OK);
+	zassert_equal(domain_get_runtime_config(d, 0, &cfg), VC_OK);
+	zassert_true(cfg.force_safe_state);
+	zassert_false(cfg.output_enable);
+	zassert_equal(cfg.raw_output_drive, 0);
+
+	free(d);
+}

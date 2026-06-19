@@ -17,6 +17,7 @@ config VC_CHANNEL_CONTROLLER
 
 config VC_RUNTIME
 	bool "VC runtime service"
+	select SMF
 	help
 	  Enable the voltage-control runtime service.
 

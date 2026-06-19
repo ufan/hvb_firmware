@@ -9,6 +9,7 @@
 #include "regmap/hvb_regs.h"
 #include <stdlib.h>
 #include <string.h>
+#include <zephyr/smf.h>
 
 #define VC_DEFAULT_MAX_RAW_DAC      0xFFFF
 #define VC_DEFAULT_MAX_VOLTAGE_RAW  20000
@@ -18,6 +19,35 @@
 #define VC_VARIANT_ID               1
 #define VC_CHANNEL_MASK(c)          ((1U << (c)) - 1)
 
+enum vc_domain_smf_state {
+	VC_DOMAIN_SMF_NORMAL,
+	VC_DOMAIN_SMF_AUTOMATIC,
+	VC_DOMAIN_SMF_CALIBRATION,
+	VC_DOMAIN_SMF_COUNT,
+};
+
+enum vc_channel_smf_state {
+	VC_CHANNEL_SMF_DISABLED_SAFE,
+	VC_CHANNEL_SMF_ENABLED_HOLDING,
+	VC_CHANNEL_SMF_RAMPING,
+	VC_CHANNEL_SMF_FAULT_LATCHED,
+	VC_CHANNEL_SMF_RETRY_COOLDOWN,
+	VC_CHANNEL_SMF_CALIBRATION_OUTPUT,
+	VC_CHANNEL_SMF_UNAVAILABLE,
+	VC_CHANNEL_SMF_COUNT,
+};
+
+struct vc_domain_smf_ctx {
+	struct smf_ctx ctx;
+	struct domain *domain;
+};
+
+struct vc_channel_smf_ctx {
+	struct smf_ctx ctx;
+	struct domain *domain;
+	uint8_t channel;
+};
+
 struct vc_channel_runtime {
 	bool output_enabled;
 	bool ramping;
@@ -25,9 +55,11 @@ struct vc_channel_runtime {
 	uint32_t cooldown_remaining_ms;
 	uint16_t cal_max_raw_dac_limit;
 	uint32_t runtime_config_version;
+	struct vc_channel_smf_ctx smf;
 };
 
 struct domain {
+	struct vc_domain_smf_ctx smf;
 	const struct vc_channel_entry *ch_entry;
 	size_t channel_count;
 	enum vc_operating_mode operating_mode;
@@ -338,6 +370,40 @@ static bool calibration_fields_changed(const struct vc_channel_config *old_cfg,
 	       old_cfg->measured_current_calib_b != new_cfg->measured_current_calib_b;
 }
 
+static void vc_domain_smf_noop(void *obj)
+{
+	ARG_UNUSED(obj);
+}
+
+static const struct smf_state vc_domain_states[VC_DOMAIN_SMF_COUNT] = {
+	[VC_DOMAIN_SMF_NORMAL] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+	[VC_DOMAIN_SMF_AUTOMATIC] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+	[VC_DOMAIN_SMF_CALIBRATION] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+};
+
+static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT] = {
+	[VC_CHANNEL_SMF_DISABLED_SAFE] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_ENABLED_HOLDING] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_RAMPING] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_FAULT_LATCHED] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_RETRY_COOLDOWN] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_CALIBRATION_OUTPUT] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_UNAVAILABLE] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+};
+
+static void domain_init_smf(struct domain *domain)
+{
+	domain->smf.domain = domain;
+	smf_set_initial(SMF_CTX(&domain->smf), &vc_domain_states[VC_DOMAIN_SMF_NORMAL]);
+
+	for (size_t ch = 0; ch < domain->channel_count; ch++) {
+		domain->runtime[ch].smf.domain = domain;
+		domain->runtime[ch].smf.channel = ch;
+		smf_set_initial(SMF_CTX(&domain->runtime[ch].smf),
+				&vc_channel_states[VC_CHANNEL_SMF_DISABLED_SAFE]);
+	}
+}
+
 struct domain *domain_create(const struct vc_channel_entry *channels,
 			     size_t count)
 {
@@ -354,6 +420,9 @@ struct domain *domain_create(const struct vc_channel_entry *channels,
 
 	domain->ch_entry = channels;
 	domain->channel_count = count;
+
+	domain_init_smf(domain);
+
 	domain->operating_mode = VC_OPERATING_MODE_NORMAL;
 	domain->sys_cfg = (struct vc_system_config){
 		.operating_mode = VC_OPERATING_MODE_NORMAL,

@@ -589,8 +589,8 @@ ZTEST(voltage_control_domain, test_smf_preserves_calibration_output_rejection)
 {
 	struct domain *d = domain_setup_fresh();
 
-	zassert_equal(domain_calibration_unlock(d, 0xA55A), VC_OK);
-	zassert_equal(domain_calibration_unlock(d, 0x5AA5), VC_OK);
+	zassert_equal(domain_calibration_unlock(d, CAL_UNLOCK_STEP1), VC_OK);
+	zassert_equal(domain_calibration_unlock(d, CAL_UNLOCK_STEP2), VC_OK);
 	zassert_equal(domain_set_operating_mode(d, VC_OPERATING_MODE_CALIBRATION), VC_OK);
 	zassert_equal(domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE),
 		      VC_ERR_INVALID_COMMAND);
