@@ -87,3 +87,30 @@ enum vc_status vc_provider_bus_take_message(struct vc_provider_msg *msg,
 
 	return VC_OK;
 }
+
+enum vc_status vc_provider_bus_publish_measurement(
+	const struct vc_measurement_snapshot *meas)
+{
+	if (meas == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	if (k_msgq_put(&vc_runtime_evidence_msgq, meas, K_NO_WAIT) != 0) {
+		return VC_ERR_UNSAFE_STATE;
+	}
+
+	return VC_OK;
+}
+
+enum vc_status vc_provider_bus_take_measurement(struct vc_measurement_snapshot *meas)
+{
+	if (meas == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	if (k_msgq_get(&vc_runtime_evidence_msgq, meas, K_NO_WAIT) != 0) {
+		return VC_ERR_UNSAFE_STATE;
+	}
+
+	return VC_OK;
+}

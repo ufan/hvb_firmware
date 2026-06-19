@@ -263,6 +263,24 @@ ZTEST(voltage_control_runtime, test_provider_bus_config_slot_acquire_release)
 	vc_provider_bus_release_config(0);
 }
 
+ZTEST(voltage_control_runtime, test_provider_bus_measurement_queue_round_trip)
+{
+	struct vc_measurement_snapshot in = {
+		.channel = 0,
+		.generation = 3,
+		.present_mask = VC_MEAS_PRESENT_VOLTAGE,
+		.raw_voltage = 456,
+	};
+	struct vc_measurement_snapshot out;
+
+	vc_provider_bus_init();
+	zassert_equal(vc_provider_bus_publish_measurement(&in), VC_OK);
+	zassert_equal(vc_provider_bus_take_measurement(&out), VC_OK);
+	zassert_equal(out.channel, 0);
+	zassert_equal(out.generation, 3);
+	zassert_equal(out.raw_voltage, 456);
+}
+
 ZTEST(voltage_control_runtime, test_provider_bus_publish_config_posts_message)
 {
 	struct vc_runtime_config_snapshot cfg = {

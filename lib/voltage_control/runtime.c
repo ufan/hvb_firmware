@@ -9,6 +9,7 @@
 #include <zephyr/kernel.h>
 
 #include "voltage_control/runtime.h"
+#include "voltage_control/provider_bus.h"
 
 K_KERNEL_STACK_DEFINE(vc_runtime_stack, CONFIG_VC_RUNTIME_THREAD_STACK_SIZE);
 
@@ -106,7 +107,7 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 			}
 		}
 
-		while (k_msgq_get(&runtime->evidence_queue, &evidence, K_NO_WAIT) == 0) {
+		while (vc_provider_bus_take_measurement(&evidence.measurement) == VC_OK) {
 			k_mutex_lock(&runtime->lock, K_FOREVER);
 			(void)domain_consume_measurement(runtime->domain, &evidence.measurement);
 			k_mutex_unlock(&runtime->lock);
@@ -137,6 +138,7 @@ struct vc_runtime *vc_runtime_create(struct domain *domain)
 	runtime->stop_requested = false;
 	k_mutex_init(&runtime->lock);
 	k_sem_init(&runtime->wake, 0, 1);
+	vc_provider_bus_init();
 	k_msgq_init(&runtime->command_queue, runtime->command_buffer,
 		    sizeof(struct vc_runtime_work_item), CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH);
 	k_msgq_init(&runtime->evidence_queue, runtime->evidence_buffer,
@@ -212,22 +214,18 @@ enum vc_status vc_runtime_set_uptime(struct vc_runtime *runtime,
 	return vc_runtime_submit_command(runtime, &cmd, timeout);
 }
 
-enum vc_status vc_runtime_submit_measurement(
+	enum vc_status vc_runtime_submit_measurement(
 	struct vc_runtime *runtime,
 	const struct vc_measurement_snapshot *meas)
 {
-	struct vc_runtime_evidence_item evidence;
-
 	if (runtime == NULL || meas == NULL) {
 		return VC_ERR_INVALID_VALUE;
 	}
 
-	evidence.measurement = *meas;
-	if (k_msgq_put(&runtime->evidence_queue, &evidence, K_NO_WAIT) != 0) {
+	if (vc_provider_bus_publish_measurement(meas) != VC_OK) {
 		return VC_ERR_UNSAFE_STATE;
 	}
 	k_sem_give(&runtime->wake);
-
 	return VC_OK;
 }
 
