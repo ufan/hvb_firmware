@@ -69,9 +69,17 @@ ZTEST(voltage_control_runtime, test_runtime_submit_measurement_updates_domain_sn
 	zassert_not_null(rt);
 
 	zassert_equal(vc_runtime_submit_measurement(rt, &meas), VC_OK);
-	k_msleep(20);
-	zassert_equal(domain_get_channel_snapshot(d, 0, &snap), VC_OK);
-	zassert_equal(snap.raw_adc_voltage, 77);
+	/* Poll until worker processes the evidence or timeout */
+	bool processed = false;
+	for (int i = 0; i < 100; i++) {
+		k_msleep(1);
+		if (domain_get_channel_snapshot(d, 0, &snap) == VC_OK &&
+		    snap.raw_adc_voltage == 77) {
+			processed = true;
+			break;
+		}
+	}
+	zassert_true(processed, "worker did not process evidence within 100ms");
 	zassert_equal(snap.measured_voltage, 77);
 
 	vc_runtime_destroy(rt);
