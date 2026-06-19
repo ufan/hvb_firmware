@@ -69,6 +69,7 @@ ZTEST(voltage_control_runtime, test_runtime_submit_measurement_updates_domain_sn
 	zassert_not_null(rt);
 
 	zassert_equal(vc_runtime_submit_measurement(rt, &meas), VC_OK);
+	k_msleep(20);
 	zassert_equal(domain_get_channel_snapshot(d, 0, &snap), VC_OK);
 	zassert_equal(snap.raw_adc_voltage, 77);
 	zassert_equal(snap.measured_voltage, 77);

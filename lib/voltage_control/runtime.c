@@ -216,17 +216,19 @@ enum vc_status vc_runtime_submit_measurement(
 	struct vc_runtime *runtime,
 	const struct vc_measurement_snapshot *meas)
 {
-	enum vc_status status;
+	struct vc_runtime_evidence_item evidence;
 
 	if (runtime == NULL || meas == NULL) {
 		return VC_ERR_INVALID_VALUE;
 	}
 
-	k_mutex_lock(&runtime->lock, K_FOREVER);
-	status = domain_consume_measurement(runtime->domain, meas);
-	k_mutex_unlock(&runtime->lock);
+	evidence.measurement = *meas;
+	if (k_msgq_put(&runtime->evidence_queue, &evidence, K_NO_WAIT) != 0) {
+		return VC_ERR_UNSAFE_STATE;
+	}
+	k_sem_give(&runtime->wake);
 
-	return status;
+	return VC_OK;
 }
 
 enum vc_status vc_runtime_get_channel_config(
