@@ -35,3 +35,26 @@ config VC_RUNTIME_EVIDENCE_QUEUE_DEPTH
 	depends on VC_RUNTIME
 	help
 	  Maximum number of queued runtime evidence records.
+
+config VC_RUNTIME_THREAD_STACK_SIZE
+	int "VC runtime worker stack size"
+	default 2048
+	range 1024 8192
+	depends on VC_RUNTIME
+	help
+	  Stack size in bytes for the voltage-control runtime worker.
+
+config VC_RUNTIME_THREAD_PRIORITY
+	int "VC runtime worker priority"
+	default 5
+	depends on VC_RUNTIME
+	help
+	  Zephyr thread priority for the voltage-control runtime worker.
+
+config VC_RUNTIME_TICK_INTERVAL_MS
+	int "VC runtime policy tick interval"
+	default 100
+	range 1 60000
+	depends on VC_RUNTIME
+	help
+	  Runtime policy tick interval in milliseconds.
