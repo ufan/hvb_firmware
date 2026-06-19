@@ -3,6 +3,7 @@
 Zephyr RTOS firmware for Jianwei Voltage Board Family. This repo is a west manifest/application repository in a T2-style workspace.
 
 ## Guide
+- The firmware is to be deployed to resource constraint embedded system, keep this in mind when choosing implementation technology.
 - Except for `tools/`, treat this repository as Zephyr-based firmware: code, build structure, board integration, and project composition should follow Zephyr conventions.
 - Prefer Zephyr-standard APIs, services, data structures, devicetree, Kconfig, device model, kernel primitives, settings, shell, and protocol facilities where they fit.
 - Use devicetree and Kconfig for board variants, feature selection, and build-time composition instead of hard-coded product assumptions.
