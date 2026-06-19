@@ -7,5 +7,6 @@ zephyr_library_sources(
 )
 zephyr_library_sources_ifdef(CONFIG_VC_CHANNEL_CONTROLLER controller.c)
 zephyr_library_sources_ifdef(CONFIG_VC_RUNTIME runtime.c)
+zephyr_library_sources_ifdef(CONFIG_VC_PROVIDER_BUS provider_bus.c)
 
 zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../include)

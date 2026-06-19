@@ -11,7 +11,7 @@
 #include <stdbool.h>
 #include <zephyr/device.h>
 
-#define VC_MAX_CHANNELS 2 // todo: should be from device tree or compile-time configuration, not fixed
+#define VC_MAX_CHANNELS CONFIG_VC_MAX_CHANNELS
 
 struct vc_channel_entry {
 	const struct device *dev;

@@ -11,6 +11,7 @@
 #include "regmap/hvb_regs.h"
 #include "voltage_control/domain.h"
 #include "voltage_control/runtime.h"
+#include "voltage_control/provider_bus.h"
 
 static const struct vc_channel_entry test_channels[] = {
 	{ .dev = NULL, .index = 0, .capabilities = CH_CAP_OUTPUT_ENABLE |
@@ -49,6 +50,20 @@ ZTEST(voltage_control_runtime, test_runtime_command_contract_defaults_are_zeroab
 	zassert_equal(cmd.payload.operating_mode, VC_OPERATING_MODE_NORMAL);
 	zassert_is_null(cmd.result_sem);
 	zassert_is_null(cmd.result);
+}
+
+ZTEST(voltage_control_runtime, test_provider_bus_contract_defaults_are_zeroable)
+{
+	struct vc_provider_msg msg = {0};
+	struct vc_runtime_config_slot slot = {0};
+	struct vc_provider_binding binding = {0};
+
+	zassert_equal(msg.type, VC_PROVIDER_MSG_CONFIG_CHANGED);
+	zassert_equal(msg.channel, 0);
+	zassert_equal(msg.config_version, 0);
+	zassert_equal(slot.snapshot.channel, 0);
+	zassert_is_null(binding.dev);
+	zassert_is_null(binding.config_slot);
 }
 
 ZTEST(voltage_control_runtime, test_runtime_submit_measurement_updates_domain_snapshot)

@@ -18,6 +18,7 @@ config VC_CHANNEL_CONTROLLER
 config VC_RUNTIME
 	bool "VC runtime service"
 	select SMF
+	select VC_PROVIDER_BUS
 	help
 	  Enable the voltage-control runtime service.
 
@@ -60,3 +61,25 @@ config VC_RUNTIME_TICK_INTERVAL_MS
 	depends on VC_RUNTIME
 	help
 	  Runtime policy tick interval in milliseconds.
+
+config VC_MAX_CHANNELS
+	int "Maximum voltage-control channels"
+	default 2
+	range 1 16
+	help
+	  Build-time maximum number of logical voltage-control channels.
+	  Board topology should keep this aligned with devicetree channel records.
+
+config VC_PROVIDER_BUS
+	bool "VC static provider bus"
+	help
+	  Enable the static provider bus used between the domain runtime and
+	  virtual channel providers.
+
+config VC_PROVIDER_MSGQ_DEPTH
+	int "VC provider message queue depth"
+	default 8
+	range 1 64
+	depends on VC_PROVIDER_BUS
+	help
+	  Maximum number of queued runtime-to-provider notifications.
