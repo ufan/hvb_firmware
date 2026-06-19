@@ -208,3 +208,21 @@ ZTEST(voltage_control_runtime, test_runtime_submit_command_rejects_null)
 	vc_runtime_destroy(rt);
 	free(d);
 }
+
+ZTEST(voltage_control_runtime, test_runtime_set_uptime_is_processed_by_worker)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_runtime *rt;
+	struct vc_system_snapshot snap;
+
+	zassert_not_null(d);
+	rt = vc_runtime_create(d);
+	zassert_not_null(rt);
+
+	zassert_equal(vc_runtime_set_uptime(rt, 42, K_SECONDS(1)), VC_OK);
+	zassert_equal(domain_get_system_snapshot(d, &snap), VC_OK);
+	zassert_equal(snap.uptime, 42);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}

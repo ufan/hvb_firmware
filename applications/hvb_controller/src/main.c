@@ -144,7 +144,7 @@ int main(void)
 		}
 
 		// todo: meaningless, domain can fetch actual uptime from k_uptime_get() internally, refactor to remove this
-		domain_set_uptime(domain, (uint32_t)(k_uptime_get() / 1000));
+		(void)vc_runtime_set_uptime(runtime, (uint32_t)(k_uptime_get() / 1000), K_MSEC(100));
 		k_msleep(HEARTBEAT_INTERVAL_MS);
 	}
 }
