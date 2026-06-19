@@ -241,3 +241,40 @@ ZTEST(voltage_control_runtime, test_runtime_set_uptime_is_processed_by_worker)
 	vc_runtime_destroy(rt);
 	free(d);
 }
+
+ZTEST(voltage_control_runtime, test_provider_bus_config_slot_acquire_release)
+{
+	struct vc_runtime_config_snapshot cfg = {
+		.channel = 0,
+		.version = 7,
+		.capability_flags = CH_CAP_OUTPUT_ENABLE,
+		.output_enable = true,
+		.raw_output_drive = 123,
+	};
+	const struct vc_runtime_config_snapshot *borrowed;
+
+	vc_provider_bus_init();
+	zassert_equal(vc_provider_bus_publish_config(0, &cfg), VC_OK);
+
+	borrowed = vc_provider_bus_acquire_config(0);
+	zassert_not_null(borrowed);
+	zassert_equal(borrowed->version, 7);
+	zassert_equal(borrowed->raw_output_drive, 123);
+	vc_provider_bus_release_config(0);
+}
+
+ZTEST(voltage_control_runtime, test_provider_bus_publish_config_posts_message)
+{
+	struct vc_runtime_config_snapshot cfg = {
+		.channel = 0,
+		.version = 9,
+	};
+	struct vc_provider_msg msg;
+
+	vc_provider_bus_init();
+	zassert_equal(vc_provider_bus_publish_config(0, &cfg), VC_OK);
+	zassert_equal(vc_provider_bus_take_message(&msg, K_NO_WAIT), VC_OK);
+	zassert_equal(msg.type, VC_PROVIDER_MSG_CONFIG_CHANGED);
+	zassert_equal(msg.channel, 0);
+	zassert_equal(msg.config_version, 9);
+}
