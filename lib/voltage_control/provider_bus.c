@@ -5,3 +5,5 @@
  */
 
 #include "voltage_control/provider_bus.h"
+
+struct vc_runtime_config_slot vc_runtime_config_slots[VC_MAX_CHANNELS];
