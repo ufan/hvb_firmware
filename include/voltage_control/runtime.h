@@ -10,6 +10,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <zephyr/kernel.h>
+
 #define VC_MEAS_PRESENT_VOLTAGE         0x0001
 #define VC_MEAS_PRESENT_CURRENT         0x0002
 #define VC_MEAS_PRESENT_PROVIDER_STATUS 0x0004
@@ -48,6 +50,43 @@ struct vc_measurement_snapshot {
 
 #include "voltage_control/domain.h"
 
+enum vc_runtime_command_type {
+	VC_RUNTIME_CMD_SET_OPERATING_MODE = 0,
+	VC_RUNTIME_CMD_SET_SYSTEM_CONFIG,
+	VC_RUNTIME_CMD_SET_CHANNEL_CONFIG,
+	VC_RUNTIME_CMD_OUTPUT_ACTION,
+	VC_RUNTIME_CMD_FAULT_COMMAND,
+	VC_RUNTIME_CMD_CALIBRATION_UNLOCK,
+	VC_RUNTIME_CMD_CALIBRATION_OUTPUT_ENABLE,
+	VC_RUNTIME_CMD_CALIBRATION_RAW_DAC,
+	VC_RUNTIME_CMD_CALIBRATION_SAMPLE,
+	VC_RUNTIME_CMD_CALIBRATION_COMMIT,
+	VC_RUNTIME_CMD_CALIBRATION_MAX_RAW_DAC,
+	VC_RUNTIME_CMD_SYSTEM_PARAM_ACTION,
+	VC_RUNTIME_CMD_CHANNEL_PARAM_ACTION,
+	VC_RUNTIME_CMD_SET_UPTIME,
+};
+
+struct vc_runtime_command {
+	enum vc_runtime_command_type type;
+	uint8_t channel;
+	union {
+		enum vc_operating_mode operating_mode;
+		struct vc_system_config system_config;
+		struct vc_channel_config channel_config;
+		enum vc_output_action output_action;
+		enum vc_channel_fault_command fault_command;
+		uint16_t calibration_unlock_value;
+		bool calibration_output_enable;
+		uint16_t calibration_raw_dac;
+		uint16_t calibration_max_raw_dac;
+		enum vc_param_action param_action;
+		uint32_t uptime_seconds;
+	} payload;
+	struct k_sem *result_sem;
+	enum vc_status *result;
+};
+
 struct vc_runtime;
 struct domain;
 
@@ -65,5 +104,15 @@ enum vc_status vc_runtime_get_channel_config(
 	struct vc_runtime *runtime,
 	uint8_t channel,
 	struct vc_runtime_config_snapshot *cfg);
+
+enum vc_status vc_runtime_submit_command(struct vc_runtime *runtime,
+					 const struct vc_runtime_command *cmd,
+					 k_timeout_t timeout);
+enum vc_status vc_runtime_set_operating_mode(struct vc_runtime *runtime,
+					     enum vc_operating_mode mode,
+					     k_timeout_t timeout);
+enum vc_status vc_runtime_set_uptime(struct vc_runtime *runtime,
+				     uint32_t seconds,
+				     k_timeout_t timeout);
 
 #endif

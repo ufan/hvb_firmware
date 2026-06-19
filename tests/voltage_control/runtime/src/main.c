@@ -40,6 +40,17 @@ ZTEST(voltage_control_runtime, test_runtime_create_and_destroy)
 	free(domain);
 }
 
+ZTEST(voltage_control_runtime, test_runtime_command_contract_defaults_are_zeroable)
+{
+	struct vc_runtime_command cmd = {0};
+
+	zassert_equal(cmd.type, VC_RUNTIME_CMD_SET_OPERATING_MODE);
+	zassert_equal(cmd.channel, 0);
+	zassert_equal(cmd.payload.operating_mode, VC_OPERATING_MODE_NORMAL);
+	zassert_is_null(cmd.result_sem);
+	zassert_is_null(cmd.result);
+}
+
 ZTEST(voltage_control_runtime, test_runtime_submit_measurement_updates_domain_snapshot)
 {
 	struct domain *d = domain_create(test_channels, 1);
