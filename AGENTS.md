@@ -6,6 +6,9 @@ Zephyr RTOS firmware for Jianwei Voltage Board Family. This repo is a west manif
 - Except for `tools/`, treat this repository as Zephyr-based firmware: code, build structure, board integration, and project composition should follow Zephyr conventions.
 - Prefer Zephyr-standard APIs, services, data structures, devicetree, Kconfig, device model, kernel primitives, settings, shell, and protocol facilities where they fit.
 - Use devicetree and Kconfig for board variants, feature selection, and build-time composition instead of hard-coded product assumptions.
+- Prefer Zephyr static build-time composition over runtime wiring. Move runtime coordination problems into devicetree, Kconfig, static kernel objects, device instances, iterable sections, and linker-defined collections when that keeps the solution simpler and safer.
+- For cross-layer seams, prefer statically declared buses, queues, slots, descriptors, and iterable-section records over runtime pointer assignment or dynamic registration, unless runtime lifetime or hot-plug behavior is explicitly required.
+- Domain and runtime channel topology must be collected from static build-time sources such as devicetree, Kconfig, device instances, and iterable-section records. Avoid runtime channel wiring, runtime pointer patch-up, and magic macro numbers when topology can be declared statically.
 - Keep low-level chip drivers hardware-shaped and policy-free.
 - Put product behavior above low-level drivers.
 - Keep frontend/protocol translation separate from product behavior.
