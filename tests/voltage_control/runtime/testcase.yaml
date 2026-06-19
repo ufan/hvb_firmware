@@ -1,0 +1,3 @@
+tests:
+  voltage_control.runtime:
+    platform_allow: native_posix

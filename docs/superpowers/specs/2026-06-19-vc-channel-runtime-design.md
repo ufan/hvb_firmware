@@ -1,7 +1,7 @@
 # Virtual Voltage Channel Runtime Design
 
 Date: 2026-06-19
-Status: Deferred draft; not approved for current provider migration implementation
+Status: Superseded by `2026-06-18-production-runtime-channel-provider-design.md`
 
 ## Purpose
 

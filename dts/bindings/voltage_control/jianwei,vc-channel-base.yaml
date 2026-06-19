@@ -3,10 +3,6 @@
 
 description: Virtual Channel base node — per-channel hardware capabilities
 
-compatible: "jianwei,vc-channel-base"
-
-include: base.yaml
-
 properties:
   channel-index:
     type: int

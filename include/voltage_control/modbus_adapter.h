@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 
+// todo: they are not used anywhere
 struct domain;
 struct vc_mb_adapter;
 

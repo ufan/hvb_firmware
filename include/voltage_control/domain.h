@@ -11,7 +11,7 @@
 #include <stdbool.h>
 #include <zephyr/device.h>
 
-#define VC_MAX_CHANNELS 2
+#define VC_MAX_CHANNELS 2 // todo: should be from device tree or compile-time configuration, not fixed
 
 struct vc_channel_entry {
 	const struct device *dev;
@@ -228,5 +228,14 @@ void domain_set_uptime(struct domain *domain, uint32_t seconds);
 void domain_tick(struct domain *domain, uint32_t dt_ms,
 		    const int16_t voltage_noise[],
 		    const int16_t current_noise[]);
+
+struct vc_runtime_config_snapshot;
+struct vc_measurement_snapshot;
+
+enum vc_status domain_get_runtime_config(const struct domain *domain,
+					    uint8_t channel,
+					    struct vc_runtime_config_snapshot *cfg);
+enum vc_status domain_consume_measurement(struct domain *domain,
+					     const struct vc_measurement_snapshot *meas);
 
 #endif

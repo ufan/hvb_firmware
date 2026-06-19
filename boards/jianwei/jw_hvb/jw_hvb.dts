@@ -9,7 +9,7 @@
 #include <st/f4/stm32f429Xi.dtsi>
 #include <zephyr/dt-bindings/gpio/gpio.h>
 
-#include <jianwei,vc-channel-capabilities.h>
+#include "../../../dts/bindings/include/jianwei,vc-channel-capabilities.h"
 #include <zephyr/dt-bindings/pinctrl/stm32-pinctrl.h>
 
 / {
@@ -54,7 +54,7 @@
 	/* HV1 ADS1232 ADC — GPIO bit-bang, not SPI */
 	ads1232_hv1: ads1232_hv1 {
 		compatible = "ti,ads1232";
-		status = "disabled";
+		status = "okay";
 		drdy-gpios = <&gpioe 13 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 		sclk-gpios = <&gpioe 12 GPIO_ACTIVE_HIGH>;
 		pwdn-gpios = <&gpioe 11 GPIO_ACTIVE_LOW>;
@@ -68,7 +68,7 @@
 	/* HV2 ADS1232 ADC */
 	ads1232_hv2: ads1232_hv2 {
 		compatible = "ti,ads1232";
-		status = "disabled";
+		status = "okay";
 		drdy-gpios = <&gpiof 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 		sclk-gpios = <&gpiof 7 GPIO_ACTIVE_HIGH>;
 		pwdn-gpios = <&gpiof 6 GPIO_ACTIVE_LOW>;
@@ -258,33 +258,36 @@
 	};
 };
 
-vc_controller: vc-controller {
-	compatible = "jianwei,vc-controller";
-	channels = <&vc_ch0 &vc_ch1>;
-};
+/ {
+	vc_controller: vc-controller {
+		compatible = "jianwei,vc-controller";
+		channels = <&vc_ch0 &vc_ch1>;
+		status = "okay";
+	};
 
-vc_ch0: vc-channel {
-	compatible = "jianwei,hvb-vc-channel";
-	channel-index = <0>;
-	capabilities = <(CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
-			 CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)>;
-	dac = <&dac_hv1>;
-	adc = <&ads1232_hv1>;
-	enable-gpios = <&gpiod 9 GPIO_ACTIVE_LOW>;
-	max-raw-dac = <0xFFFF>;
-	sample-rate-ms = <100>;
-	status = "disabled";
-};
+	vc_ch0: vc-channel-0 {
+		compatible = "jianwei,hvb-vc-channel";
+		channel-index = <0>;
+		capabilities = <(CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+				 CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)>;
+		dac = <&dac_hv1>;
+		adc = <&ads1232_hv1>;
+		enable-gpios = <&gpiod 9 GPIO_ACTIVE_LOW>;
+		max-raw-dac = <0xFFFF>;
+		sample-rate-ms = <100>;
+		status = "okay";
+	};
 
-vc_ch1: vc-channel {
-	compatible = "jianwei,hvb-vc-channel";
-	channel-index = <1>;
-	capabilities = <(CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
-			 CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)>;
-	dac = <&dac_hv2>;
-	adc = <&ads1232_hv2>;
-	enable-gpios = <&gpioc 4 GPIO_ACTIVE_LOW>;
-	max-raw-dac = <0xFFFF>;
-	sample-rate-ms = <100>;
-	status = "disabled";
+	vc_ch1: vc-channel-1 {
+		compatible = "jianwei,hvb-vc-channel";
+		channel-index = <1>;
+		capabilities = <(CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+				 CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)>;
+		dac = <&dac_hv2>;
+		adc = <&ads1232_hv2>;
+		enable-gpios = <&gpioc 4 GPIO_ACTIVE_LOW>;
+		max-raw-dac = <0xFFFF>;
+		sample-rate-ms = <100>;
+		status = "okay";
+	};
 };

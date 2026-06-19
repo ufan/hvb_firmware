@@ -11,9 +11,13 @@
 #include <stdint.h>
 #include <zephyr/device.h>
 
+struct vc_runtime_config_snapshot;
+
 struct vc_channel_api {
 	int (*set_output)(const struct device *dev, uint16_t code);
 	int (*set_enable)(const struct device *dev, bool enable);
+	int (*apply_config)(const struct device *dev,
+			    const struct vc_runtime_config_snapshot *cfg);
 	int (*measure_voltage)(const struct device *dev, int32_t *value);
 	int (*measure_current)(const struct device *dev, int32_t *value);
 	uint16_t (*get_capabilities)(const struct device *dev);

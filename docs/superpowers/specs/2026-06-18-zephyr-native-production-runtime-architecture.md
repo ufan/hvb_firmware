@@ -9,6 +9,8 @@ This document refines the production runtime architecture for Jianwei voltage-co
 
 The target is a reusable Zephyr-native voltage-control domain runtime library with a small subsystem-like virtual voltage channel layer. The first concrete product app is `hvb_controller`; the same architecture should support future board variants whose physical channels may be discrete DAC/ADC/GPIO circuits or smart external modules exposed over buses such as I2C, SPI, CAN, or Ethernet.
 
+The concrete production runtime interaction between the Domain Runtime Library and Virtual Channel Providers is defined in `docs/superpowers/specs/2026-06-18-production-runtime-channel-provider-design.md`.
+
 ## Layer Responsibilities
 
 ### Application Orchestration

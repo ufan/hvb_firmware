@@ -14,3 +14,24 @@ config VC_CHANNEL_CONTROLLER
 	help
 	  Enable compile-time channel table aggregation from the
 	  vc-controller DTS node.
+
+config VC_RUNTIME
+	bool "VC runtime service"
+	help
+	  Enable the voltage-control runtime service.
+
+config VC_RUNTIME_COMMAND_QUEUE_DEPTH
+	int "VC runtime command queue depth"
+	default 8
+	range 1 64
+	depends on VC_RUNTIME
+	help
+	  Maximum number of queued runtime commands.
+
+config VC_RUNTIME_EVIDENCE_QUEUE_DEPTH
+	int "VC runtime evidence queue depth"
+	default 4
+	range 1 64
+	depends on VC_RUNTIME
+	help
+	  Maximum number of queued runtime evidence records.

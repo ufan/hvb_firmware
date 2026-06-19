@@ -13,6 +13,7 @@
 
 #include "regmap/hvb_regs.h"
 #include "voltage_control/vc_channel.h"
+#include "voltage_control/runtime.h"
 
 LOG_MODULE_REGISTER(hvb_vc_channel, LOG_LEVEL_INF);
 
@@ -79,9 +80,73 @@ static uint16_t hvb_vc_get_capabilities(const struct device *dev)
 	return cfg->capabilities;
 }
 
+struct hvb_vc_data {
+	uint32_t applied_config_version;
+	uint32_t generation;
+	uint16_t provider_status;
+};
+
+static int hvb_vc_apply_config(const struct device *dev,
+			       const struct vc_runtime_config_snapshot *cfg)
+{
+	struct hvb_vc_data *data = dev->data;
+	int ret;
+
+	if (data == NULL || cfg == NULL) {
+		return -EINVAL;
+	}
+
+	data->applied_config_version = cfg->version;
+	data->generation++;
+
+	if (cfg->force_safe_state) {
+		ret = hvb_vc_set_enable(dev, false);
+		if (ret < 0) {
+			data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
+			return ret;
+		}
+		ret = hvb_vc_set_output(dev, 0);
+		if (ret < 0) {
+			data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
+			return ret;
+		}
+		data->provider_status &= ~VC_PROVIDER_STATUS_APPLY_FAILED;
+		return 0;
+	}
+
+	if (cfg->calibration_mode) {
+		ret = hvb_vc_set_enable(dev, cfg->calibration_output_enable);
+		if (ret < 0) {
+			data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
+			return ret;
+		}
+		ret = hvb_vc_set_output(dev, cfg->calibration_raw_output_drive);
+		if (ret < 0) {
+			data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
+			return ret;
+		}
+		data->provider_status &= ~VC_PROVIDER_STATUS_APPLY_FAILED;
+		return 0;
+	}
+
+	ret = hvb_vc_set_enable(dev, cfg->output_enable);
+	if (ret < 0) {
+		data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
+		return ret;
+	}
+	ret = hvb_vc_set_output(dev, cfg->raw_output_drive);
+	if (ret < 0) {
+		data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
+		return ret;
+	}
+	data->provider_status &= ~VC_PROVIDER_STATUS_APPLY_FAILED;
+	return 0;
+}
+
 static const struct vc_channel_api hvb_vc_api = {
 	.set_output = hvb_vc_set_output,
 	.set_enable = hvb_vc_set_enable,
+	.apply_config = hvb_vc_apply_config,
 	.measure_voltage = hvb_vc_measure_voltage,
 	.measure_current = hvb_vc_measure_current,
 	.get_capabilities = hvb_vc_get_capabilities,
@@ -120,8 +185,9 @@ static int hvb_vc_init(const struct device *dev)
 		.sample_rate_ms = DT_INST_PROP(n, sample_rate_ms), \
 		.capabilities = DT_INST_PROP(n, capabilities), \
 	}; \
+	static struct hvb_vc_data hvb_vc_data_##n; \
 	DEVICE_DT_INST_DEFINE(n, hvb_vc_init, NULL, \
-		NULL, &hvb_vc_config_##n, \
+		&hvb_vc_data_##n, &hvb_vc_config_##n, \
 		POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, \
 		&hvb_vc_api);
 
