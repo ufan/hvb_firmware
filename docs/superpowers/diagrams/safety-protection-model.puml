@@ -1,0 +1,67 @@
+@startuml
+!theme plain
+title Safety & Protection Model
+
+skinparam backgroundColor #FAFAFA
+skinparam ArrowColor #333333
+skinparam FontName Arial
+skinparam activityBorderColor #555555
+skinparam activityDiamondBorderColor #555555
+
+start
+
+:Virtual Channel Provider\npublishes Measurement Snapshot;
+
+:Domain Runtime Library\napplies calibration to\nraw voltage/current;
+
+if (Current limit\ncrossed?) then (yes)
+  :Record current\nFault History;
+  if (Protection Mode?) then (Apply Action)
+    :Execute Protection\nOutput Action\n(clamp/ramp-down/\nforce-zero/disable);
+    :Create Active\nFault Block;
+  else (Flag Only)
+    :Record only;
+  endif
+else (no)
+endif
+
+if (Voltage limit\ncrossed?) then (yes)
+  :Record voltage\nFault History;
+  if (Protection Mode?) then (Apply Action)
+    if (Current fault\nalready acted?) then (yes)
+      :Current action\ntakes priority;
+    else (no)
+      :Execute voltage\nProtection Output Action;
+    endif
+    :Create Active\nFault Block;
+  else (Flag Only)
+    :Record only;
+  endif
+else (no)
+endif
+
+if (Active Fault Block\nexists?) then (yes)
+  if (Operating Mode?) then (Normal)
+    :Latch channel.\nRequire manual\nclear + re-enable;
+    stop
+  else (Automatic)
+    if (Fault retryable\n& budget remains?) then (yes)
+      :Enter cooldown\n(Auto Retry Delay);
+      if (Measurements in\nSafe Band?) then (yes)
+        :Retry enable\n(may derate target);
+      else (no)
+        :Remain blocked;
+      endif
+    else (no)
+      :Latch as manual\nActive Fault Block;
+      stop
+    endif
+  endif
+else (no)
+endif
+
+:Continue normal\nchannel operation;
+
+stop
+
+@enduml

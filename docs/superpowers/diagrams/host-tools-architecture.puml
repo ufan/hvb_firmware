@@ -1,0 +1,56 @@
+@startuml
+!theme plain
+title HVB Host Tools Architecture
+
+skinparam backgroundColor #FAFAFA
+skinparam componentBorderColor #555555
+skinparam rectangleBorderColor #555555
+skinparam ArrowColor #333333
+skinparam FontName Arial
+skinparam nodesep 50
+skinparam ranksep 30
+
+rectangle "HVB Board\n(Modbus RTU)" as board #D3D3D3
+
+rectangle "hvb_modbus_core\n(shared static library)" as core #FAD7A0 {
+  component "HvbModbusClient" as client
+  component "Protocol Types\n& Enums" as types
+  component "Register Map\n& Metadata" as regmap
+  component "Config Manager\n(TOML)" as config
+  component "Monitor Renderer" as monitor
+}
+
+rectangle "hvb_demo_app\n(End-User / Operator)" as demo #AED6F1 {
+  component "hvb_demo_cli\n(CLI11)" as cli
+  component "hvb_demo_tui\n(FTXUI)" as tui
+  component "hvb_demo_gui\n(Qt/QML)" as gui
+}
+
+rectangle "hvb_factory_tool\n(Factory / Service)" as factory #A9DFBF {
+  component "hvb_factory_tui\n(daniele77/cli REPL)" as repl
+  component "hvb_factory_gui\n(Qt/QML 5-step)" as fgui
+}
+
+rectangle "shared_qml" as shared #F9E79F {
+  component "HvbTheme.qml\n(light/dark)" as theme
+}
+
+demo -[#333]-> core : links
+factory -[#333]-> core : links
+core -[#333]-> board : "Modbus RTU\n(RS-485)"
+gui ..[#999].> shared : uses
+fgui ..[#999].> shared : uses
+
+note bottom of demo
+  Normal + Automatic modes.
+  Calibration coefficients
+  are read-only.
+end note
+
+note bottom of factory
+  Calibration Mode only.
+  Unlock, raw DAC/ADC,
+  coefficient write, commit.
+end note
+
+@enduml

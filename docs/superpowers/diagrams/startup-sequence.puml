@@ -1,0 +1,50 @@
+@startuml
+!theme plain
+title Firmware Startup Sequence
+
+skinparam backgroundColor #FAFAFA
+skinparam ArrowColor #333333
+skinparam FontName Arial
+skinparam sequenceParticipantBorderColor #555555
+
+participant "Zephyr\nKernel" as zephyr #D3D3D3
+participant "hvb_controller\n(App)" as app #AED6F1
+participant "Virtual Channel\nProviders" as vcp #FAD7A0
+participant "Domain Runtime\nLibrary" as domain #A9DFBF
+participant "Frontend\nAdapters" as front #AED6F1
+
+== Phase 1: Hardware Safe State ==
+
+zephyr -> zephyr : Initialize devices\n(init priorities)
+app -> vcp : Configure output-enable\nto safe disabled state
+app -> vcp : Write safe Output Drive Level\n(DAC code zero) to all outputs
+
+== Phase 2: Configuration ==
+
+app -> app : Discover virtual channels\n(devicetree + Kconfig)
+app -> app : Load persistent settings\n(NVS / Settings)
+
+== Phase 3: Domain Initialization ==
+
+app -> domain : Initialize with channel\ncapabilities and config
+domain -> domain : Set up protection policy,\nrecovery state, calibration
+domain -> domain : Evaluate operating mode\n(Normal or Automatic)
+
+== Phase 4: Runtime Start ==
+
+app -> vcp : Start channel runtime\nprocessing
+app -> front : Start Modbus adapter
+app -> front : Start shell adapter
+
+== Phase 5: Operating Mode ==
+
+alt Normal Mode
+  front -> domain : Wait for remote\nfrontend commands
+else Automatic Mode
+  domain -> domain : Validate auto-start config\nper channel
+  domain -> vcp : Request channel enable\nvia domain command path
+  vcp --> domain : Measurement Snapshots
+  domain -> domain : Apply ramp policy,\nprotection remains\nfinal authority
+end
+
+@enduml

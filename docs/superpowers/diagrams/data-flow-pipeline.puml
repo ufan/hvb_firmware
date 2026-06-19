@@ -1,0 +1,44 @@
+@startuml
+!theme plain
+title Voltage-Control Data Flow Pipeline
+
+skinparam backgroundColor #FAFAFA
+skinparam ArrowColor #333333
+skinparam FontName Arial
+skinparam activityBorderColor #555555
+
+left to right direction
+
+rectangle "Command Path (Write)" as cmd_path #AED6F1 {
+  rectangle "Adapter\nCommand" as acmd #AED6F1
+  rectangle "Domain\nCommand" as dcmd #A9DFBF
+  rectangle "Runtime Config\nSnapshot" as rcfg #A9DFBF
+  rectangle "Virtual Channel\nCommand" as vccmd #FAD7A0
+
+  acmd -[#333]-> dcmd : "translate"
+  dcmd -[#333]-> rcfg : "validate &\npublish"
+  rcfg -[#333]-> vccmd : "apply at\nsafe boundary"
+}
+
+rectangle "Measurement Path (Read)" as meas_path #F9E79F {
+  rectangle "Measurement\nSnapshot" as msnap #FAD7A0
+  rectangle "Domain Runtime\nState" as dstate #A9DFBF
+  rectangle "Domain Snapshot\n/ Read Model" as dsnap #A9DFBF
+  rectangle "Adapter\nResponse" as aresp #AED6F1
+
+  msnap -[#333]-> dstate : "raw evidence\n+ generation\n+ timestamp"
+  dstate -[#333]-> dsnap : "calibrate,\nprotect,\nrecover"
+  dsnap -[#333]-> aresp : "pack for\nprotocol"
+}
+
+note bottom of cmd_path
+  Write completion = domain accepted/rejected.
+  Does NOT mean physical output reached target.
+end note
+
+note bottom of meas_path
+  Reads return latest coherent snapshot.
+  No synchronous hardware sampling.
+end note
+
+@enduml

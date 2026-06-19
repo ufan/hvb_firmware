@@ -1,0 +1,48 @@
+@startuml
+!theme plain
+title Operating Modes State Machine
+
+skinparam backgroundColor #FAFAFA
+skinparam ArrowColor #333333
+skinparam FontName Arial
+skinparam stateBorderColor #555555
+
+[*] --> Normal : boot\n(default)
+
+state Normal #A9DFBF : Explicit remote commands only.\nProtection disables require\nmanual clear/re-enable.
+
+state Automatic #AED6F1 : Auto-start eligible channels.\nBounded auto-retry on\nselected faults.
+
+state CalibrationUnlock <<choice>>
+
+state Calibration #FAD7A0 : Raw DAC/ADC access.\nBypasses ramp, calibrated\nprotection, auto-recovery.\nHard safety rails active.
+
+Normal --> Automatic : mode write
+Automatic --> Normal : mode write
+
+Normal --> CalibrationUnlock : unlock\nstep 1 + 2
+Automatic --> CalibrationUnlock : unlock\nstep 1 + 2
+
+CalibrationUnlock --> Calibration : mode write = 2\n[outputs forced off,\nDAC zeroed,\nramp/retry cancelled]
+
+Calibration --> Normal : exit\n[raw output forced off,\ncal state cleared]
+Calibration --> Automatic : exit\n[raw output forced off,\ncal state cleared]
+
+note right of Calibration
+  - Volatile, never persisted as boot mode
+  - Single-channel raw output only
+  - Coefficient writes allowed
+  - Calibration Commit persists coefficients
+  - Wrong unlock value resets progress
+end note
+
+note left of Automatic
+  Mode switch does not
+  disrupt running channels.
+
+  Switch Auto→Normal converts
+  pending retries to manual
+  Active Fault Blocks.
+end note
+
+@enduml

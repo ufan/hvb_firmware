@@ -1,0 +1,66 @@
+@startuml
+!theme plain
+title Jianwei Voltage-Control Firmware — Layered Architecture
+
+skinparam backgroundColor #FAFAFA
+skinparam componentBorderColor #555555
+skinparam rectangleBorderColor #555555
+skinparam ArrowColor #333333
+skinparam FontName Arial
+skinparam defaultTextAlignment center
+skinparam nodesep 60
+skinparam ranksep 40
+
+top to bottom direction
+
+rectangle "Frontend Adapters" as frontends #AED6F1 {
+  component "Modbus\nAdapter" as modbus
+  component "Shell\nAdapter" as shell
+  component "Future:\nCAN / TCP / UI" as future_adapt
+}
+
+rectangle "Domain Runtime Library\n(lib/voltage_control)" as domain #A9DFBF {
+  component "Command\nValidation" as cmd_val
+  component "Operating\nModes" as modes
+  component "Ramping\nPolicy" as ramp
+  component "Protection &\nRecovery" as protect
+  component "Calibration\nPolicy" as cal_pol
+  component "Persistence\nSemantics" as persist
+  component "Domain\nSnapshots" as snap
+}
+
+rectangle "Virtual Voltage Channel Layer" as vchan #FAD7A0 {
+  component "HVB Channel\nProvider" as hvb_prov
+  component "Future Board\nProvider" as future_prov
+}
+
+rectangle "Zephyr / Hardware" as hw #D3D3D3 {
+  component "GPIO\n(Run/Stop)" as gpio
+  component "SPI DAC\n(AD5541)" as dac
+  component "ADC\n(ADS1232)" as adc
+  component "Sensor\n(SHT31)" as sensor
+  component "Modbus\nSerial" as modbus_serial
+  component "Settings\n/ NVS" as nvs
+}
+
+frontends -[#333]-> domain : "Domain\nCommands"
+domain -[#333]-> vchan : "Raw Channel\nCommands"
+vchan -[#333]-> hw : "Zephyr\nDevice APIs"
+vchan -[#999,dashed]-> domain : "Measurement\nSnapshots"
+domain -[#999,dashed]-> frontends : "Domain\nSnapshots"
+
+modbus -[hidden]-> shell
+shell -[hidden]-> future_adapt
+cmd_val -[hidden]-> modes
+modes -[hidden]-> ramp
+ramp -[hidden]-> protect
+protect -[hidden]-> cal_pol
+cal_pol -[hidden]-> persist
+persist -[hidden]-> snap
+gpio -[hidden]-> dac
+dac -[hidden]-> adc
+adc -[hidden]-> sensor
+sensor -[hidden]-> modbus_serial
+modbus_serial -[hidden]-> nvs
+
+@enduml

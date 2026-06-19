@@ -1,0 +1,55 @@
+flowchart TD
+    subgraph deps["External Dependencies"]
+        MODBUS["ModbusLib v0.4.8\n(Modbus RTU)"]
+        TOML["toml++ v3.4.0\n(Config parser)"]
+        CLI11["CLI11 v2.4.2\n(Arg parser)"]
+        FTXUI["FTXUI v5.0.0\n(Terminal UI)"]
+        D77CLI["daniele77/cli v2.2.0\n(Cisco REPL)"]
+        QT6["Qt 6.8+\n(Quick / Material)"]
+        CATCH2["Catch2 v3.7.1\n(Test framework)"]
+    end
+
+    subgraph core["hvb_modbus_core (static lib)"]
+        TYPES["types.h\nOpMode, CalibrationSnapshot\nChannelInfo, SystemInfo"]
+        REGMAP["register_map.h\nhvb_regs.h offsets\nint32/uint32 helpers"]
+        CLIENT["hvb_modbus_client\nFC03/04/06 transport\ncalibration APIs"]
+        META["register_meta\nregister catalog\nenum formatting"]
+        CONFIG["config_manager\nTOML persistence"]
+        RENDER["monitor_render\nASCII table output"]
+    end
+
+    subgraph demo["hvb_demo_app (operator)"]
+        direction LR
+        DEMO_CLI["CLI\nhvb_demo_cli"]
+        DEMO_TUI["TUI\nhvb_demo_tui"]
+        DEMO_GUI["GUI\nhvb_demo_gui"]
+    end
+
+    subgraph factory["hvb_factory_tool (calibration)"]
+        direction LR
+        FACT_REPL["REPL\nhvb_factory_tui"]
+        FACT_GUI["GUI\nhvb_factory_gui"]
+    end
+
+    subgraph shared["shared_qml"]
+        THEME["HvbTheme.qml\nLight / Dark palette"]
+    end
+
+    subgraph tests["hvb_modbus_core/tests"]
+        TESTS["43 tests / 166 assertions\ncalibration, reads, writes\nenums, monitor, TUI format"]
+    end
+
+    MODBUS --> CLIENT
+    TOML --> CONFIG
+    CLI11 --> DEMO_CLI
+    FTXUI --> DEMO_TUI
+    D77CLI --> FACT_REPL
+    QT6 --> DEMO_GUI
+    QT6 --> FACT_GUI
+    CATCH2 --> TESTS
+
+    core --> demo
+    core --> factory
+    core --> tests
+    THEME -.-> DEMO_GUI
+    THEME -.-> FACT_GUI
