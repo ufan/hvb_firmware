@@ -79,6 +79,15 @@ ZTEST(voltage_control_domain, test_runtime_contract_defaults_are_zeroable)
 	zassert_equal(meas.provider_fault_cause, 0);
 }
 
+ZTEST(voltage_control_domain, test_domain_create_static_initializes_domain_without_heap)
+{
+	struct domain *d = domain_create_static(test_channels, 2);
+
+	zassert_not_null(d);
+	zassert_equal(domain_get_supported_channel_count(d), 2);
+	zassert_equal(domain_get_operating_mode(d), VC_OPERATING_MODE_NORMAL);
+}
+
 ZTEST(voltage_control_domain, test_initial_runtime_config_is_safe)
 {
 	struct domain *d = domain_setup_fresh();

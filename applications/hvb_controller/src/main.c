@@ -31,7 +31,6 @@ static const struct gpio_dt_spec sys_run = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpio
 
 extern const struct vc_channel_entry vc_domain_channels[];
 extern const size_t vc_domain_channel_count;
-// todo: dynamically allocate object should be avoided in MCU firmware, refactor to have global static objects instead of heap allocated ones
 static struct vc_mb_adapter *mb;
 static struct vc_runtime *runtime;
 
@@ -89,7 +88,7 @@ static int init_modbus_server(void)
 
 int main(void)
 {
-	struct domain *domain; // todo: bad idea to use daynmacilly allocated domain in mcu firemware, refactor to have a global static domain instead
+	struct domain *domain;
 	struct vc_system_snapshot system_snapshot;
 	int ret;
 
@@ -104,14 +103,13 @@ int main(void)
 		return 0;
 	}
 
-	// todo: do we really need to dynamically allocate the domain and explicitly manage its lifecycle?
-	domain = domain_create(vc_domain_channels, vc_domain_channel_count);
+	domain = domain_create_static(vc_domain_channels, vc_domain_channel_count);
 	if (!domain) {
 		printk("Failed to create voltage-control domain\n");
 		return 0;
 	}
 
-	runtime = vc_runtime_create(domain);
+	runtime = vc_runtime_create_static(domain);
 	if (!runtime) {
 		printk("Failed to create runtime\n");
 		return 0;
@@ -138,7 +136,7 @@ int main(void)
 	}
 
 	printk("hvb_controller ready: slave=1 USART6 115200 8N1 RS485_DIR=PG11"
-	       " variant=%u channels=%u protocol=%u.%u hardware_runtime=pending\n",
+	       " variant=%u channels=%u protocol=%u.%u hardware_runtime=provider-bus\n",
 	       domain_get_variant_id(domain),
 	       domain_get_supported_channel_count(domain),
 	       system_snapshot.protocol_major, system_snapshot.protocol_minor);

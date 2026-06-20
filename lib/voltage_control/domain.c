@@ -404,19 +404,15 @@ static void domain_init_smf(struct domain *domain)
 	}
 }
 
-struct domain *domain_create(const struct vc_channel_entry *channels,
-			     size_t count)
+static struct domain *domain_init(struct domain *domain,
+				  const struct vc_channel_entry *channels,
+				  size_t count)
 {
-	struct domain *domain;
-
-	if (!channels || count > VC_MAX_CHANNELS) {
+	if (domain == NULL || channels == NULL || count > VC_MAX_CHANNELS) {
 		return NULL;
 	}
 
-	domain = calloc(1, sizeof(*domain));
-	if (!domain) {
-		return NULL;
-	}
+	memset(domain, 0, sizeof(*domain));
 
 	domain->ch_entry = channels;
 	domain->channel_count = count;
@@ -446,6 +442,32 @@ struct domain *domain_create(const struct vc_channel_entry *channels,
 	}
 
 	return domain;
+}
+
+struct domain *domain_create(const struct vc_channel_entry *channels,
+			     size_t count)
+{
+	struct domain *domain;
+
+	domain = calloc(1, sizeof(*domain));
+	if (!domain) {
+		return NULL;
+	}
+
+	if (domain_init(domain, channels, count) == NULL) {
+		free(domain);
+		return NULL;
+	}
+
+	return domain;
+}
+
+struct domain *domain_create_static(const struct vc_channel_entry *channels,
+				    size_t count)
+{
+	static struct domain domain;
+
+	return domain_init(&domain, channels, count);
 }
 
 enum vc_status domain_get_runtime_config(const struct domain *domain,

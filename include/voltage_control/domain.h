@@ -166,6 +166,8 @@ struct domain;
 
 struct domain *domain_create(const struct vc_channel_entry *channels,
 			     size_t count);
+struct domain *domain_create_static(const struct vc_channel_entry *channels,
+				    size_t count);
 
 enum vc_operating_mode domain_get_operating_mode(const struct domain *domain);
 enum vc_status domain_set_operating_mode(struct domain *domain,

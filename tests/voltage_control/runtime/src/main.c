@@ -41,6 +41,22 @@ ZTEST(voltage_control_runtime, test_runtime_create_and_destroy)
 	free(domain);
 }
 
+ZTEST(voltage_control_runtime, test_runtime_create_static_initializes_runtime_without_heap)
+{
+	struct domain *domain = domain_create(test_channels, 1);
+	struct vc_runtime *runtime;
+
+	zassert_not_null(domain);
+	runtime = vc_runtime_create_static(domain);
+	zassert_not_null(runtime);
+
+	zassert_equal(vc_runtime_set_uptime(runtime, 42, K_MSEC(100)), VC_OK);
+	vc_runtime_destroy(runtime);
+	zassert_equal(domain_get_supported_channel_count(domain), 1);
+
+	free(domain);
+}
+
 ZTEST(voltage_control_runtime, test_runtime_command_contract_defaults_are_zeroable)
 {
 	struct vc_runtime_command cmd = {0};

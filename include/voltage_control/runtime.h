@@ -96,6 +96,7 @@ struct domain;
  * the runtime object, not the borrowed domain.
  */
 struct vc_runtime *vc_runtime_create(struct domain *domain);
+struct vc_runtime *vc_runtime_create_static(struct domain *domain);
 void vc_runtime_destroy(struct vc_runtime *runtime);
 enum vc_status vc_runtime_submit_measurement(
 	struct vc_runtime *runtime,

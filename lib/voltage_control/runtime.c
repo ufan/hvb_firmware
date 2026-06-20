@@ -5,6 +5,7 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 
 #include <zephyr/kernel.h>
 
@@ -28,6 +29,7 @@ struct vc_runtime {
 	struct k_msgq evidence_queue;
 	struct k_sem wake;
 	struct k_thread thread;
+	bool heap_allocated;
 	bool stop_requested;
 	char command_buffer[CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH * sizeof(struct vc_runtime_work_item)];
 	char evidence_buffer[CONFIG_VC_RUNTIME_EVIDENCE_QUEUE_DEPTH * sizeof(struct vc_runtime_evidence_item)];
@@ -138,20 +140,17 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 	}
 }
 
-struct vc_runtime *vc_runtime_create(struct domain *domain)
+static struct vc_runtime *vc_runtime_init(struct vc_runtime *runtime,
+					 struct domain *domain,
+					 bool heap_allocated)
 {
-	struct vc_runtime *runtime;
-
-	if (domain == NULL) {
+	if (runtime == NULL || domain == NULL) {
 		return NULL;
 	}
 
-	runtime = malloc(sizeof(*runtime));
-	if (runtime == NULL) {
-		return NULL;
-	}
-
+	memset(runtime, 0, sizeof(*runtime));
 	runtime->domain = domain;
+	runtime->heap_allocated = heap_allocated;
 	runtime->stop_requested = false;
 	k_mutex_init(&runtime->lock);
 	k_sem_init(&runtime->wake, 0, 1);
@@ -169,6 +168,29 @@ struct vc_runtime *vc_runtime_create(struct domain *domain)
 	return runtime;
 }
 
+struct vc_runtime *vc_runtime_create(struct domain *domain)
+{
+	struct vc_runtime *runtime;
+
+	if (domain == NULL) {
+		return NULL;
+	}
+
+	runtime = malloc(sizeof(*runtime));
+	if (runtime == NULL) {
+		return NULL;
+	}
+
+	return vc_runtime_init(runtime, domain, true);
+}
+
+struct vc_runtime *vc_runtime_create_static(struct domain *domain)
+{
+	static struct vc_runtime runtime;
+
+	return vc_runtime_init(&runtime, domain, false);
+}
+
 void vc_runtime_destroy(struct vc_runtime *runtime)
 {
 	if (runtime == NULL) {
@@ -178,7 +200,9 @@ void vc_runtime_destroy(struct vc_runtime *runtime)
 	runtime->stop_requested = true;
 	k_sem_give(&runtime->wake);
 	(void)k_thread_join(&runtime->thread, K_FOREVER);
-	free(runtime);
+	if (runtime->heap_allocated) {
+		free(runtime);
+	}
 }
 
 enum vc_status vc_runtime_submit_command(struct vc_runtime *runtime,
@@ -232,7 +256,7 @@ enum vc_status vc_runtime_set_uptime(struct vc_runtime *runtime,
 	return vc_runtime_submit_command(runtime, &cmd, timeout);
 }
 
-	enum vc_status vc_runtime_submit_measurement(
+enum vc_status vc_runtime_submit_measurement(
 	struct vc_runtime *runtime,
 	const struct vc_measurement_snapshot *meas)
 {
