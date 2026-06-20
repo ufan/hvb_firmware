@@ -4,7 +4,7 @@ This ledger is the current navigation map for project state. Historical implemen
 
 ## Status Labels
 
-- `verified`: implemented and recently verified with command evidence.
+- `verified`: implemented and recorded with summarized verification evidence.
 - `implemented-unverified`: code appears present, but no fresh verification is recorded here.
 - `superseded`: replaced by a later spec, plan, or implementation path.
 - `planned`: approved design or plan exists, but implementation is not started or not found.
@@ -14,7 +14,7 @@ This ledger is the current navigation map for project state. Historical implemen
 ## Current Baseline
 
 - Branch: `main`
-- Remote tracking at last local check: `main...origin/main [ahead 2]` because reconciliation design and plan docs are local.
+- Remote tracking at last local check: local docs reconciliation commits are ahead of origin; run `git status --short --branch` for the current count.
 - Worktree at last local check: dirty with active static-lifetime cleanup in firmware and tests.
 - No git stashes were present after prior cleanup.
 
@@ -43,7 +43,7 @@ Files:
 - `tests/voltage_control/domain/src/main.c`
 - `tests/voltage_control/runtime/src/main.c`
 
-Fresh verification for this active cleanup passed before this ledger was planned:
+Last recorded verification for this active cleanup:
 
 - Domain native tests: `74/74`
 - Runtime native tests: `21/21`
