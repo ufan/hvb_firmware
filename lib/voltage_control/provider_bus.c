@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "voltage_control/provider_bus.h"
+#include "voltage_control/vc_channel.h"
 
 struct vc_runtime_config_slot vc_runtime_config_slots[VC_MAX_CHANNELS];
 
@@ -114,8 +115,6 @@ enum vc_status vc_provider_bus_take_measurement(struct vc_measurement_snapshot *
 
 	return VC_OK;
 }
-
-#include "voltage_control/vc_channel.h"
 
 size_t vc_provider_bus_binding_count(void)
 {

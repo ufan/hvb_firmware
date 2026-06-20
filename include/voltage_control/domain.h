@@ -162,6 +162,43 @@ struct vc_system_snapshot {
 	uint16_t system_fault_cause;
 };
 
+enum vc_config_field {
+	VC_FIELD_OPERATING_MODE,
+	VC_FIELD_SLAVE_ADDRESS,
+	VC_FIELD_BAUD_RATE_CODE,
+	VC_FIELD_RECOVERY_POLICY_MODE,
+	VC_FIELD_AUTO_RETRY_DELAY,
+	VC_FIELD_AUTO_RETRY_MAX_COUNT,
+	VC_FIELD_AUTO_RETRY_WINDOW,
+	VC_FIELD_VOLTAGE_SAFE_BAND_PCT,
+	VC_FIELD_CURRENT_SAFE_BAND_PCT,
+
+	VC_FIELD_CONFIGURED_TARGET_VOLTAGE,
+	VC_FIELD_RAMP_UP_STEP,
+	VC_FIELD_RAMP_UP_INTERVAL,
+	VC_FIELD_RAMP_DOWN_STEP,
+	VC_FIELD_RAMP_DOWN_INTERVAL,
+	VC_FIELD_VOLTAGE_PROTECTION_MODE,
+	VC_FIELD_VOLTAGE_PROT_OUT_ACTION,
+	VC_FIELD_VOLTAGE_LIMIT_THRESHOLD,
+	VC_FIELD_CURRENT_PROTECTION_MODE,
+	VC_FIELD_CURRENT_PROT_OUT_ACTION,
+	VC_FIELD_CURRENT_LIMIT_THRESHOLD,
+	VC_FIELD_AUTO_DERATE_STEP,
+	VC_FIELD_SAVE_TARGET_POLICY,
+	VC_FIELD_OUTPUT_CAL_K,
+	VC_FIELD_OUTPUT_CAL_B,
+	VC_FIELD_MEASURED_V_CAL_K,
+	VC_FIELD_MEASURED_V_CAL_B,
+	VC_FIELD_MEASURED_I_CAL_K,
+	VC_FIELD_MEASURED_I_CAL_B,
+};
+
+struct vc_field_write {
+	enum vc_config_field field;
+	uint16_t value;
+};
+
 struct domain;
 
 struct domain *domain_create(const struct vc_channel_entry *channels,
@@ -226,10 +263,7 @@ uint16_t domain_get_active_channel_mask(const struct domain *domain);
 uint16_t domain_get_variant_id(const struct domain *domain);
 
 void domain_set_uptime(struct domain *domain, uint32_t seconds);
-
-void domain_tick(struct domain *domain, uint32_t dt_ms,
-		    const int16_t voltage_noise[],
-		    const int16_t current_noise[]);
+void domain_process_periodic(struct domain *domain, uint32_t dt_ms);
 
 struct vc_runtime_config_snapshot;
 struct vc_measurement_snapshot;
@@ -239,5 +273,13 @@ enum vc_status domain_get_runtime_config(const struct domain *domain,
 					    struct vc_runtime_config_snapshot *cfg);
 enum vc_status domain_consume_measurement(struct domain *domain,
 					     const struct vc_measurement_snapshot *meas);
+
+enum vc_status domain_set_system_field(struct domain *domain,
+				       enum vc_config_field field,
+				       uint16_t value);
+enum vc_status domain_set_channel_field(struct domain *domain,
+					uint8_t channel,
+					enum vc_config_field field,
+					uint16_t value);
 
 #endif

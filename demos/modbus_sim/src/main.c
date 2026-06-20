@@ -15,6 +15,7 @@
 
 #include "voltage_control/domain.h"
 #include "voltage_control/modbus_adapter.h"
+#include "voltage_control/runtime.h"
 #include "voltage_control/vc_channel.h"
 
 #define HEARTBEAT_INTERVAL_MS 500
@@ -81,6 +82,7 @@ static int init_modbus_server(void)
 
 int main(void)
 {
+	struct vc_runtime *runtime;
 	struct domain *domain;
 	struct vc_system_snapshot system_snapshot;
 	int ret;
@@ -107,14 +109,15 @@ int main(void)
 				  CH_CAP_CURRENT_MEASUREMENT },
 	};
 
-	domain = domain_create(hvb_channels, 2);
-	if (!domain) {
-		printk("Failed to create voltage-control domain\n");
+	runtime = vc_domain_runtime_create(hvb_channels, 2);
+	if (!runtime) {
+		printk("Failed to create domain runtime\n");
 		return 0;
 	}
+	domain = vc_runtime_get_domain(runtime);
 	domain_get_system_snapshot(domain, &system_snapshot);
 
-	mb = vc_mb_adapter_create(domain);
+	mb = vc_mb_adapter_create(runtime);
 	if (!mb) {
 		printk("Failed to create Modbus adapter\n");
 		return 0;
@@ -138,16 +141,33 @@ int main(void)
 			printk("Failed to toggle SYS_RUN GPIO: %d\n", ret);
 		}
 
-		domain_set_uptime(domain, (uint32_t)(k_uptime_get() / 1000));
-
-		int16_t v_noise[VC_MAX_CHANNELS], i_noise[VC_MAX_CHANNELS];
 		uint8_t n = domain_get_supported_channel_count(domain);
-		for (uint8_t ch = 0; ch < n; ch++) {
-			v_noise[ch] = gen_noise(5);
-			i_noise[ch] = gen_noise(20);
-		}
-		domain_tick(domain, HEARTBEAT_INTERVAL_MS, v_noise, i_noise);
 
+		for (uint8_t ch = 0; ch < n; ch++) {
+			struct vc_channel_snapshot snap;
+
+			if (domain_get_channel_snapshot(domain, ch, &snap) == VC_OK) {
+				struct vc_measurement_snapshot meas = {
+					.channel = ch,
+					.generation = 1,
+					.timestamp_ms = (uint32_t)k_uptime_get_32(),
+					.present_mask = VC_MEAS_PRESENT_VOLTAGE |
+							VC_MEAS_PRESENT_CURRENT,
+				};
+				int32_t v = snap.operational_target_voltage + gen_noise(5);
+				int32_t i = snap.operational_target_voltage / 2 + gen_noise(20);
+
+				if (v > 20000) v = 20000;
+				if (v < 0) v = 0;
+				if (i > 32767) i = 32767;
+				if (i < 0) i = 0;
+				meas.raw_voltage = v;
+				meas.raw_current = i;
+				(void)domain_consume_measurement(domain, &meas);
+			}
+		}
+
+		domain_process_periodic(domain, HEARTBEAT_INTERVAL_MS);
 		k_msleep(HEARTBEAT_INTERVAL_MS);
 	}
 }

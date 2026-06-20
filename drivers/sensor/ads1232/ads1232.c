@@ -79,7 +79,7 @@ static int ads1232_read_one(const struct ads1232_config *cfg, int ch,
 	int32_t val = 0;
 	int timeout;
 
-	// A0/A1 to select channel per Table 7-2. With GPIO_ACTIVE_LOW, set(1)=physical LOW=AINx.
+	/* A0/A1 to select channel per Table 7-2. With GPIO_ACTIVE_LOW, set(1)=physical LOW=AINx. */
 	if (cfg->a0.port) {
 		gpio_pin_set_dt(&cfg->a0, ch);
 	}

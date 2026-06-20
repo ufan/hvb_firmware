@@ -17,12 +17,10 @@
 #include <zephyr/modbus/modbus.h>
 #include <zephyr/sys/printk.h>
 
-#include "regmap/hvb_regs.h"
 #include "voltage_control/domain.h"
 #include "voltage_control/modbus_adapter.h"
 #include "voltage_control/provider_bus.h"
 #include "voltage_control/runtime.h"
-#include "voltage_control/vc_channel.h"
 
 #define HEARTBEAT_INTERVAL_MS 500
 #define MODBUS_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_modbus_serial)
@@ -34,6 +32,15 @@ extern const size_t vc_domain_channel_count;
 static struct vc_mb_adapter *mb;
 static struct vc_runtime *runtime;
 
+static void heartbeat_handler(struct k_work *work)
+{
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+
+	gpio_pin_toggle_dt(&sys_run);
+	k_work_schedule(dwork, K_MSEC(HEARTBEAT_INTERVAL_MS));
+}
+
+static K_WORK_DELAYABLE_DEFINE(heartbeat_work, heartbeat_handler);
 
 static int input_reg_rd(uint16_t addr, uint16_t *reg)
 {
@@ -59,16 +66,14 @@ static struct modbus_user_callbacks modbus_callbacks = {
 	.holding_reg_wr = holding_reg_wr,
 };
 
-// todo: slave id and braudrate should be configurable: either through device tree or compile-time configuration, 
-// or even runtime configuration through a special modbus register, refactor to support that
 static const struct modbus_iface_param server_param = {
 	.mode = MODBUS_MODE_RTU,
 	.server = {
 		.user_cb = &modbus_callbacks,
-		.unit_id = 1,
+		.unit_id = CONFIG_VC_MODBUS_UNIT_ID,
 	},
 	.serial = {
-		.baud = 115200,
+		.baud = CONFIG_VC_MODBUS_BAUD_RATE,
 		.parity = UART_CFG_PARITY_NONE,
 	},
 };
@@ -88,8 +93,7 @@ static int init_modbus_server(void)
 
 int main(void)
 {
-	struct domain *domain;
-	struct vc_system_snapshot system_snapshot;
+	struct vc_system_snapshot snap;
 	int ret;
 
 	if (!gpio_is_ready_dt(&sys_run)) {
@@ -103,15 +107,10 @@ int main(void)
 		return 0;
 	}
 
-	domain = domain_create_static(vc_domain_channels, vc_domain_channel_count);
-	if (!domain) {
-		printk("Failed to create voltage-control domain\n");
-		return 0;
-	}
-
-	runtime = vc_runtime_create_static(domain);
+	runtime = vc_domain_runtime_create_static(vc_domain_channels,
+						  vc_domain_channel_count);
 	if (!runtime) {
-		printk("Failed to create runtime\n");
+		printk("Failed to create domain runtime\n");
 		return 0;
 	}
 
@@ -121,9 +120,7 @@ int main(void)
 		return 0;
 	}
 
-	domain_get_system_snapshot(domain, &system_snapshot);
-
-	mb = vc_mb_adapter_create(domain);
+	mb = vc_mb_adapter_create(runtime);
 	if (!mb) {
 		printk("Failed to create Modbus adapter\n");
 		return 0;
@@ -135,21 +132,13 @@ int main(void)
 		return 0;
 	}
 
-	printk("hvb_controller ready: slave=1 USART6 115200 8N1 RS485_DIR=PG11"
-	       " variant=%u channels=%u protocol=%u.%u hardware_runtime=provider-bus\n",
-	       domain_get_variant_id(domain),
-	       domain_get_supported_channel_count(domain),
-	       system_snapshot.protocol_major, system_snapshot.protocol_minor);
+	vc_runtime_get_published_system_snapshot(runtime, &snap);
+	printk("hvb_controller ready: slave=%d baud=%d"
+	       " variant=%u channels=%u protocol=%u.%u\n",
+	       CONFIG_VC_MODBUS_UNIT_ID, CONFIG_VC_MODBUS_BAUD_RATE,
+	       snap.variant_id, snap.supported_channel_count,
+	       snap.protocol_major, snap.protocol_minor);
 
-	// todo: prefer heartbeat code in a separate task and use k_work for it (also separate file, keep main function clean)
-	while (1) {
-		ret = gpio_pin_toggle_dt(&sys_run);
-		if (ret < 0) {
-			printk("Failed to toggle SYS_RUN GPIO: %d\n", ret);
-		}
-
-		// todo: meaningless, domain can fetch actual uptime from k_uptime_get() internally, refactor to remove this
-		(void)vc_runtime_set_uptime(runtime, (uint32_t)(k_uptime_get() / 1000), K_MSEC(100));
-		k_msleep(HEARTBEAT_INTERVAL_MS);
-	}
+	k_work_schedule(&heartbeat_work, K_NO_WAIT);
+	return 0;
 }

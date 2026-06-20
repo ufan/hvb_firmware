@@ -83,3 +83,16 @@ config VC_PROVIDER_MSGQ_DEPTH
 	depends on VC_PROVIDER_BUS
 	help
 	  Maximum number of queued runtime-to-provider notifications.
+
+config VC_MODBUS_UNIT_ID
+	int "Modbus server unit ID"
+	default 1
+	range 1 247
+	help
+	  Modbus RTU slave address for the voltage-control server.
+
+config VC_MODBUS_BAUD_RATE
+	int "Modbus baud rate"
+	default 115200
+	help
+	  Baud rate for the Modbus RTU serial interface.

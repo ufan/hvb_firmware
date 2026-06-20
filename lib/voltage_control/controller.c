@@ -7,6 +7,7 @@
  */
 
 #include <zephyr/devicetree.h>
+#include "voltage_control/domain.h"
 #include "voltage_control/vc_channel.h"
 
 #define VC_CONTROLLER_NODE DT_NODELABEL(vc_controller)
@@ -20,11 +21,7 @@
 					 capabilities), \
 	},
 
-const struct vc_channel_entry {
-	const struct device *dev;
-	uint8_t            index;
-	uint16_t           capabilities;
-} vc_domain_channels[] = {
+const struct vc_channel_entry vc_domain_channels[] = {
 	DT_FOREACH_PROP_ELEM(VC_CONTROLLER_NODE, channels, CH_ENTRY)
 };
 

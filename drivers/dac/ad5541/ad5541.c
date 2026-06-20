@@ -12,6 +12,7 @@
 #include <zephyr/drivers/dac.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/byteorder.h>
 
 LOG_MODULE_REGISTER(ad5541, CONFIG_DAC_LOG_LEVEL);
 
@@ -45,7 +46,7 @@ static int ad5541_write_value(const struct device *dev, uint8_t channel,
 		return -ENOTSUP;
 	}
 
-	tx_data = (uint16_t)(value & 0xFFFF);
+	tx_data = sys_cpu_to_be16((uint16_t)(value & 0xFFFF));
 
 	const struct spi_buf tx_buf = {
 		.buf = &tx_data,

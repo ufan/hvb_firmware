@@ -40,15 +40,11 @@
 #define HVB_PROTOCOL_MAJOR             2
 #define HVB_PROTOCOL_MINOR             1
 
+#include "jianwei,vc-channel-capabilities.h"
+
 #define SYS_CAP_AUTOMATIC_MODE         0x0001
 #define SYS_CAP_ENV_SENSOR             0x0002
 #define SYS_CAP_CALIBRATION_MODE       0x0004
-
-#define CH_CAP_OUTPUT_ENABLE           0x0001
-#define CH_CAP_RAW_OUTPUT_DRIVE        0x0002
-#define CH_CAP_VOLTAGE_MEASUREMENT     0x0004
-#define CH_CAP_CURRENT_MEASUREMENT     0x0008
-#define CH_CAP_HARDWARE_STATUS         0x0010
 
 /* ------------------------------------------------------------------ */
 /* System input block  (FC04, offsets 0..39)                           */

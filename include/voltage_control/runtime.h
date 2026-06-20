@@ -64,7 +64,8 @@ enum vc_runtime_command_type {
 	VC_RUNTIME_CMD_CALIBRATION_MAX_RAW_DAC,
 	VC_RUNTIME_CMD_SYSTEM_PARAM_ACTION,
 	VC_RUNTIME_CMD_CHANNEL_PARAM_ACTION,
-	VC_RUNTIME_CMD_SET_UPTIME,
+	VC_RUNTIME_CMD_SET_SYSTEM_FIELD,
+	VC_RUNTIME_CMD_SET_CHANNEL_FIELD,
 };
 
 struct vc_runtime_command {
@@ -81,7 +82,7 @@ struct vc_runtime_command {
 		uint16_t calibration_raw_dac;
 		uint16_t calibration_max_raw_dac;
 		enum vc_param_action param_action;
-		uint32_t uptime_seconds;
+		struct vc_field_write field_write;
 	} payload;
 	struct k_sem *result_sem;
 	enum vc_status *result;
@@ -91,13 +92,21 @@ struct vc_runtime;
 struct domain;
 
 /*
- * The runtime borrows domain. The caller owns domain and must keep it alive
- * until after vc_runtime_destroy() returns. Destroying the runtime frees only
- * the runtime object, not the borrowed domain.
+ * Legacy API: runtime borrows domain. Caller owns domain lifetime.
  */
 struct vc_runtime *vc_runtime_create(struct domain *domain);
 struct vc_runtime *vc_runtime_create_static(struct domain *domain);
 void vc_runtime_destroy(struct vc_runtime *runtime);
+
+/*
+ * Unified API: creates domain + runtime as one unit.
+ * The returned vc_runtime owns its domain internally.
+ */
+struct vc_runtime *vc_domain_runtime_create(
+	const struct vc_channel_entry *channels, size_t count);
+struct vc_runtime *vc_domain_runtime_create_static(
+	const struct vc_channel_entry *channels, size_t count);
+struct domain *vc_runtime_get_domain(struct vc_runtime *runtime);
 enum vc_status vc_runtime_submit_measurement(
 	struct vc_runtime *runtime,
 	const struct vc_measurement_snapshot *meas);
@@ -112,8 +121,29 @@ enum vc_status vc_runtime_submit_command(struct vc_runtime *runtime,
 enum vc_status vc_runtime_set_operating_mode(struct vc_runtime *runtime,
 					     enum vc_operating_mode mode,
 					     k_timeout_t timeout);
-enum vc_status vc_runtime_set_uptime(struct vc_runtime *runtime,
-				     uint32_t seconds,
-				     k_timeout_t timeout);
+enum vc_status vc_runtime_set_system_field(struct vc_runtime *runtime,
+					   enum vc_config_field field,
+					   uint16_t value,
+					   k_timeout_t timeout);
+enum vc_status vc_runtime_set_channel_field(struct vc_runtime *runtime,
+					    uint8_t channel,
+					    enum vc_config_field field,
+					    uint16_t value,
+					    k_timeout_t timeout);
+
+enum vc_status vc_runtime_get_published_system_snapshot(
+	struct vc_runtime *runtime,
+	struct vc_system_snapshot *snap);
+enum vc_status vc_runtime_get_published_channel_snapshot(
+	struct vc_runtime *runtime,
+	uint8_t channel,
+	struct vc_channel_snapshot *snap);
+enum vc_status vc_runtime_get_published_system_config(
+	struct vc_runtime *runtime,
+	struct vc_system_config *cfg);
+enum vc_status vc_runtime_get_published_channel_config(
+	struct vc_runtime *runtime,
+	uint8_t channel,
+	struct vc_channel_config *cfg);
 
 #endif

@@ -18,6 +18,13 @@ static const struct vc_channel_entry test_channels[] = {
 						  CH_CAP_VOLTAGE_MEASUREMENT },
 };
 
+static const struct vc_channel_entry full_cap_channels[] = {
+	{ .dev = NULL, .index = 0, .capabilities = CH_CAP_OUTPUT_ENABLE |
+						  CH_CAP_RAW_OUTPUT_DRIVE |
+						  CH_CAP_VOLTAGE_MEASUREMENT |
+						  CH_CAP_CURRENT_MEASUREMENT },
+};
+
 ZTEST_SUITE(voltage_control_runtime, NULL, NULL, NULL, NULL, NULL);
 
 ZTEST(voltage_control_runtime, test_runtime_create_rejects_null_domain)
@@ -50,7 +57,6 @@ ZTEST(voltage_control_runtime, test_runtime_create_static_initializes_runtime_wi
 	runtime = vc_runtime_create_static(domain);
 	zassert_not_null(runtime);
 
-	zassert_equal(vc_runtime_set_uptime(runtime, 42, K_MSEC(100)), VC_OK);
 	vc_runtime_destroy(runtime);
 	zassert_equal(domain_get_supported_channel_count(domain), 1);
 
@@ -240,7 +246,7 @@ ZTEST(voltage_control_runtime, test_runtime_submit_command_rejects_null)
 	free(d);
 }
 
-ZTEST(voltage_control_runtime, test_runtime_set_uptime_is_processed_by_worker)
+ZTEST(voltage_control_runtime, test_published_snapshot_has_uptime)
 {
 	struct domain *d = domain_create(test_channels, 1);
 	struct vc_runtime *rt;
@@ -250,9 +256,9 @@ ZTEST(voltage_control_runtime, test_runtime_set_uptime_is_processed_by_worker)
 	rt = vc_runtime_create(d);
 	zassert_not_null(rt);
 
-	zassert_equal(vc_runtime_set_uptime(rt, 42, K_SECONDS(1)), VC_OK);
-	zassert_equal(domain_get_system_snapshot(d, &snap), VC_OK);
-	zassert_equal(snap.uptime, 42);
+	k_msleep(50);
+	zassert_equal(vc_runtime_get_published_system_snapshot(rt, &snap), VC_OK);
+	zassert_true(snap.uptime >= 0);
 
 	vc_runtime_destroy(rt);
 	free(d);
@@ -371,4 +377,175 @@ ZTEST(voltage_control_runtime, test_provider_bus_binding_api_is_callable)
 ZTEST(voltage_control_runtime, test_provider_bus_start_all_without_bindings)
 {
 	zassert_equal(vc_provider_bus_start_all(), VC_OK);
+}
+
+/* ---- Unified creation API ---- */
+
+ZTEST(voltage_control_runtime, test_domain_runtime_create_static)
+{
+	struct vc_runtime *rt = vc_domain_runtime_create_static(test_channels, 1);
+
+	zassert_not_null(rt);
+	zassert_not_null(vc_runtime_get_domain(rt));
+	zassert_equal(domain_get_supported_channel_count(vc_runtime_get_domain(rt)), 1);
+
+	vc_runtime_destroy(rt);
+}
+
+ZTEST(voltage_control_runtime, test_domain_runtime_create_heap)
+{
+	struct vc_runtime *rt = vc_domain_runtime_create(test_channels, 1);
+
+	zassert_not_null(rt);
+	zassert_not_null(vc_runtime_get_domain(rt));
+
+	vc_runtime_destroy(rt);
+}
+
+ZTEST(voltage_control_runtime, test_runtime_get_domain_null_returns_null)
+{
+	zassert_is_null(vc_runtime_get_domain(NULL));
+}
+
+/* ---- Per-field command integration ---- */
+
+ZTEST(voltage_control_runtime, test_set_system_field_through_queue)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_runtime *rt = vc_runtime_create(d);
+	struct vc_system_config cfg;
+
+	zassert_not_null(rt);
+	zassert_equal(vc_runtime_set_system_field(rt, VC_FIELD_SLAVE_ADDRESS,
+						  42, K_SECONDS(1)), VC_OK);
+	domain_get_system_config(d, &cfg);
+	zassert_equal(cfg.slave_address, 42);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_set_channel_field_through_queue)
+{
+	struct domain *d = domain_create(full_cap_channels, 1);
+	struct vc_runtime *rt = vc_runtime_create(d);
+	struct vc_channel_config cfg;
+
+	zassert_not_null(rt);
+	zassert_equal(vc_runtime_set_channel_field(rt, 0,
+						   VC_FIELD_CONFIGURED_TARGET_VOLTAGE,
+						   5000, K_SECONDS(1)), VC_OK);
+	domain_get_channel_config(d, 0, &cfg);
+	zassert_equal(cfg.configured_target_voltage, 5000);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_set_channel_field_rejects_bad_channel)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_runtime *rt = vc_runtime_create(d);
+
+	zassert_not_null(rt);
+	zassert_equal(vc_runtime_set_channel_field(rt, 99,
+						   VC_FIELD_CONFIGURED_TARGET_VOLTAGE,
+						   100, K_SECONDS(1)),
+		      VC_ERR_UNSUPPORTED_CHANNEL);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}
+
+/* ---- Published snapshot integration ---- */
+
+ZTEST(voltage_control_runtime, test_published_system_snapshot_reflects_initial_state)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_runtime *rt = vc_runtime_create(d);
+	struct vc_system_snapshot snap;
+
+	zassert_not_null(rt);
+	zassert_equal(vc_runtime_get_published_system_snapshot(rt, &snap), VC_OK);
+	zassert_equal(snap.supported_channel_count, 1);
+	zassert_equal(snap.active_operating_mode, VC_OPERATING_MODE_NORMAL);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_published_channel_snapshot_reflects_initial_state)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_runtime *rt = vc_runtime_create(d);
+	struct vc_channel_snapshot snap;
+
+	zassert_not_null(rt);
+	zassert_equal(vc_runtime_get_published_channel_snapshot(rt, 0, &snap), VC_OK);
+	zassert_equal(snap.operational_target_voltage, 0);
+	zassert_true(snap.channel_capability_flags & CH_CAP_OUTPUT_ENABLE);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_published_snapshot_updates_after_command)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_runtime *rt = vc_runtime_create(d);
+	struct vc_system_snapshot snap;
+
+	zassert_not_null(rt);
+	zassert_equal(vc_runtime_set_operating_mode(rt, VC_OPERATING_MODE_AUTOMATIC,
+						    K_SECONDS(1)), VC_OK);
+	k_msleep(50);
+
+	zassert_equal(vc_runtime_get_published_system_snapshot(rt, &snap), VC_OK);
+	zassert_equal(snap.active_operating_mode, VC_OPERATING_MODE_AUTOMATIC);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_published_config_reflects_field_write)
+{
+	struct domain *d = domain_create(full_cap_channels, 1);
+	struct vc_runtime *rt = vc_runtime_create(d);
+	struct vc_channel_config cfg;
+
+	zassert_not_null(rt);
+	zassert_equal(vc_runtime_set_channel_field(rt, 0,
+						   VC_FIELD_RAMP_UP_STEP,
+						   100, K_SECONDS(1)), VC_OK);
+	k_msleep(50);
+
+	zassert_equal(vc_runtime_get_published_channel_config(rt, 0, &cfg), VC_OK);
+	zassert_equal(cfg.ramp_up_step, 100);
+
+	vc_runtime_destroy(rt);
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_published_snapshot_rejects_null)
+{
+	struct vc_system_snapshot snap;
+
+	zassert_equal(vc_runtime_get_published_system_snapshot(NULL, &snap),
+		      VC_ERR_INVALID_VALUE);
+	zassert_equal(vc_runtime_get_published_system_snapshot(NULL, NULL),
+		      VC_ERR_INVALID_VALUE);
+}
+
+ZTEST(voltage_control_runtime, test_published_channel_snapshot_rejects_bad_channel)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_runtime *rt = vc_runtime_create(d);
+	struct vc_channel_snapshot snap;
+
+	zassert_not_null(rt);
+	zassert_equal(vc_runtime_get_published_channel_snapshot(rt, 99, &snap),
+		      VC_ERR_UNSUPPORTED_CHANNEL);
+
+	vc_runtime_destroy(rt);
+	free(d);
 }

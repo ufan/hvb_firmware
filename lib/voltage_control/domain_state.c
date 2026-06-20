@@ -83,9 +83,26 @@ struct runtime_config_visible_state {
 	int16_t operational_target_voltage;
 };
 
+static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT];
+
 static bool channel_valid(const struct domain *domain, uint8_t channel)
 {
 	return channel < domain->channel_count;
+}
+
+static enum vc_channel_smf_state channel_get_state(const struct domain *domain,
+						   uint8_t channel)
+{
+	const struct smf_ctx *ctx = SMF_CTX(&domain->runtime[channel].smf);
+
+	return (enum vc_channel_smf_state)(ctx->current - &vc_channel_states[0]);
+}
+
+static void channel_set_state(struct domain *domain, uint8_t channel,
+			      enum vc_channel_smf_state state)
+{
+	smf_set_state(SMF_CTX(&domain->runtime[channel].smf),
+		      &vc_channel_states[state]);
 }
 
 static bool is_valid_operating_mode(enum vc_operating_mode mode)
@@ -145,6 +162,11 @@ static void reset_calibration_channel(struct domain *domain, uint8_t channel,
 	snap->raw_adc_voltage = 0;
 	snap->raw_adc_current = 0;
 	snap->cal_sample_status = VC_CAL_SAMPLE_NONE;
+	if (entering) {
+		channel_set_state(domain, channel, VC_CHANNEL_SMF_CALIBRATION_OUTPUT);
+	} else {
+		channel_set_state(domain, channel, VC_CHANNEL_SMF_DISABLED_SAFE);
+	}
 }
 
 static void reset_calibration_outputs(struct domain *domain, bool entering)
@@ -305,6 +327,7 @@ static void force_runtime_safe_state(struct domain *domain, uint8_t channel)
 	snap->cal_output_enabled = 0;
 	snap->raw_dac_readback = 0;
 	snap->operational_target_voltage = 0;
+	channel_set_state(domain, channel, VC_CHANNEL_SMF_DISABLED_SAFE);
 }
 
 static enum vc_status validate_channel_capability_config(
@@ -370,25 +393,20 @@ static bool calibration_fields_changed(const struct vc_channel_config *old_cfg,
 	       old_cfg->measured_current_calib_b != new_cfg->measured_current_calib_b;
 }
 
-static void vc_domain_smf_noop(void *obj)
-{
-	ARG_UNUSED(obj);
-}
-
 static const struct smf_state vc_domain_states[VC_DOMAIN_SMF_COUNT] = {
-	[VC_DOMAIN_SMF_NORMAL] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
-	[VC_DOMAIN_SMF_AUTOMATIC] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
-	[VC_DOMAIN_SMF_CALIBRATION] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+	[VC_DOMAIN_SMF_NORMAL] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+	[VC_DOMAIN_SMF_AUTOMATIC] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+	[VC_DOMAIN_SMF_CALIBRATION] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
 };
 
 static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT] = {
-	[VC_CHANNEL_SMF_DISABLED_SAFE] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
-	[VC_CHANNEL_SMF_ENABLED_HOLDING] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
-	[VC_CHANNEL_SMF_RAMPING] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
-	[VC_CHANNEL_SMF_FAULT_LATCHED] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
-	[VC_CHANNEL_SMF_RETRY_COOLDOWN] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
-	[VC_CHANNEL_SMF_CALIBRATION_OUTPUT] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
-	[VC_CHANNEL_SMF_UNAVAILABLE] = SMF_CREATE_STATE(NULL, vc_domain_smf_noop, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_DISABLED_SAFE] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_ENABLED_HOLDING] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_RAMPING] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_FAULT_LATCHED] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_RETRY_COOLDOWN] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_CALIBRATION_OUTPUT] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_UNAVAILABLE] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
 };
 
 static void domain_init_smf(struct domain *domain)
@@ -560,6 +578,22 @@ enum vc_status domain_set_operating_mode(struct domain *domain,
 	    old_mode == VC_OPERATING_MODE_CALIBRATION) {
 		clear_calibration_unlock(domain);
 	}
+
+	switch (mode) {
+	case VC_OPERATING_MODE_NORMAL:
+		smf_set_state(SMF_CTX(&domain->smf),
+			      &vc_domain_states[VC_DOMAIN_SMF_NORMAL]);
+		break;
+	case VC_OPERATING_MODE_AUTOMATIC:
+		smf_set_state(SMF_CTX(&domain->smf),
+			      &vc_domain_states[VC_DOMAIN_SMF_AUTOMATIC]);
+		break;
+	case VC_OPERATING_MODE_CALIBRATION:
+		smf_set_state(SMF_CTX(&domain->smf),
+			      &vc_domain_states[VC_DOMAIN_SMF_CALIBRATION]);
+		break;
+	}
+
 	if (capture_runtime_state) {
 		for (size_t i = 0; i < domain->channel_count; i++) {
 			mark_runtime_config_changed_if_visible_state_changed(domain, i,
@@ -715,6 +749,7 @@ enum vc_status domain_set_channel_config(struct domain *domain,
 	}
 
 	memcpy(&domain->channels[channel], cfg, sizeof(*cfg));
+	mark_runtime_config_changed(domain, channel);
 	return VC_OK;
 }
 
@@ -1027,17 +1062,20 @@ enum vc_status domain_channel_output_action(struct domain *domain,
 		}
 		rt->output_enabled = true;
 		rt->ramping = true;
+		channel_set_state(domain, channel, VC_CHANNEL_SMF_RAMPING);
 		break;
 	case VC_OUTPUT_ACTION_DISABLE_GRACEFUL:
 		rt->output_enabled = false;
 		rt->ramping = false;
 		snap->operational_target_voltage = 0;
+		channel_set_state(domain, channel, VC_CHANNEL_SMF_DISABLED_SAFE);
 		break;
 	case VC_OUTPUT_ACTION_DISABLE_IMMEDIATE:
 		rt->output_enabled = false;
 		rt->ramping = false;
 		snap->raw_dac_readback = 0;
 		snap->operational_target_voltage = 0;
+		channel_set_state(domain, channel, VC_CHANNEL_SMF_DISABLED_SAFE);
 		break;
 	case VC_OUTPUT_ACTION_NONE:
 	default:
@@ -1099,6 +1137,7 @@ enum vc_status domain_channel_fault_command(struct domain *domain,
 			return VC_ERR_UNSAFE_STATE;
 		}
 		snap->active_fault_cause = 0;
+		channel_set_state(domain, channel, VC_CHANNEL_SMF_DISABLED_SAFE);
 		break;
 	case VC_CHANNEL_FAULT_COMMAND_CLEAR_HISTORY:
 		snap->fault_history_cause = 0;
@@ -1176,6 +1215,136 @@ void domain_set_uptime(struct domain *domain, uint32_t seconds)
 	domain->uptime_seconds = seconds;
 }
 
+/* ---- Per-field config setters ---- */
+
+enum vc_status domain_set_system_field(struct domain *domain,
+				       enum vc_config_field field,
+				       uint16_t value)
+{
+	struct vc_system_config cfg;
+	enum vc_status status;
+
+	status = domain_get_system_config(domain, &cfg);
+	if (status != VC_OK) {
+		return status;
+	}
+
+	switch (field) {
+	case VC_FIELD_OPERATING_MODE:
+		return domain_set_operating_mode(domain, (enum vc_operating_mode)value);
+	case VC_FIELD_SLAVE_ADDRESS:
+		cfg.slave_address = value;
+		break;
+	case VC_FIELD_BAUD_RATE_CODE:
+		cfg.baud_rate_code = (enum vc_baud_rate_code)value;
+		break;
+	case VC_FIELD_RECOVERY_POLICY_MODE:
+		cfg.recovery_policy_mode = (enum vc_recovery_policy_mode)value;
+		break;
+	case VC_FIELD_AUTO_RETRY_DELAY:
+		cfg.auto_retry_delay = value;
+		break;
+	case VC_FIELD_AUTO_RETRY_MAX_COUNT:
+		cfg.auto_retry_max_count = value;
+		break;
+	case VC_FIELD_AUTO_RETRY_WINDOW:
+		cfg.auto_retry_window = value;
+		break;
+	case VC_FIELD_VOLTAGE_SAFE_BAND_PCT:
+		cfg.voltage_safe_band_pct = value;
+		break;
+	case VC_FIELD_CURRENT_SAFE_BAND_PCT:
+		cfg.current_safe_band_pct = value;
+		break;
+	default:
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	return domain_set_system_config(domain, &cfg);
+}
+
+enum vc_status domain_set_channel_field(struct domain *domain,
+					uint8_t channel,
+					enum vc_config_field field,
+					uint16_t value)
+{
+	struct vc_channel_config cfg;
+	enum vc_status status;
+
+	if (!channel_valid(domain, channel)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+
+	status = domain_get_channel_config(domain, channel, &cfg);
+	if (status != VC_OK) {
+		return status;
+	}
+
+	switch (field) {
+	case VC_FIELD_CONFIGURED_TARGET_VOLTAGE:
+		cfg.configured_target_voltage = (int16_t)value;
+		break;
+	case VC_FIELD_RAMP_UP_STEP:
+		cfg.ramp_up_step = value;
+		break;
+	case VC_FIELD_RAMP_UP_INTERVAL:
+		cfg.ramp_up_interval = value;
+		break;
+	case VC_FIELD_RAMP_DOWN_STEP:
+		cfg.ramp_down_step = value;
+		break;
+	case VC_FIELD_RAMP_DOWN_INTERVAL:
+		cfg.ramp_down_interval = value;
+		break;
+	case VC_FIELD_VOLTAGE_PROTECTION_MODE:
+		cfg.voltage_protection_mode = (enum vc_protection_mode)value;
+		break;
+	case VC_FIELD_VOLTAGE_PROT_OUT_ACTION:
+		cfg.voltage_protection_output_action = (enum vc_output_action)value;
+		break;
+	case VC_FIELD_VOLTAGE_LIMIT_THRESHOLD:
+		cfg.voltage_limit_threshold = (int16_t)value;
+		break;
+	case VC_FIELD_CURRENT_PROTECTION_MODE:
+		cfg.current_protection_mode = (enum vc_protection_mode)value;
+		break;
+	case VC_FIELD_CURRENT_PROT_OUT_ACTION:
+		cfg.current_protection_output_action = (enum vc_output_action)value;
+		break;
+	case VC_FIELD_CURRENT_LIMIT_THRESHOLD:
+		cfg.current_limit_threshold = (int16_t)value;
+		break;
+	case VC_FIELD_AUTO_DERATE_STEP:
+		cfg.auto_derate_step = value;
+		break;
+	case VC_FIELD_SAVE_TARGET_POLICY:
+		cfg.save_target_policy = value;
+		break;
+	case VC_FIELD_OUTPUT_CAL_K:
+		cfg.output_calib_k = value;
+		break;
+	case VC_FIELD_OUTPUT_CAL_B:
+		cfg.output_calib_b = (int16_t)value;
+		break;
+	case VC_FIELD_MEASURED_V_CAL_K:
+		cfg.measured_voltage_calib_k = value;
+		break;
+	case VC_FIELD_MEASURED_V_CAL_B:
+		cfg.measured_voltage_calib_b = (int16_t)value;
+		break;
+	case VC_FIELD_MEASURED_I_CAL_K:
+		cfg.measured_current_calib_k = value;
+		break;
+	case VC_FIELD_MEASURED_I_CAL_B:
+		cfg.measured_current_calib_b = (int16_t)value;
+		break;
+	default:
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	return domain_set_channel_config(domain, channel, &cfg);
+}
+
 /* ---- Tick sub-functions ---- */
 
 static void vc_tick_ramp(struct domain *domain, uint8_t ch, uint32_t dt_ms)
@@ -1195,7 +1364,10 @@ static void vc_tick_ramp(struct domain *domain, uint8_t ch, uint32_t dt_ms)
 	current = snap->operational_target_voltage;
 
 	if (current == target) {
-		rt->ramping = false;
+		if (rt->ramping) {
+			rt->ramping = false;
+			channel_set_state(domain, ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
+		}
 		return;
 	}
 
@@ -1212,6 +1384,7 @@ static void vc_tick_ramp(struct domain *domain, uint8_t ch, uint32_t dt_ms)
 	if (step == 0 || interval == 0) {
 		snap->operational_target_voltage = target;
 		rt->ramping = false;
+		channel_set_state(domain, ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
 		return;
 	}
 
@@ -1236,27 +1409,8 @@ static void vc_tick_ramp(struct domain *domain, uint8_t ch, uint32_t dt_ms)
 	snap->operational_target_voltage = current;
 	if (current == target) {
 		rt->ramping = false;
+		channel_set_state(domain, ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
 	}
-}
-
-static void vc_tick_measure(struct domain *domain, uint8_t ch,
-			    int16_t v_noise, int16_t i_noise)
-{
-	struct vc_channel_snapshot *snap = &domain->snapshots[ch];
-	int16_t max_v = VC_DEFAULT_MAX_VOLTAGE_RAW;
-	int16_t min_v = VC_DEFAULT_MIN_VOLTAGE_RAW;
-	int16_t max_i = VC_DEFAULT_MAX_CURRENT_RAW;
-	int32_t val;
-
-	val = (int32_t)snap->operational_target_voltage + v_noise;
-	if (val > max_v) val = max_v;
-	if (val < min_v) val = min_v;
-	snap->measured_voltage = (int16_t)val;
-
-	val = (int32_t)snap->measured_voltage / 2 + i_noise;
-	if (val > max_i) val = max_i;
-	if (val < 0) val = 0;
-	snap->measured_current = (int16_t)val;
 }
 
 static void apply_protection_action(struct domain *domain, uint8_t channel,
@@ -1371,6 +1525,9 @@ static void vc_tick_protection(struct domain *domain, uint8_t ch)
 
 	if (should_start_cooldown(domain)) {
 		start_cooldown(rt, &domain->sys_cfg);
+		channel_set_state(domain, ch, VC_CHANNEL_SMF_RETRY_COOLDOWN);
+	} else {
+		channel_set_state(domain, ch, VC_CHANNEL_SMF_FAULT_LATCHED);
 	}
 }
 
@@ -1405,25 +1562,30 @@ static void vc_tick_status_bits(struct domain *domain, uint8_t ch)
 {
 	struct vc_channel_runtime *rt = &domain->runtime[ch];
 	struct vc_channel_snapshot *snap = &domain->snapshots[ch];
+	enum vc_channel_smf_state state = channel_get_state(domain, ch);
 	uint16_t bits = 0;
 
-	if (snap->operational_target_voltage != 0 ||
-	    snap->measured_voltage != 0) {
+	if (state == VC_CHANNEL_SMF_ENABLED_HOLDING ||
+	    state == VC_CHANNEL_SMF_RAMPING) {
+		bits |= 0x0001;
+	} else if (snap->operational_target_voltage != 0 ||
+		   snap->measured_voltage != 0) {
 		bits |= 0x0001;
 	}
 	if (rt->output_enabled) {
 		bits |= 0x0002;
 	}
-	if (rt->ramping) {
+	if (state == VC_CHANNEL_SMF_RAMPING) {
 		bits |= 0x0004;
 	}
-	if (snap->active_fault_cause != 0) {
+	if (state == VC_CHANNEL_SMF_FAULT_LATCHED ||
+	    state == VC_CHANNEL_SMF_RETRY_COOLDOWN) {
 		bits |= 0x0008;
 	}
 	if (snap->fault_history_cause != 0) {
 		bits |= 0x0010;
 	}
-	if (rt->cooldown_remaining_ms > 0) {
+	if (state == VC_CHANNEL_SMF_RETRY_COOLDOWN) {
 		bits |= 0x0020;
 	}
 
@@ -1432,11 +1594,9 @@ static void vc_tick_status_bits(struct domain *domain, uint8_t ch)
 	snap->status_bits = bits;
 }
 
-/* ---- Public tick entry ---- */
+/* ---- Periodic processing (ramp, protection, recovery, status) ---- */
 
-void domain_tick(struct domain *domain, uint32_t dt_ms,
-		    const int16_t voltage_noise[],
-		    const int16_t current_noise[])
+void domain_process_periodic(struct domain *domain, uint32_t dt_ms)
 {
 	uint8_t n = (uint8_t)domain->channel_count;
 
@@ -1450,8 +1610,6 @@ void domain_tick(struct domain *domain, uint32_t dt_ms,
 		uint32_t version_before = domain->runtime[ch].runtime_config_version;
 
 		vc_tick_ramp(domain, ch, dt_ms);
-		vc_tick_measure(domain, ch, voltage_noise[ch],
-				current_noise[ch]);
 		vc_tick_protection(domain, ch);
 		vc_tick_recovery(domain, ch, dt_ms);
 		vc_tick_status_bits(domain, ch);

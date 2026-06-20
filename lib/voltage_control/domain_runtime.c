@@ -22,6 +22,13 @@ struct vc_runtime_evidence_item {
 	struct vc_measurement_snapshot measurement;
 };
 
+struct vc_published_snapshot {
+	struct vc_system_snapshot system;
+	struct vc_channel_snapshot channels[VC_MAX_CHANNELS];
+	struct vc_channel_config configs[VC_MAX_CHANNELS];
+	struct vc_system_config sys_config;
+};
+
 struct vc_runtime {
 	struct domain *domain;
 	struct k_mutex lock;
@@ -31,6 +38,8 @@ struct vc_runtime {
 	struct k_thread thread;
 	bool heap_allocated;
 	bool stop_requested;
+	struct vc_published_snapshot published;
+	struct k_mutex snapshot_lock;
 	char command_buffer[CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH * sizeof(struct vc_runtime_work_item)];
 	char evidence_buffer[CONFIG_VC_RUNTIME_EVIDENCE_QUEUE_DEPTH * sizeof(struct vc_runtime_evidence_item)];
 };
@@ -73,12 +82,34 @@ static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 	case VC_RUNTIME_CMD_CHANNEL_PARAM_ACTION:
 		return domain_channel_param_action(runtime->domain, cmd->channel,
 						   cmd->payload.param_action);
-	case VC_RUNTIME_CMD_SET_UPTIME:
-		domain_set_uptime(runtime->domain, cmd->payload.uptime_seconds);
-		return VC_OK;
+	case VC_RUNTIME_CMD_SET_SYSTEM_FIELD:
+		return domain_set_system_field(runtime->domain,
+					       cmd->payload.field_write.field,
+					       cmd->payload.field_write.value);
+	case VC_RUNTIME_CMD_SET_CHANNEL_FIELD:
+		return domain_set_channel_field(runtime->domain, cmd->channel,
+						cmd->payload.field_write.field,
+						cmd->payload.field_write.value);
 	default:
 		return VC_ERR_INVALID_COMMAND;
 	}
+}
+
+static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
+{
+	uint16_t count = domain_get_supported_channel_count(runtime->domain);
+
+	k_mutex_lock(&runtime->snapshot_lock, K_FOREVER);
+	domain_get_system_snapshot(runtime->domain, &runtime->published.system);
+	domain_get_system_config(runtime->domain, &runtime->published.sys_config);
+	for (uint8_t ch = 0; ch < count; ch++) {
+		domain_get_channel_snapshot(runtime->domain, ch,
+					   &runtime->published.channels[ch]);
+		domain_get_channel_config(runtime->domain, ch,
+					  &runtime->published.configs[ch]);
+	}
+	runtime->published.system.uptime = (uint32_t)(k_uptime_get() / 1000);
+	k_mutex_unlock(&runtime->snapshot_lock);
 }
 
 static void vc_runtime_publish_all_configs(struct vc_runtime *runtime)
@@ -133,10 +164,13 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 
 		if (wake_ret == -EAGAIN) {
 			k_mutex_lock(&runtime->lock, K_FOREVER);
-			domain_tick(runtime->domain, CONFIG_VC_RUNTIME_TICK_INTERVAL_MS, NULL, NULL);
+			domain_process_periodic(runtime->domain,
+						CONFIG_VC_RUNTIME_TICK_INTERVAL_MS);
 			vc_runtime_publish_all_configs(runtime);
 			k_mutex_unlock(&runtime->lock);
 		}
+
+		vc_runtime_publish_snapshot(runtime);
 	}
 }
 
@@ -153,9 +187,11 @@ static struct vc_runtime *vc_runtime_init(struct vc_runtime *runtime,
 	runtime->heap_allocated = heap_allocated;
 	runtime->stop_requested = false;
 	k_mutex_init(&runtime->lock);
+	k_mutex_init(&runtime->snapshot_lock);
 	k_sem_init(&runtime->wake, 0, 1);
 	vc_provider_bus_init();
 	vc_runtime_publish_all_configs(runtime);
+	vc_runtime_publish_snapshot(runtime);
 	k_msgq_init(&runtime->command_queue, runtime->command_buffer,
 		    sizeof(struct vc_runtime_work_item), CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH);
 	k_msgq_init(&runtime->evidence_queue, runtime->evidence_buffer,
@@ -189,6 +225,36 @@ struct vc_runtime *vc_runtime_create_static(struct domain *domain)
 	static struct vc_runtime runtime;
 
 	return vc_runtime_init(&runtime, domain, false);
+}
+
+struct vc_runtime *vc_domain_runtime_create(
+	const struct vc_channel_entry *channels, size_t count)
+{
+	struct domain *domain = domain_create(channels, count);
+
+	if (domain == NULL) {
+		return NULL;
+	}
+	return vc_runtime_create(domain);
+}
+
+struct vc_runtime *vc_domain_runtime_create_static(
+	const struct vc_channel_entry *channels, size_t count)
+{
+	struct domain *domain = domain_create_static(channels, count);
+
+	if (domain == NULL) {
+		return NULL;
+	}
+	return vc_runtime_create_static(domain);
+}
+
+struct domain *vc_runtime_get_domain(struct vc_runtime *runtime)
+{
+	if (runtime == NULL) {
+		return NULL;
+	}
+	return runtime->domain;
 }
 
 void vc_runtime_destroy(struct vc_runtime *runtime)
@@ -244,18 +310,6 @@ enum vc_status vc_runtime_set_operating_mode(struct vc_runtime *runtime,
 	return vc_runtime_submit_command(runtime, &cmd, timeout);
 }
 
-enum vc_status vc_runtime_set_uptime(struct vc_runtime *runtime,
-				     uint32_t seconds,
-				     k_timeout_t timeout)
-{
-	struct vc_runtime_command cmd = {
-		.type = VC_RUNTIME_CMD_SET_UPTIME,
-		.payload.uptime_seconds = seconds,
-	};
-
-	return vc_runtime_submit_command(runtime, &cmd, timeout);
-}
-
 enum vc_status vc_runtime_submit_measurement(
 	struct vc_runtime *runtime,
 	const struct vc_measurement_snapshot *meas)
@@ -287,4 +341,92 @@ enum vc_status vc_runtime_get_channel_config(
 	k_mutex_unlock(&runtime->lock);
 
 	return status;
+}
+
+enum vc_status vc_runtime_set_system_field(struct vc_runtime *runtime,
+					   enum vc_config_field field,
+					   uint16_t value,
+					   k_timeout_t timeout)
+{
+	struct vc_runtime_command cmd = {
+		.type = VC_RUNTIME_CMD_SET_SYSTEM_FIELD,
+		.payload.field_write = { .field = field, .value = value },
+	};
+
+	return vc_runtime_submit_command(runtime, &cmd, timeout);
+}
+
+enum vc_status vc_runtime_set_channel_field(struct vc_runtime *runtime,
+					    uint8_t channel,
+					    enum vc_config_field field,
+					    uint16_t value,
+					    k_timeout_t timeout)
+{
+	struct vc_runtime_command cmd = {
+		.type = VC_RUNTIME_CMD_SET_CHANNEL_FIELD,
+		.channel = channel,
+		.payload.field_write = { .field = field, .value = value },
+	};
+
+	return vc_runtime_submit_command(runtime, &cmd, timeout);
+}
+
+enum vc_status vc_runtime_get_published_system_snapshot(
+	struct vc_runtime *runtime,
+	struct vc_system_snapshot *snap)
+{
+	if (runtime == NULL || snap == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+	k_mutex_lock(&runtime->snapshot_lock, K_FOREVER);
+	*snap = runtime->published.system;
+	k_mutex_unlock(&runtime->snapshot_lock);
+	return VC_OK;
+}
+
+enum vc_status vc_runtime_get_published_channel_snapshot(
+	struct vc_runtime *runtime,
+	uint8_t channel,
+	struct vc_channel_snapshot *snap)
+{
+	if (runtime == NULL || snap == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+	if (channel >= domain_get_supported_channel_count(runtime->domain)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	k_mutex_lock(&runtime->snapshot_lock, K_FOREVER);
+	*snap = runtime->published.channels[channel];
+	k_mutex_unlock(&runtime->snapshot_lock);
+	return VC_OK;
+}
+
+enum vc_status vc_runtime_get_published_system_config(
+	struct vc_runtime *runtime,
+	struct vc_system_config *cfg)
+{
+	if (runtime == NULL || cfg == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+	k_mutex_lock(&runtime->snapshot_lock, K_FOREVER);
+	*cfg = runtime->published.sys_config;
+	k_mutex_unlock(&runtime->snapshot_lock);
+	return VC_OK;
+}
+
+enum vc_status vc_runtime_get_published_channel_config(
+	struct vc_runtime *runtime,
+	uint8_t channel,
+	struct vc_channel_config *cfg)
+{
+	if (runtime == NULL || cfg == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+	if (channel >= domain_get_supported_channel_count(runtime->domain)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	k_mutex_lock(&runtime->snapshot_lock, K_FOREVER);
+	*cfg = runtime->published.configs[channel];
+	k_mutex_unlock(&runtime->snapshot_lock);
+	return VC_OK;
 }

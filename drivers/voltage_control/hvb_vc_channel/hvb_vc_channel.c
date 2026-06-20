@@ -19,6 +19,25 @@ LOG_MODULE_REGISTER(hvb_vc_channel, LOG_LEVEL_INF);
 
 #define DT_DRV_COMPAT jianwei_hvb_vc_channel
 
+#define HVB_VC_WORKQ_STACK_SIZE 1024
+#define HVB_VC_WORKQ_PRIORITY   CONFIG_SYSTEM_WORKQUEUE_PRIORITY
+
+static K_THREAD_STACK_DEFINE(hvb_vc_workq_stack, HVB_VC_WORKQ_STACK_SIZE);
+static struct k_work_q hvb_vc_workq;
+static bool hvb_vc_workq_started;
+
+static void hvb_vc_ensure_workq(void)
+{
+	if (!hvb_vc_workq_started) {
+		k_work_queue_init(&hvb_vc_workq);
+		k_work_queue_start(&hvb_vc_workq, hvb_vc_workq_stack,
+				   K_THREAD_STACK_SIZEOF(hvb_vc_workq_stack),
+				   HVB_VC_WORKQ_PRIORITY, NULL);
+		k_thread_name_set(&hvb_vc_workq.thread, "hvb_vc_workq");
+		hvb_vc_workq_started = true;
+	}
+}
+
 struct hvb_vc_config {
 	const struct device *dac;
 	const struct device *adc;
@@ -32,12 +51,10 @@ struct hvb_vc_config {
 static int hvb_vc_set_output(const struct device *dev, uint16_t code)
 {
 	const struct hvb_vc_config *cfg = dev->config;
-	struct dac_channel_cfg dac_cfg = { .channel_id = 0, .resolution = 16 };
 
 	if (code > cfg->max_raw_dac) {
 		return -EINVAL;
 	}
-	dac_channel_setup(cfg->dac, &dac_cfg);
 	return dac_write_value(cfg->dac, 0, code);
 }
 
@@ -83,6 +100,7 @@ static uint16_t hvb_vc_get_capabilities(const struct device *dev)
 
 struct hvb_vc_data {
 	struct k_work_delayable work;
+	const struct device *dev;
 	uint8_t channel;
 	uint32_t applied_config_version;
 	uint32_t generation;
@@ -100,6 +118,8 @@ static void hvb_vc_publish_measurement(const struct device *dev)
 		.provider_status = data->provider_status | VC_PROVIDER_STATUS_READY,
 	};
 	int32_t value;
+
+	data->provider_status &= ~VC_PROVIDER_STATUS_SAMPLE_ERROR;
 
 	if ((cfg->capabilities & CH_CAP_VOLTAGE_MEASUREMENT) != 0) {
 		if (hvb_vc_measure_voltage(dev, &value) == 0) {
@@ -187,39 +207,31 @@ static void hvb_vc_work_handler(struct k_work *work)
 {
 	struct k_work_delayable *delayable = k_work_delayable_from_work(work);
 	struct hvb_vc_data *data = CONTAINER_OF(delayable, struct hvb_vc_data, work);
-	const struct device *dev = NULL;
+	const struct device *dev = data->dev;
+	const struct hvb_vc_config *cfg = dev->config;
+	const struct vc_runtime_config_snapshot *runtime_cfg;
 
-	STRUCT_SECTION_FOREACH(vc_provider_binding, binding) {
-		if (binding->channel == data->channel) {
-			dev = binding->dev;
-			break;
-		}
-	}
-
-	if (dev != NULL) {
-		const struct hvb_vc_config *cfg = dev->config;
-		const struct vc_runtime_config_snapshot *runtime_cfg;
-
-		runtime_cfg = vc_provider_bus_acquire_config(data->channel);
-		if (runtime_cfg != NULL) {
-			if (runtime_cfg->version != data->applied_config_version) {
-				if (hvb_vc_apply_config(dev, runtime_cfg) == 0) {
-					data->applied_config_version = runtime_cfg->version;
-				}
+	runtime_cfg = vc_provider_bus_acquire_config(data->channel);
+	if (runtime_cfg != NULL) {
+		if (runtime_cfg->version != data->applied_config_version) {
+			if (hvb_vc_apply_config(dev, runtime_cfg) == 0) {
+				data->applied_config_version = runtime_cfg->version;
 			}
-			vc_provider_bus_release_config(data->channel);
 		}
-
-		hvb_vc_publish_measurement(dev);
-		k_work_schedule(&data->work, K_MSEC(cfg->sample_rate_ms));
+		vc_provider_bus_release_config(data->channel);
 	}
+
+	hvb_vc_publish_measurement(dev);
+	k_work_schedule_for_queue(&hvb_vc_workq, &data->work,
+				  K_MSEC(cfg->sample_rate_ms));
 }
 
 static int hvb_vc_start(const struct device *dev)
 {
 	struct hvb_vc_data *data = dev->data;
 
-	return k_work_schedule(&data->work, K_NO_WAIT) < 0 ? -EIO : 0;
+	return k_work_schedule_for_queue(&hvb_vc_workq, &data->work,
+				       K_NO_WAIT) < 0 ? -EIO : 0;
 }
 
 static int hvb_vc_stop(const struct device *dev)
@@ -234,7 +246,8 @@ static int hvb_vc_notify_config_changed(const struct device *dev, uint32_t versi
 	struct hvb_vc_data *data = dev->data;
 
 	ARG_UNUSED(version);
-	return k_work_schedule(&data->work, K_NO_WAIT) < 0 ? -EIO : 0;
+	return k_work_schedule_for_queue(&hvb_vc_workq, &data->work,
+					K_NO_WAIT) < 0 ? -EIO : 0;
 }
 
 static const struct vc_channel_api hvb_vc_api = {
@@ -253,9 +266,20 @@ static int hvb_vc_init(const struct device *dev)
 {
 	const struct hvb_vc_config *cfg = dev->config;
 
+	hvb_vc_ensure_workq();
+
 	if (!device_is_ready(cfg->dac)) {
 		LOG_ERR("DAC not ready");
 		return -ENODEV;
+	}
+	{
+		struct dac_channel_cfg dac_cfg = { .channel_id = 0, .resolution = 16 };
+		int ret = dac_channel_setup(cfg->dac, &dac_cfg);
+
+		if (ret < 0) {
+			LOG_ERR("DAC channel setup failed: %d", ret);
+			return ret;
+		}
 	}
 	if (!device_is_ready(cfg->adc)) {
 		LOG_ERR("ADC not ready");
@@ -270,12 +294,13 @@ static int hvb_vc_init(const struct device *dev)
 	{
 		struct hvb_vc_data *data = dev->data;
 
+		data->dev = dev;
 		data->channel = cfg->channel_index;
 		k_work_init_delayable(&data->work, hvb_vc_work_handler);
 	}
 
 	LOG_INF("ch%d ready dac=%s adc=%s caps=0x%04x",
-		DT_INST_PROP(0, channel_index),
+		cfg->channel_index,
 		cfg->dac->name, cfg->adc->name, cfg->capabilities);
 	return 0;
 }

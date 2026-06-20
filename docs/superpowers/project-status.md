@@ -42,7 +42,19 @@ This ledger is the current navigation map for project state. Historical implemen
 
 ## Active Uncommitted Work
 
-No active uncommitted work was present at the last ledger update.
+Remediation plan execution (2026-06-20):
+- Phase 1 (driver fixes 1.1–1.6): applied, verified domain 74/74, runtime 21/21, jw_hvb build
+- Phase 2 (code quality 2.1–2.6): applied, verified domain 74/74, runtime 21/21, jw_hvb build
+- Phase 3.0: design spec written at `docs/superpowers/specs/2026-06-20-unified-event-driven-domain-runtime-design.md`
+- Phase 3.1 (per-field command infra): applied, verified 95/95 tests, jw_hvb build
+- Phase 3.2 (unified domain runtime): files renamed, domain_tick removed, unified creation API, verified 95/95 tests, jw_hvb build
+- Phase 3.3 (SMF activation): channel/domain state tracking active, verified 95/95 tests, jw_hvb build
+- Phase 3.4 (published domain snapshot): published snapshot with frontend read API, verified 95/95 tests, jw_hvb build
+- Phase 3.6 (config version bump): domain_set_channel_config now bumps runtime_config_version, verified 95/95 tests, jw_hvb build
+- Phase 3.5 (Modbus adapter rewrite): applied, verified 95/95 tests, jw_hvb build. Data race eliminated.
+- Phase 3.7 (test updates): 12 new runtime integration tests added (unified creation, per-field commands, published snapshot), verified 117/117 tests total (84 domain + 33 runtime), jw_hvb build
+- Phase 4.1 (Modbus config from Kconfig): CONFIG_VC_MODBUS_UNIT_ID and CONFIG_VC_MODBUS_BAUD_RATE added, main.c uses them
+- Phase 4.2 (heartbeat refactor): heartbeat moved to k_work_delayable, uptime read internally by runtime, main.c no longer references struct domain, verified 117/117 tests, jw_hvb build
 
 ## Historical Plan Interpretation
 
@@ -62,6 +74,7 @@ No active uncommitted work was present at the last ledger update.
 | Startup safety confirmation | `deferred` | Design provider output-safe confirmation before Modbus/shell command acceptance. |
 | Host-tools deferred validation | `deferred` | Validate factory GUI workflow and deployment scripts separately. |
 | Peripheral tuning hardware record | `deferred` | Record hardware verification for bring-up demos when hardware is available. |
+| Hardware interlock GPIO | `deferred` | Removed from DTS binding (2.6); re-add when interlock hardware design is finalized. |
 
 ## Update Protocol
 

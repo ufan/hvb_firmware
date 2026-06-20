@@ -8,6 +8,7 @@ target_include_directories(hvb_modbus_core
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
     PUBLIC ${MODBUSLIB_INCLUDE_DIR}
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../dts/bindings/include
 )
 target_link_libraries(hvb_modbus_core PUBLIC modbus)
 target_link_libraries(hvb_modbus_core PUBLIC tomlplusplus::tomlplusplus)
