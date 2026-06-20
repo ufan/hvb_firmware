@@ -50,11 +50,6 @@ static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 	switch (cmd->type) {
 	case VC_RUNTIME_CMD_SET_OPERATING_MODE:
 		return domain_set_operating_mode(runtime->domain, cmd->payload.operating_mode);
-	case VC_RUNTIME_CMD_SET_SYSTEM_CONFIG:
-		return domain_set_system_config(runtime->domain, &cmd->payload.system_config);
-	case VC_RUNTIME_CMD_SET_CHANNEL_CONFIG:
-		return domain_set_channel_config(runtime->domain, cmd->channel,
-						 &cmd->payload.channel_config);
 	case VC_RUNTIME_CMD_OUTPUT_ACTION:
 		return domain_channel_output_action(runtime->domain, cmd->channel,
 						    cmd->payload.output_action);
@@ -99,6 +94,8 @@ static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 {
 	uint16_t count = domain_get_supported_channel_count(runtime->domain);
 
+	k_mutex_lock(&runtime->lock, K_FOREVER);
+	domain_process_periodic(runtime->domain, 0);
 	k_mutex_lock(&runtime->snapshot_lock, K_FOREVER);
 	domain_get_system_snapshot(runtime->domain, &runtime->published.system);
 	domain_get_system_config(runtime->domain, &runtime->published.sys_config);
@@ -110,6 +107,7 @@ static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 	}
 	runtime->published.system.uptime = (uint32_t)(k_uptime_get() / 1000);
 	k_mutex_unlock(&runtime->snapshot_lock);
+	k_mutex_unlock(&runtime->lock);
 }
 
 static void vc_runtime_publish_all_configs(struct vc_runtime *runtime)

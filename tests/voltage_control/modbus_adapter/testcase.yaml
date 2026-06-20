@@ -1,0 +1,3 @@
+tests:
+  voltage_control.modbus_adapter:
+    platform_allow: native_posix

@@ -84,6 +84,8 @@ struct runtime_config_visible_state {
 };
 
 static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT];
+static void vc_tick_protection(struct domain *domain, uint8_t ch);
+static void vc_tick_status_bits(struct domain *domain, uint8_t ch);
 
 static bool channel_valid(const struct domain *domain, uint8_t channel)
 {
@@ -748,8 +750,21 @@ enum vc_status domain_set_channel_config(struct domain *domain,
 		return VC_ERR_INVALID_VALUE;
 	}
 
-	memcpy(&domain->channels[channel], cfg, sizeof(*cfg));
-	mark_runtime_config_changed(domain, channel);
+	{
+		struct runtime_config_visible_state before_vis =
+			capture_runtime_config_visible_state(domain, channel);
+
+		memcpy(&domain->channels[channel], cfg, sizeof(*cfg));
+
+		if (domain->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
+			vc_tick_protection(domain, channel);
+			vc_tick_status_bits(domain, channel);
+		}
+
+		mark_runtime_config_changed(domain, channel);
+		mark_runtime_config_changed_if_visible_state_changed(domain, channel,
+								     &before_vis);
+	}
 	return VC_OK;
 }
 
@@ -792,6 +807,15 @@ enum vc_status domain_consume_measurement(struct domain *domain,
 			((int64_t)meas->raw_current * cfg->measured_current_calib_k) /
 			10000 + cfg->measured_current_calib_b);
 	}
+	if ((meas->present_mask & (VC_MEAS_PRESENT_VOLTAGE | VC_MEAS_PRESENT_CURRENT)) &&
+	    domain->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
+		before = capture_runtime_config_visible_state(domain, meas->channel);
+		vc_tick_protection(domain, meas->channel);
+		vc_tick_status_bits(domain, meas->channel);
+		mark_runtime_config_changed_if_visible_state_changed(domain,
+							      meas->channel, &before);
+	}
+
 	if (meas->present_mask & VC_MEAS_PRESENT_PROVIDER_STATUS) {
 		before = capture_runtime_config_visible_state(domain, meas->channel);
 		provider_faults = meas->provider_fault_cause;
@@ -1356,7 +1380,7 @@ static void vc_tick_ramp(struct domain *domain, uint8_t ch, uint32_t dt_ms)
 	uint16_t step, interval;
 	uint32_t interval_ms;
 
-	if (!rt->output_enabled) {
+	if (!rt->output_enabled || snap->active_fault_cause != 0) {
 		return;
 	}
 

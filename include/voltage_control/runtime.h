@@ -52,8 +52,6 @@ struct vc_measurement_snapshot {
 
 enum vc_runtime_command_type {
 	VC_RUNTIME_CMD_SET_OPERATING_MODE = 0,
-	VC_RUNTIME_CMD_SET_SYSTEM_CONFIG,
-	VC_RUNTIME_CMD_SET_CHANNEL_CONFIG,
 	VC_RUNTIME_CMD_OUTPUT_ACTION,
 	VC_RUNTIME_CMD_FAULT_COMMAND,
 	VC_RUNTIME_CMD_CALIBRATION_UNLOCK,
@@ -73,8 +71,6 @@ struct vc_runtime_command {
 	uint8_t channel;
 	union {
 		enum vc_operating_mode operating_mode;
-		struct vc_system_config system_config;
-		struct vc_channel_config channel_config;
 		enum vc_output_action output_action;
 		enum vc_channel_fault_command fault_command;
 		uint16_t calibration_unlock_value;
