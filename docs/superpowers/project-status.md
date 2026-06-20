@@ -28,6 +28,16 @@ This ledger is the current navigation map for project state. Historical implemen
 | Host tools architecture plan and diagrams | `verified` | Commit `7c45f35 docs: add host tools architecture plan`. |
 | Resource-constraint guidance | `verified` | Commit `96b008a docs: note firmware resource constraints`. |
 | Project status reconciliation design | `verified` | Commit `94c97de docs: design project status reconciliation`. |
+| Project status reconciliation plan | `verified` | Commit `a64cee9 docs: plan project status reconciliation`. |
+| Project status ledger | `verified` | Created by `e0907e1 docs: add project status ledger`, aligned by `4a8c227 docs: align project status ledger with plan`, and clarified by `686e000 docs: clarify status ledger evidence`. |
+| Reconciliation design ledger link | `verified` | Commit `98a2cc5 docs: link status reconciliation ledger`. |
+
+## Superseded Plans And Specs
+
+| Artifact | Status | Evidence |
+| --- | --- | --- |
+| `docs/superpowers/specs/2026-06-19-vc-channel-runtime-design.md` | `superseded` | Replaced by `docs/superpowers/specs/2026-06-18-production-runtime-channel-provider-design.md` and later async runtime/static provider bus designs. |
+| Historical unchecked implementation plans | `superseded` | Use this ledger plus current code/tests before acting on unchecked plan boxes. |
 
 ## Active Uncommitted Work
 
