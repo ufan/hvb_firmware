@@ -28,7 +28,6 @@ This ledger is the current navigation map for project state. Historical implemen
 | Host tools architecture plan and diagrams | `verified` | Commit `7c45f35 docs: add host tools architecture plan`. |
 | Resource-constraint guidance | `verified` | Commit `96b008a docs: note firmware resource constraints`. |
 | Project status reconciliation design | `verified` | Commit `94c97de docs: design project status reconciliation`. |
-| Project status reconciliation plan | `verified` | Commit `a64cee9 docs: plan project status reconciliation`. |
 
 ## Active Uncommitted Work
 
