@@ -14,8 +14,8 @@ This ledger is the current navigation map for project state. Historical implemen
 ## Current Baseline
 
 - Branch: `main`
-- Remote tracking at last local check: local docs reconciliation commits are ahead of origin; run `git status --short --branch` for the current count.
-- Worktree at last local check: dirty with active static-lifetime cleanup in firmware and tests.
+- Remote tracking at last local check: local reconciliation and static-allocation commits are ahead of origin; run `git status --short --branch` for the current count.
+- Worktree at last local check: clean after committing static-lifetime cleanup and this ledger update.
 - No git stashes were present after prior cleanup.
 
 ## Verified Committed Work
@@ -31,6 +31,7 @@ This ledger is the current navigation map for project state. Historical implemen
 | Project status reconciliation plan | `verified` | Commit `a64cee9 docs: plan project status reconciliation`. |
 | Project status ledger | `verified` | Created by `e0907e1 docs: add project status ledger`, aligned by `4a8c227 docs: align project status ledger with plan`, and clarified by `686e000 docs: clarify status ledger evidence`. |
 | Reconciliation design ledger link | `verified` | Commit `98a2cc5 docs: link status reconciliation ledger`. |
+| Static voltage runtime allocation | `verified` | Commit `cd41b64 feat: add static voltage runtime allocation`; verified with domain native tests `74/74`, runtime native tests `21/21`, and `jw_hvb` build. |
 
 ## Superseded Plans And Specs
 
@@ -41,23 +42,7 @@ This ledger is the current navigation map for project state. Historical implemen
 
 ## Active Uncommitted Work
 
-Static-lifetime cleanup is active in the worktree and is not part of the committed baseline until committed.
-
-Files:
-
-- `applications/hvb_controller/src/main.c`
-- `include/voltage_control/domain.h`
-- `include/voltage_control/runtime.h`
-- `lib/voltage_control/domain.c`
-- `lib/voltage_control/runtime.c`
-- `tests/voltage_control/domain/src/main.c`
-- `tests/voltage_control/runtime/src/main.c`
-
-Last recorded verification for this active cleanup:
-
-- Domain native tests: `74/74`
-- Runtime native tests: `21/21`
-- `jw_hvb` build: pass
+No active uncommitted work was present at the last ledger update.
 
 ## Historical Plan Interpretation
 
@@ -70,7 +55,6 @@ Last recorded verification for this active cleanup:
 
 | Gap | Status | Next Action |
 | --- | --- | --- |
-| Commit or revise static-lifetime cleanup | `planned` | Review active changes, commit if accepted, or adjust before further firmware work. |
 | Production app hardening | `planned` | Design Modbus unit ID/baud source, heartbeat structure, and uptime ownership before implementation. |
 | Provider-bus dispatch tests | `planned` | Add fake iterable provider binding coverage for provider bus start/dispatch behavior. |
 | Settings persistence | `deferred` | Design Zephyr settings/NVS behavior for save/load/factory-reset commands. |
