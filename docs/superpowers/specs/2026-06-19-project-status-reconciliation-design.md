@@ -6,6 +6,8 @@ Historical implementation plans in this repository still contain unchecked `- [ 
 
 This design defines a lightweight status reconciliation layer: one current status ledger that summarizes what is verified, what is superseded, and what remains actionable.
 
+Implemented artifact: `docs/superpowers/project-status.md` is the current ledger described by this design.
+
 ## Problem
 
 The repository now has several overlapping specs and plans for voltage-control domain behavior, Modbus, calibration, runtime, providers, static provider bus, host tools, and peripheral tuning. Many plans were executed through incremental commits but their checkboxes were not updated afterward.
