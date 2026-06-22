@@ -67,6 +67,11 @@ STRUCT_SECTION_ITERABLE(vc_provider_binding, fake_binding_1) = {
 	.route_bit = BIT(1),
 };
 
+STRUCT_SECTION_ITERABLE_NAMED(vc_measurement_buffer_entry,
+	_0_, test_meas_buf_0) = {0};
+STRUCT_SECTION_ITERABLE_NAMED(vc_measurement_buffer_entry,
+	_1_, test_meas_buf_1) = {0};
+
 static void reset_fakes(void *fixture)
 {
 	ARG_UNUSED(fixture);
@@ -220,4 +225,51 @@ ZTEST(voltage_control_provider_bus, test_publish_config_rejects_null)
 ZTEST(voltage_control_provider_bus, test_acquire_config_rejects_bad_channel)
 {
 	zassert_is_null(vc_provider_bus_acquire_config(99));
+}
+
+/* ---- measurement buffer ---- */
+
+ZTEST(voltage_control_provider_bus, test_measurement_buffer_count_matches_entries)
+{
+	zassert_equal(vc_measurement_buffer_count(), 2);
+}
+
+ZTEST(voltage_control_provider_bus, test_measurement_buffer_store_read_round_trip)
+{
+	struct vc_measurement_snapshot in = {
+		.channel = 0,
+		.generation = 3,
+		.timestamp_ms = 500,
+		.present_mask = VC_MEAS_PRESENT_VOLTAGE,
+		.raw_voltage = 42,
+	};
+	struct vc_measurement_snapshot out;
+
+	vc_measurement_buffer_init();
+	zassert_equal(vc_measurement_buffer_store(0, &in), VC_OK);
+	zassert_equal(vc_measurement_buffer_read(0, &out), VC_OK);
+	zassert_equal(out.generation, 3);
+	zassert_equal(out.timestamp_ms, 500);
+	zassert_equal(out.raw_voltage, 42);
+}
+
+ZTEST(voltage_control_provider_bus, test_measurement_buffer_indexed_access)
+{
+	struct vc_measurement_snapshot in0 = {
+		.channel = 0, .generation = 1, .timestamp_ms = 100,
+	};
+	struct vc_measurement_snapshot in1 = {
+		.channel = 1, .generation = 2, .timestamp_ms = 200,
+	};
+	struct vc_measurement_snapshot out;
+
+	vc_measurement_buffer_init();
+	zassert_equal(vc_measurement_buffer_store(0, &in0), VC_OK);
+	zassert_equal(vc_measurement_buffer_store(1, &in1), VC_OK);
+
+	zassert_equal(vc_measurement_buffer_read(0, &out), VC_OK);
+	zassert_equal(out.generation, 1);
+
+	zassert_equal(vc_measurement_buffer_read(1, &out), VC_OK);
+	zassert_equal(out.generation, 2);
 }
