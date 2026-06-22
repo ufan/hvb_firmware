@@ -63,7 +63,7 @@ None.
 | Provider-bus dispatch tests | `verified` | Committed as `4474df6`. |
 | Settings persistence | `verified` | `vc_storage_backend` interface, NVS backend, auto-load, calibration-safe factory-reset. |
 | Evidence freshness | `verified` | Measurement buffer, `VC_FAULT_STALE`, DTS-derived channel count. |
-| Startup safety confirmation | `deferred` | Design provider output-safe confirmation before Modbus/shell command acceptance. |
+| Startup safety confirmation | `verified` | Existing three-layer safety is sufficient: driver init sets GPIO INACTIVE, domain publishes force_safe_state=true, Modbus server starts last. No additional code needed. |
 | Host-tools deferred validation | `deferred` | Validate factory GUI workflow and deployment scripts separately. |
 | Peripheral tuning hardware record | `deferred` | Record hardware verification for bring-up demos when hardware is available. |
 | Hardware interlock GPIO | `deferred` | Removed from DTS binding (2.6); re-add when interlock hardware design is finalized. |
