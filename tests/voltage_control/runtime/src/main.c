@@ -8,10 +8,14 @@
 
 #include <zephyr/ztest.h>
 
+#include <errno.h>
+#include <string.h>
+
 #include "regmap/hvb_regs.h"
 #include "voltage_control/domain.h"
 #include "voltage_control/runtime.h"
 #include "voltage_control/provider_bus.h"
+#include "voltage_control/vc_storage.h"
 
 static const struct vc_channel_entry test_channels[] = {
 	{ .dev = NULL, .index = 0, .capabilities = CH_CAP_OUTPUT_ENABLE |
@@ -592,4 +596,186 @@ ZTEST(voltage_control_runtime, test_measurement_buffer_rejects_null)
 		      VC_ERR_UNSUPPORTED_CHANNEL);
 	zassert_equal(vc_measurement_buffer_read(99, &meas),
 		      VC_ERR_UNSUPPORTED_CHANNEL);
+}
+
+/* ---- Fake storage backend ---- */
+
+static struct vc_system_config fake_saved_sys;
+static struct vc_channel_config fake_saved_ch[2];
+static bool fake_sys_saved;
+static bool fake_ch_saved[2];
+
+static int fake_save_system_config(const struct vc_system_config *cfg)
+{
+	fake_saved_sys = *cfg;
+	fake_sys_saved = true;
+	return 0;
+}
+
+static int fake_load_system_config(struct vc_system_config *cfg)
+{
+	if (!fake_sys_saved) {
+		return -ENOENT;
+	}
+	*cfg = fake_saved_sys;
+	return 0;
+}
+
+static int fake_save_channel_config(uint8_t ch, const struct vc_channel_config *cfg)
+{
+	if (ch >= 2) {
+		return -EINVAL;
+	}
+	fake_saved_ch[ch] = *cfg;
+	fake_ch_saved[ch] = true;
+	return 0;
+}
+
+static int fake_load_channel_config(uint8_t ch, struct vc_channel_config *cfg)
+{
+	if (ch >= 2 || !fake_ch_saved[ch]) {
+		return -ENOENT;
+	}
+	*cfg = fake_saved_ch[ch];
+	return 0;
+}
+
+static int fake_erase_all(void)
+{
+	fake_sys_saved = false;
+	fake_ch_saved[0] = false;
+	fake_ch_saved[1] = false;
+	return 0;
+}
+
+static const struct vc_storage_backend fake_storage = {
+	.save_system_config = fake_save_system_config,
+	.load_system_config = fake_load_system_config,
+	.save_channel_config = fake_save_channel_config,
+	.load_channel_config = fake_load_channel_config,
+	.erase_all = fake_erase_all,
+};
+
+static void reset_fake_storage(void)
+{
+	memset(&fake_saved_sys, 0, sizeof(fake_saved_sys));
+	memset(fake_saved_ch, 0, sizeof(fake_saved_ch));
+	fake_sys_saved = false;
+	fake_ch_saved[0] = false;
+	fake_ch_saved[1] = false;
+}
+
+/* ---- Settings persistence tests ---- */
+
+ZTEST(voltage_control_runtime, test_system_save_and_load_round_trip)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_system_config cfg;
+
+	zassert_not_null(d);
+	reset_fake_storage();
+	domain_set_storage_backend(d, &fake_storage);
+
+	zassert_equal(domain_set_system_field(d, VC_FIELD_SLAVE_ADDRESS, 42), VC_OK);
+	zassert_equal(domain_system_param_action(d, VC_PARAM_ACTION_SAVE), VC_OK);
+	zassert_true(fake_sys_saved);
+
+	zassert_equal(domain_set_system_field(d, VC_FIELD_SLAVE_ADDRESS, 99), VC_OK);
+	zassert_equal(domain_system_param_action(d, VC_PARAM_ACTION_LOAD), VC_OK);
+
+	domain_get_system_config(d, &cfg);
+	zassert_equal(cfg.slave_address, 42);
+
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_system_factory_reset_restores_defaults)
+{
+	struct domain *d = domain_create(test_channels, 1);
+	struct vc_system_config cfg;
+
+	zassert_not_null(d);
+	reset_fake_storage();
+	domain_set_storage_backend(d, &fake_storage);
+
+	zassert_equal(domain_set_system_field(d, VC_FIELD_SLAVE_ADDRESS, 42), VC_OK);
+	zassert_equal(domain_system_param_action(d, VC_PARAM_ACTION_SAVE), VC_OK);
+	zassert_equal(domain_system_param_action(d, VC_PARAM_ACTION_FACTORY_RESET), VC_OK);
+
+	domain_get_system_config(d, &cfg);
+	zassert_equal(cfg.slave_address, 1);
+
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_system_param_action_null_storage_returns_error)
+{
+	struct domain *d = domain_create(test_channels, 1);
+
+	zassert_not_null(d);
+	zassert_equal(domain_system_param_action(d, VC_PARAM_ACTION_SAVE), VC_ERR_STORAGE);
+	zassert_equal(domain_system_param_action(d, VC_PARAM_ACTION_LOAD), VC_ERR_STORAGE);
+
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_channel_save_and_load_round_trip)
+{
+	struct domain *d = domain_create(full_cap_channels, 1);
+	struct vc_channel_config cfg;
+
+	zassert_not_null(d);
+	reset_fake_storage();
+	domain_set_storage_backend(d, &fake_storage);
+
+	zassert_equal(domain_set_channel_field(d, 0, VC_FIELD_CONFIGURED_TARGET_VOLTAGE,
+					       5000), VC_OK);
+	zassert_equal(domain_channel_param_action(d, 0, VC_PARAM_ACTION_SAVE), VC_OK);
+	zassert_true(fake_ch_saved[0]);
+
+	zassert_equal(domain_set_channel_field(d, 0, VC_FIELD_CONFIGURED_TARGET_VOLTAGE,
+					       9999), VC_OK);
+	zassert_equal(domain_channel_param_action(d, 0, VC_PARAM_ACTION_LOAD), VC_OK);
+
+	domain_get_channel_config(d, 0, &cfg);
+	zassert_equal(cfg.configured_target_voltage, 5000);
+
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_channel_factory_reset_preserves_calibration)
+{
+	struct domain *d = domain_create(full_cap_channels, 1);
+	struct vc_channel_config cfg;
+
+	zassert_not_null(d);
+	reset_fake_storage();
+	domain_set_storage_backend(d, &fake_storage);
+
+	domain_get_channel_config(d, 0, &cfg);
+	zassert_equal(cfg.measured_voltage_calib_k, 10000);
+
+	zassert_equal(domain_set_channel_field(d, 0, VC_FIELD_CONFIGURED_TARGET_VOLTAGE,
+					       5000), VC_OK);
+	zassert_equal(domain_channel_param_action(d, 0, VC_PARAM_ACTION_FACTORY_RESET), VC_OK);
+
+	domain_get_channel_config(d, 0, &cfg);
+	zassert_equal(cfg.configured_target_voltage, 0);
+	zassert_equal(cfg.measured_voltage_calib_k, 10000);
+
+	free(d);
+}
+
+ZTEST(voltage_control_runtime, test_channel_load_no_saved_data_returns_error)
+{
+	struct domain *d = domain_create(full_cap_channels, 1);
+
+	zassert_not_null(d);
+	reset_fake_storage();
+	domain_set_storage_backend(d, &fake_storage);
+
+	zassert_equal(domain_channel_param_action(d, 0, VC_PARAM_ACTION_LOAD),
+		      VC_ERR_STORAGE);
+
+	free(d);
 }
