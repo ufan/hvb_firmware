@@ -33,6 +33,8 @@ This ledger is the current navigation map for project state. Historical implemen
 | Static voltage runtime allocation | `verified` | Commit `cd41b64 feat: add static voltage runtime allocation`; verified with domain native tests `74/74`, runtime native tests `21/21`, and `jw_hvb` build. |
 | Unified event-driven domain runtime | `verified` | Commit `f3f6742 feat: unified event-driven domain runtime library`; remediation phases 1–3.7 and 4.1–4.2 (driver fixes, code quality, per-field commands, unified creation API, SMF activation, published snapshot, config versioning, Modbus adapter rewrite, runtime integration tests, Kconfig Modbus config, heartbeat refactor). |
 | Event-driven protection and Modbus adapter tests | `verified` | Commit `0fac055 feat: event-driven protection triggers and Modbus adapter tests`; 17 Modbus adapter tests added. Verified 134/134 tests (84 domain + 33 runtime + 17 modbus_adapter), `jw_hvb` build clean. |
+| Provider-bus dispatch tests | `verified` | Commit `4474df6 feat: add provider-bus dispatch tests with fake iterable bindings`; 15 provider_bus tests. |
+| Evidence freshness | `verified` | DTS-derived `VC_MAX_CHANNELS`, measurement buffer as RAM iterable section with numeric sorting, `VC_FAULT_STALE` flag, staleness detection at snapshot publish time. Verified 154/154 tests (84 domain + 36 runtime + 18 provider_bus + 17 modbus_adapter, 1 skipped), `jw_hvb` build clean. |
 
 ## Superseded Plans And Specs
 
@@ -43,7 +45,7 @@ This ledger is the current navigation map for project state. Historical implemen
 
 ## Active Uncommitted Work
 
-- Provider-bus dispatch tests: 15 tests with fake iterable bindings covering `start_all`, `notify_channel`, `dispatch_one`, config slot round-trip, and validation. Verified 149/149 tests (84 domain + 33 runtime + 17 modbus_adapter + 15 provider_bus), `jw_hvb` build clean.
+None.
 
 ## Historical Plan Interpretation
 
@@ -57,9 +59,9 @@ This ledger is the current navigation map for project state. Historical implemen
 | Gap | Status | Next Action |
 | --- | --- | --- |
 | Production app hardening | `verified` | Phases 4.1 (Kconfig Modbus config) and 4.2 (heartbeat refactor) committed in `f3f6742` and `0fac055`. |
-| Provider-bus dispatch tests | `implemented-unverified` | 15 tests in `tests/voltage_control/provider_bus/`; commit pending. |
+| Provider-bus dispatch tests | `verified` | Committed as `4474df6`. |
 | Settings persistence | `deferred` | Design Zephyr settings/NVS behavior for save/load/factory-reset commands. |
-| Evidence freshness | `deferred` | Design stale measurement detection and capability-aware status/fault policy. |
+| Evidence freshness | `verified` | Measurement buffer, `VC_FAULT_STALE`, DTS-derived channel count. |
 | Startup safety confirmation | `deferred` | Design provider output-safe confirmation before Modbus/shell command acceptance. |
 | Host-tools deferred validation | `deferred` | Validate factory GUI workflow and deployment scripts separately. |
 | Peripheral tuning hardware record | `deferred` | Record hardware verification for bring-up demos when hardware is available. |
