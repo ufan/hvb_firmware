@@ -65,6 +65,8 @@ None.
 | Evidence freshness | `verified` | Measurement buffer, `VC_FAULT_STALE`, DTS-derived channel count. |
 | Startup safety confirmation | `verified` | Existing three-layer safety is sufficient: driver init sets GPIO INACTIVE, domain publishes force_safe_state=true, Modbus server starts last. No additional code needed. |
 | Host-tools register map alignment | `verified` | Aligned ChStatus and FaultCause with firmware VC_FAULT_STALE. Removed phantom UNSUPPORTED/RETRY_EXHAUSTED bits. Host tools build clean, 5/5 affected tests pass. 4 pre-existing channel-read test failures remain (register offset bug, not related). |
+| Shell console frontend | `planned` | Zephyr shell console as an always-available Kconfig-gated user interaction layer. Independent of Modbus adapter — protocol layer may change but shell remains. |
+| Host-tools channel-read test fix | `planned` | Fix 4 pre-existing register offset failures in test_channel_reads.cpp and test_calibration.cpp. |
 | Peripheral tuning hardware record | `deferred` | Record hardware verification for bring-up demos when hardware is available. |
 | Hardware interlock GPIO | `deferred` | Removed from DTS binding (2.6); re-add when interlock hardware design is finalized. |
 
