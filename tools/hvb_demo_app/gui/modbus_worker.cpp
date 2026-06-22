@@ -101,8 +101,7 @@ QVariantMap ModbusWorker::channelInfoToMap(int /*ch*/, const hvb::ChannelInfo& i
     m["statusActiveFault"] = (info.status & hvb::ChStatus::ACTIVE_FAULT) != 0;
     m["statusFaultHistory"] = (info.status & hvb::ChStatus::FAULT_HISTORY) != 0;
     m["statusCooldown"] = (info.status & hvb::ChStatus::COOLDOWN_ACTIVE) != 0;
-    m["statusRetryExhausted"] = (info.status & hvb::ChStatus::RETRY_EXHAUSTED) != 0;
-    m["statusUnsupported"] = (info.status & hvb::ChStatus::UNSUPPORTED) != 0;
+    m["statusMeasStale"] = (info.status & hvb::ChStatus::MEASUREMENT_STALE) != 0;
 
     m["faultVLimit"] = (info.activeFault & hvb::FaultCause::VOLTAGE_LIMIT) != 0;
     m["faultILimit"] = (info.activeFault & hvb::FaultCause::CURRENT_LIMIT) != 0;
@@ -111,6 +110,7 @@ QVariantMap ModbusWorker::channelInfoToMap(int /*ch*/, const hvb::ChannelInfo& i
     m["faultInterlock"] = (info.activeFault & hvb::FaultCause::VARIANT_INTERLOCK) != 0;
     m["faultRetryExhausted"] = (info.activeFault & hvb::FaultCause::AUTO_RETRY_EXHAUSTED) != 0;
     m["faultConfigInvalid"] = (info.activeFault & hvb::FaultCause::CONFIG_INVALID_AUTO) != 0;
+    m["faultMeasStale"] = (info.activeFault & hvb::FaultCause::MEASUREMENT_STALE) != 0;
 
     m["capOutEn"] = (info.chCapFlags & hvb::ChCap::OUTPUT_ENABLE_CTRL) != 0;
     m["capCurrentMeas"] = (info.chCapFlags & hvb::ChCap::CURRENT_MEAS) != 0;

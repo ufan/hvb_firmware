@@ -45,8 +45,7 @@ static void printStatusBits(uint16_t status) {
     std::cout << "  Active Fault:     " << yn(hvb::ChStatus::ACTIVE_FAULT) << "\n";
     std::cout << "  Fault History:    " << yn(hvb::ChStatus::FAULT_HISTORY) << "\n";
     std::cout << "  Cooldown:         " << yn(hvb::ChStatus::COOLDOWN_ACTIVE) << "\n";
-    std::cout << "  Retry Exhausted:  " << yn(hvb::ChStatus::RETRY_EXHAUSTED) << "\n";
-    std::cout << "  Unsupported:      " << yn(hvb::ChStatus::UNSUPPORTED) << "\n";
+    std::cout << "  Meas Stale:       " << yn(hvb::ChStatus::MEASUREMENT_STALE) << "\n";
 }
 
 static void printFaultCause(uint16_t fault, const char* label) {
@@ -61,6 +60,7 @@ static void printFaultCause(uint16_t fault, const char* label) {
     if (fault & hvb::FaultCause::VARIANT_INTERLOCK)    p("IL");
     if (fault & hvb::FaultCause::AUTO_RETRY_EXHAUSTED) p("RE");
     if (fault & hvb::FaultCause::CONFIG_INVALID_AUTO)  p("CI");
+    if (fault & hvb::FaultCause::MEASUREMENT_STALE)   p("ST");
     std::cout << "\n";
 }
 
@@ -130,7 +130,7 @@ int cmdStatus() {
     for (int ch = 0; ch < 2; ++ch) {
         auto ci = g_client->readChannelInfo(ch);
         if (!g_client->isConnected()) { std::cerr << "Error ch" << ch << "\n"; return 1; }
-        if (ci.status & hvb::ChStatus::UNSUPPORTED) { std::cout << "CH" << ch << ": UNSUPPORTED\n"; continue; }
+        if (!g_client->isConnected()) { std::cerr << "Error ch" << ch << "\n"; break; }
         std::cout << "=== Channel " << ch << " ===\n";
         printSep("Measured Voltage:", formatVRaw(ci.voltageRaw));
         printSep("Measured Current:", formatIRaw(ci.currentRaw));

@@ -37,7 +37,7 @@ TEST_CASE("Monitor — table includes channel data", "[monitor]") {
     channels[0].activeFault = 0;
 
     channels[1].voltageRaw = 0;
-    channels[1].status = 0x0080;     // unsupported
+    channels[1].status = 0;
 
     auto output = renderMonitorTable(sys, channels);
     CHECK(output.find("CH0") != std::string::npos);

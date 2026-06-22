@@ -75,8 +75,7 @@ namespace ChStatus {
     inline constexpr uint16_t ACTIVE_FAULT         = 0x0008;
     inline constexpr uint16_t FAULT_HISTORY        = 0x0010;
     inline constexpr uint16_t COOLDOWN_ACTIVE      = 0x0020;
-    inline constexpr uint16_t RETRY_EXHAUSTED      = 0x0040;
-    inline constexpr uint16_t UNSUPPORTED          = 0x0080;
+    inline constexpr uint16_t MEASUREMENT_STALE   = 0x0040;
 }
 
 namespace FaultCause {
@@ -87,6 +86,7 @@ namespace FaultCause {
     inline constexpr uint16_t VARIANT_INTERLOCK     = 0x0010;
     inline constexpr uint16_t AUTO_RETRY_EXHAUSTED  = 0x0020;
     inline constexpr uint16_t CONFIG_INVALID_AUTO   = 0x0040;
+    inline constexpr uint16_t MEASUREMENT_STALE    = 0x0080;
 }
 
 namespace SysCap {

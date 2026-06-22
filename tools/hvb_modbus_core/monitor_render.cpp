@@ -24,11 +24,6 @@ std::string renderMonitorTable(const hvb::SystemInfo& sys,
     for (size_t i = 0; i < channels.size() && i < 2; ++i) {
         const auto& ci = channels[i];
 
-        if (ci.status & hvb::ChStatus::UNSUPPORTED) {
-            ss << " CH" << i << " │ (unsupported)\n";
-            continue;
-        }
-
         auto v = hvb::reg::voltageToV(ci.voltageRaw);
         auto a = hvb::reg::currentToA(ci.currentRaw);
         auto tv = hvb::reg::voltageToV(ci.operationalTargetVoltageRaw);

@@ -59,10 +59,6 @@ inline Component makeMonitorTab(AppState& s) {
             const auto& ci = s.data.chInfo[ch];
             const auto& cc = s.data.chCfg[ch];
             std::string sel = (ch == st->selectedRow) ? "\xe2\x96\xb6" : " ";
-            if (ci.status & ChStatus::UNSUPPORTED) {
-                rows.push_back({sel + std::to_string(ch), "(unsupported)", "", "", "", "", "", "", ""});
-                continue;
-            }
             rows.push_back({
                 sel + std::to_string(ch),
                 fmtVoltage(ci.voltageRaw),

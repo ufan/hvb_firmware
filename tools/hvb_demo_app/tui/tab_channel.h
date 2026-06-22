@@ -117,11 +117,7 @@ inline Component makeChannelTab(AppState& s, int ch) {
         Element liveBar = text(" Not connected ") | dim;
         if (s.data.valid) {
             const auto& ci = s.data.chInfo[ch];
-            if (ci.status & ChStatus::UNSUPPORTED) {
-                return window(text(" CH" + std::to_string(ch) + " "), vbox({
-                    text(" Channel " + std::to_string(ch) + " unsupported ") | bold | center,
-                }));
-            } else {
+            {
                 char lastFault[24] = "--";
                 if (ci.lastFaultTimestamp > 0)
                     snprintf(lastFault, sizeof(lastFault), "%u s ago", (unsigned)ci.lastFaultTimestamp);

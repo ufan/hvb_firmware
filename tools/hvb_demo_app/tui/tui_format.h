@@ -35,10 +35,9 @@ inline std::string fmtInterval(uint16_t raw) {
 
 inline std::string statusBadge(uint16_t status) {
     using namespace hvb::ChStatus;
-    if (status & UNSUPPORTED)     return "UNSUP";
-    if (status & ACTIVE_FAULT)    return "FAULT";
-    if (status & COOLDOWN_ACTIVE) return "COOL";
-    if (status & RETRY_EXHAUSTED) return "RETRY-X";
+    if (status & ACTIVE_FAULT)       return "FAULT";
+    if (status & COOLDOWN_ACTIVE)    return "COOL";
+    if (status & MEASUREMENT_STALE)  return "STALE";
     bool on   = (status & OUTPUT_DRIVE_NONZERO) != 0;
     bool ramp = (status & RAMPING_ACTIVE) != 0;
     if (on && ramp) return "ON RAMP";
@@ -57,6 +56,7 @@ inline std::string faultStr(uint16_t fault) {
     if (fault & hvb::FaultCause::VARIANT_INTERLOCK)    s += "IL ";
     if (fault & hvb::FaultCause::AUTO_RETRY_EXHAUSTED) s += "RE ";
     if (fault & hvb::FaultCause::CONFIG_INVALID_AUTO)  s += "CI ";
+    if (fault & hvb::FaultCause::MEASUREMENT_STALE)   s += "ST ";
     if (!s.empty() && s.back() == ' ') s.pop_back();
     return s;
 }

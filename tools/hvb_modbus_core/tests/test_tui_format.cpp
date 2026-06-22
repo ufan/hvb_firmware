@@ -11,8 +11,7 @@ TEST_CASE("statusBadge") {
     CHECK(statusBadge(ChStatus::OUTPUT_DRIVE_NONZERO | ChStatus::RAMPING_ACTIVE) == "ON RAMP");
     CHECK(statusBadge(ChStatus::ACTIVE_FAULT) == "FAULT");
     CHECK(statusBadge(ChStatus::COOLDOWN_ACTIVE) == "COOL");
-    CHECK(statusBadge(ChStatus::UNSUPPORTED) == "UNSUP");
-    CHECK(statusBadge(ChStatus::RETRY_EXHAUSTED) == "RETRY-X");
+    CHECK(statusBadge(ChStatus::MEASUREMENT_STALE) == "STALE");
 }
 
 TEST_CASE("faultStr") {
