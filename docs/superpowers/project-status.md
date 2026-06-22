@@ -35,6 +35,7 @@ This ledger is the current navigation map for project state. Historical implemen
 | Event-driven protection and Modbus adapter tests | `verified` | Commit `0fac055 feat: event-driven protection triggers and Modbus adapter tests`; 17 Modbus adapter tests added. Verified 134/134 tests (84 domain + 33 runtime + 17 modbus_adapter), `jw_hvb` build clean. |
 | Provider-bus dispatch tests | `verified` | Commit `4474df6 feat: add provider-bus dispatch tests with fake iterable bindings`; 15 provider_bus tests. |
 | Evidence freshness | `verified` | DTS-derived `VC_MAX_CHANNELS`, measurement buffer as RAM iterable section with numeric sorting, `VC_FAULT_STALE` flag, staleness detection at snapshot publish time. Verified 154/154 tests (84 domain + 36 runtime + 18 provider_bus + 17 modbus_adapter, 1 skipped), `jw_hvb` build clean. |
+| Settings persistence | `verified` | `vc_storage_backend` interface, Zephyr Settings/NVS backend, param_action implementation (SAVE/LOAD/FACTORY_RESET/SOFTWARE_RESET), auto-load at startup, flash partition, calibration preserved on factory-reset. Verified 160/160 tests (84 domain + 42 runtime + 18 provider_bus + 17 modbus_adapter, 1 skipped), `jw_hvb` build clean. |
 
 ## Superseded Plans And Specs
 
@@ -60,7 +61,7 @@ None.
 | --- | --- | --- |
 | Production app hardening | `verified` | Phases 4.1 (Kconfig Modbus config) and 4.2 (heartbeat refactor) committed in `f3f6742` and `0fac055`. |
 | Provider-bus dispatch tests | `verified` | Committed as `4474df6`. |
-| Settings persistence | `deferred` | Design Zephyr settings/NVS behavior for save/load/factory-reset commands. |
+| Settings persistence | `verified` | `vc_storage_backend` interface, NVS backend, auto-load, calibration-safe factory-reset. |
 | Evidence freshness | `verified` | Measurement buffer, `VC_FAULT_STALE`, DTS-derived channel count. |
 | Startup safety confirmation | `deferred` | Design provider output-safe confirmation before Modbus/shell command acceptance. |
 | Host-tools deferred validation | `deferred` | Validate factory GUI workflow and deployment scripts separately. |
