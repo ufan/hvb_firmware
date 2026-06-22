@@ -4,11 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
- /*
- * This is the main application for the HVB controller firmware. It initializes the system and starts up the modbus server.
- * Other components are initialized through the domain and runtime initialization separately, and the main function is kept clean for better readability and maintainability.
- */
-
 #include <errno.h>
 
 #include <zephyr/drivers/gpio.h>
@@ -17,20 +12,15 @@
 #include <zephyr/modbus/modbus.h>
 #include <zephyr/sys/printk.h>
 
-#include "voltage_control/domain.h"
 #include "voltage_control/modbus_adapter.h"
-#include "voltage_control/provider_bus.h"
-#include "voltage_control/runtime.h"
+#include "voltage_control/vc.h"
 
 #define HEARTBEAT_INTERVAL_MS 500
 #define MODBUS_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_modbus_serial)
 
 static const struct gpio_dt_spec sys_run = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
-extern const struct vc_channel_entry vc_domain_channels[];
-extern const size_t vc_domain_channel_count;
 static struct vc_mb_adapter *mb;
-static struct vc_runtime *runtime;
 
 static void heartbeat_handler(struct k_work *work)
 {
@@ -107,20 +97,19 @@ int main(void)
 		return 0;
 	}
 
-	runtime = vc_domain_runtime_create_static(vc_domain_channels,
-						  vc_domain_channel_count);
-	if (!runtime) {
-		printk("Failed to create domain runtime\n");
+	struct vc_ctx *ctx = vc_init();
+	if (!ctx) {
+		printk("Failed to init vc\n");
 		return 0;
 	}
 
-	ret = vc_provider_bus_start_all();
+	ret = vc_ctx_start(ctx);
 	if (ret != VC_OK) {
-		printk("Failed to start provider bus: %d\n", ret);
+		printk("Failed to start vc: %d\n", ret);
 		return 0;
 	}
 
-	mb = vc_mb_adapter_create(runtime);
+	mb = vc_mb_adapter_create(ctx);
 	if (!mb) {
 		printk("Failed to create Modbus adapter\n");
 		return 0;
@@ -132,7 +121,7 @@ int main(void)
 		return 0;
 	}
 
-	vc_runtime_get_published_system_snapshot(runtime, &snap);
+	vc_query(ctx, vc_q_system_snapshot(&snap));
 	printk("hvb_controller ready: slave=%d baud=%d"
 	       " variant=%u channels=%u protocol=%u.%u\n",
 	       CONFIG_VC_MODBUS_UNIT_ID, CONFIG_VC_MODBUS_BAUD_RATE,
