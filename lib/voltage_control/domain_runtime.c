@@ -11,7 +11,12 @@
 
 #include "voltage_control/runtime.h"
 #include "voltage_control/provider_bus.h"
+#include "voltage_control/vc_storage.h"
 #include "jianwei,vc-channel-capabilities.h"
+
+#ifdef CONFIG_VC_SETTINGS_PERSISTENCE
+#include <zephyr/settings/settings.h>
+#endif
 
 K_KERNEL_STACK_DEFINE(vc_runtime_stack, CONFIG_VC_RUNTIME_THREAD_STACK_SIZE);
 
@@ -196,6 +201,47 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 	}
 }
 
+static void vc_runtime_auto_load(struct vc_runtime *runtime)
+{
+#ifdef CONFIG_VC_SETTINGS_PERSISTENCE
+	struct domain *d = runtime->domain;
+	uint16_t count = domain_get_supported_channel_count(d);
+	struct vc_system_config sys_cfg;
+
+	domain_set_storage_backend(d, &vc_settings_storage);
+	settings_subsys_init();
+
+	if (vc_settings_storage.load_system_config(&sys_cfg) == 0) {
+		(void)domain_set_system_config(d, &sys_cfg);
+	}
+
+	for (uint8_t ch = 0; ch < count; ch++) {
+		struct vc_channel_config ch_cfg;
+
+		domain_get_channel_config(d, ch, &ch_cfg);
+
+		struct vc_channel_config loaded = ch_cfg;
+
+		if (vc_settings_storage.load_channel_config(ch, &loaded) == 0) {
+			loaded.output_calib_k = ch_cfg.output_calib_k;
+			loaded.output_calib_b = ch_cfg.output_calib_b;
+			loaded.measured_voltage_calib_k = ch_cfg.measured_voltage_calib_k;
+			loaded.measured_voltage_calib_b = ch_cfg.measured_voltage_calib_b;
+			loaded.measured_current_calib_k = ch_cfg.measured_current_calib_k;
+			loaded.measured_current_calib_b = ch_cfg.measured_current_calib_b;
+			(void)domain_set_channel_config(d, ch, &loaded);
+		}
+
+		domain_get_channel_config(d, ch, &ch_cfg);
+		if (vc_settings_storage.load_channel_cal(ch, &ch_cfg) == 0) {
+			(void)domain_set_channel_config(d, ch, &ch_cfg);
+		}
+	}
+#else
+	ARG_UNUSED(runtime);
+#endif
+}
+
 static struct vc_runtime *vc_runtime_init(struct vc_runtime *runtime,
 					 struct domain *domain,
 					 bool heap_allocated)
@@ -212,6 +258,7 @@ static struct vc_runtime *vc_runtime_init(struct vc_runtime *runtime,
 	k_mutex_init(&runtime->snapshot_lock);
 	k_sem_init(&runtime->wake, 0, 1);
 	vc_provider_bus_init();
+	vc_runtime_auto_load(runtime);
 	vc_runtime_publish_all_configs(runtime);
 	vc_runtime_publish_snapshot(runtime);
 	k_msgq_init(&runtime->command_queue, runtime->command_buffer,

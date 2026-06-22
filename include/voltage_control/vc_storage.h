@@ -19,4 +19,8 @@ struct vc_storage_backend {
 	int (*erase_all)(void);
 };
 
+#ifdef CONFIG_VC_SETTINGS_PERSISTENCE
+extern const struct vc_storage_backend vc_settings_storage;
+#endif
+
 #endif
