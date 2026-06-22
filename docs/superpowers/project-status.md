@@ -64,7 +64,7 @@ None.
 | Settings persistence | `verified` | `vc_storage_backend` interface, NVS backend, auto-load, calibration-safe factory-reset. |
 | Evidence freshness | `verified` | Measurement buffer, `VC_FAULT_STALE`, DTS-derived channel count. |
 | Startup safety confirmation | `verified` | Existing three-layer safety is sufficient: driver init sets GPIO INACTIVE, domain publishes force_safe_state=true, Modbus server starts last. No additional code needed. |
-| Host-tools deferred validation | `deferred` | Validate factory GUI workflow and deployment scripts separately. |
+| Host-tools register map alignment | `verified` | Aligned ChStatus and FaultCause with firmware VC_FAULT_STALE. Removed phantom UNSUPPORTED/RETRY_EXHAUSTED bits. Host tools build clean, 5/5 affected tests pass. 4 pre-existing channel-read test failures remain (register offset bug, not related). |
 | Peripheral tuning hardware record | `deferred` | Record hardware verification for bring-up demos when hardware is available. |
 | Hardware interlock GPIO | `deferred` | Removed from DTS binding (2.6); re-add when interlock hardware design is finalized. |
 
