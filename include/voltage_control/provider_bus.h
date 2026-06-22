@@ -40,6 +40,11 @@ struct vc_provider_binding {
 	uint32_t route_bit;
 };
 
+struct vc_measurement_buffer_entry {
+	struct k_mutex lock;
+	struct vc_measurement_snapshot snapshot;
+};
+
 extern struct vc_runtime_config_slot vc_runtime_config_slots[VC_MAX_CHANNELS];
 
 void vc_provider_bus_init(void);
@@ -57,5 +62,12 @@ size_t vc_provider_bus_binding_count(void);
 enum vc_status vc_provider_bus_start_all(void);
 enum vc_status vc_provider_bus_notify_channel(uint8_t channel, uint32_t version);
 enum vc_status vc_provider_bus_dispatch_one(k_timeout_t timeout);
+
+void vc_measurement_buffer_init(void);
+enum vc_status vc_measurement_buffer_store(uint8_t channel,
+					   const struct vc_measurement_snapshot *meas);
+enum vc_status vc_measurement_buffer_read(uint8_t channel,
+					  struct vc_measurement_snapshot *meas);
+size_t vc_measurement_buffer_count(void);
 
 #endif

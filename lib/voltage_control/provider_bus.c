@@ -30,6 +30,7 @@ void vc_provider_bus_init(void)
 	}
 	k_msgq_purge(&vc_provider_msgq);
 	k_msgq_purge(&vc_runtime_evidence_msgq);
+	vc_measurement_buffer_init();
 }
 
 enum vc_status vc_provider_bus_publish_config(uint8_t channel,
@@ -175,4 +176,66 @@ enum vc_status vc_provider_bus_dispatch_one(k_timeout_t timeout)
 	default:
 		return VC_ERR_INVALID_VALUE;
 	}
+}
+
+void vc_measurement_buffer_init(void)
+{
+	STRUCT_SECTION_FOREACH(vc_measurement_buffer_entry, entry) {
+		k_mutex_init(&entry->lock);
+		memset(&entry->snapshot, 0, sizeof(entry->snapshot));
+	}
+}
+
+enum vc_status vc_measurement_buffer_store(uint8_t channel,
+					   const struct vc_measurement_snapshot *meas)
+{
+	struct vc_measurement_buffer_entry *entry;
+	size_t count;
+
+	if (meas == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	STRUCT_SECTION_COUNT(vc_measurement_buffer_entry, &count);
+	if (channel >= count) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+
+	STRUCT_SECTION_GET(vc_measurement_buffer_entry, channel, &entry);
+	k_mutex_lock(&entry->lock, K_FOREVER);
+	entry->snapshot = *meas;
+	k_mutex_unlock(&entry->lock);
+
+	return VC_OK;
+}
+
+enum vc_status vc_measurement_buffer_read(uint8_t channel,
+					  struct vc_measurement_snapshot *meas)
+{
+	struct vc_measurement_buffer_entry *entry;
+	size_t count;
+
+	if (meas == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	STRUCT_SECTION_COUNT(vc_measurement_buffer_entry, &count);
+	if (channel >= count) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+
+	STRUCT_SECTION_GET(vc_measurement_buffer_entry, channel, &entry);
+	k_mutex_lock(&entry->lock, K_FOREVER);
+	*meas = entry->snapshot;
+	k_mutex_unlock(&entry->lock);
+
+	return VC_OK;
+}
+
+size_t vc_measurement_buffer_count(void)
+{
+	size_t count;
+
+	STRUCT_SECTION_COUNT(vc_measurement_buffer_entry, &count);
+	return count;
 }

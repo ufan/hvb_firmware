@@ -325,6 +325,8 @@ static int hvb_vc_init(const struct device *dev)
 		.dev = DEVICE_DT_INST_GET(n), \
 		.config_slot = &vc_runtime_config_slots[DT_INST_PROP(n, channel_index)], \
 		.route_bit = BIT(DT_INST_PROP(n, channel_index)), \
-	};
+	}; \
+	STRUCT_SECTION_ITERABLE_NAMED(vc_measurement_buffer_entry, \
+		_##n##_, hvb_meas_buf_##n) = {0};
 
 DT_INST_FOREACH_STATUS_OKAY(HVB_VC_INIT)
