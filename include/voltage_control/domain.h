@@ -27,6 +27,7 @@ struct vc_channel_entry {
 #define VC_FAULT_INTERLOCK     0x0010
 #define VC_FAULT_RETRY_EXHAUST 0x0020
 #define VC_FAULT_CFG_INVALID   0x0040
+#define VC_FAULT_STALE         0x0080
 
 enum vc_status {
 	VC_OK = 0,

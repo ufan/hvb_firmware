@@ -76,6 +76,15 @@ config VC_PROVIDER_MSGQ_DEPTH
 	help
 	  Maximum number of queued runtime-to-provider notifications.
 
+config VC_MEASUREMENT_STALE_TIMEOUT_MS
+	int "Measurement staleness timeout in milliseconds"
+	default 5000
+	depends on VC_PROVIDER_BUS
+	help
+	  Time after the last measurement arrival before the channel
+	  is flagged stale. Only applies to channels with voltage or
+	  current measurement capability.
+
 config VC_MODBUS_UNIT_ID
 	int "Modbus server unit ID"
 	default 1
