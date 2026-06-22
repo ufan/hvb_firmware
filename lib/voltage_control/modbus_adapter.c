@@ -5,15 +5,14 @@
  */
 
 #include "voltage_control/modbus_adapter.h"
-#include "voltage_control/domain.h"
-#include "voltage_control/runtime.h"
+#include "voltage_control/vc.h"
 #include "regmap/hvb_regs.h"
 
 #define EXT_BLOCK_END 279
 #define MB_CMD_TIMEOUT K_SECONDS(1)
 
 struct vc_mb_adapter {
-	struct vc_runtime *runtime;
+	struct vc_ctx *ctx;
 };
 
 static bool addr_decode(uint16_t addr, bool *is_sys, uint8_t *ch, uint16_t *off)
@@ -81,6 +80,11 @@ static enum vc_mb_result domain_st_to_mb_result(enum vc_status st)
 	default:
 		return VC_MB_DEVICE_FAILURE;
 	}
+}
+
+static enum vc_mb_result dispatch(struct vc_ctx *ctx, struct vc_cmd cmd)
+{
+	return domain_st_to_mb_result(vc_dispatch(ctx, cmd, MB_CMD_TIMEOUT));
 }
 
 static bool ch_input_supported(uint16_t caps, uint16_t off)
@@ -171,12 +175,12 @@ static uint16_t int32_lo(int32_t value)
 	return (uint16_t)((uint32_t)value & 0xFFFF);
 }
 
-static enum vc_mb_result read_sys_input(struct vc_runtime *rt, uint16_t off,
+static enum vc_mb_result read_sys_input(struct vc_ctx *ctx, uint16_t off,
 					uint16_t *reg)
 {
 	struct vc_system_snapshot snap;
 
-	vc_runtime_get_published_system_snapshot(rt, &snap);
+	vc_query(ctx, vc_q_system_snapshot(&snap));
 
 	switch (off) {
 	case SYS_PROTOCOL_MAJOR:        *reg = snap.protocol_major; break;
@@ -201,17 +205,17 @@ static enum vc_mb_result read_sys_input(struct vc_runtime *rt, uint16_t off,
 	return VC_MB_OK;
 }
 
-static enum vc_mb_result read_ch_input(struct vc_runtime *rt, uint8_t ch,
+static enum vc_mb_result read_ch_input(struct vc_ctx *ctx, uint8_t ch,
 				       uint16_t off, uint16_t *reg)
 {
 	struct vc_channel_snapshot snap;
 	struct vc_system_snapshot sys;
 
-	if (vc_runtime_get_published_channel_snapshot(rt, ch, &snap) != VC_OK) {
+	if (vc_query(ctx, vc_q_channel_snapshot(ch, &snap)) != VC_OK) {
 		return VC_MB_ILLEGAL_ADDRESS;
 	}
 
-	vc_runtime_get_published_system_snapshot(rt, &sys);
+	vc_query(ctx, vc_q_system_snapshot(&sys));
 	if (is_ch_cal_input_reg(off) &&
 	    sys.active_operating_mode != VC_OPERATING_MODE_CALIBRATION) {
 		return VC_MB_ILLEGAL_ADDRESS;
@@ -247,12 +251,12 @@ static enum vc_mb_result read_ch_input(struct vc_runtime *rt, uint8_t ch,
 	return VC_MB_OK;
 }
 
-static enum vc_mb_result read_sys_holding(struct vc_runtime *rt, uint16_t off,
+static enum vc_mb_result read_sys_holding(struct vc_ctx *ctx, uint16_t off,
 					  uint16_t *reg)
 {
 	struct vc_system_config cfg;
 
-	vc_runtime_get_published_system_config(rt, &cfg);
+	vc_query(ctx, vc_q_system_config(&cfg));
 
 	switch (off) {
 	case SYS_OPERATING_MODE:         *reg = cfg.operating_mode; break;
@@ -272,21 +276,21 @@ static enum vc_mb_result read_sys_holding(struct vc_runtime *rt, uint16_t off,
 	return VC_MB_OK;
 }
 
-static enum vc_mb_result read_ch_holding(struct vc_runtime *rt, uint8_t ch,
+static enum vc_mb_result read_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 					 uint16_t off, uint16_t *reg)
 {
 	struct vc_channel_config cfg;
 	struct vc_channel_snapshot snap;
 	struct vc_system_snapshot sys;
 
-	if (vc_runtime_get_published_channel_snapshot(rt, ch, &snap) != VC_OK) {
+	if (vc_query(ctx, vc_q_channel_snapshot(ch, &snap)) != VC_OK) {
 		return VC_MB_ILLEGAL_ADDRESS;
 	}
 	if (!ch_holding_supported(snap.channel_capability_flags, off)) {
 		return VC_MB_ILLEGAL_ADDRESS;
 	}
 
-	vc_runtime_get_published_system_snapshot(rt, &sys);
+	vc_query(ctx, vc_q_system_snapshot(&sys));
 
 	if (is_ch_cal_holding_reg(off)) {
 		if (sys.active_operating_mode != VC_OPERATING_MODE_CALIBRATION) {
@@ -304,7 +308,7 @@ static enum vc_mb_result read_ch_holding(struct vc_runtime *rt, uint8_t ch,
 		return VC_MB_OK;
 	}
 
-	if (vc_runtime_get_published_channel_config(rt, ch, &cfg) != VC_OK) {
+	if (vc_query(ctx, vc_q_channel_config(ch, &cfg)) != VC_OK) {
 		return VC_MB_ILLEGAL_ADDRESS;
 	}
 
@@ -336,13 +340,6 @@ static enum vc_mb_result read_ch_holding(struct vc_runtime *rt, uint8_t ch,
 		break;
 	}
 	return VC_MB_OK;
-}
-
-static enum vc_mb_result submit_cmd(struct vc_runtime *rt,
-				    const struct vc_runtime_command *cmd)
-{
-	return domain_st_to_mb_result(
-		vc_runtime_submit_command(rt, cmd, MB_CMD_TIMEOUT));
 }
 
 static const enum vc_config_field ch_reg_to_field[] = {
@@ -379,66 +376,54 @@ static const enum vc_config_field sys_reg_to_field[] = {
 	[SYS_CURRENT_SAFE_BAND_PCT]  = VC_FIELD_CURRENT_SAFE_BAND_PCT,
 };
 
-static enum vc_mb_result write_sys_holding(struct vc_runtime *rt, uint16_t off,
+static enum vc_mb_result write_sys_holding(struct vc_ctx *ctx, uint16_t off,
 					   uint16_t val)
 {
 	if (off > SYS_CURRENT_SAFE_BAND_PCT) {
 		return VC_MB_ILLEGAL_ADDRESS;
 	}
-	return domain_st_to_mb_result(
-		vc_runtime_set_system_field(rt, sys_reg_to_field[off],
-					   val, MB_CMD_TIMEOUT));
+	return dispatch(ctx, vc_cmd_sys_field(sys_reg_to_field[off], val));
 }
 
-static enum vc_mb_result write_ch_holding(struct vc_runtime *rt, uint8_t ch,
+static enum vc_mb_result write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 					  uint16_t off, uint16_t val)
 {
 	struct vc_channel_snapshot snap;
 	struct vc_system_snapshot sys;
 
-	if (vc_runtime_get_published_channel_snapshot(rt, ch, &snap) != VC_OK) {
+	if (vc_query(ctx, vc_q_channel_snapshot(ch, &snap)) != VC_OK) {
 		return VC_MB_ILLEGAL_ADDRESS;
 	}
 	if (!ch_holding_supported(snap.channel_capability_flags, off)) {
 		return VC_MB_ILLEGAL_ADDRESS;
 	}
 
-	vc_runtime_get_published_system_snapshot(rt, &sys);
+	vc_query(ctx, vc_q_system_snapshot(&sys));
 
 	if (is_ch_calibration_coefficient_reg(off) &&
 	    sys.active_operating_mode != VC_OPERATING_MODE_CALIBRATION) {
 		return VC_MB_ILLEGAL_ADDRESS;
 	}
 	if (is_ch_cal_holding_reg(off)) {
-		struct vc_runtime_command cmd = { .channel = ch };
-
 		if (sys.active_operating_mode != VC_OPERATING_MODE_CALIBRATION) {
 			return VC_MB_ILLEGAL_ADDRESS;
 		}
 		switch (off) {
 		case CH_CAL_OUTPUT_ENABLE:
 			if (val > 1) return VC_MB_ILLEGAL_VALUE;
-			cmd.type = VC_RUNTIME_CMD_CALIBRATION_OUTPUT_ENABLE;
-			cmd.payload.calibration_output_enable = val != 0;
-			return submit_cmd(rt, &cmd);
+			return dispatch(ctx, vc_cmd_cal_output(ch, val != 0));
 		case CH_RAW_DAC_CODE:
-			cmd.type = VC_RUNTIME_CMD_CALIBRATION_RAW_DAC;
-			cmd.payload.calibration_raw_dac = val;
-			return submit_cmd(rt, &cmd);
+			return dispatch(ctx, vc_cmd_cal_dac(ch, val));
 		case CH_CAL_SAMPLE_CMD:
 			if (val == CAL_COMMAND_NONE) return VC_MB_OK;
 			if (val != CAL_COMMAND_EXECUTE) return VC_MB_ILLEGAL_ADDRESS;
-			cmd.type = VC_RUNTIME_CMD_CALIBRATION_SAMPLE;
-			return submit_cmd(rt, &cmd);
+			return dispatch(ctx, vc_cmd_cal_sample(ch));
 		case CH_CAL_COMMIT_CMD:
 			if (val == CAL_COMMAND_NONE) return VC_MB_OK;
 			if (val != CAL_COMMAND_EXECUTE) return VC_MB_ILLEGAL_ADDRESS;
-			cmd.type = VC_RUNTIME_CMD_CALIBRATION_COMMIT;
-			return submit_cmd(rt, &cmd);
+			return dispatch(ctx, vc_cmd_cal_commit(ch));
 		case CH_CAL_MAX_RAW_DAC_LIMIT:
-			cmd.type = VC_RUNTIME_CMD_CALIBRATION_MAX_RAW_DAC;
-			cmd.payload.calibration_max_raw_dac = val;
-			return submit_cmd(rt, &cmd);
+			return dispatch(ctx, vc_cmd_cal_max_dac(ch, val));
 		default:
 			return VC_MB_ILLEGAL_ADDRESS;
 		}
@@ -448,9 +433,7 @@ static enum vc_mb_result write_ch_holding(struct vc_runtime *rt, uint8_t ch,
 		return VC_MB_ILLEGAL_ADDRESS;
 	}
 
-	return domain_st_to_mb_result(
-		vc_runtime_set_channel_field(rt, ch, ch_reg_to_field[off],
-					     val, MB_CMD_TIMEOUT));
+	return dispatch(ctx, vc_cmd_ch_field(ch, ch_reg_to_field[off], val));
 }
 
 enum vc_mb_result vc_mb_input_rd(struct vc_mb_adapter *a, uint16_t addr,
@@ -465,10 +448,10 @@ enum vc_mb_result vc_mb_input_rd(struct vc_mb_adapter *a, uint16_t addr,
 	}
 
 	if (is_sys) {
-		return read_sys_input(a->runtime, off, reg);
+		return read_sys_input(a->ctx, off, reg);
 	}
 
-	return read_ch_input(a->runtime, ch, off, reg);
+	return read_ch_input(a->ctx, ch, off, reg);
 }
 
 enum vc_mb_result vc_mb_holding_rd(struct vc_mb_adapter *a, uint16_t addr,
@@ -488,10 +471,10 @@ enum vc_mb_result vc_mb_holding_rd(struct vc_mb_adapter *a, uint16_t addr,
 	}
 
 	if (is_sys) {
-		return read_sys_holding(a->runtime, off, reg);
+		return read_sys_holding(a->ctx, off, reg);
 	}
 
-	return read_ch_holding(a->runtime, ch, off, reg);
+	return read_ch_holding(a->ctx, ch, off, reg);
 }
 
 enum vc_mb_result vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr,
@@ -503,11 +486,7 @@ enum vc_mb_result vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr,
 
 	if (is_extension(addr)) {
 		if (addr == EXT_CAL_UNLOCK_ABS) {
-			struct vc_runtime_command cmd = {
-				.type = VC_RUNTIME_CMD_CALIBRATION_UNLOCK,
-				.payload.calibration_unlock_value = val,
-			};
-			return submit_cmd(a->runtime, &cmd);
+			return dispatch(a->ctx, vc_cmd_cal_unlock(val));
 		}
 		return VC_MB_ILLEGAL_ADDRESS;
 	}
@@ -518,51 +497,33 @@ enum vc_mb_result vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr,
 
 	if (is_sys) {
 		if (off == SYS_PARAM_ACTION) {
-			struct vc_runtime_command cmd = {
-				.type = VC_RUNTIME_CMD_SYSTEM_PARAM_ACTION,
-				.payload.param_action = (enum vc_param_action)val,
-			};
-			return submit_cmd(a->runtime, &cmd);
+			return dispatch(a->ctx,
+					vc_cmd_sys_param((enum vc_param_action)val));
 		}
-		return write_sys_holding(a->runtime, off, val);
+		return write_sys_holding(a->ctx, off, val);
 	}
 
 	switch (off) {
-	case CH_OUTPUT_ACTION: {
-		struct vc_runtime_command cmd = {
-			.type = VC_RUNTIME_CMD_OUTPUT_ACTION,
-			.channel = ch,
-			.payload.output_action = (enum vc_output_action)val,
-		};
-		return submit_cmd(a->runtime, &cmd);
-	}
-	case CH_FAULT_CMD: {
-		struct vc_runtime_command cmd = {
-			.type = VC_RUNTIME_CMD_FAULT_COMMAND,
-			.channel = ch,
-			.payload.fault_command = (enum vc_channel_fault_command)val,
-		};
-		return submit_cmd(a->runtime, &cmd);
-	}
-	case CH_PARAM_ACTION: {
-		struct vc_runtime_command cmd = {
-			.type = VC_RUNTIME_CMD_CHANNEL_PARAM_ACTION,
-			.channel = ch,
-			.payload.param_action = (enum vc_param_action)val,
-		};
-		return submit_cmd(a->runtime, &cmd);
-	}
+	case CH_OUTPUT_ACTION:
+		return dispatch(a->ctx,
+				vc_cmd_output(ch, (enum vc_output_action)val));
+	case CH_FAULT_CMD:
+		return dispatch(a->ctx,
+				vc_cmd_fault(ch, (enum vc_channel_fault_command)val));
+	case CH_PARAM_ACTION:
+		return dispatch(a->ctx,
+				vc_cmd_ch_param(ch, (enum vc_param_action)val));
 	default:
 		break;
 	}
 
-	return write_ch_holding(a->runtime, ch, off, val);
+	return write_ch_holding(a->ctx, ch, off, val);
 }
 
-struct vc_mb_adapter *vc_mb_adapter_create(struct vc_runtime *runtime)
+struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx)
 {
 	static struct vc_mb_adapter adapter;
 
-	adapter.runtime = runtime;
+	adapter.ctx = ctx;
 	return &adapter;
 }
