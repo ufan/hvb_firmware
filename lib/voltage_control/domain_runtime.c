@@ -11,6 +11,7 @@
 
 #include "voltage_control/runtime.h"
 #include "voltage_control/provider_bus.h"
+#include "jianwei,vc-channel-capabilities.h"
 
 K_KERNEL_STACK_DEFINE(vc_runtime_stack, CONFIG_VC_RUNTIME_THREAD_STACK_SIZE);
 
@@ -93,6 +94,7 @@ static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 {
 	uint16_t count = domain_get_supported_channel_count(runtime->domain);
+	uint32_t now_ms = k_uptime_get_32();
 
 	k_mutex_lock(&runtime->lock, K_FOREVER);
 	domain_process_periodic(runtime->domain, 0);
@@ -104,6 +106,26 @@ static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 					   &runtime->published.channels[ch]);
 		domain_get_channel_config(runtime->domain, ch,
 					  &runtime->published.configs[ch]);
+
+		struct vc_channel_snapshot *snap = &runtime->published.channels[ch];
+		uint16_t caps = snap->channel_capability_flags;
+		bool has_meas = (caps & CH_CAP_VOLTAGE_MEASUREMENT) ||
+				(caps & CH_CAP_CURRENT_MEASUREMENT);
+
+		if (has_meas) {
+			struct vc_measurement_snapshot meas;
+
+			if (vc_measurement_buffer_read(ch, &meas) == VC_OK &&
+			    meas.timestamp_ms != 0) {
+				uint32_t elapsed = now_ms - meas.timestamp_ms;
+
+				if (elapsed >= CONFIG_VC_MEASUREMENT_STALE_TIMEOUT_MS) {
+					snap->fault_history_cause |= VC_FAULT_STALE;
+					snap->active_fault_cause |= VC_FAULT_STALE;
+					snap->status_bits |= 0x0040;
+				}
+			}
+		}
 	}
 	runtime->published.system.uptime = (uint32_t)(k_uptime_get() / 1000);
 	k_mutex_unlock(&runtime->snapshot_lock);
@@ -154,6 +176,8 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 		}
 
 		while (vc_provider_bus_take_measurement(&evidence.measurement) == VC_OK) {
+			(void)vc_measurement_buffer_store(evidence.measurement.channel,
+							  &evidence.measurement);
 			k_mutex_lock(&runtime->lock, K_FOREVER);
 			(void)domain_consume_measurement(runtime->domain, &evidence.measurement);
 			vc_runtime_publish_all_configs(runtime);
