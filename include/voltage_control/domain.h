@@ -269,6 +269,10 @@ void domain_process_periodic(struct domain *domain, uint32_t dt_ms);
 
 struct vc_runtime_config_snapshot;
 struct vc_measurement_snapshot;
+struct vc_storage_backend;
+
+void domain_set_storage_backend(struct domain *domain,
+				const struct vc_storage_backend *backend);
 
 enum vc_status domain_get_runtime_config(const struct domain *domain,
 					    uint8_t channel,

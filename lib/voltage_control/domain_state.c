@@ -6,6 +6,7 @@
 
 #include "voltage_control/domain.h"
 #include "voltage_control/runtime.h"
+#include "voltage_control/vc_storage.h"
 #include "regmap/hvb_regs.h"
 #include <stdlib.h>
 #include <string.h>
@@ -71,6 +72,7 @@ struct domain {
 	uint16_t system_fault_cause;
 	uint8_t cal_unlock_step;
 	bool cal_unlocked;
+	const struct vc_storage_backend *storage;
 };
 
 struct runtime_config_visible_state {
@@ -462,6 +464,14 @@ static struct domain *domain_init(struct domain *domain,
 	}
 
 	return domain;
+}
+
+void domain_set_storage_backend(struct domain *domain,
+				const struct vc_storage_backend *backend)
+{
+	if (domain != NULL) {
+		domain->storage = backend;
+	}
 }
 
 struct domain *domain_create(const struct vc_channel_entry *channels,
