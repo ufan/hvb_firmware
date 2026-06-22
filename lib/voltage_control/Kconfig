@@ -62,14 +62,6 @@ config VC_RUNTIME_TICK_INTERVAL_MS
 	help
 	  Runtime policy tick interval in milliseconds.
 
-config VC_MAX_CHANNELS
-	int "Maximum voltage-control channels"
-	default 2
-	range 1 16
-	help
-	  Build-time maximum number of logical voltage-control channels.
-	  Board topology should keep this aligned with devicetree channel records.
-
 config VC_PROVIDER_BUS
 	bool "VC static provider bus"
 	help

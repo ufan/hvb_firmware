@@ -10,8 +10,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 
-#define VC_MAX_CHANNELS CONFIG_VC_MAX_CHANNELS
+#define VC_MAX_CHANNELS DT_PROP_LEN(DT_NODELABEL(vc_controller), channels)
 
 struct vc_channel_entry {
 	const struct device *dev;
