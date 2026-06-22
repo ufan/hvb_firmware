@@ -549,3 +549,47 @@ ZTEST(voltage_control_runtime, test_published_channel_snapshot_rejects_bad_chann
 	vc_runtime_destroy(rt);
 	free(d);
 }
+
+ZTEST(voltage_control_runtime, test_stale_fault_flag_is_distinct)
+{
+	zassert_equal(VC_FAULT_STALE, 0x0080);
+	zassert_equal(VC_FAULT_STALE & VC_FAULT_MEASUREMENT, 0);
+	zassert_equal(VC_FAULT_STALE & VC_FAULT_VOLTAGE, 0);
+}
+
+ZTEST(voltage_control_runtime, test_measurement_buffer_store_and_read)
+{
+	struct vc_measurement_snapshot in = {
+		.channel = 0,
+		.generation = 5,
+		.timestamp_ms = 12345,
+		.present_mask = VC_MEAS_PRESENT_VOLTAGE,
+		.raw_voltage = 100,
+	};
+	struct vc_measurement_snapshot out;
+	size_t count = vc_measurement_buffer_count();
+
+	if (count == 0) {
+		ztest_test_skip();
+		return;
+	}
+
+	vc_measurement_buffer_init();
+	zassert_equal(vc_measurement_buffer_store(0, &in), VC_OK);
+	zassert_equal(vc_measurement_buffer_read(0, &out), VC_OK);
+	zassert_equal(out.generation, 5);
+	zassert_equal(out.timestamp_ms, 12345);
+	zassert_equal(out.raw_voltage, 100);
+}
+
+ZTEST(voltage_control_runtime, test_measurement_buffer_rejects_null)
+{
+	struct vc_measurement_snapshot meas;
+
+	zassert_equal(vc_measurement_buffer_store(0, NULL), VC_ERR_INVALID_VALUE);
+	zassert_equal(vc_measurement_buffer_read(0, NULL), VC_ERR_INVALID_VALUE);
+	zassert_equal(vc_measurement_buffer_store(99, &meas),
+		      VC_ERR_UNSUPPORTED_CHANNEL);
+	zassert_equal(vc_measurement_buffer_read(99, &meas),
+		      VC_ERR_UNSUPPORTED_CHANNEL);
+}
