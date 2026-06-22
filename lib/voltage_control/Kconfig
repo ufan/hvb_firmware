@@ -85,6 +85,17 @@ config VC_MEASUREMENT_STALE_TIMEOUT_MS
 	  is flagged stale. Only applies to channels with voltage or
 	  current measurement capability.
 
+config VC_SETTINGS_PERSISTENCE
+	bool "VC settings persistence via NVS"
+	depends on VC_RUNTIME
+	select SETTINGS
+	select NVS
+	select FLASH
+	select FLASH_MAP
+	help
+	  Enable save/load/factory-reset of system and channel configs
+	  using Zephyr Settings backed by NVS on internal flash.
+
 config VC_MODBUS_UNIT_ID
 	int "Modbus server unit ID"
 	default 1
