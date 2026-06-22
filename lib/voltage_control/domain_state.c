@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <zephyr/smf.h>
+#include <zephyr/sys/reboot.h>
 
 #define VC_DEFAULT_MAX_RAW_DAC      0xFFFF
 #define VC_DEFAULT_MAX_VOLTAGE_RAW  20000
@@ -426,6 +427,29 @@ static void domain_init_smf(struct domain *domain)
 	}
 }
 
+static struct vc_system_config domain_default_system_config(void)
+{
+	return (struct vc_system_config){
+		.operating_mode = VC_OPERATING_MODE_NORMAL,
+		.slave_address = 1,
+		.baud_rate_code = VC_BAUD_RATE_115200,
+		.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
+		.voltage_safe_band_pct = 10,
+		.current_safe_band_pct = 10,
+	};
+}
+
+static struct vc_channel_config domain_default_channel_config(void)
+{
+	return (struct vc_channel_config){
+		.voltage_limit_threshold = VC_DEFAULT_MAX_VOLTAGE_RAW,
+		.current_limit_threshold = VC_DEFAULT_MAX_CURRENT_RAW,
+		.output_calib_k = 10000,
+		.measured_voltage_calib_k = 10000,
+		.measured_current_calib_k = 10000,
+	};
+}
+
 static struct domain *domain_init(struct domain *domain,
 				  const struct vc_channel_entry *channels,
 				  size_t count)
@@ -442,23 +466,10 @@ static struct domain *domain_init(struct domain *domain,
 	domain_init_smf(domain);
 
 	domain->operating_mode = VC_OPERATING_MODE_NORMAL;
-	domain->sys_cfg = (struct vc_system_config){
-		.operating_mode = VC_OPERATING_MODE_NORMAL,
-		.slave_address = 1,
-		.baud_rate_code = VC_BAUD_RATE_115200,
-		.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
-		.voltage_safe_band_pct = 10,
-		.current_safe_band_pct = 10,
-	};
+	domain->sys_cfg = domain_default_system_config();
 
 	for (size_t i = 0; i < count && i < VC_MAX_CHANNELS; i++) {
-		domain->channels[i] = (struct vc_channel_config){
-			.voltage_limit_threshold = VC_DEFAULT_MAX_VOLTAGE_RAW,
-			.current_limit_threshold = VC_DEFAULT_MAX_CURRENT_RAW,
-			.output_calib_k = 10000,
-			.measured_voltage_calib_k = 10000,
-			.measured_current_calib_k = 10000,
-		};
+		domain->channels[i] = domain_default_channel_config();
 		domain->runtime[i].cal_max_raw_dac_limit = 0xFFFF;
 		domain->runtime[i].runtime_config_version = 1;
 	}
@@ -1191,11 +1202,34 @@ enum vc_status domain_system_param_action(struct domain *domain,
 	case VC_PARAM_ACTION_NONE:
 		return VC_OK;
 	case VC_PARAM_ACTION_SAVE:
-	case VC_PARAM_ACTION_LOAD:
+		if (domain->storage == NULL || domain->storage->save_system_config == NULL) {
+			return VC_ERR_STORAGE;
+		}
+		return domain->storage->save_system_config(&domain->sys_cfg) < 0
+			? VC_ERR_STORAGE : VC_OK;
+	case VC_PARAM_ACTION_LOAD: {
+		struct vc_system_config cfg;
+
+		if (domain->storage == NULL || domain->storage->load_system_config == NULL) {
+			return VC_ERR_STORAGE;
+		}
+		if (domain->storage->load_system_config(&cfg) < 0) {
+			return VC_ERR_STORAGE;
+		}
+		return domain_set_system_config(domain, &cfg);
+	}
 	case VC_PARAM_ACTION_FACTORY_RESET:
-		return VC_ERR_STORAGE;
+		if (domain->storage != NULL && domain->storage->erase_all != NULL) {
+			(void)domain->storage->erase_all();
+		}
+		domain->sys_cfg = domain_default_system_config();
+		domain->operating_mode = VC_OPERATING_MODE_NORMAL;
+		return VC_OK;
 	case VC_PARAM_ACTION_SOFTWARE_RESET:
-		return VC_ERR_STORAGE;
+#ifdef CONFIG_REBOOT
+		sys_reboot(SYS_REBOOT_COLD);
+#endif
+		return VC_OK;
 	default:
 		return VC_ERR_INVALID_VALUE;
 	}
@@ -1213,11 +1247,44 @@ enum vc_status domain_channel_param_action(struct domain *domain,
 	case VC_PARAM_ACTION_NONE:
 		return VC_OK;
 	case VC_PARAM_ACTION_SAVE:
-	case VC_PARAM_ACTION_LOAD:
-	case VC_PARAM_ACTION_FACTORY_RESET:
-		return VC_ERR_STORAGE;
+		if (domain->storage == NULL || domain->storage->save_channel_config == NULL) {
+			return VC_ERR_STORAGE;
+		}
+		return domain->storage->save_channel_config(channel,
+			&domain->channels[channel]) < 0 ? VC_ERR_STORAGE : VC_OK;
+	case VC_PARAM_ACTION_LOAD: {
+		struct vc_channel_config cfg = domain->channels[channel];
+
+		if (domain->storage == NULL || domain->storage->load_channel_config == NULL) {
+			return VC_ERR_STORAGE;
+		}
+		if (domain->storage->load_channel_config(channel, &cfg) < 0) {
+			return VC_ERR_STORAGE;
+		}
+		cfg.output_calib_k = domain->channels[channel].output_calib_k;
+		cfg.output_calib_b = domain->channels[channel].output_calib_b;
+		cfg.measured_voltage_calib_k = domain->channels[channel].measured_voltage_calib_k;
+		cfg.measured_voltage_calib_b = domain->channels[channel].measured_voltage_calib_b;
+		cfg.measured_current_calib_k = domain->channels[channel].measured_current_calib_k;
+		cfg.measured_current_calib_b = domain->channels[channel].measured_current_calib_b;
+		return domain_set_channel_config(domain, channel, &cfg);
+	}
+	case VC_PARAM_ACTION_FACTORY_RESET: {
+		struct vc_channel_config defaults = domain_default_channel_config();
+
+		defaults.output_calib_k = domain->channels[channel].output_calib_k;
+		defaults.output_calib_b = domain->channels[channel].output_calib_b;
+		defaults.measured_voltage_calib_k = domain->channels[channel].measured_voltage_calib_k;
+		defaults.measured_voltage_calib_b = domain->channels[channel].measured_voltage_calib_b;
+		defaults.measured_current_calib_k = domain->channels[channel].measured_current_calib_k;
+		defaults.measured_current_calib_b = domain->channels[channel].measured_current_calib_b;
+		return domain_set_channel_config(domain, channel, &defaults);
+	}
 	case VC_PARAM_ACTION_SOFTWARE_RESET:
-		return VC_ERR_STORAGE;
+#ifdef CONFIG_REBOOT
+		sys_reboot(SYS_REBOOT_COLD);
+#endif
+		return VC_OK;
 	default:
 		return VC_ERR_INVALID_VALUE;
 	}
