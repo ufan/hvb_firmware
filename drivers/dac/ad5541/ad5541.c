@@ -20,6 +20,7 @@ struct ad5541_config {
 	struct spi_dt_spec bus;
 };
 
+/* Validate channel (must be 0) and resolution (must be 16-bit). */
 static int ad5541_channel_setup(const struct device *dev,
 				const struct dac_channel_cfg *channel_cfg)
 {
@@ -35,6 +36,7 @@ static int ad5541_channel_setup(const struct device *dev,
 	return 0;
 }
 
+/* Write a 16-bit DAC code via SPI (big-endian, single transfer). */
 static int ad5541_write_value(const struct device *dev, uint8_t channel,
 			      uint32_t value)
 {
@@ -60,6 +62,7 @@ static int ad5541_write_value(const struct device *dev, uint8_t channel,
 	return spi_write_dt(&config->bus, &tx);
 }
 
+/* Device init: verify SPI bus is ready. */
 static int ad5541_init(const struct device *dev)
 {
 	const struct ad5541_config *config = dev->config;

@@ -21,7 +21,9 @@
 
 struct vc_ctx;
 
+/* Create the singleton vc_ctx from DTS channel data; returns NULL on failure. */
 struct vc_ctx *vc_init(void);
+/* Start all provider bus channel drivers; call once after vc_init. */
 enum vc_status vc_ctx_start(struct vc_ctx *ctx);
 
 /* ------------------------------------------------------------------ */
@@ -74,6 +76,7 @@ struct vc_cmd {
 	};
 };
 
+/* Route a command to the runtime worker thread; blocks until processed or timeout. */
 enum vc_status vc_dispatch(struct vc_ctx *ctx, struct vc_cmd cmd,
 			   k_timeout_t timeout);
 
@@ -101,12 +104,14 @@ struct vc_query {
 	} out;
 };
 
+/* Read published state (snapshot or config) from the runtime; non-blocking. */
 enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query q);
 
 /* ------------------------------------------------------------------ */
 /* Command builders                                                    */
 /* ------------------------------------------------------------------ */
 
+/* Build a command to switch operating mode (normal/automatic/calibration). */
 static inline struct vc_cmd vc_cmd_set_mode(enum vc_operating_mode mode)
 {
 	return (struct vc_cmd){
@@ -115,6 +120,7 @@ static inline struct vc_cmd vc_cmd_set_mode(enum vc_operating_mode mode)
 	};
 }
 
+/* Build a command to enable/disable channel output. */
 static inline struct vc_cmd vc_cmd_output(uint8_t ch,
 					  enum vc_output_action action)
 {
@@ -125,6 +131,7 @@ static inline struct vc_cmd vc_cmd_output(uint8_t ch,
 	};
 }
 
+/* Build a command to clear active or history faults on a channel. */
 static inline struct vc_cmd vc_cmd_fault(uint8_t ch,
 					 enum vc_channel_fault_command cmd)
 {
@@ -135,6 +142,7 @@ static inline struct vc_cmd vc_cmd_fault(uint8_t ch,
 	};
 }
 
+/* Build a command to write a single system config field. */
 static inline struct vc_cmd vc_cmd_sys_field(enum vc_config_field field,
 					     uint16_t value)
 {
@@ -144,6 +152,7 @@ static inline struct vc_cmd vc_cmd_sys_field(enum vc_config_field field,
 	};
 }
 
+/* Build a command to write a single channel config field. */
 static inline struct vc_cmd vc_cmd_ch_field(uint8_t ch,
 					    enum vc_config_field field,
 					    uint16_t value)
@@ -155,6 +164,7 @@ static inline struct vc_cmd vc_cmd_ch_field(uint8_t ch,
 	};
 }
 
+/* Build a calibration unlock command (two-step: STEP1 then STEP2). */
 static inline struct vc_cmd vc_cmd_cal_unlock(uint16_t value)
 {
 	return (struct vc_cmd){
@@ -163,6 +173,7 @@ static inline struct vc_cmd vc_cmd_cal_unlock(uint16_t value)
 	};
 }
 
+/* Build a calibration output enable/disable command. */
 static inline struct vc_cmd vc_cmd_cal_output(uint8_t ch, bool enable)
 {
 	return (struct vc_cmd){
@@ -173,6 +184,7 @@ static inline struct vc_cmd vc_cmd_cal_output(uint8_t ch, bool enable)
 	};
 }
 
+/* Build a calibration raw DAC code write command. */
 static inline struct vc_cmd vc_cmd_cal_dac(uint8_t ch, uint16_t code)
 {
 	return (struct vc_cmd){
@@ -183,6 +195,7 @@ static inline struct vc_cmd vc_cmd_cal_dac(uint8_t ch, uint16_t code)
 	};
 }
 
+/* Build a calibration ADC sample trigger command. */
 static inline struct vc_cmd vc_cmd_cal_sample(uint8_t ch)
 {
 	return (struct vc_cmd){
@@ -192,6 +205,7 @@ static inline struct vc_cmd vc_cmd_cal_sample(uint8_t ch)
 	};
 }
 
+/* Build a calibration commit command (finalize calibration data). */
 static inline struct vc_cmd vc_cmd_cal_commit(uint8_t ch)
 {
 	return (struct vc_cmd){
@@ -201,6 +215,7 @@ static inline struct vc_cmd vc_cmd_cal_commit(uint8_t ch)
 	};
 }
 
+/* Build a command to set the max raw DAC limit for calibration. */
 static inline struct vc_cmd vc_cmd_cal_max_dac(uint8_t ch, uint16_t limit)
 {
 	return (struct vc_cmd){
@@ -211,6 +226,7 @@ static inline struct vc_cmd vc_cmd_cal_max_dac(uint8_t ch, uint16_t limit)
 	};
 }
 
+/* Build a system-level param action command (save/load/factory-reset/reboot). */
 static inline struct vc_cmd vc_cmd_sys_param(enum vc_param_action action)
 {
 	return (struct vc_cmd){
@@ -219,6 +235,7 @@ static inline struct vc_cmd vc_cmd_sys_param(enum vc_param_action action)
 	};
 }
 
+/* Build a channel-level param action command (save/load/factory-reset/reboot). */
 static inline struct vc_cmd vc_cmd_ch_param(uint8_t ch,
 					    enum vc_param_action action)
 {
@@ -229,6 +246,7 @@ static inline struct vc_cmd vc_cmd_ch_param(uint8_t ch,
 	};
 }
 
+/* Build a command to submit a measurement snapshot from a provider. */
 static inline struct vc_cmd vc_cmd_measurement(
 	const struct vc_measurement_snapshot *meas)
 {
@@ -243,6 +261,7 @@ static inline struct vc_cmd vc_cmd_measurement(
 /* Query builders                                                      */
 /* ------------------------------------------------------------------ */
 
+/* Build a query for the system snapshot (protocol, uptime, channel info). */
 static inline struct vc_query vc_q_system_snapshot(
 	struct vc_system_snapshot *out)
 {
@@ -252,6 +271,7 @@ static inline struct vc_query vc_q_system_snapshot(
 	};
 }
 
+/* Build a query for a channel snapshot (measurements, status, faults). */
 static inline struct vc_query vc_q_channel_snapshot(
 	uint8_t ch, struct vc_channel_snapshot *out)
 {
@@ -262,6 +282,7 @@ static inline struct vc_query vc_q_channel_snapshot(
 	};
 }
 
+/* Build a query for the system config (address, baud, recovery, etc.). */
 static inline struct vc_query vc_q_system_config(
 	struct vc_system_config *out)
 {
@@ -271,6 +292,7 @@ static inline struct vc_query vc_q_system_config(
 	};
 }
 
+/* Build a query for a channel config (target voltage, ramp, protection, cal). */
 static inline struct vc_query vc_q_channel_config(
 	uint8_t ch, struct vc_channel_config *out)
 {
@@ -281,6 +303,7 @@ static inline struct vc_query vc_q_channel_config(
 	};
 }
 
+/* Build a query for a channel's runtime config (output drive, cal state). */
 static inline struct vc_query vc_q_runtime_config(
 	uint8_t ch, struct vc_runtime_config_snapshot *out)
 {

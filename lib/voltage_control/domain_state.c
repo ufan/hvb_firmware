@@ -90,11 +90,13 @@ static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT];
 static void vc_tick_protection(struct domain *domain, uint8_t ch);
 static void vc_tick_status_bits(struct domain *domain, uint8_t ch);
 
+/* Return true if channel index is within the configured range. */
 static bool channel_valid(const struct domain *domain, uint8_t channel)
 {
 	return channel < domain->channel_count;
 }
 
+/* Read the current SMF state enum for a channel from its smf_ctx. */
 static enum vc_channel_smf_state channel_get_state(const struct domain *domain,
 						   uint8_t channel)
 {
@@ -103,6 +105,7 @@ static enum vc_channel_smf_state channel_get_state(const struct domain *domain,
 	return (enum vc_channel_smf_state)(ctx->current - &vc_channel_states[0]);
 }
 
+/* Transition a channel to a new SMF state. */
 static void channel_set_state(struct domain *domain, uint8_t channel,
 			      enum vc_channel_smf_state state)
 {
@@ -117,6 +120,7 @@ static bool is_valid_operating_mode(enum vc_operating_mode mode)
 	       mode == VC_OPERATING_MODE_CALIBRATION;
 }
 
+/* True if transitioning from a non-calibration mode into calibration. */
 static bool is_entering_calibration(const struct domain *domain,
 					   enum vc_operating_mode mode)
 {
@@ -124,12 +128,14 @@ static bool is_entering_calibration(const struct domain *domain,
 	       mode == VC_OPERATING_MODE_CALIBRATION;
 }
 
+/* Reset the two-step calibration unlock sequence. */
 static void clear_calibration_unlock(struct domain *domain)
 {
 	domain->cal_unlock_step = 0;
 	domain->cal_unlocked = false;
 }
 
+/* Zero out normal-mode runtime state for a channel, preserving fault status bits. */
 static void clear_normal_runtime_channel(struct domain *domain, uint8_t channel)
 {
 	struct vc_channel_snapshot *snap = &domain->snapshots[channel];
@@ -154,6 +160,7 @@ static void clear_normal_runtime_channel(struct domain *domain, uint8_t channel)
 	snap->status_bits = preserved;
 }
 
+/* Reset a channel for calibration mode; transitions to CALIBRATION_OUTPUT or DISABLED_SAFE. */
 static void reset_calibration_channel(struct domain *domain, uint8_t channel,
 					      bool entering)
 {
@@ -174,6 +181,7 @@ static void reset_calibration_channel(struct domain *domain, uint8_t channel,
 	}
 }
 
+/* Reset all channels for calibration entry/exit. */
 static void reset_calibration_outputs(struct domain *domain, bool entering)
 {
 	for (size_t ch = 0; ch < domain->channel_count; ch++) {
@@ -226,18 +234,21 @@ static bool is_valid_channel_fault_command(enum vc_channel_fault_command cmd)
 	       cmd <= VC_CHANNEL_FAULT_COMMAND_CLEAR_HISTORY;
 }
 
+/* True if channel has a hardware or interlock fault (non-clearable by measurement). */
 static bool has_hard_safety_fault(const struct domain *domain, uint8_t channel)
 {
 	return (domain->snapshots[channel].active_fault_cause &
 		(VC_FAULT_HARDWARE | VC_FAULT_INTERLOCK)) != 0;
 }
 
+/* True if the channel's DTS-declared capabilities include all bits in cap. */
 static bool channel_has_cap(const struct domain *domain, uint8_t channel,
 			    uint16_t cap)
 {
 	return (domain->ch_entry[channel].capabilities & cap) == cap;
 }
 
+/* Saturate a 64-bit value to INT16 range. */
 static int16_t clamp_int16_from_i64(int64_t value)
 {
 	if (value > INT16_MAX) {
@@ -249,6 +260,7 @@ static int16_t clamp_int16_from_i64(int64_t value)
 	return (int16_t)value;
 }
 
+/* Convert operational target voltage to raw DAC code using output calibration (K/B). */
 static uint16_t raw_drive_from_operational_target(
 	const struct vc_channel_config *cfg, int32_t target)
 {
@@ -264,6 +276,7 @@ static uint16_t raw_drive_from_operational_target(
 	return (uint16_t)raw;
 }
 
+/* Bump the runtime config version to notify providers of a change. */
 static void mark_runtime_config_changed(struct domain *domain, uint8_t channel)
 {
 	if (channel_valid(domain, channel)) {
@@ -274,6 +287,7 @@ static void mark_runtime_config_changed(struct domain *domain, uint8_t channel)
 	}
 }
 
+/* Snapshot the provider-visible portion of a channel's runtime config for change detection. */
 static struct runtime_config_visible_state capture_runtime_config_visible_state(
 	const struct domain *domain, uint8_t channel)
 {
@@ -297,6 +311,7 @@ static struct runtime_config_visible_state capture_runtime_config_visible_state(
 	};
 }
 
+/* Compare two runtime config visible states for any difference. */
 static bool runtime_config_visible_state_changed(
 	const struct runtime_config_visible_state *before,
 	const struct runtime_config_visible_state *after)
@@ -310,6 +325,7 @@ static bool runtime_config_visible_state_changed(
 	       before->operational_target_voltage != after->operational_target_voltage;
 }
 
+/* Bump config version only if the provider-visible state actually changed. */
 static void mark_runtime_config_changed_if_visible_state_changed(
 	struct domain *domain, uint8_t channel,
 	const struct runtime_config_visible_state *before)
@@ -322,6 +338,7 @@ static void mark_runtime_config_changed_if_visible_state_changed(
 	}
 }
 
+/* Force a channel to safe state: output off, DAC zero, SMF to DISABLED_SAFE. */
 static void force_runtime_safe_state(struct domain *domain, uint8_t channel)
 {
 	struct vc_channel_snapshot *snap = &domain->snapshots[channel];
@@ -335,6 +352,7 @@ static void force_runtime_safe_state(struct domain *domain, uint8_t channel)
 	channel_set_state(domain, channel, VC_CHANNEL_SMF_DISABLED_SAFE);
 }
 
+/* Reject config changes for fields not supported by the channel's capabilities. */
 static enum vc_status validate_channel_capability_config(
 	const struct domain *domain,
 	uint8_t channel,
@@ -381,12 +399,14 @@ static enum vc_status validate_channel_capability_config(
 	return VC_OK;
 }
 
+/* Transition into calibration mode: reset all channel outputs for calibration. */
 static enum vc_status enter_calibration_mode(struct domain *domain)
 {
 	reset_calibration_outputs(domain, true);
 	return VC_OK;
 }
 
+/* True if any calibration coefficient (K/B) differs between old and new config. */
 static bool calibration_fields_changed(const struct vc_channel_config *old_cfg,
 					      const struct vc_channel_config *new_cfg)
 {
@@ -414,6 +434,7 @@ static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT] = {
 	[VC_CHANNEL_SMF_UNAVAILABLE] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
 };
 
+/* Set initial SMF states for the domain (NORMAL) and all channels (DISABLED_SAFE). */
 static void domain_init_smf(struct domain *domain)
 {
 	domain->smf.domain = domain;
@@ -427,6 +448,7 @@ static void domain_init_smf(struct domain *domain)
 	}
 }
 
+/* Factory default system config: address=1, 115200 baud, manual latch recovery, 10% safe bands. */
 static struct vc_system_config domain_default_system_config(void)
 {
 	return (struct vc_system_config){
@@ -439,6 +461,7 @@ static struct vc_system_config domain_default_system_config(void)
 	};
 }
 
+/* Factory default channel config: unity calibration (K=10000), zero target, max limits. */
 static struct vc_channel_config domain_default_channel_config(void)
 {
 	return (struct vc_channel_config){
@@ -450,6 +473,7 @@ static struct vc_channel_config domain_default_channel_config(void)
 	};
 }
 
+/* Zero-init and configure a domain struct with channels, defaults, and SMF states. */
 static struct domain *domain_init(struct domain *domain,
 				  const struct vc_channel_entry *channels,
 				  size_t count)
@@ -918,6 +942,7 @@ enum vc_status domain_calibration_unlock(struct domain *domain,
 	return VC_ERR_INVALID_COMMAND;
 }
 
+/* Guard: verify channel is valid and domain is in calibration mode. */
 static enum vc_status calibration_channel_ready(const struct domain *domain,
 						       uint8_t channel)
 {
@@ -930,6 +955,7 @@ static enum vc_status calibration_channel_ready(const struct domain *domain,
 	return VC_OK;
 }
 
+/* Guard: verify calibration mode + channel has required capabilities. */
 static enum vc_status calibration_capability_ready(
 	const struct domain *domain, uint8_t channel, uint16_t caps)
 {
@@ -1131,6 +1157,7 @@ enum vc_status domain_channel_output_action(struct domain *domain,
 	return VC_OK;
 }
 
+/* True if measured values are within safe band of their limits; needed before clearing faults. */
 static bool vc_is_safe_to_clear_active(const struct domain *domain,
 				       uint8_t channel,
 				       uint16_t fault_bits)
@@ -1448,6 +1475,7 @@ enum vc_status domain_set_channel_field(struct domain *domain,
 
 /* ---- Tick sub-functions ---- */
 
+/* Advance the voltage ramp toward configured target by step/interval; manages RAMPING/HOLDING state. */
 static void vc_tick_ramp(struct domain *domain, uint8_t ch, uint32_t dt_ms)
 {
 	struct vc_channel_config *cfg = &domain->channels[ch];
@@ -1514,6 +1542,7 @@ static void vc_tick_ramp(struct domain *domain, uint8_t ch, uint32_t dt_ms)
 	}
 }
 
+/* Execute a protection output action (force zero, clamp, disable) on a faulted channel. */
 static void apply_protection_action(struct domain *domain, uint8_t channel,
 				    enum vc_output_action action,
 				    int16_t clamp_limit)
@@ -1549,6 +1578,7 @@ static void apply_protection_action(struct domain *domain, uint8_t channel,
 	mark_runtime_config_changed_if_visible_state_changed(domain, channel, &before);
 }
 
+/* Begin auto-retry cooldown timer from system config auto_retry_delay. */
 static void start_cooldown(struct vc_channel_runtime *rt,
 			   const struct vc_system_config *sys)
 {
@@ -1556,6 +1586,7 @@ static void start_cooldown(struct vc_channel_runtime *rt,
 		(uint32_t)sys->auto_retry_delay * 1000;
 }
 
+/* True if automatic mode with a retryable recovery policy is active. */
 static bool should_start_cooldown(const struct domain *domain)
 {
 	const struct vc_system_config *sys = &domain->sys_cfg;
@@ -1565,6 +1596,7 @@ static bool should_start_cooldown(const struct domain *domain)
 	       sys->recovery_policy_mode != VC_RECOVERY_NEVER_RETRY;
 }
 
+/* Check voltage/current limits; set faults and apply protection actions if exceeded. */
 static void vc_tick_protection(struct domain *domain, uint8_t ch)
 {
 	struct vc_channel_config *cfg = &domain->channels[ch];
@@ -1632,6 +1664,7 @@ static void vc_tick_protection(struct domain *domain, uint8_t ch)
 	}
 }
 
+/* Decrement auto-retry cooldown timer in automatic mode. */
 static void vc_tick_recovery(struct domain *domain, uint8_t ch,
 			     uint32_t dt_ms)
 {
@@ -1659,6 +1692,7 @@ static void vc_tick_recovery(struct domain *domain, uint8_t ch,
 	}
 }
 
+/* Recompute channel status_bits (output active, enabled, ramping, faulted, cooldown). */
 static void vc_tick_status_bits(struct domain *domain, uint8_t ch)
 {
 	struct vc_channel_runtime *rt = &domain->runtime[ch];

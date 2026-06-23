@@ -203,86 +203,117 @@ struct vc_field_write {
 
 struct domain;
 
+/* Allocate domain on heap; caller must free. Returns NULL on failure. */
 struct domain *domain_create(const struct vc_channel_entry *channels,
 			     size_t count);
+/* Allocate domain in a static variable; single-instance only. */
 struct domain *domain_create_static(const struct vc_channel_entry *channels,
 				    size_t count);
 
+/* Return current operating mode (normal/automatic/calibration). */
 enum vc_operating_mode domain_get_operating_mode(const struct domain *domain);
+/* Switch operating mode; calibration requires prior unlock. Resets channel states on transition. */
 enum vc_status domain_set_operating_mode(struct domain *domain,
 					    enum vc_operating_mode mode);
 
+/* Copy system-level config (address, baud, recovery policy, etc.) into *cfg. */
 enum vc_status domain_get_system_config(const struct domain *domain,
 					   struct vc_system_config *cfg);
+/* Validate and apply a full system config. Triggers mode transition if operating_mode changed. */
 enum vc_status domain_set_system_config(struct domain *domain,
 					   const struct vc_system_config *cfg);
 
+/* Copy per-channel config (target voltage, ramp, protection, calibration) into *cfg. */
 enum vc_status domain_get_channel_config(const struct domain *domain,
 					    uint8_t channel,
 					    struct vc_channel_config *cfg);
+/* Validate and apply a full channel config. Enforces capability and calibration-mode guards. */
 enum vc_status domain_set_channel_config(struct domain *domain,
 					    uint8_t channel,
 					    const struct vc_channel_config *cfg);
 
+/* Populate a system snapshot (protocol version, uptime, channel count, fault state). */
 enum vc_status domain_get_system_snapshot(const struct domain *domain,
 					     struct vc_system_snapshot *snap);
+/* Populate a channel snapshot (measured values, status bits, fault cause, calibration state). */
 enum vc_status domain_get_channel_snapshot(const struct domain *domain,
 					      uint8_t channel,
 					      struct vc_channel_snapshot *snap);
 
+/* Execute an output action (enable/disable) on a channel. Blocked in calibration mode. */
 enum vc_status domain_channel_output_action(struct domain *domain,
 					       uint8_t channel,
 					       enum vc_output_action action);
+/* Clear active or history faults on a channel. Active clear requires safe-band check. */
 enum vc_status domain_channel_fault_command(struct domain *domain,
 					       uint8_t channel,
 					       enum vc_channel_fault_command cmd);
 
+/* Two-step unlock sequence (STEP1 then STEP2) to enable calibration mode entry. */
 enum vc_status domain_calibration_unlock(struct domain *domain,
 					    uint16_t value);
+/* Enable/disable raw DAC output for one channel. Only one channel may be active at a time. */
 enum vc_status domain_calibration_set_output_enable(struct domain *domain,
 						       uint8_t channel,
 						       bool enabled);
+/* Set raw DAC code for calibration output. Requires output enabled and no safety faults. */
 enum vc_status domain_calibration_set_raw_dac(struct domain *domain,
 						 uint8_t channel,
 						 uint16_t code);
+/* Trigger ADC sample capture for calibration. Requires voltage or current measurement cap. */
 enum vc_status domain_calibration_sample(struct domain *domain,
 					    uint8_t channel);
+/* Commit calibration data. Requires output disabled and no safety faults. */
 enum vc_status domain_calibration_commit(struct domain *domain,
 					    uint8_t channel);
+/* Set upper limit for raw DAC code in calibration mode. Must be >= current DAC readback. */
 enum vc_status domain_calibration_set_max_raw_dac(struct domain *domain,
 						     uint8_t channel,
 						     uint16_t limit);
 
+/* Save/load/factory-reset/reboot at system level via storage backend. */
 enum vc_status domain_system_param_action(struct domain *domain,
 					     enum vc_param_action action);
+/* Save/load/factory-reset per-channel config. Preserves calibration coefficients on load/reset. */
 enum vc_status domain_channel_param_action(struct domain *domain,
 					      uint8_t channel,
 					      enum vc_param_action action);
 
+/* Return true if channel index is within the configured channel count. */
 bool domain_is_channel_supported(const struct domain *domain, uint8_t channel);
+/* Return number of channels configured at domain creation. */
 uint16_t domain_get_supported_channel_count(const struct domain *domain);
+/* Return bitmask of active channels (all channels up to count are active). */
 uint16_t domain_get_active_channel_mask(const struct domain *domain);
+/* Return hardware variant identifier (compile-time constant). */
 uint16_t domain_get_variant_id(const struct domain *domain);
 
+/* Update the stored uptime counter (fed from kernel uptime). */
 void domain_set_uptime(struct domain *domain, uint32_t seconds);
+/* Run one tick of ramp, protection, recovery, and status-bit updates for all channels. */
 void domain_process_periodic(struct domain *domain, uint32_t dt_ms);
 
 struct vc_runtime_config_snapshot;
 struct vc_measurement_snapshot;
 struct vc_storage_backend;
 
+/* Attach a storage backend for save/load/erase operations. NULL disables persistence. */
 void domain_set_storage_backend(struct domain *domain,
 				const struct vc_storage_backend *backend);
 
+/* Build a runtime config snapshot for the provider bus (output drive, calibration state, etc.). */
 enum vc_status domain_get_runtime_config(const struct domain *domain,
 					    uint8_t channel,
 					    struct vc_runtime_config_snapshot *cfg);
+/* Ingest a measurement from the provider bus; applies calibration scaling and runs protection. */
 enum vc_status domain_consume_measurement(struct domain *domain,
 					     const struct vc_measurement_snapshot *meas);
 
+/* Set a single system config field by enum key. Delegates to domain_set_system_config. */
 enum vc_status domain_set_system_field(struct domain *domain,
 				       enum vc_config_field field,
 				       uint16_t value);
+/* Set a single channel config field by enum key. Delegates to domain_set_channel_config. */
 enum vc_status domain_set_channel_field(struct domain *domain,
 					uint8_t channel,
 					enum vc_config_field field,

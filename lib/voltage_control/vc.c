@@ -38,6 +38,7 @@ enum vc_status vc_ctx_start(struct vc_ctx *ctx)
 	return vc_provider_bus_start_all();
 }
 
+/* Translate a vc_cal_command into a vc_runtime_command and submit to the runtime. */
 static enum vc_status dispatch_calibration(struct vc_runtime *rt,
 					   const struct vc_cal_command *cal,
 					   k_timeout_t timeout)

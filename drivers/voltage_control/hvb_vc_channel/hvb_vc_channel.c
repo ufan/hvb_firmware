@@ -26,6 +26,7 @@ static K_THREAD_STACK_DEFINE(hvb_vc_workq_stack, HVB_VC_WORKQ_STACK_SIZE);
 static struct k_work_q hvb_vc_workq;
 static bool hvb_vc_workq_started;
 
+/* Lazily start the shared work queue for all HVB VC channel instances. */
 static void hvb_vc_ensure_workq(void)
 {
 	if (!hvb_vc_workq_started) {
@@ -48,6 +49,7 @@ struct hvb_vc_config {
 	uint8_t channel_index;
 };
 
+/* Write raw DAC code to the channel's DAC device. */
 static int hvb_vc_set_output(const struct device *dev, uint16_t code)
 {
 	const struct hvb_vc_config *cfg = dev->config;
@@ -58,6 +60,7 @@ static int hvb_vc_set_output(const struct device *dev, uint16_t code)
 	return dac_write_value(cfg->dac, 0, code);
 }
 
+/* Set the HV output enable GPIO. */
 static int hvb_vc_set_enable(const struct device *dev, bool enable)
 {
 	const struct hvb_vc_config *cfg = dev->config;
@@ -65,6 +68,7 @@ static int hvb_vc_set_enable(const struct device *dev, bool enable)
 	return gpio_pin_set_dt(&cfg->enable, enable ? 1 : 0);
 }
 
+/* Read raw 24-bit voltage ADC value (channel 0). */
 static int hvb_vc_measure_voltage(const struct device *dev, int32_t *value)
 {
 	const struct hvb_vc_config *cfg = dev->config;
@@ -78,6 +82,7 @@ static int hvb_vc_measure_voltage(const struct device *dev, int32_t *value)
 	return adc_read(cfg->adc, &seq);
 }
 
+/* Read raw 24-bit current ADC value (channel 1). */
 static int hvb_vc_measure_current(const struct device *dev, int32_t *value)
 {
 	const struct hvb_vc_config *cfg = dev->config;
@@ -91,6 +96,7 @@ static int hvb_vc_measure_current(const struct device *dev, int32_t *value)
 	return adc_read(cfg->adc, &seq);
 }
 
+/* Return the DTS-declared capability bitmask for this channel. */
 static uint16_t hvb_vc_get_capabilities(const struct device *dev)
 {
 	const struct hvb_vc_config *cfg = dev->config;
@@ -107,6 +113,7 @@ struct hvb_vc_data {
 	uint16_t provider_status;
 };
 
+/* Sample voltage + current ADCs and publish a measurement snapshot to the provider bus. */
 static void hvb_vc_publish_measurement(const struct device *dev)
 {
 	const struct hvb_vc_config *cfg = dev->config;
@@ -146,6 +153,7 @@ static void hvb_vc_publish_measurement(const struct device *dev)
 	(void)vc_provider_bus_publish_measurement(&meas);
 }
 
+/* Apply a runtime config to hardware: set enable GPIO + DAC output based on mode/state. */
 static int hvb_vc_apply_config(const struct device *dev,
 			       const struct vc_runtime_config_snapshot *cfg)
 {
@@ -203,6 +211,7 @@ static int hvb_vc_apply_config(const struct device *dev,
 	return 0;
 }
 
+/* Periodic work handler: apply pending config, sample ADCs, reschedule at sample_rate_ms. */
 static void hvb_vc_work_handler(struct k_work *work)
 {
 	struct k_work_delayable *delayable = k_work_delayable_from_work(work);
@@ -226,6 +235,7 @@ static void hvb_vc_work_handler(struct k_work *work)
 				  K_MSEC(cfg->sample_rate_ms));
 }
 
+/* Start the periodic work loop immediately. */
 static int hvb_vc_start(const struct device *dev)
 {
 	struct hvb_vc_data *data = dev->data;
@@ -234,6 +244,7 @@ static int hvb_vc_start(const struct device *dev)
 				       K_NO_WAIT) < 0 ? -EIO : 0;
 }
 
+/* Cancel the periodic work loop. */
 static int hvb_vc_stop(const struct device *dev)
 {
 	struct hvb_vc_data *data = dev->data;
@@ -241,6 +252,7 @@ static int hvb_vc_stop(const struct device *dev)
 	return k_work_cancel_delayable(&data->work);
 }
 
+/* Wake the work handler immediately so it picks up the new config version. */
 static int hvb_vc_notify_config_changed(const struct device *dev, uint32_t version)
 {
 	struct hvb_vc_data *data = dev->data;
@@ -262,6 +274,7 @@ static const struct vc_channel_api hvb_vc_api = {
 	.get_capabilities = hvb_vc_get_capabilities,
 };
 
+/* Device init: start workq, verify DAC/ADC/GPIO readiness, configure DAC channel, init work item. */
 static int hvb_vc_init(const struct device *dev)
 {
 	const struct hvb_vc_config *cfg = dev->config;

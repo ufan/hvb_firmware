@@ -50,6 +50,7 @@ struct vc_runtime {
 	char evidence_buffer[CONFIG_VC_RUNTIME_EVIDENCE_QUEUE_DEPTH * sizeof(struct vc_runtime_evidence_item)];
 };
 
+/* Dispatch a runtime command to the appropriate domain function by command type. */
 static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 						  const struct vc_runtime_command *cmd)
 {
@@ -96,6 +97,7 @@ static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 	}
 }
 
+/* Refresh the published snapshot cache: run periodic tick, copy snapshots, check stale measurements. */
 static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 {
 	uint16_t count = domain_get_supported_channel_count(runtime->domain);
@@ -137,6 +139,7 @@ static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 	k_mutex_unlock(&runtime->lock);
 }
 
+/* Push updated runtime configs for all channels to the provider bus. */
 static void vc_runtime_publish_all_configs(struct vc_runtime *runtime)
 {
 	uint16_t count = domain_get_supported_channel_count(runtime->domain);
@@ -151,6 +154,7 @@ static void vc_runtime_publish_all_configs(struct vc_runtime *runtime)
 	}
 }
 
+/* Main runtime worker thread: processes commands, measurements, and periodic ticks. */
 static void vc_runtime_worker(void *p1, void *p2, void *p3)
 {
 	struct vc_runtime *runtime = p1;
@@ -201,6 +205,7 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 	}
 }
 
+/* Auto-load persisted system/channel/calibration config from settings at startup. */
 static void vc_runtime_auto_load(struct vc_runtime *runtime)
 {
 #ifdef CONFIG_VC_SETTINGS_PERSISTENCE
@@ -242,6 +247,7 @@ static void vc_runtime_auto_load(struct vc_runtime *runtime)
 #endif
 }
 
+/* Initialize runtime: mutexes, queues, provider bus, auto-load, start worker thread. */
 static struct vc_runtime *vc_runtime_init(struct vc_runtime *runtime,
 					 struct domain *domain,
 					 bool heap_allocated)
@@ -273,6 +279,7 @@ static struct vc_runtime *vc_runtime_init(struct vc_runtime *runtime,
 	return runtime;
 }
 
+/* Heap-allocate a runtime and initialize it. */
 static struct vc_runtime *vc_runtime_create_heap(struct domain *domain)
 {
 	struct vc_runtime *runtime;
@@ -289,6 +296,7 @@ static struct vc_runtime *vc_runtime_create_heap(struct domain *domain)
 	return vc_runtime_init(runtime, domain, true);
 }
 
+/* Statically allocate a runtime (single-instance) and initialize it. */
 static struct vc_runtime *vc_runtime_create_local_static(struct domain *domain)
 {
 	static struct vc_runtime runtime;

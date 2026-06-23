@@ -31,6 +31,7 @@ struct ads1232_data {
 	struct k_mutex lock;
 };
 
+/* Map integer gain value (from DTS) to Zephyr ADC_GAIN enum. */
 static enum adc_gain ads1232_int_to_gain(int g)
 {
 	switch (g) {
@@ -39,6 +40,7 @@ static enum adc_gain ads1232_int_to_gain(int g)
 	}
 }
 
+/* Set GAIN[1:0] GPIOs per ADS1232 Table 7-3 (00=1x, 01=2x). */
 static void ads1232_set_gain_gpios(const struct ads1232_config *cfg, enum adc_gain gain)
 {
 	if (!cfg->gain0.port || !cfg->gain1.port) {
@@ -57,6 +59,7 @@ static void ads1232_set_gain_gpios(const struct ads1232_config *cfg, enum adc_ga
 	gpio_pin_set_dt(&cfg->gain1, 0);
 }
 
+/* ADC channel setup: validate channel_id (0 or 1) and optionally set runtime gain. */
 static int ads1232_channel_setup(const struct device *dev,
 				 const struct adc_channel_cfg *channel_cfg)
 {
@@ -73,6 +76,7 @@ static int ads1232_channel_setup(const struct device *dev,
 	return 0;
 }
 
+/* Read one channel: select via A0, wait for DRDY, bit-bang 24 bits + sign-extend to 32-bit. */
 static int ads1232_read_one(const struct ads1232_config *cfg, int ch,
 			    int32_t *out)
 {
@@ -130,6 +134,7 @@ static int ads1232_read_one(const struct ads1232_config *cfg, int ch,
 	return 0;
 }
 
+/* ADC read sequence: read selected channels (bitmask) under mutex; fill int32_t buffer. */
 static int ads1232_read(const struct device *dev,
 			const struct adc_sequence *sequence)
 {
@@ -170,6 +175,7 @@ unlock:
 	return ret;
 }
 
+/* Device init: configure GPIOs, run PWDN power-up sequence (§7.4.5), set initial gain. */
 static int ads1232_init(const struct device *dev)
 {
 	const struct ads1232_config *cfg = dev->config;

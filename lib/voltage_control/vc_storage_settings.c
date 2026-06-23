@@ -36,6 +36,7 @@ struct vc_channel_cal {
 	int16_t measured_current_calib_b;
 };
 
+/* Pack operational fields (no calibration coefficients) for NVS storage. */
 static void pack_no_cal(struct vc_channel_config_no_cal *dst,
 			const struct vc_channel_config *src)
 {
@@ -54,6 +55,7 @@ static void pack_no_cal(struct vc_channel_config_no_cal *dst,
 	dst->save_target_policy = src->save_target_policy;
 }
 
+/* Unpack operational fields from NVS into a full channel config struct. */
 static void unpack_no_cal(struct vc_channel_config *dst,
 			  const struct vc_channel_config_no_cal *src)
 {
@@ -72,6 +74,7 @@ static void unpack_no_cal(struct vc_channel_config *dst,
 	dst->save_target_policy = src->save_target_policy;
 }
 
+/* Pack calibration coefficients (K/B for output, voltage, current) for NVS storage. */
 static void pack_cal(struct vc_channel_cal *dst,
 		     const struct vc_channel_config *src)
 {
@@ -83,6 +86,7 @@ static void pack_cal(struct vc_channel_cal *dst,
 	dst->measured_current_calib_b = src->measured_current_calib_b;
 }
 
+/* Unpack calibration coefficients from NVS into a full channel config struct. */
 static void unpack_cal(struct vc_channel_config *dst,
 		       const struct vc_channel_cal *src)
 {
@@ -100,6 +104,7 @@ struct settings_read_ctx {
 	bool found;
 };
 
+/* Zephyr settings callback: read exactly ctx->len bytes into ctx->dst. */
 static int settings_direct_loader(const char *name, size_t len,
 				  settings_read_cb read_cb, void *cb_arg,
 				  void *param)
@@ -118,6 +123,7 @@ static int settings_direct_loader(const char *name, size_t len,
 	return 0;
 }
 
+/* Load a settings key directly into a buffer; returns -ENOENT if not found. */
 static int settings_load_key(const char *key, void *dst, size_t len)
 {
 	struct settings_read_ctx ctx = {
@@ -133,16 +139,19 @@ static int settings_load_key(const char *key, void *dst, size_t len)
 	return ctx.found ? 0 : -ENOENT;
 }
 
+/* Persist system config to NVS key "vc/sys". */
 static int settings_save_sys(const struct vc_system_config *cfg)
 {
 	return settings_save_one("vc/sys", cfg, sizeof(*cfg));
 }
 
+/* Load system config from NVS key "vc/sys". */
 static int settings_load_sys(struct vc_system_config *cfg)
 {
 	return settings_load_key("vc/sys", cfg, sizeof(*cfg));
 }
 
+/* Persist channel operational config (excluding cal coefficients) to "vc/chN/cfg". */
 static int settings_save_ch_cfg(uint8_t ch, const struct vc_channel_config *cfg)
 {
 	char key[16];
@@ -153,6 +162,7 @@ static int settings_save_ch_cfg(uint8_t ch, const struct vc_channel_config *cfg)
 	return settings_save_one(key, &packed, sizeof(packed));
 }
 
+/* Load channel operational config (excluding cal coefficients) from "vc/chN/cfg". */
 static int settings_load_ch_cfg(uint8_t ch, struct vc_channel_config *cfg)
 {
 	char key[16];
@@ -168,6 +178,7 @@ static int settings_load_ch_cfg(uint8_t ch, struct vc_channel_config *cfg)
 	return 0;
 }
 
+/* Persist channel calibration coefficients to "vc/chN/cal". */
 static int settings_save_ch_cal(uint8_t ch, const struct vc_channel_config *cfg)
 {
 	char key[16];
@@ -178,6 +189,7 @@ static int settings_save_ch_cal(uint8_t ch, const struct vc_channel_config *cfg)
 	return settings_save_one(key, &packed, sizeof(packed));
 }
 
+/* Load channel calibration coefficients from "vc/chN/cal". */
 static int settings_load_ch_cal(uint8_t ch, struct vc_channel_config *cfg)
 {
 	char key[16];
@@ -193,6 +205,7 @@ static int settings_load_ch_cal(uint8_t ch, struct vc_channel_config *cfg)
 	return 0;
 }
 
+/* Delete all vc settings keys (system config + all channel config/cal). */
 static int settings_erase(void)
 {
 	(void)settings_delete("vc/sys");

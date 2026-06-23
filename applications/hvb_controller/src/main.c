@@ -22,6 +22,7 @@ static const struct gpio_dt_spec sys_run = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpio
 
 static struct vc_mb_adapter *mb;
 
+/* Toggle the SYS_RUN LED at 500ms intervals as a heartbeat indicator. */
 static void heartbeat_handler(struct k_work *work)
 {
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
@@ -32,18 +33,21 @@ static void heartbeat_handler(struct k_work *work)
 
 static K_WORK_DELAYABLE_DEFINE(heartbeat_work, heartbeat_handler);
 
+/* Modbus callback: read input register (FC04). */
 static int input_reg_rd(uint16_t addr, uint16_t *reg)
 {
 	enum vc_mb_result r = vc_mb_input_rd(mb, addr, reg);
 	return r ? -EINVAL : 0;
 }
 
+/* Modbus callback: read holding register (FC03). */
 static int holding_reg_rd(uint16_t addr, uint16_t *reg)
 {
 	enum vc_mb_result r = vc_mb_holding_rd(mb, addr, reg);
 	return r ? -EINVAL : 0;
 }
 
+/* Modbus callback: write holding register (FC06). */
 static int holding_reg_wr(uint16_t addr, uint16_t reg)
 {
 	enum vc_mb_result r = vc_mb_holding_wr(mb, addr, reg);
@@ -68,6 +72,7 @@ static const struct modbus_iface_param server_param = {
 	},
 };
 
+/* Look up the Modbus RTU interface by DTS name and initialize the server. */
 static int init_modbus_server(void)
 {
 	const char iface_name[] = DEVICE_DT_NAME(MODBUS_NODE);
@@ -81,6 +86,7 @@ static int init_modbus_server(void)
 	return modbus_init_server(iface, server_param);
 }
 
+/* App entry: init GPIO, vc subsystem, Modbus server, start heartbeat LED. */
 int main(void)
 {
 	struct vc_system_snapshot snap;

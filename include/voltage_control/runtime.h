@@ -87,46 +87,59 @@ struct vc_runtime_command {
 struct vc_runtime;
 struct domain;
 
+/* Stop the runtime worker thread and free if heap-allocated. */
 void vc_runtime_destroy(struct vc_runtime *runtime);
 
+/* Create a runtime + domain on the heap from DTS channel entries. */
 struct vc_runtime *vc_domain_runtime_create(
 	const struct vc_channel_entry *channels, size_t count);
+/* Create a runtime + domain in static storage (single-instance). */
 struct vc_runtime *vc_domain_runtime_create_static(
 	const struct vc_channel_entry *channels, size_t count);
+/* Publish a measurement to the provider bus and wake the runtime worker. */
 enum vc_status vc_runtime_submit_measurement(
 	struct vc_runtime *runtime,
 	const struct vc_measurement_snapshot *meas);
+/* Read the current runtime config for a channel (under domain lock). */
 enum vc_status vc_runtime_get_channel_config(
 	struct vc_runtime *runtime,
 	uint8_t channel,
 	struct vc_runtime_config_snapshot *cfg);
 
+/* Enqueue a command and block until the worker thread processes it. */
 enum vc_status vc_runtime_submit_command(struct vc_runtime *runtime,
 					 const struct vc_runtime_command *cmd,
 					 k_timeout_t timeout);
+/* Convenience: submit a set-operating-mode command. */
 enum vc_status vc_runtime_set_operating_mode(struct vc_runtime *runtime,
 					     enum vc_operating_mode mode,
 					     k_timeout_t timeout);
+/* Convenience: submit a set-system-field command. */
 enum vc_status vc_runtime_set_system_field(struct vc_runtime *runtime,
 					   enum vc_config_field field,
 					   uint16_t value,
 					   k_timeout_t timeout);
+/* Convenience: submit a set-channel-field command. */
 enum vc_status vc_runtime_set_channel_field(struct vc_runtime *runtime,
 					    uint8_t channel,
 					    enum vc_config_field field,
 					    uint16_t value,
 					    k_timeout_t timeout);
 
+/* Read the last published system snapshot (lock-free copy from snapshot_lock). */
 enum vc_status vc_runtime_get_published_system_snapshot(
 	struct vc_runtime *runtime,
 	struct vc_system_snapshot *snap);
+/* Read the last published channel snapshot for the given channel. */
 enum vc_status vc_runtime_get_published_channel_snapshot(
 	struct vc_runtime *runtime,
 	uint8_t channel,
 	struct vc_channel_snapshot *snap);
+/* Read the last published system config. */
 enum vc_status vc_runtime_get_published_system_config(
 	struct vc_runtime *runtime,
 	struct vc_system_config *cfg);
+/* Read the last published channel config for the given channel. */
 enum vc_status vc_runtime_get_published_channel_config(
 	struct vc_runtime *runtime,
 	uint8_t channel,

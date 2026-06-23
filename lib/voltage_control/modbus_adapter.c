@@ -15,6 +15,7 @@ struct vc_mb_adapter {
 	struct vc_ctx *ctx;
 };
 
+/* Decode a Modbus address into system/channel + block offset. Returns false if out of range. */
 static bool addr_decode(uint16_t addr, bool *is_sys, uint8_t *ch, uint16_t *off)
 {
 	if (addr < SYS_BLOCK_BASE + CH_BLOCK_SIZE) {
@@ -64,6 +65,7 @@ static bool caps_all(uint16_t caps, uint16_t mask)
 	return (caps & mask) == mask;
 }
 
+/* Map domain vc_status codes to Modbus exception codes. */
 static enum vc_mb_result domain_st_to_mb_result(enum vc_status st)
 {
 	switch (st) {
@@ -82,11 +84,13 @@ static enum vc_mb_result domain_st_to_mb_result(enum vc_status st)
 	}
 }
 
+/* Dispatch a vc_cmd via vc_dispatch and translate the result to Modbus. */
 static enum vc_mb_result dispatch(struct vc_ctx *ctx, struct vc_cmd cmd)
 {
 	return domain_st_to_mb_result(vc_dispatch(ctx, cmd, MB_CMD_TIMEOUT));
 }
 
+/* Check if a channel input register offset is accessible given the channel's capabilities. */
 static bool ch_input_supported(uint16_t caps, uint16_t off)
 {
 	switch (off) {
@@ -119,6 +123,7 @@ static bool ch_input_supported(uint16_t caps, uint16_t off)
 	}
 }
 
+/* Check if a channel holding register offset is accessible given the channel's capabilities. */
 static bool ch_holding_supported(uint16_t caps, uint16_t off)
 {
 	switch (off) {
@@ -175,6 +180,7 @@ static uint16_t int32_lo(int32_t value)
 	return (uint16_t)((uint32_t)value & 0xFFFF);
 }
 
+/* Read a system input register (FC04): protocol version, uptime, status, etc. */
 static enum vc_mb_result read_sys_input(struct vc_ctx *ctx, uint16_t off,
 					uint16_t *reg)
 {
@@ -205,6 +211,7 @@ static enum vc_mb_result read_sys_input(struct vc_ctx *ctx, uint16_t off,
 	return VC_MB_OK;
 }
 
+/* Read a channel input register (FC04): measurements, status, faults, calibration data. */
 static enum vc_mb_result read_ch_input(struct vc_ctx *ctx, uint8_t ch,
 				       uint16_t off, uint16_t *reg)
 {
@@ -251,6 +258,7 @@ static enum vc_mb_result read_ch_input(struct vc_ctx *ctx, uint8_t ch,
 	return VC_MB_OK;
 }
 
+/* Read a system holding register (FC03): operating mode, address, baud, recovery config. */
 static enum vc_mb_result read_sys_holding(struct vc_ctx *ctx, uint16_t off,
 					  uint16_t *reg)
 {
@@ -276,6 +284,7 @@ static enum vc_mb_result read_sys_holding(struct vc_ctx *ctx, uint16_t off,
 	return VC_MB_OK;
 }
 
+/* Read a channel holding register (FC03): config, calibration coefficients, cal state. */
 static enum vc_mb_result read_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 					 uint16_t off, uint16_t *reg)
 {
@@ -376,6 +385,7 @@ static const enum vc_config_field sys_reg_to_field[] = {
 	[SYS_CURRENT_SAFE_BAND_PCT]  = VC_FIELD_CURRENT_SAFE_BAND_PCT,
 };
 
+/* Write a system holding register (FC06): dispatch as a system field write command. */
 static enum vc_mb_result write_sys_holding(struct vc_ctx *ctx, uint16_t off,
 					   uint16_t val)
 {
@@ -385,6 +395,7 @@ static enum vc_mb_result write_sys_holding(struct vc_ctx *ctx, uint16_t off,
 	return dispatch(ctx, vc_cmd_sys_field(sys_reg_to_field[off], val));
 }
 
+/* Write a channel holding register (FC06): dispatch as config field, output action, or cal command. */
 static enum vc_mb_result write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 					  uint16_t off, uint16_t val)
 {
