@@ -13,4 +13,3 @@ zephyr_library_sources_ifdef(CONFIG_VC_SETTINGS_PERSISTENCE vc_storage_settings.
 zephyr_linker_sources_ifdef(CONFIG_VC_PROVIDER_BUS RAM_SECTIONS provider_bus_sections.ld)
 
 zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../include)
-zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../dts/bindings/include)

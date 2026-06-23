@@ -12,7 +12,7 @@
 #include "voltage_control/runtime.h"
 #include "voltage_control/provider_bus.h"
 #include "voltage_control/vc_storage.h"
-#include "jianwei,vc-channel-capabilities.h"
+#include <dt-bindings/voltage_control/capabilities.h>
 
 #ifdef CONFIG_VC_SETTINGS_PERSISTENCE
 #include <zephyr/settings/settings.h>

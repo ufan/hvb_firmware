@@ -9,7 +9,7 @@
 #include <st/f4/stm32f429Xi.dtsi>
 #include <zephyr/dt-bindings/gpio/gpio.h>
 
-#include "../../../dts/bindings/include/jianwei,vc-channel-capabilities.h"
+#include <dt-bindings/voltage_control/capabilities.h>
 #include <zephyr/dt-bindings/pinctrl/stm32-pinctrl.h>
 
 / {

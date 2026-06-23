@@ -40,7 +40,7 @@
 #define HVB_PROTOCOL_MAJOR             2
 #define HVB_PROTOCOL_MINOR             1
 
-#include "jianwei,vc-channel-capabilities.h"
+#include <dt-bindings/voltage_control/capabilities.h>
 
 #define SYS_CAP_AUTOMATIC_MODE         0x0001
 #define SYS_CAP_ENV_SENSOR             0x0002
