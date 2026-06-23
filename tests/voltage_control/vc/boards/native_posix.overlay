@@ -1,0 +1,17 @@
+/ {
+	vc_ch0: vc-channel-0 {
+		compatible = "jianwei,vc-channel-stub";
+		channel-index = <0>;
+		capabilities = <0x000f>;
+	};
+	vc_ch1: vc-channel-1 {
+		compatible = "jianwei,vc-channel-stub";
+		channel-index = <1>;
+		capabilities = <0x000f>;
+	};
+	vc_controller: vc-controller {
+		compatible = "jianwei,vc-controller";
+		channels = <&vc_ch0 &vc_ch1>;
+		status = "okay";
+	};
+};

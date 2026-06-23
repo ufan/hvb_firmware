@@ -15,6 +15,10 @@
 #include "voltage_control/modbus_adapter.h"
 #include "voltage_control/runtime.h"
 
+struct vc_ctx {
+	struct vc_runtime *runtime;
+};
+
 static const struct vc_channel_entry test_channels[] = {
 	{ .dev = NULL, .index = 0,
 	  .capabilities = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
@@ -638,7 +642,8 @@ ZTEST(voltage_control_domain, test_channel0_supported)
 ZTEST(voltage_control_domain, test_modbus_input_core_readable_without_measurement_caps)
 {
 	struct vc_runtime *rt = vc_domain_runtime_create(onoff_channels, 1);
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(rt);
+	struct vc_ctx test_ctx = { .runtime = rt };
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(&test_ctx);
 	uint16_t reg;
 
 	zassert_not_null(rt);
@@ -654,7 +659,8 @@ ZTEST(voltage_control_domain, test_modbus_input_core_readable_without_measuremen
 ZTEST(voltage_control_domain, test_modbus_input_rejects_unsupported_measurement_tail)
 {
 	struct vc_runtime *rt = vc_domain_runtime_create(onoff_channels, 1);
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(rt);
+	struct vc_ctx test_ctx = { .runtime = rt };
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(&test_ctx);
 	uint16_t reg;
 
 	zassert_not_null(rt);
@@ -669,7 +675,8 @@ ZTEST(voltage_control_domain, test_modbus_input_rejects_unsupported_measurement_
 ZTEST(voltage_control_domain, test_modbus_holding_rejects_unsupported_policy_tail)
 {
 	struct vc_runtime *rt = vc_domain_runtime_create(onoff_channels, 1);
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(rt);
+	struct vc_ctx test_ctx = { .runtime = rt };
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(&test_ctx);
 	uint16_t reg;
 
 	zassert_not_null(rt);
@@ -689,7 +696,8 @@ ZTEST(voltage_control_domain, test_modbus_holding_rejects_unsupported_policy_tai
 ZTEST(voltage_control_domain, test_modbus_rejects_unsupported_calibration_tail)
 {
 	struct vc_runtime *rt = vc_domain_runtime_create(onoff_channels, 1);
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(rt);
+	struct vc_ctx test_ctx = { .runtime = rt };
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(&test_ctx);
 	uint16_t reg;
 
 	zassert_not_null(rt);

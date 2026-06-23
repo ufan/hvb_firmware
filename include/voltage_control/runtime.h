@@ -87,22 +87,12 @@ struct vc_runtime_command {
 struct vc_runtime;
 struct domain;
 
-/*
- * Legacy API: runtime borrows domain. Caller owns domain lifetime.
- */
-struct vc_runtime *vc_runtime_create(struct domain *domain);
-struct vc_runtime *vc_runtime_create_static(struct domain *domain);
 void vc_runtime_destroy(struct vc_runtime *runtime);
 
-/*
- * Unified API: creates domain + runtime as one unit.
- * The returned vc_runtime owns its domain internally.
- */
 struct vc_runtime *vc_domain_runtime_create(
 	const struct vc_channel_entry *channels, size_t count);
 struct vc_runtime *vc_domain_runtime_create_static(
 	const struct vc_channel_entry *channels, size_t count);
-struct domain *vc_runtime_get_domain(struct vc_runtime *runtime);
 enum vc_status vc_runtime_submit_measurement(
 	struct vc_runtime *runtime,
 	const struct vc_measurement_snapshot *meas);

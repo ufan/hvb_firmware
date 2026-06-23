@@ -273,7 +273,7 @@ static struct vc_runtime *vc_runtime_init(struct vc_runtime *runtime,
 	return runtime;
 }
 
-struct vc_runtime *vc_runtime_create(struct domain *domain)
+static struct vc_runtime *vc_runtime_create_heap(struct domain *domain)
 {
 	struct vc_runtime *runtime;
 
@@ -289,7 +289,7 @@ struct vc_runtime *vc_runtime_create(struct domain *domain)
 	return vc_runtime_init(runtime, domain, true);
 }
 
-struct vc_runtime *vc_runtime_create_static(struct domain *domain)
+static struct vc_runtime *vc_runtime_create_local_static(struct domain *domain)
 {
 	static struct vc_runtime runtime;
 
@@ -304,7 +304,7 @@ struct vc_runtime *vc_domain_runtime_create(
 	if (domain == NULL) {
 		return NULL;
 	}
-	return vc_runtime_create(domain);
+	return vc_runtime_create_heap(domain);
 }
 
 struct vc_runtime *vc_domain_runtime_create_static(
@@ -315,15 +315,7 @@ struct vc_runtime *vc_domain_runtime_create_static(
 	if (domain == NULL) {
 		return NULL;
 	}
-	return vc_runtime_create_static(domain);
-}
-
-struct domain *vc_runtime_get_domain(struct vc_runtime *runtime)
-{
-	if (runtime == NULL) {
-		return NULL;
-	}
-	return runtime->domain;
+	return vc_runtime_create_local_static(domain);
 }
 
 void vc_runtime_destroy(struct vc_runtime *runtime)
