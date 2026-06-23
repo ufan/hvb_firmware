@@ -6,7 +6,7 @@
 
 #include "voltage_control/modbus_adapter.h"
 #include "voltage_control/vc.h"
-#include "regmap/hvb_regs.h"
+#include "regmap/vc_regs.h"
 
 #define EXT_BLOCK_END 279
 #define MB_CMD_TIMEOUT K_SECONDS(1)

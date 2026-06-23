@@ -10,7 +10,7 @@
 #include <zephyr/ztest.h>
 #include <stdlib.h>
 
-#include "regmap/hvb_regs.h"
+#include "regmap/vc_regs.h"
 #include "voltage_control/domain.h"
 #include "voltage_control/modbus_adapter.h"
 #include "voltage_control/runtime.h"
@@ -1202,8 +1202,8 @@ ZTEST(voltage_control_domain, test_system_snapshot)
 	struct vc_system_snapshot snap;
 
 	domain_get_system_snapshot(d, &snap);
-	zassert_equal(snap.protocol_major, HVB_PROTOCOL_MAJOR);
-	zassert_equal(snap.protocol_minor, HVB_PROTOCOL_MINOR);
+	zassert_equal(snap.protocol_major, VC_PROTOCOL_MAJOR);
+	zassert_equal(snap.protocol_minor, VC_PROTOCOL_MINOR);
 	zassert_equal(snap.variant_id, 1);
 	zassert_equal(snap.supported_channel_count, 2);
 	zassert_equal(snap.active_channel_mask, 0x0003);

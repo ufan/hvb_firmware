@@ -11,7 +11,7 @@
 #include <errno.h>
 #include <string.h>
 
-#include "regmap/hvb_regs.h"
+#include "regmap/vc_regs.h"
 #include "voltage_control/domain.h"
 #include "voltage_control/runtime.h"
 #include "voltage_control/provider_bus.h"

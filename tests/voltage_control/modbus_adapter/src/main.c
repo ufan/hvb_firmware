@@ -8,7 +8,7 @@
 
 #include <zephyr/ztest.h>
 
-#include "regmap/hvb_regs.h"
+#include "regmap/vc_regs.h"
 #include "voltage_control/modbus_adapter.h"
 #include "voltage_control/vc.h"
 
@@ -59,8 +59,8 @@ ZTEST(modbus_adapter, test_sys_input_reads_protocol_version)
 	zassert_not_null(ctx);
 	zassert_equal(vc_mb_input_rd(mb, SYS_PROTOCOL_MAJOR, &major), VC_MB_OK);
 	zassert_equal(vc_mb_input_rd(mb, SYS_PROTOCOL_MINOR, &minor), VC_MB_OK);
-	zassert_equal(major, HVB_PROTOCOL_MAJOR);
-	zassert_equal(minor, HVB_PROTOCOL_MINOR);
+	zassert_equal(major, VC_PROTOCOL_MAJOR);
+	zassert_equal(minor, VC_PROTOCOL_MINOR);
 
 	destroy_ctx(ctx);
 }

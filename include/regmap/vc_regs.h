@@ -25,8 +25,8 @@
  * 16-bit registers with HI/LO suffixes.
  */
 
-#ifndef REGMAP_HVB_REGS_H
-#define REGMAP_HVB_REGS_H
+#ifndef REGMAP_VC_REGS_H
+#define REGMAP_VC_REGS_H
 
 /* ------------------------------------------------------------------ */
 /* Block base addresses                                                */
@@ -37,8 +37,8 @@
 #define CH_BLOCK_SIZE     40
 #define EXT_BLOCK_BASE    200
 
-#define HVB_PROTOCOL_MAJOR             2
-#define HVB_PROTOCOL_MINOR             1
+#define VC_PROTOCOL_MAJOR             2
+#define VC_PROTOCOL_MINOR             1
 
 #include <dt-bindings/voltage_control/capabilities.h>
 

@@ -7,7 +7,7 @@
 #include "voltage_control/domain.h"
 #include "voltage_control/runtime.h"
 #include "voltage_control/vc_storage.h"
-#include "regmap/hvb_regs.h"
+#include "regmap/vc_regs.h"
 #include <stdlib.h>
 #include <string.h>
 #include <zephyr/smf.h>
@@ -873,8 +873,8 @@ enum vc_status domain_get_system_snapshot(const struct domain *domain,
 					     struct vc_system_snapshot *snap)
 {
 	memset(snap, 0, sizeof(*snap));
-	snap->protocol_major = HVB_PROTOCOL_MAJOR;
-	snap->protocol_minor = HVB_PROTOCOL_MINOR;
+	snap->protocol_major = VC_PROTOCOL_MAJOR;
+	snap->protocol_minor = VC_PROTOCOL_MINOR;
 	snap->variant_id = VC_VARIANT_ID;
 	snap->system_capability_flags = VC_DEFAULT_SYSTEM_CAPS;
 	snap->supported_channel_count = (uint16_t)domain->channel_count;
