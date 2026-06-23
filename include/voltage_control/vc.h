@@ -74,7 +74,7 @@ struct vc_cmd {
 	};
 };
 
-enum vc_status vc_dispatch(struct vc_ctx *ctx, const struct vc_cmd *cmd,
+enum vc_status vc_dispatch(struct vc_ctx *ctx, struct vc_cmd cmd,
 			   k_timeout_t timeout);
 
 /* ------------------------------------------------------------------ */
@@ -101,7 +101,7 @@ struct vc_query {
 	} out;
 };
 
-enum vc_status vc_query(struct vc_ctx *ctx, const struct vc_query *q);
+enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query q);
 
 /* ------------------------------------------------------------------ */
 /* Command builders                                                    */
