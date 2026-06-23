@@ -11,7 +11,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 
-#include "regmap/hvb_regs.h"
+#include <dt-bindings/voltage_control/capabilities.h>
 #include "voltage_control/vc_channel.h"
 #include "voltage_control/provider_bus.h"
 
