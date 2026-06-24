@@ -1,16 +1,36 @@
 # Copyright (c) 2026 Jianwei
 # SPDX-License-Identifier: Apache-2.0
 
-description: Virtual Channel controller — owns the ordered channel list
+description: Voltage controller — owns virtual channels as children
 
 compatible: "jianwei,vc-controller"
 
 include: base.yaml
 
 properties:
-  channels:
-    type: phandles
-    required: true
-    description: |
-      Ordered list of VC channel device phandles. The order defines
-      the channel index domain-side.
+  "#address-cells":
+    type: int
+    const: 1
+  "#size-cells":
+    type: int
+    const: 0
+
+child-binding:
+  description: Virtual voltage channel base properties
+  properties:
+    reg:
+      type: array
+      required: true
+      description: Channel index (0-based).
+    label:
+      type: string
+      required: true
+      description: Human-readable channel name.
+    capabilities:
+      type: int
+      required: true
+      description: Bitmask of CH_CAP_* flags.
+    enable-gpios:
+      type: phandle-array
+      required: false
+      description: GPIO that gates channel output.

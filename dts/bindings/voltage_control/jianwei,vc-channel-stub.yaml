@@ -1,15 +1,20 @@
 # Copyright (c) 2026 Jianwei
 # SPDX-License-Identifier: Apache-2.0
 
-description: Stub VC channel for native_posix tests
+description: Stub VC channel for native_posix tests (child of vc-controller)
 
 compatible: "jianwei,vc-channel-stub"
 
 properties:
-  channel-index:
-    type: int
+  reg:
+    type: array
     required: true
-
+    description: Channel index (0-based).
+  label:
+    type: string
+    required: true
+    description: Human-readable channel name.
   capabilities:
     type: int
     required: true
+    description: Bitmask of CH_CAP_* flags.

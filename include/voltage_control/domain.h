@@ -12,7 +12,7 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 
-#define VC_MAX_CHANNELS DT_PROP_LEN(DT_NODELABEL(vc_controller), channels)
+#define VC_MAX_CHANNELS DT_CHILD_NUM_STATUS_OKAY(DT_NODELABEL(vc_controller))
 
 struct vc_channel_entry {
 	const struct device *dev;

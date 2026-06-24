@@ -1,31 +1,24 @@
 # Copyright (c) 2026 Jianwei
 # SPDX-License-Identifier: Apache-2.0
 
-description: HVB Virtual Voltage Channel
+description: HVB Virtual Voltage Channel (child of vc-controller)
 
 compatible: "jianwei,hvb-vc-channel"
-
-include:
-  - name: base.yaml
-  - name: jianwei,vc-channel-base.yaml
 
 properties:
   dac:
     type: phandle
     required: true
-    description: Phandle to the DAC device for raw output drive.
-
+    description: Phandle to the DAC device.
   adc:
     type: phandle
     required: true
-    description: Phandle to the ADC device for voltage/current measurement.
-
+    description: Phandle to the ADC device.
   max-raw-dac:
     type: int
     required: true
     default: 0xFFFF
-    description: Maximum raw DAC code for this channel.
-
+    description: Maximum raw DAC code.
   sample-rate-ms:
     type: int
     required: false
