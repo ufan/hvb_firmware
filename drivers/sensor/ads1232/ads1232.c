@@ -29,9 +29,14 @@ struct ads1232_config {
 
 struct ads1232_data {
 	struct k_mutex lock;
+	const struct device *dev;
+#ifdef CONFIG_ADS1232_INTERRUPT_DRIVEN
+	struct gpio_callback drdy_cb;
+	struct k_poll_signal *async_signal;
+	const struct adc_sequence *async_seq;
+#endif
 };
 
-/* Map integer gain value (from DTS) to Zephyr ADC_GAIN enum. */
 static enum adc_gain ads1232_int_to_gain(int g)
 {
 	switch (g) {
@@ -40,14 +45,12 @@ static enum adc_gain ads1232_int_to_gain(int g)
 	}
 }
 
-/* Set GAIN[1:0] GPIOs per ADS1232 Table 7-3 (00=1x, 01=2x). */
 static void ads1232_set_gain_gpios(const struct ads1232_config *cfg, enum adc_gain gain)
 {
 	if (!cfg->gain0.port || !cfg->gain1.port) {
 		return;
 	}
 
-	/* Table 7-3: GAIN[1:0] 00=1x, 01=2x */
 	switch (gain) {
 	case ADC_GAIN_2:
 		gpio_pin_set_dt(&cfg->gain0, 1);
@@ -59,7 +62,6 @@ static void ads1232_set_gain_gpios(const struct ads1232_config *cfg, enum adc_ga
 	gpio_pin_set_dt(&cfg->gain1, 0);
 }
 
-/* ADC channel setup: validate channel_id (0 or 1) and optionally set runtime gain. */
 static int ads1232_channel_setup(const struct device *dev,
 				 const struct adc_channel_cfg *channel_cfg)
 {
@@ -76,40 +78,10 @@ static int ads1232_channel_setup(const struct device *dev,
 	return 0;
 }
 
-/* Read one channel: select via A0, wait for DRDY, bit-bang 24 bits + sign-extend to 32-bit. */
-static int ads1232_read_one(const struct ads1232_config *cfg, int ch,
-			    int32_t *out)
+static int32_t ads1232_bitbang_read(const struct ads1232_config *cfg)
 {
 	int32_t val = 0;
-	int timeout;
 
-	/* A0/A1 to select channel per Table 7-2. With GPIO_ACTIVE_LOW, set(1)=physical LOW=AINx. */
-	if (cfg->a0.port) {
-		gpio_pin_set_dt(&cfg->a0, ch);
-	}
-
-	/*
-	 * Wait for DRDY to assert (physical LOW = data ready).
-	 * With GPIO_ACTIVE_LOW: gpio_pin_get_dt returns 1 when physical LOW.
-	 * Settling is ~401 ms at 10 SPS (§7.3.7, Table 7-5).
-	 */
-	timeout = 420;
-	while (!gpio_pin_get_dt(&cfg->drdy) && timeout > 0) {
-		k_sleep(K_MSEC(1));
-		timeout--;
-	}
-	if (timeout == 0) {
-		LOG_ERR("ch%d DRDY timeout", ch);
-		return -ETIMEDOUT;
-	}
-
-	/*
-	 * Clock out 24 bits MSB-first. Per §7.3.10 and Table 7-8:
-	 *   t4 ≤ 50 ns: SCLK rising → new bit valid on DOUT
-	 *   t3 ≥ 100 ns: SCLK pulse width
-	 * k_busy_wait(1) = 1 µs satisfies both. Use gpio_pin_get_raw because
-	 * DOUT outputs raw binary (physical HIGH = bit '1'), not DRDY active-low.
-	 */
 	for (int i = 0; i < 24; i++) {
 		gpio_pin_set_dt(&cfg->sclk, 1);
 		k_busy_wait(1);
@@ -130,11 +102,32 @@ static int ads1232_read_one(const struct ads1232_config *cfg, int ch,
 		val |= (int32_t)0xFF000000;
 	}
 
-	*out = val;
+	return val;
+}
+
+static int ads1232_read_one(const struct ads1232_config *cfg, int ch,
+			    int32_t *out)
+{
+	int timeout;
+
+	if (cfg->a0.port) {
+		gpio_pin_set_dt(&cfg->a0, ch);
+	}
+
+	timeout = 420;
+	while (!gpio_pin_get_dt(&cfg->drdy) && timeout > 0) {
+		k_sleep(K_MSEC(1));
+		timeout--;
+	}
+	if (timeout == 0) {
+		LOG_ERR("ch%d DRDY timeout", ch);
+		return -ETIMEDOUT;
+	}
+
+	*out = ads1232_bitbang_read(cfg);
 	return 0;
 }
 
-/* ADC read sequence: read selected channels (bitmask) under mutex; fill int32_t buffer. */
 static int ads1232_read(const struct device *dev,
 			const struct adc_sequence *sequence)
 {
@@ -175,7 +168,74 @@ unlock:
 	return ret;
 }
 
-/* Device init: configure GPIOs, run PWDN power-up sequence (§7.4.5), set initial gain. */
+/* ---- Interrupt-driven mode (adc_read_async) ---- */
+
+#ifdef CONFIG_ADS1232_INTERRUPT_DRIVEN
+
+static void ads1232_drdy_isr(const struct device *port,
+			     struct gpio_callback *cb,
+			     gpio_port_pins_t pins)
+{
+	struct ads1232_data *data = CONTAINER_OF(cb, struct ads1232_data, drdy_cb);
+	const struct ads1232_config *cfg = data->dev->config;
+
+	ARG_UNUSED(port);
+	ARG_UNUSED(pins);
+
+	gpio_pin_interrupt_configure_dt(&cfg->drdy, GPIO_INT_DISABLE);
+
+	int32_t val = ads1232_bitbang_read(cfg);
+
+	if (data->async_seq != NULL) {
+		int32_t *buf = (int32_t *)data->async_seq->buffer;
+
+		*buf = val;
+	}
+
+	if (data->async_signal != NULL) {
+		k_poll_signal_raise(data->async_signal, 0);
+		data->async_signal = NULL;
+	}
+}
+
+static int ads1232_read_async(const struct device *dev,
+			      const struct adc_sequence *sequence,
+			      struct k_poll_signal *async)
+{
+	const struct ads1232_config *cfg = dev->config;
+	struct ads1232_data *data = dev->data;
+	int ch;
+
+	if (sequence->channels == 0 || (sequence->channels & ~(BIT(0) | BIT(1)))) {
+		return -EINVAL;
+	}
+	if (sequence->buffer_size < sizeof(int32_t)) {
+		return -ENOMEM;
+	}
+
+	if (sequence->channels & BIT(0)) {
+		ch = 0;
+	} else {
+		ch = 1;
+	}
+
+	if (cfg->a0.port) {
+		gpio_pin_set_dt(&cfg->a0, ch);
+	}
+
+	data->async_signal = async;
+	data->async_seq = sequence;
+
+	k_poll_signal_reset(async);
+	gpio_pin_interrupt_configure_dt(&cfg->drdy, GPIO_INT_EDGE_TO_ACTIVE);
+
+	return 0;
+}
+
+#endif /* CONFIG_ADS1232_INTERRUPT_DRIVEN */
+
+/* ---- Device init ---- */
+
 static int ads1232_init(const struct device *dev)
 {
 	const struct ads1232_config *cfg = dev->config;
@@ -183,6 +243,7 @@ static int ads1232_init(const struct device *dev)
 	int ret;
 
 	k_mutex_init(&data->lock);
+	data->dev = dev;
 
 	if (!device_is_ready(cfg->drdy.port)) {
 		LOG_ERR("DRDY GPIO port not ready");
@@ -217,23 +278,21 @@ static int ads1232_init(const struct device *dev)
 
 	/*
 	 * Power-up sequence §7.4.5, Table 7-13.
-	 * PWDN is GPIO_ACTIVE_LOW: set(1)=physical LOW=power-down,
-	 *                           set(0)=physical HIGH=run.
-	 * t15 ≥ 10 µs: PWDN must be held high after supplies stable
-	 *              (MCU boot time satisfies this already)
-	 * t16 ≥ 26 µs: PWDN HIGH pulse duration
-	 * t17 ≥ 26 µs: PWDN LOW pulse duration → then HIGH = start converting
 	 */
-	gpio_pin_set_dt(&cfg->pwdn, 1);  /* physical LOW: reset circuitry */
-	k_busy_wait(100);                 /* ≥ t15 (10 µs) */
-	gpio_pin_set_dt(&cfg->pwdn, 0);  /* physical HIGH: begin t16 */
-	k_busy_wait(30);                  /* t16 ≥ 26 µs */
-	gpio_pin_set_dt(&cfg->pwdn, 1);  /* physical LOW: t17 */
-	k_busy_wait(30);                  /* t17 ≥ 26 µs */
-	gpio_pin_set_dt(&cfg->pwdn, 0);  /* physical HIGH: start converting */
+	gpio_pin_set_dt(&cfg->pwdn, 1);
+	k_busy_wait(100);
+	gpio_pin_set_dt(&cfg->pwdn, 0);
+	k_busy_wait(30);
+	gpio_pin_set_dt(&cfg->pwdn, 1);
+	k_busy_wait(30);
+	gpio_pin_set_dt(&cfg->pwdn, 0);
 
-	/* Set initial gain if specified. */
 	ads1232_set_gain_gpios(cfg, ads1232_int_to_gain(cfg->init_gain));
+
+#ifdef CONFIG_ADS1232_INTERRUPT_DRIVEN
+	gpio_init_callback(&data->drdy_cb, ads1232_drdy_isr, BIT(cfg->drdy.pin));
+	gpio_add_callback(cfg->drdy.port, &data->drdy_cb);
+#endif
 
 	LOG_DBG("%s ready", dev->name);
 	return 0;
@@ -242,6 +301,9 @@ static int ads1232_init(const struct device *dev)
 static const struct adc_driver_api ads1232_api = {
 	.channel_setup = ads1232_channel_setup,
 	.read          = ads1232_read,
+#ifdef CONFIG_ADS1232_INTERRUPT_DRIVEN
+	.read_async    = ads1232_read_async,
+#endif
 	.ref_internal  = 5000,
 };
 

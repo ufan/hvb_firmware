@@ -9,3 +9,13 @@ config ADS1232
 	help
 	  Enable the TI ADS1232 24-bit delta-sigma ADC driver.
 	  Uses GPIO bit-bang protocol (not SPI).
+
+config ADS1232_INTERRUPT_DRIVEN
+	bool "Use interrupt-driven DRDY wait for ADS1232"
+	depends on ADS1232
+	select ADC_ASYNC
+	help
+	  Use GPIO interrupt on DRDY pin instead of polling.
+	  Enables adc_read_async() for non-blocking ADC reads.
+	  The ISR performs the 24-bit bit-bang (~50us) and signals
+	  the caller via k_poll_signal.
