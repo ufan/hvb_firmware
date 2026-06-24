@@ -1,60 +1,48 @@
-# Plan B: Channel Table + DTS Bindings + HVB Driver Refactor
+# Plan B: Hardware Layer + Integration + Provider Bus Removal
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Create the hardware abstraction layer — static channel table, new DTS child-node bindings, new 4-function hardware API, and refactored HVB driver with interrupt-driven ADC sampling via k_work_poll.
+**Goal:** Complete the Channel Table & Direct-Drive Architecture by building the hardware abstraction layer, rewiring the domain runtime and CQRS facade to use the new voltage controller, rewriting the HVB driver with interrupt-driven ADC sampling, and deleting the provider bus.
 
-**Architecture:** The channel table is a static dispatch layer mapping channel index → device + hw API, built from DTS at compile time using child-node composition. The HVB driver is rewritten to implement the new `vc_channel_hw_api` (4 functions) and uses k_work_poll with DRDY GPIO interrupts for non-blocking ADC reads. The ADS1232 driver gains a split-phase API: select channel, arm DRDY interrupt callback, and read-data-now (bit-bang only, no DRDY wait). Each measurement is written directly to a per-channel buffer and immediately consumed by the voltage controller.
+**Architecture:** This plan merges the former Plans B and C because they are deeply entangled — the HVB driver rewrite needs the vc_controller pointer (wiring), deleting provider_bus.c requires updating domain_runtime.c (wiring), and the DTS binding changes affect both layers. The work proceeds bottom-up: foundation headers → DTS → ADS1232 → HVB driver → runtime/facade rewrite → delete legacy → application update → verify.
 
-**Tech Stack:** C99, Zephyr RTOS (k_work_poll, k_poll_signal, GPIO interrupts, SMF), DTS bindings, ztest on native_posix
+**Tech Stack:** C99, Zephyr RTOS (k_work_poll, k_poll_signal, GPIO interrupts), DTS bindings, ztest on native_posix
 
 **Spec:** `docs/superpowers/specs/2026-06-24-channel-table-direct-drive-design.md`
 
-**Depends on:** Plan A (vc_channel_state.c, vc_controller.c) — completed and tested.
-
-**Constraint:** The existing domain tests (84 tests), vc_channel_state tests (40 tests), and vc_controller tests (17 tests) must continue to pass throughout. They don't depend on the hardware layer.
+**Depends on:** Plan A (vc_channel_state.c, vc_controller.c) — completed, 57 passing tests.
 
 ---
 
-## File Map
+## Task Overview
 
-### New files
-| File | Responsibility |
-|---|---|
-| `include/voltage_control/vc_channel_hw.h` | New 4-function hardware API vtable |
-| `include/voltage_control/vc_channel_table.h` | Channel table API + `vc_measurement_buffer_entry` |
-| `lib/voltage_control/vc_channel_table.c` | Static dispatch implementation |
-
-### Modified files
-| File | Change |
-|---|---|
-| `dts/bindings/voltage_control/jianwei,vc-controller.yaml` | Child-node composition with `#address-cells`/`#size-cells` |
-| `dts/bindings/voltage_control/jianwei,hvb-vc-channel.yaml` | Child binding of controller (removes base include) |
-| `dts/bindings/voltage_control/jianwei,vc-channel-stub.yaml` | Child binding for tests (adds `reg`) |
-| `boards/jianwei/jw_hvb/jw_hvb.dts` | Channels as children of controller node |
-| `include/voltage_control/domain.h` | `VC_MAX_CHANNELS` macro update |
-| `lib/voltage_control/controller.c` | Use `DT_FOREACH_CHILD_STATUS_OKAY` |
-| `drivers/sensor/ads1232/ads1232.c` | Add split-phase API: select, arm DRDY, read-now |
-| `drivers/voltage_control/hvb_vc_channel/hvb_vc_channel.c` | Full rewrite with `vc_channel_hw_api` + k_work_poll |
-| `lib/voltage_control/CMakeLists.txt` | Add `vc_channel_table.c` |
-| All test `boards/native_posix.overlay` files (5 total) | Child-node DTS format |
-
-### Deleted files
-| File | Reason |
-|---|---|
-| `dts/bindings/voltage_control/jianwei,vc-channel-base.yaml` | Properties absorbed into controller child-binding |
-| `include/voltage_control/vc_channel.h` | Replaced by `vc_channel_hw.h` |
+| # | Task | What changes |
+|---|---|---|
+| 1 | New headers (additive) | `vc_channel_hw.h`, `vc_channel_table.h/c`, measurement buffer type |
+| 2 | DTS binding migration (atomic) | All bindings, overlays, `VC_MAX_CHANNELS`, `controller.c` |
+| 3 | ADS1232 interrupt-driven mode | Add `select_channel()`, `get_drdy()`, `read_data_now()` alongside existing `adc_read()` |
+| 4 | HVB driver rewrite | k_work_poll + DRDY ISR + phase state machine + `vc_channel_hw_api` |
+| 5 | domain_runtime.c rewrite | Thin facade using `vc_controller`, no provider bus |
+| 6 | vc.c rewrite | Route dispatch/query to `vc_controller` directly |
+| 7 | vc.h simplification | Remove `vc_runtime_command` types, simplify to `vc_controller` routing |
+| 8 | modbus_adapter.c update | Route through new `vc.h` / vc_controller path |
+| 9 | Application main.c update | Use new `vc_init()` that creates `vc_controller` + channel table |
+| 10 | Delete legacy modules | `provider_bus.c/h`, `vc_channel.h`, `runtime.h` unused types |
+| 11 | Full build + test verification | All native_posix tests + `west build -b jw_hvb` |
 
 ---
 
-### Task 1: Create vc_channel_hw.h (new hardware API)
+### Task 1: Create vc_channel_hw.h + vc_channel_table.h/c
+
+Additive — no conflicts with existing code. These compile alongside the old modules.
 
 **Files:**
 - Create: `include/voltage_control/vc_channel_hw.h`
+- Create: `include/voltage_control/vc_channel_table.h`
+- Create: `lib/voltage_control/vc_channel_table.c`
+- Modify: `lib/voltage_control/CMakeLists.txt`
 
-This is the new 4-function hardware API vtable that replaces the legacy 9-function `vc_channel_api`.
-
-- [ ] **Step 1: Create the header file**
+- [ ] **Step 1: Create vc_channel_hw.h**
 
 ```c
 /*
@@ -79,23 +67,7 @@ struct vc_channel_hw_api {
 #endif
 ```
 
-- [ ] **Step 2: Commit**
-
-```bash
-git add include/voltage_control/vc_channel_hw.h
-git commit -m "feat: add vc_channel_hw.h — new 4-function hardware API vtable"
-```
-
----
-
-### Task 2: Create vc_channel_table.h/c (static dispatch + measurement buffer)
-
-**Files:**
-- Create: `include/voltage_control/vc_channel_table.h`
-- Create: `lib/voltage_control/vc_channel_table.c`
-- Modify: `lib/voltage_control/CMakeLists.txt`
-
-- [ ] **Step 1: Create vc_channel_table.h**
+- [ ] **Step 2: Create vc_channel_table.h**
 
 ```c
 /*
@@ -108,6 +80,7 @@ git commit -m "feat: add vc_channel_hw.h — new 4-function hardware API vtable"
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 #include <zephyr/device.h>
 
 struct vc_measurement_buffer_entry {
@@ -127,6 +100,7 @@ struct vc_channel_table_entry {
 struct vc_controller;
 
 void vc_channel_table_init(struct vc_controller *ctrl);
+struct vc_controller *vc_channel_table_get_controller(void);
 
 int vc_channel_table_set_output(uint8_t ch, uint16_t code);
 int vc_channel_table_set_enable(uint8_t ch, bool enable);
@@ -137,12 +111,14 @@ const struct vc_measurement_buffer_entry *vc_channel_table_get_measurement(uint8
 size_t vc_channel_table_count(void);
 uint16_t vc_channel_table_capabilities(uint8_t ch);
 
+extern struct vc_channel_table_entry vc_channel_table[];
+
 #endif
 ```
 
-- [ ] **Step 2: Create vc_channel_table.c**
+- [ ] **Step 3: Create vc_channel_table.c**
 
-This file provides static dispatch from channel index to device + hw API. It uses the existing `controller.c` DTS table (which will be updated to the new child-node format in Task 3). For now, it compiles alongside the existing code.
+Note: This file uses `DT_FOREACH_CHILD_STATUS_OKAY` and `DT_REG_ADDR` which require the new DTS bindings from Task 2. It's added to CMakeLists behind `CONFIG_VC_CHANNEL_CONTROLLER` so it won't compile until the DTS change lands.
 
 ```c
 /*
@@ -154,6 +130,7 @@ This file provides static dispatch from channel index to device + hw API. It use
 #include "voltage_control/vc_channel_hw.h"
 #include "voltage_control/vc_controller.h"
 #include <zephyr/devicetree.h>
+#include <errno.h>
 
 #define VC_CONTROLLER_NODE DT_NODELABEL(vc_controller)
 
@@ -162,7 +139,6 @@ static struct vc_controller *g_ctrl;
 static struct vc_measurement_buffer_entry
 	meas_buffers[DT_CHILD_NUM_STATUS_OKAY(VC_CONTROLLER_NODE)];
 
-struct vc_channel_table_entry vc_channel_table[] = {
 #define CH_TABLE_ENTRY(node_id) \
 	{ \
 		.dev = DEVICE_DT_GET(node_id), \
@@ -170,6 +146,8 @@ struct vc_channel_table_entry vc_channel_table[] = {
 		.capabilities = DT_PROP(node_id, capabilities), \
 		.meas = &meas_buffers[DT_REG_ADDR(node_id)], \
 	},
+
+struct vc_channel_table_entry vc_channel_table[] = {
 	DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, CH_TABLE_ENTRY)
 };
 
@@ -180,9 +158,14 @@ void vc_channel_table_init(struct vc_controller *ctrl)
 	g_ctrl = ctrl;
 }
 
+struct vc_controller *vc_channel_table_get_controller(void)
+{
+	return g_ctrl;
+}
+
 static const struct vc_channel_hw_api *get_hw_api(uint8_t ch)
 {
-	if (ch >= vc_channel_table_size) {
+	if (ch >= vc_channel_table_size || vc_channel_table[ch].dev == NULL) {
 		return NULL;
 	}
 	return vc_channel_table[ch].dev->api;
@@ -250,28 +233,29 @@ uint16_t vc_channel_table_capabilities(uint8_t ch)
 }
 ```
 
-Note: This file won't compile yet — it uses `DT_FOREACH_CHILD_STATUS_OKAY` and `DT_REG_ADDR` which require the new DTS bindings from Task 3. It's added to CMakeLists conditionally.
+- [ ] **Step 4: Add vc_channel_table.c to CMakeLists**
 
-- [ ] **Step 3: Add vc_channel_table.c to CMakeLists**
-
-Add to `lib/voltage_control/CMakeLists.txt` after the existing `zephyr_library_sources_ifdef(CONFIG_VC_CHANNEL_CONTROLLER controller.c)` line:
+In `lib/voltage_control/CMakeLists.txt`, add after the `controller.c` line:
 
 ```cmake
 zephyr_library_sources_ifdef(CONFIG_VC_CHANNEL_CONTROLLER vc_channel_table.c)
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add include/voltage_control/vc_channel_table.h lib/voltage_control/vc_channel_table.c lib/voltage_control/CMakeLists.txt
-git commit -m "feat: add vc_channel_table static dispatch + measurement buffer type"
+git add include/voltage_control/vc_channel_hw.h \
+  include/voltage_control/vc_channel_table.h \
+  lib/voltage_control/vc_channel_table.c \
+  lib/voltage_control/CMakeLists.txt
+git commit -m "feat: add vc_channel_hw.h, vc_channel_table with measurement buffer"
 ```
 
 ---
 
-### Task 3: Update DTS bindings to child-node composition
+### Task 2: DTS binding migration (atomic)
 
-This is an atomic change — all bindings, DTS files, overlays, and the `VC_MAX_CHANNELS` macro must be updated together for the build to work.
+All bindings, DTS files, overlays, VC_MAX_CHANNELS, and controller.c must change together.
 
 **Files:**
 - Modify: `dts/bindings/voltage_control/jianwei,vc-controller.yaml`
@@ -280,12 +264,10 @@ This is an atomic change — all bindings, DTS files, overlays, and the `VC_MAX_
 - Modify: `boards/jianwei/jw_hvb/jw_hvb.dts`
 - Modify: `include/voltage_control/domain.h` (VC_MAX_CHANNELS)
 - Modify: `lib/voltage_control/controller.c`
-- Modify: All 7 test `boards/native_posix.overlay` files
+- Modify: All 7 test overlay files
 - Delete: `dts/bindings/voltage_control/jianwei,vc-channel-base.yaml`
 
-- [ ] **Step 1: Rewrite vc-controller.yaml with child-binding**
-
-Replace the entire file:
+- [ ] **Step 1: Rewrite vc-controller.yaml**
 
 ```yaml
 # Copyright (c) 2026 Jianwei
@@ -326,9 +308,7 @@ child-binding:
       description: GPIO that gates channel output.
 ```
 
-- [ ] **Step 2: Rewrite hvb-vc-channel.yaml as child binding**
-
-Replace the entire file:
+- [ ] **Step 2: Rewrite hvb-vc-channel.yaml**
 
 ```yaml
 # Copyright (c) 2026 Jianwei
@@ -342,16 +322,16 @@ properties:
   dac:
     type: phandle
     required: true
-    description: Phandle to the DAC device for raw output drive.
+    description: Phandle to the DAC device.
   adc:
     type: phandle
     required: true
-    description: Phandle to the ADC device for voltage/current measurement.
+    description: Phandle to the ADC device.
   max-raw-dac:
     type: int
     required: true
     default: 0xFFFF
-    description: Maximum raw DAC code for this channel.
+    description: Maximum raw DAC code.
   sample-rate-ms:
     type: int
     required: false
@@ -359,9 +339,7 @@ properties:
     description: Target measurement sampling period in milliseconds.
 ```
 
-- [ ] **Step 3: Rewrite vc-channel-stub.yaml as child binding**
-
-Replace the entire file:
+- [ ] **Step 3: Rewrite vc-channel-stub.yaml**
 
 ```yaml
 # Copyright (c) 2026 Jianwei
@@ -372,17 +350,15 @@ description: Stub VC channel for native_posix tests (child of vc-controller)
 compatible: "jianwei,vc-channel-stub"
 ```
 
-The stub now inherits `reg`, `label`, `capabilities` from the controller's child-binding. No extra properties needed.
-
 - [ ] **Step 4: Delete vc-channel-base.yaml**
 
 ```bash
 git rm dts/bindings/voltage_control/jianwei,vc-channel-base.yaml
 ```
 
-- [ ] **Step 5: Update jw_hvb.dts — channels as children of controller**
+- [ ] **Step 5: Update jw_hvb.dts**
 
-Replace the vc_controller section at the bottom of the file (lines 261-293). Remove the old top-level `vc_ch0`, `vc_ch1`, and `vc_controller` nodes and replace with:
+Replace the vc_controller section (lines 261-293) with child-node composition:
 
 ```dts
 / {
@@ -421,23 +397,20 @@ Replace the vc_controller section at the bottom of the file (lines 261-293). Rem
 };
 ```
 
-- [ ] **Step 6: Update VC_MAX_CHANNELS macro in domain.h**
+- [ ] **Step 6: Update VC_MAX_CHANNELS in domain.h**
 
-In `include/voltage_control/domain.h`, change line 14 from:
-
+Change `include/voltage_control/domain.h` line 14 from:
 ```c
 #define VC_MAX_CHANNELS DT_PROP_LEN(DT_NODELABEL(vc_controller), channels)
 ```
-
 to:
-
 ```c
 #define VC_MAX_CHANNELS DT_CHILD_NUM_STATUS_OKAY(DT_NODELABEL(vc_controller))
 ```
 
-- [ ] **Step 7: Update controller.c to use DT_FOREACH_CHILD_STATUS_OKAY**
+- [ ] **Step 7: Update controller.c**
 
-Replace the entire content of `lib/voltage_control/controller.c`:
+Replace entire file:
 
 ```c
 /*
@@ -464,9 +437,9 @@ const struct vc_channel_entry vc_domain_channels[] = {
 const size_t vc_domain_channel_count = ARRAY_SIZE(vc_domain_channels);
 ```
 
-- [ ] **Step 8: Update all 7 test overlays to child-node format**
+- [ ] **Step 8: Update all 7 test overlays**
 
-The new overlay format for all test suites. Create a shared content and apply to each:
+Replace each overlay file with the child-node format:
 
 ```dts
 #include <dt-bindings/voltage_control/capabilities.h>
@@ -497,7 +470,7 @@ The new overlay format for all test suites. Create a shared content and apply to
 };
 ```
 
-Apply this to all 7 overlay files:
+Apply to all 7 files:
 - `tests/voltage_control/domain/boards/native_posix.overlay`
 - `tests/voltage_control/modbus_adapter/boards/native_posix.overlay`
 - `tests/voltage_control/vc/boards/native_posix.overlay`
@@ -506,11 +479,7 @@ Apply this to all 7 overlay files:
 - `tests/voltage_control/vc_channel_state/boards/native_posix.overlay`
 - `tests/voltage_control/vc_controller/boards/native_posix.overlay`
 
-- [ ] **Step 9: Update vc_channel_stub.c to remove channel-index usage**
-
-The stub driver currently uses `DT_INST_PROP(n, channel_index)` — this property no longer exists. The stub is a minimal device that doesn't need any properties beyond what Zephyr provides. The existing stub at `tests/voltage_control/vc/src/vc_channel_stub.c` should still compile since it doesn't reference `channel-index` (it's just a `DEVICE_DT_INST_DEFINE` with NULL api). Verify this.
-
-- [ ] **Step 10: Build and run all existing test suites**
+- [ ] **Step 9: Build and run core test suites**
 
 ```bash
 west build -b native_posix tests/voltage_control/domain -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
@@ -518,37 +487,32 @@ west build -b native_posix tests/voltage_control/vc_channel_state -p && ./build/
 west build -b native_posix tests/voltage_control/vc_controller -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
 ```
 
-Expected: All 141 tests pass (84 + 40 + 17).
+Expected: All 141 tests pass.
 
-- [ ] **Step 11: Commit the atomic DTS change**
+- [ ] **Step 10: Commit**
 
 ```bash
 git rm dts/bindings/voltage_control/jianwei,vc-channel-base.yaml
 git add dts/bindings/voltage_control/ boards/jianwei/jw_hvb/jw_hvb.dts \
   include/voltage_control/domain.h lib/voltage_control/controller.c \
-  tests/voltage_control/*/boards/native_posix.overlay \
-  tests/voltage_control/vc/src/vc_channel_stub.c
-git commit -m "refactor: DTS child-node composition for vc-controller channels
-
-Channels are now children of vc-controller with reg for index and
-label for human-readable name. Delete vc-channel-base.yaml. Update
-all test overlays and VC_MAX_CHANNELS macro."
+  tests/voltage_control/*/boards/native_posix.overlay
+git commit -m "refactor: DTS child-node composition for vc-controller channels"
 ```
 
 ---
 
-### Task 4: Add split-phase API to ADS1232 driver
+### Task 3: Add interrupt-driven mode to ADS1232 driver
 
-The ADS1232 driver currently only supports blocking reads through the Zephyr ADC API. The HVB driver needs non-blocking access to: (1) select ADC channel, (2) get DRDY GPIO spec for interrupt setup, (3) bit-bang read without DRDY wait.
+The ADS1232 driver keeps its existing Zephyr ADC API (`adc_read`) for demo/shell compatibility. We add three new functions for the HVB driver's non-blocking path: select ADC input channel, get DRDY GPIO spec for interrupt setup, and bit-bang read without DRDY wait.
 
 **Files:**
 - Modify: `drivers/sensor/ads1232/ads1232.c`
 
-- [ ] **Step 1: Add public helpers to ads1232.c**
-
-Add these functions after `ads1232_read` and before `ads1232_init`:
+- [ ] **Step 1: Add split-phase functions after ads1232_read and before ads1232_init**
 
 ```c
+/* ---- Split-phase API for interrupt-driven consumers ---- */
+
 int ads1232_select_channel(const struct device *dev, int ch)
 {
 	const struct ads1232_config *cfg = dev->config;
@@ -580,6 +544,7 @@ int ads1232_read_data_now(const struct device *dev, int32_t *out)
 		k_busy_wait(1);
 	}
 
+	/* 25th SCLK to force DRDY/DOUT high */
 	gpio_pin_set_dt(&cfg->sclk, 1);
 	k_busy_wait(1);
 	gpio_pin_set_dt(&cfg->sclk, 0);
@@ -594,37 +559,23 @@ int ads1232_read_data_now(const struct device *dev, int32_t *out)
 }
 ```
 
-These functions are called by the HVB driver from its k_work_poll handler. They don't go through the ADC API — they're direct GPIO operations on the ADS1232's pins.
-
-- [ ] **Step 2: Verify existing domain tests still pass**
-
-```bash
-west build -b native_posix tests/voltage_control/domain -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
-```
-
-Expected: All 84 domain tests pass (the ADS1232 changes don't affect native_posix tests).
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
 git add drivers/sensor/ads1232/ads1232.c
-git commit -m "feat: add split-phase API to ADS1232 — select_channel, get_drdy, read_data_now"
+git commit -m "feat: add ADS1232 split-phase API for interrupt-driven consumers"
 ```
 
 ---
 
-### Task 5: Rewrite HVB VC channel driver with vc_channel_hw_api + k_work_poll
+### Task 4: Rewrite HVB VC channel driver
 
-This is the most complex task — a full rewrite of `hvb_vc_channel.c`. The driver changes from:
-- Old: shared workq + blocking `adc_read()` + `vc_channel_api` (9 functions) + provider bus interaction
-- New: shared workq + k_work_poll on DRDY + `vc_channel_hw_api` (4 functions) + direct measurement buffer write + `vc_controller_consume_*` calls
+Full rewrite: blocking adc_read → k_work_poll on DRDY signal + ads1232_read_data_now. Provider bus dependency removed. Implements vc_channel_hw_api. Writes directly to measurement buffer and calls vc_controller_consume_*.
 
 **Files:**
-- Modify: `drivers/voltage_control/hvb_vc_channel/hvb_vc_channel.c` (full rewrite)
+- Modify: `drivers/voltage_control/hvb_vc_channel/hvb_vc_channel.c`
 
 - [ ] **Step 1: Rewrite hvb_vc_channel.c**
-
-Replace the entire file content:
 
 ```c
 /*
@@ -667,7 +618,6 @@ static void hvb_vc_ensure_workq(void)
 	}
 }
 
-/* Forward declarations for ADS1232 split-phase API */
 extern int ads1232_select_channel(const struct device *dev, int ch);
 extern const struct gpio_dt_spec *ads1232_get_drdy(const struct device *dev);
 extern int ads1232_read_data_now(const struct device *dev, int32_t *out);
@@ -702,8 +652,6 @@ struct hvb_vc_data {
 	bool sampling_active;
 };
 
-/* ---- Hardware API ---- */
-
 static int hvb_vc_set_output(const struct device *dev, uint16_t code)
 {
 	const struct hvb_vc_config *cfg = dev->config;
@@ -721,8 +669,6 @@ static int hvb_vc_set_enable(const struct device *dev, bool enable)
 	return gpio_pin_set_dt(&cfg->enable, enable ? 1 : 0);
 }
 
-/* ---- DRDY interrupt handler ---- */
-
 static void hvb_vc_drdy_isr(const struct device *port, struct gpio_callback *cb,
 			     gpio_port_pins_t pins)
 {
@@ -730,7 +676,6 @@ static void hvb_vc_drdy_isr(const struct device *port, struct gpio_callback *cb,
 
 	ARG_UNUSED(port);
 	ARG_UNUSED(pins);
-
 	k_poll_signal_raise(&data->drdy_signal, 0);
 }
 
@@ -751,39 +696,46 @@ static void hvb_vc_disarm_drdy(struct hvb_vc_data *data)
 	gpio_pin_interrupt_configure_dt(drdy, GPIO_INT_DISABLE);
 }
 
-/* ---- k_work_poll handler: bit-bang + consume ---- */
+static void hvb_vc_start_next_cycle(struct hvb_vc_data *data);
 
 static void hvb_vc_poll_handler(struct k_work *work)
 {
-	struct k_work_poll *poll_work = CONTAINER_OF(work, struct k_work_poll, work);
-	struct hvb_vc_data *data = CONTAINER_OF(poll_work, struct hvb_vc_data, poll_work);
+	struct k_work_poll *pw = CONTAINER_OF(work, struct k_work_poll, work);
+	struct hvb_vc_data *data = CONTAINER_OF(pw, struct hvb_vc_data, poll_work);
 	const struct hvb_vc_config *cfg = data->dev->config;
-	int32_t raw_value;
-	int ret;
+	struct vc_controller *ctrl = vc_channel_table_get_controller();
+	int32_t raw;
 
 	hvb_vc_disarm_drdy(data);
 
 	if (data->poll_work.poll_result != 0) {
-		LOG_WRN("ch%d DRDY timeout (phase=%d)", data->channel, data->adc_phase);
-		vc_controller_consume_fault(NULL, data->channel, VC_FAULT_MEASUREMENT);
+		LOG_WRN("ch%d DRDY timeout phase=%d", data->channel, data->adc_phase);
+		if (ctrl) {
+			vc_controller_consume_fault(ctrl, data->channel,
+						    VC_FAULT_MEASUREMENT);
+		}
 		k_work_schedule_for_queue(&hvb_vc_workq, &data->next_cycle_work,
 					  K_MSEC(cfg->sample_rate_ms));
 		return;
 	}
 
-	ret = ads1232_read_data_now(cfg->adc, &raw_value);
-	if (ret < 0) {
-		LOG_ERR("ch%d read failed: %d", data->channel, ret);
-		vc_controller_consume_fault(NULL, data->channel, VC_FAULT_MEASUREMENT);
+	if (ads1232_read_data_now(cfg->adc, &raw) < 0) {
+		LOG_ERR("ch%d read failed", data->channel);
+		if (ctrl) {
+			vc_controller_consume_fault(ctrl, data->channel,
+						    VC_FAULT_MEASUREMENT);
+		}
 		k_work_schedule_for_queue(&hvb_vc_workq, &data->next_cycle_work,
 					  K_MSEC(cfg->sample_rate_ms));
 		return;
 	}
 
 	if (data->adc_phase == ADC_PHASE_VOLTAGE) {
-		data->meas->raw_voltage = raw_value;
+		data->meas->raw_voltage = raw;
 		data->meas->voltage_timestamp_ms = k_uptime_get_32();
-		vc_controller_consume_voltage(NULL, data->channel, raw_value);
+		if (ctrl) {
+			vc_controller_consume_voltage(ctrl, data->channel, raw);
+		}
 
 		if (cfg->capabilities & CH_CAP_CURRENT_MEASUREMENT) {
 			data->adc_phase = ADC_PHASE_CURRENT;
@@ -800,9 +752,11 @@ static void hvb_vc_poll_handler(struct k_work *work)
 						  K_MSEC(cfg->sample_rate_ms));
 		}
 	} else {
-		data->meas->raw_current = raw_value;
+		data->meas->raw_current = raw;
 		data->meas->current_timestamp_ms = k_uptime_get_32();
-		vc_controller_consume_current(NULL, data->channel, raw_value);
+		if (ctrl) {
+			vc_controller_consume_current(ctrl, data->channel, raw);
+		}
 
 		data->adc_phase = ADC_PHASE_VOLTAGE;
 		k_work_schedule_for_queue(&hvb_vc_workq,
@@ -811,18 +765,21 @@ static void hvb_vc_poll_handler(struct k_work *work)
 	}
 }
 
-/* ---- Next cycle: start a new V+I measurement cycle ---- */
-
 static void hvb_vc_next_cycle_handler(struct k_work *work)
 {
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct hvb_vc_data *data = CONTAINER_OF(dwork, struct hvb_vc_data,
 						next_cycle_work);
-	const struct hvb_vc_config *cfg = data->dev->config;
 
 	if (!data->sampling_active) {
 		return;
 	}
+	hvb_vc_start_next_cycle(data);
+}
+
+static void hvb_vc_start_next_cycle(struct hvb_vc_data *data)
+{
+	const struct hvb_vc_config *cfg = data->dev->config;
 
 	data->adc_phase = ADC_PHASE_VOLTAGE;
 	ads1232_select_channel(cfg->adc, 0);
@@ -832,8 +789,6 @@ static void hvb_vc_next_cycle_handler(struct k_work *work)
 				    &data->drdy_event, 1,
 				    K_MSEC(HVB_VC_DRDY_TIMEOUT_MS));
 }
-
-/* ---- start/stop sampling ---- */
 
 static int hvb_vc_start_sampling(const struct device *dev)
 {
@@ -846,14 +801,8 @@ static int hvb_vc_start_sampling(const struct device *dev)
 	}
 
 	data->sampling_active = true;
-	data->adc_phase = ADC_PHASE_VOLTAGE;
-	ads1232_select_channel(cfg->adc, 0);
-	hvb_vc_arm_drdy(data);
-	return k_work_poll_submit_to_queue(&hvb_vc_workq,
-					   &data->poll_work,
-					   &data->drdy_event, 1,
-					   K_MSEC(HVB_VC_DRDY_TIMEOUT_MS)) < 0
-		? -EIO : 0;
+	hvb_vc_start_next_cycle(data);
+	return 0;
 }
 
 static int hvb_vc_stop_sampling(const struct device *dev)
@@ -867,16 +816,12 @@ static int hvb_vc_stop_sampling(const struct device *dev)
 	return 0;
 }
 
-/* ---- API vtable ---- */
-
 static const struct vc_channel_hw_api hvb_vc_hw_api = {
 	.set_output = hvb_vc_set_output,
 	.set_enable = hvb_vc_set_enable,
 	.start_sampling = hvb_vc_start_sampling,
 	.stop_sampling = hvb_vc_stop_sampling,
 };
-
-/* ---- Device init ---- */
 
 static int hvb_vc_init(const struct device *dev)
 {
@@ -923,13 +868,11 @@ static int hvb_vc_init(const struct device *dev)
 	gpio_init_callback(&data->drdy_cb, hvb_vc_drdy_isr, BIT(drdy->pin));
 	gpio_add_callback(drdy->port, &data->drdy_cb);
 
-	LOG_INF("ch%d ready dac=%s adc=%s caps=0x%04x (k_work_poll)",
+	LOG_INF("ch%d ready dac=%s adc=%s caps=0x%04x",
 		cfg->channel_index,
 		cfg->dac->name, cfg->adc->name, cfg->capabilities);
 	return 0;
 }
-
-/* ---- DTS instantiation ---- */
 
 #define HVB_VC_INIT(n) \
 	static const struct hvb_vc_config hvb_vc_config_##n = { \
@@ -950,125 +893,167 @@ static int hvb_vc_init(const struct device *dev)
 DT_INST_FOREACH_STATUS_OKAY(HVB_VC_INIT)
 ```
 
-Key changes from the old driver:
-- `vc_channel_api` (9 functions) → `vc_channel_hw_api` (4 functions)
-- Blocking `adc_read()` → k_work_poll on DRDY signal + `ads1232_read_data_now()`
-- Provider bus interaction removed — no `vc_provider_bus_*` calls
-- ADC phase state machine (VOLTAGE → CURRENT → schedule next cycle)
-- Direct measurement buffer write + `vc_controller_consume_*` calls
-- STRUCT_SECTION_ITERABLE for provider_binding and measurement_buffer removed (managed by vc_channel_table now)
-- `vc_controller_consume_*` calls pass NULL for the controller pointer — Plan C will wire this to the real controller. For now, these calls will be no-ops or need a stub.
-
-Note: The `vc_controller_consume_*` functions in `vc_controller.c` take a `struct vc_controller *` as the first argument. The HVB driver needs access to the controller singleton. The channel table provides this via `vc_channel_table_init(ctrl)`. The driver accesses it through an extern or a getter. For this task, we'll add a getter to vc_channel_table.
-
-- [ ] **Step 2: Add controller getter to vc_channel_table**
-
-Add to `include/voltage_control/vc_channel_table.h`:
-
-```c
-struct vc_controller *vc_channel_table_get_controller(void);
-```
-
-Add to `lib/voltage_control/vc_channel_table.c`:
-
-```c
-struct vc_controller *vc_channel_table_get_controller(void)
-{
-	return g_ctrl;
-}
-```
-
-Then update the `hvb_vc_poll_handler` and `hvb_vc_next_cycle_handler` to use:
-
-```c
-struct vc_controller *ctrl = vc_channel_table_get_controller();
-```
-
-instead of passing NULL to the `vc_controller_consume_*` calls.
-
-- [ ] **Step 3: Delete legacy vc_channel.h**
+- [ ] **Step 2: Verify native_posix tests still pass** (HVB driver not compiled for native_posix)
 
 ```bash
-git rm include/voltage_control/vc_channel.h
-```
-
-Update any files that include `vc_channel.h` to include `vc_channel_hw.h` instead:
-- `lib/voltage_control/controller.c` — remove the include (it no longer needs the channel API)
-- `lib/voltage_control/provider_bus.c` — still includes it; change to `vc_channel_hw.h` (provider_bus.c uses `vc_channel_api` in `start_all` and `notify_channel`; these functions will be updated in Plan C when provider_bus is deleted. For now, this file will have a build error on hardware targets but still compiles for native_posix tests since provider_bus depends on `CONFIG_VC_PROVIDER_BUS`)
-
-Actually — this is a problem. We can't delete `vc_channel.h` yet because `provider_bus.c` depends on `vc_channel_api` and provider_bus is still used by `domain_runtime.c`. The deletion must happen in Plan C. For now, just ensure the new driver doesn't include it.
-
-- [ ] **Step 4: Verify domain/vc_channel_state/vc_controller tests still pass**
-
-```bash
-west build -b native_posix tests/voltage_control/domain -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
 west build -b native_posix tests/voltage_control/vc_channel_state -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
-west build -b native_posix tests/voltage_control/vc_controller -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
 ```
 
-Expected: All 141 tests pass.
+- [ ] **Step 3: Commit**
+
+```bash
+git add drivers/voltage_control/hvb_vc_channel/hvb_vc_channel.c
+git commit -m "refactor: rewrite HVB driver — k_work_poll + DRDY interrupt + vc_channel_hw_api"
+```
+
+---
+
+### Task 5: Rewrite domain_runtime.c as thin facade
+
+Replace the 500-line runtime with a thin facade that uses vc_controller. No more provider bus, no measurement draining, no config publishing.
+
+**Files:**
+- Modify: `lib/voltage_control/domain_runtime.c`
+
+- [ ] **Step 1: Rewrite domain_runtime.c**
+
+The new runtime keeps: command queue + worker thread + published snapshot cache. It drops: evidence queue, provider bus calls, direct domain_state calls for channel operations.
+
+The `vc_runtime` struct simplifies to hold a `vc_controller *` instead of a `domain *`. All channel operations route through `vc_controller_*` functions. The runtime still owns system config (slave address, baud rate) separately, and delegates channel state entirely to the controller.
+
+Write the full replacement (approximately 250 lines — half the current size). The worker loop becomes:
+
+```
+while (!stop_requested):
+    k_sem_take(&wake, K_MSEC(TICK_INTERVAL_MS))
+    drain command queue → route to vc_controller_*
+    if tick expired: vc_controller_tick(ctrl, dt_ms)
+    publish_snapshot() → copy from vc_controller_get_*_snapshot()
+```
+
+The `vc_runtime_submit_measurement` function is removed — measurements come from the HVB driver directly to vc_controller.
+
+- [ ] **Step 2: Verify domain tests still build** (they use the runtime indirectly via vc.c)
+
+Note: The domain test suite creates a `vc_runtime` which depends on the old runtime. Some domain tests may need updating to use the new API. The modbus adapter tests also depend on the runtime. These tests may need a migration step — if they fail, adapt them to the new runtime interface.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add lib/voltage_control/domain_runtime.c
+git commit -m "refactor: rewrite domain_runtime.c as thin vc_controller facade"
+```
+
+---
+
+### Task 6: Rewrite vc.c — route to vc_controller directly
+
+The CQRS facade (`vc_dispatch`/`vc_query`) routes to `vc_controller_*` instead of constructing `vc_runtime_command` structs and submitting them to the runtime's command queue.
+
+**Files:**
+- Modify: `lib/voltage_control/vc.c`
+- Modify: `include/voltage_control/vc.h` (simplify types — remove `VC_CMD_SUBMIT_MEASUREMENT`, `vc_runtime_command` references)
+
+- [ ] **Step 1: Rewrite vc.c**
+
+The `vc_ctx` now holds a `vc_controller *` and a `vc_runtime *` (for the worker thread lifecycle). `vc_dispatch` calls `vc_controller_*` directly via the runtime's command queue (to maintain thread safety — commands from Modbus must be serialized). `vc_query` reads from the runtime's published snapshot cache.
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add lib/voltage_control/vc.c include/voltage_control/vc.h
+git commit -m "refactor: rewrite vc.c — route dispatch/query to vc_controller"
+```
+
+---
+
+### Task 7: Update modbus_adapter.c
+
+The modbus adapter should work unchanged if `vc_dispatch`/`vc_query` maintain the same external API. Verify and fix any issues.
+
+- [ ] **Step 1: Build and run modbus_adapter tests**
+
+```bash
+west build -b native_posix tests/voltage_control/modbus_adapter -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
+```
+
+- [ ] **Step 2: Fix any issues and commit**
+
+---
+
+### Task 8: Update application main.c
+
+The application `main.c` calls `vc_init()` → `vc_ctx_start()`. The new `vc_init` creates the `vc_controller` + channel table + runtime. `vc_ctx_start` calls `vc_channel_table_start_sampling` for each channel instead of `vc_provider_bus_start_all`.
+
+- [ ] **Step 1: Update main.c if needed** (may work unchanged if vc.c API is stable)
+
+- [ ] **Step 2: Commit**
+
+---
+
+### Task 9: Delete legacy modules
+
+**Files to delete:**
+- `lib/voltage_control/provider_bus.c`
+- `include/voltage_control/provider_bus.h`
+- `include/voltage_control/vc_channel.h`
+- `lib/voltage_control/provider_bus_sections.ld`
+- `tests/voltage_control/provider_bus/` (entire directory)
+
+**Files to update:**
+- `lib/voltage_control/CMakeLists.txt` — remove provider_bus.c, provider_bus_sections.ld
+- `lib/voltage_control/Kconfig` — remove `CONFIG_VC_PROVIDER_BUS`, `CONFIG_VC_PROVIDER_MSGQ_DEPTH`, `CONFIG_VC_RUNTIME_EVIDENCE_QUEUE_DEPTH`
+- `include/voltage_control/runtime.h` — remove `vc_runtime_config_snapshot`, `vc_measurement_snapshot`, `vc_runtime_command` (if no longer needed by the runtime)
+
+- [ ] **Step 1: Delete files**
+
+```bash
+git rm lib/voltage_control/provider_bus.c
+git rm include/voltage_control/provider_bus.h
+git rm include/voltage_control/vc_channel.h
+git rm lib/voltage_control/provider_bus_sections.ld
+git rm -r tests/voltage_control/provider_bus/
+```
+
+- [ ] **Step 2: Update CMakeLists.txt** — remove provider_bus lines
+
+- [ ] **Step 3: Update Kconfig** — remove provider bus config options
+
+- [ ] **Step 4: Clean up runtime.h** — remove types that are no longer used
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add drivers/voltage_control/hvb_vc_channel/hvb_vc_channel.c \
-  drivers/sensor/ads1232/ads1232.c \
-  include/voltage_control/vc_channel_table.h \
-  lib/voltage_control/vc_channel_table.c
-git commit -m "refactor: rewrite HVB driver with k_work_poll + vc_channel_hw_api
-
-Replace blocking adc_read() with DRDY interrupt + k_work_poll.
-ADC phase state machine (voltage → current → next cycle).
-Direct measurement buffer write + vc_controller_consume_* calls.
-4-function vc_channel_hw_api replaces 9-function vc_channel_api.
-Shared workq occupied ~60µs per read instead of ~400ms."
-```
-
----
-
-### Task 6: Verify full build on hardware target (jw_hvb)
-
-This task verifies that the firmware builds for the actual hardware target, not just native_posix.
-
-- [ ] **Step 1: Build for jw_hvb**
-
-```bash
-west build -b jw_hvb applications/hvb_controller -p 2>&1 | tail -10
-```
-
-This may fail because the application main.c still uses the old provider bus and vc.c wiring. Build errors are expected for the application — but the drivers, lib, and DTS should compile cleanly. If there are DTS or driver-level errors, fix them.
-
-- [ ] **Step 2: Note any build issues for Plan C**
-
-Record any link errors or missing symbol errors that are caused by the old wiring in `domain_runtime.c`, `vc.c`, or `main.c`. These are Plan C's responsibility to fix.
-
-- [ ] **Step 3: Commit any fixes**
-
-```bash
 git add -u
-git commit -m "fix: resolve hardware build issues from Plan B changes"
+git commit -m "refactor: delete provider bus, legacy vc_channel_api, and unused runtime types"
 ```
 
 ---
 
-### Task 7: Run all native_posix test suites (final verification)
+### Task 10: Full build and test verification
 
-- [ ] **Step 1: Run all 5 test suites that should still pass**
-
-```bash
-west build -b native_posix tests/voltage_control/domain -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
-west build -b native_posix tests/voltage_control/vc_channel_state -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
-west build -b native_posix tests/voltage_control/vc_controller -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
-west build -b native_posix tests/voltage_control/vc -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
-west build -b native_posix tests/voltage_control/modbus_adapter -p && ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
-```
-
-Expected: All test suites pass. The provider_bus and runtime test suites may have issues due to the DTS overlay changes — fix any that arise.
-
-- [ ] **Step 2: Verify commit history**
+- [ ] **Step 1: Run all native_posix test suites**
 
 ```bash
-git log --oneline -10
+for t in domain vc_channel_state vc_controller vc modbus_adapter runtime; do
+  echo "=== $t ==="
+  west build -b native_posix tests/voltage_control/$t -p 2>&1 | tail -2
+  ./build/zephyr/zephyr.exe 2>&1 | grep -E "SUITE|PROJECT"
+done
 ```
 
-Verify the commit progression shows: hw API header → channel table → DTS bindings (atomic) → ADS1232 split-phase → HVB driver rewrite → hw build check → final verification.
+Note: `runtime` and `provider_bus` test suites may no longer exist or may need updating. Skip any that were deleted.
+
+- [ ] **Step 2: Build for hardware target**
+
+```bash
+west build -b jw_hvb applications/hvb_controller -p 2>&1 | tail -5
+```
+
+- [ ] **Step 3: Final commit log**
+
+```bash
+git log --oneline -15
+```
+
+Verify clean progression: headers → DTS → ADS1232 → HVB driver → runtime → vc.c → modbus → main → delete legacy → verify.
