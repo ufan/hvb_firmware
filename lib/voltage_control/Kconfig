@@ -18,7 +18,6 @@ config VC_CHANNEL_CONTROLLER
 config VC_RUNTIME
 	bool "VC runtime service"
 	select SMF
-	select VC_PROVIDER_BUS
 	help
 	  Enable the voltage-control runtime service.
 
@@ -29,14 +28,6 @@ config VC_RUNTIME_COMMAND_QUEUE_DEPTH
 	depends on VC_RUNTIME
 	help
 	  Maximum number of queued runtime commands.
-
-config VC_RUNTIME_EVIDENCE_QUEUE_DEPTH
-	int "VC runtime evidence queue depth"
-	default 4
-	range 1 64
-	depends on VC_RUNTIME
-	help
-	  Maximum number of queued runtime evidence records.
 
 config VC_RUNTIME_THREAD_STACK_SIZE
 	int "VC runtime worker stack size"
@@ -61,29 +52,6 @@ config VC_RUNTIME_TICK_INTERVAL_MS
 	depends on VC_RUNTIME
 	help
 	  Runtime policy tick interval in milliseconds.
-
-config VC_PROVIDER_BUS
-	bool "VC static provider bus"
-	help
-	  Enable the static provider bus used between the domain runtime and
-	  virtual channel providers.
-
-config VC_PROVIDER_MSGQ_DEPTH
-	int "VC provider message queue depth"
-	default 8
-	range 1 64
-	depends on VC_PROVIDER_BUS
-	help
-	  Maximum number of queued runtime-to-provider notifications.
-
-config VC_MEASUREMENT_STALE_TIMEOUT_MS
-	int "Measurement staleness timeout in milliseconds"
-	default 5000
-	depends on VC_PROVIDER_BUS
-	help
-	  Time after the last measurement arrival before the channel
-	  is flagged stale. Only applies to channels with voltage or
-	  current measurement capability.
 
 config VC_SETTINGS_PERSISTENCE
 	bool "VC settings persistence via NVS"
