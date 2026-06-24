@@ -61,12 +61,17 @@ One channel's voltage measurement wakes the global runtime worker, which checks 
 
 ### Responsibility Separation
 
-**Virtual Channel** (`vc_channel_state.c`) — per-channel, independent:
+**Virtual Channel** (`vc_channel_state.c`) — per-channel, independent, **single arbiter**:
 - Owns its SMF state machine (disabled_safe, enabled_holding, ramping, fault_latched, retry_cooldown, calibration_output)
 - Owns its config (target voltage, ramp settings, protection settings, calibration coefficients)
 - Owns its runtime state (output_enabled, ramp_accum, cooldown, measured values, faults, status bits)
 - Owns its engines: ramp engine, protection engine, recovery engine, status engine
-- Consumes measurements and produces **decisions** (output commands + state transitions)
+- **Single arbiter of state transitions** from three input sources:
+  1. Frontend commands (output action, config change, fault clear) — via voltage controller from runtime worker
+  2. Measurement updates (triggers protection policy) — via voltage controller from shared workq
+  3. Periodic ramp and recovery — via voltage controller from runtime worker tick
+- All three inputs are serialized through a per-channel `k_spinlock` (~10µs critical section, disables interrupts on Cortex-M4) so the state machine sees a consistent view regardless of which thread calls in
+- Produces **decisions** (pending output commands + state transitions)
 - Does NOT execute hardware writes directly
 
 **Voltage Controller** (`vc_controller.c`) — thin wrapper/manager:
@@ -155,23 +160,24 @@ For HVB, the drain happens immediately after the virtual channel call returns (s
 
 ```c
 struct vc_channel {
+    struct k_spinlock lock;        /* single arbiter serialization */
     struct smf_ctx smf;
     uint8_t index;
     uint16_t capabilities;
 
-    /* Config (written by command path) */
+    /* Config */
     struct vc_channel_config config;
 
-    /* Runtime state (written by engines) */
+    /* Runtime state */
     bool output_enabled;
     bool ramping;
     uint32_t ramp_accum_ms;
     uint32_t cooldown_remaining_ms;
+    int16_t operational_target_voltage;
 
-    /* Measurement state (written by measurement path) */
+    /* Measurement state */
     int16_t measured_voltage;
     int16_t measured_current;
-    int16_t operational_target_voltage;
 
     /* Fault state */
     uint16_t active_fault_cause;
@@ -192,7 +198,7 @@ struct vc_channel {
 };
 ```
 
-This is the current `vc_channel_snapshot` + `vc_channel_runtime` + `vc_channel_config` + per-channel SMF context, pulled out of the domain struct's parallel arrays into a single self-contained struct.
+All fields are behind the per-channel `k_spinlock`. Every public function on `vc_channel` acquires the lock on entry and releases on exit. This is the current `vc_channel_snapshot` + `vc_channel_runtime` + `vc_channel_config` + per-channel SMF context, pulled out of the domain's parallel arrays into a single self-contained arbiter.
 
 ### API
 
@@ -348,7 +354,7 @@ int vc_channel_table_set_enable(uint8_t ch, bool enable);
 int vc_channel_table_start_sampling(uint8_t ch);
 int vc_channel_table_stop_sampling(uint8_t ch);
 
-const struct vc_measurement_snapshot *vc_channel_table_get_measurement(uint8_t ch);
+const struct vc_measurement_buffer_entry *vc_channel_table_get_measurement(uint8_t ch);
 size_t vc_channel_table_count(void);
 uint16_t vc_channel_table_capabilities(uint8_t ch);
 const struct vc_channel_entry *vc_channel_table_get(uint8_t ch);
@@ -366,28 +372,16 @@ The voltage controller is a singleton, same as today's domain. The channel table
 
 ```c
 struct vc_measurement_buffer_entry {
-    struct vc_measurement_snapshot snapshot;
-};
-```
-
-No mutex. The driver writes directly; adapters read directly. On a 32-bit MCU with aligned fields, a torn read has no safety consequence.
-
-### Snapshot Fields
-
-```c
-struct vc_measurement_snapshot {
-    uint8_t channel;
-    uint16_t present_mask;
     int32_t raw_voltage;
     uint32_t voltage_timestamp_ms;
     int32_t raw_current;
     uint32_t current_timestamp_ms;
-    uint16_t provider_status;
-    uint16_t provider_fault_cause;
 };
 ```
 
-Each ADC read updates its own value and timestamp independently. The `present_mask` indicates which field was just updated.
+This is bare storage for the monitoring/query path only. No `channel` (implicit from buffer index), no `present_mask` (the consumption functions `consume_voltage`/`consume_current` already know the measurement type), no `provider_status` or `provider_fault_cause` (faults go directly through `consume_fault` to the virtual channel arbiter).
+
+Each ADC read updates its own value and timestamp independently. The driver writes one field pair at a time; the query path reads whatever is current.
 
 ## Interrupt-Driven ADC Sampling (HVB Variant)
 
@@ -397,7 +391,7 @@ Each ADC read updates its own value and timestamp independently. The `present_ma
 struct hvb_vc_data {
     const struct device *dev;
     uint8_t channel;
-    struct vc_measurement_buffer_entry *meas;
+    struct vc_measurement_buffer_entry *meas;  /* direct write to monitoring buffer */
 
     /* k_work_poll for non-blocking DRDY wait */
     struct k_work_poll poll_work;
@@ -428,9 +422,11 @@ DRDY ISR:
 
 k_work_poll handler fires (adc_phase == ADC_PHASE_VOLTAGE):
   └→ bit-bang 24 bits (~50µs) → raw_voltage
-  └→ write raw_voltage + voltage_timestamp to meas->snapshot
+  └→ write raw_voltage + voltage_timestamp to meas buffer
   └→ vc_controller_consume_voltage(ctrl, ch, raw_voltage)
-       └→ vc_channel_consume_voltage() → calibration + protection decision
+       └→ vc_channel_consume_voltage() [under spinlock]
+            → calibration scaling
+            → voltage protection check → state transition + pending command if fault
        └→ drain pending command → vc_channel_table_set_output/set_enable
   └→ adc_phase = ADC_PHASE_CURRENT
   └→ select A0 for current input
@@ -440,9 +436,11 @@ DRDY ISR: (same)
 
 k_work_poll handler fires (adc_phase == ADC_PHASE_CURRENT):
   └→ bit-bang 24 bits (~50µs) → raw_current
-  └→ write raw_current + current_timestamp to meas->snapshot
+  └→ write raw_current + current_timestamp to meas buffer
   └→ vc_controller_consume_current(ctrl, ch, raw_current)
-       └→ vc_channel_consume_current() → calibration + protection decision
+       └→ vc_channel_consume_current() [under spinlock]
+            → calibration scaling
+            → current protection check → state transition + pending command if fault
        └→ drain pending command → vc_channel_table_set_output/set_enable
   └→ adc_phase = ADC_PHASE_VOLTAGE
   └→ schedule next_cycle_work after sample_rate_ms
@@ -505,15 +503,16 @@ vc_runtime_worker:
 
 Measurement processing is absent from this loop. It happens inline in the k_work_poll handlers via `vc_controller_consume_*`.
 
-### Lock-Free Design
+### Single-Arbiter Concurrency
 
-Two threads mutate virtual channel state:
-- **Shared workq thread**: measurement path → `vc_channel_consume_voltage/current` → writes measured values, fault bits, status bits, may produce pending command
-- **Runtime worker thread**: command path → `vc_channel_set_config/output_action` → writes config, ramp state; ramp tick → writes operational_target, may produce pending command
+The virtual channel state machine is the **single arbiter** of all state transitions. Three input sources call into it from two threads:
 
-These paths touch different fields. The one shared field is `operational_target_voltage` (ramp writes, protection reads). A `volatile int16_t` with aligned access is sufficient on Cortex-M4.
+- **Shared workq thread**: measurement path → `vc_channel_consume_voltage/current/fault`
+- **Runtime worker thread**: command path → `vc_channel_output_action/set_field/set_config`; ramp tick → `vc_channel_tick_ramp`
 
-Both paths may produce pending hardware commands (protection → disable output; ramp → update output code). The pending command struct uses an atomic flag so only one path drains at a time. In practice, protection commands take priority — if a fault disables output, the next ramp tick sees `output_enabled == false` and skips.
+All virtual channel functions acquire a per-channel `k_spinlock` on entry and release on exit. On Cortex-M4, `k_spinlock` disables interrupts (~10µs critical section for calibration arithmetic + protection check). This guarantees the state machine sees a consistent view — no field-level reasoning about which thread writes what.
+
+The spinlock also serializes pending command production. Only one pending command exists at a time per channel. If protection produces a "disable output" command while a ramp "update output" is pending, the protection command overwrites it — correct behavior since the channel is now faulted and the ramp output is no longer valid.
 
 ## What Gets Deleted
 
@@ -569,6 +568,6 @@ No changes to any DTS bindings. The `drdy-gpios` property already exists in `ti,
 ## Migration Notes
 
 - `vc_channel_api` is deleted entirely, not wrapped. All drivers must implement `vc_channel_hw_api`.
-- The `vc_measurement_snapshot` struct gains per-field timestamps.
+- The `vc_measurement_snapshot` struct is deleted. Replaced by `vc_measurement_buffer_entry` with bare raw values + timestamps for the monitoring path only.
 - Calibration mode: `domain_calibration_set_raw_dac` becomes `vc_channel_cal_set_raw_dac` on the virtual channel, with the voltage controller draining the pending command to `vc_channel_table_set_output`.
 - The `struct domain` shrinks to system-level state only. `vc_controller` owns channel state.
