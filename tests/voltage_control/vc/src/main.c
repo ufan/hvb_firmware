@@ -108,32 +108,10 @@ ZTEST(vc_api, test_dispatch_calibration)
 		    K_SECONDS(1));
 }
 
-ZTEST(vc_api, test_dispatch_measurement)
-{
-	struct vc_measurement_snapshot meas = {
-		.channel = 0,
-		.generation = 1,
-		.timestamp_ms = 10,
-		.present_mask = VC_MEAS_PRESENT_VOLTAGE,
-		.raw_voltage = 77,
-	};
-
-	zassert_equal(vc_dispatch(ctx, vc_cmd_measurement(&meas),
-				  K_NO_WAIT), VC_OK);
-}
-
 ZTEST(vc_api, test_query_system_snapshot)
 {
 	struct vc_system_snapshot snap;
 
 	zassert_equal(vc_query(ctx, vc_q_system_snapshot(&snap)), VC_OK);
 	zassert_equal(snap.supported_channel_count, 2);
-}
-
-ZTEST(vc_api, test_query_runtime_config)
-{
-	struct vc_runtime_config_snapshot cfg;
-
-	zassert_equal(vc_query(ctx, vc_q_runtime_config(0, &cfg)), VC_OK);
-	zassert_equal(cfg.channel, 0);
 }

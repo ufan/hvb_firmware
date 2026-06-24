@@ -5,7 +5,7 @@
  */
 
 #include "voltage_control/vc.h"
-#include "voltage_control/provider_bus.h"
+#include "voltage_control/vc_channel_table.h"
 
 extern const struct vc_channel_entry vc_domain_channels[];
 extern const size_t vc_domain_channel_count;
@@ -32,13 +32,24 @@ struct vc_ctx *vc_init(void)
 
 enum vc_status vc_ctx_start(struct vc_ctx *ctx)
 {
+	size_t count;
+
 	if (ctx == NULL) {
 		return VC_ERR_INVALID_VALUE;
 	}
-	return vc_provider_bus_start_all();
+
+	count = vc_channel_table_count();
+	for (size_t i = 0; i < count; i++) {
+		int ret = vc_channel_table_start_sampling((uint8_t)i);
+
+		if (ret < 0 && ret != -ENOTSUP) {
+			return VC_ERR_UNSAFE_STATE;
+		}
+	}
+
+	return VC_OK;
 }
 
-/* Translate a vc_cal_command into a vc_runtime_command and submit to the runtime. */
 static enum vc_status dispatch_calibration(struct vc_runtime *rt,
 					   const struct vc_cal_command *cal,
 					   k_timeout_t timeout)
@@ -127,8 +138,8 @@ enum vc_status vc_dispatch(struct vc_ctx *ctx, struct vc_cmd cmd,
 		return vc_runtime_submit_command(ctx->runtime, &rtcmd, timeout);
 
 	case VC_CMD_SUBMIT_MEASUREMENT:
-		return vc_runtime_submit_measurement(ctx->runtime,
-						     &cmd.measurement);
+		return VC_ERR_INVALID_COMMAND;
+
 	default:
 		return VC_ERR_INVALID_COMMAND;
 	}
@@ -158,8 +169,7 @@ enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query q)
 			ctx->runtime, q.channel, q.out.channel_config);
 
 	case VC_QUERY_RUNTIME_CONFIG:
-		return vc_runtime_get_channel_config(
-			ctx->runtime, q.channel, q.out.runtime_config);
+		return VC_ERR_INVALID_COMMAND;
 
 	default:
 		return VC_ERR_INVALID_COMMAND;

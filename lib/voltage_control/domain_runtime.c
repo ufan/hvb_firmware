@@ -10,7 +10,8 @@
 #include <zephyr/kernel.h>
 
 #include "voltage_control/runtime.h"
-#include "voltage_control/provider_bus.h"
+#include "voltage_control/vc_controller.h"
+#include "voltage_control/vc_channel_table.h"
 #include "voltage_control/vc_storage.h"
 #include <dt-bindings/voltage_control/capabilities.h>
 
@@ -24,10 +25,6 @@ struct vc_runtime_work_item {
 	struct vc_runtime_command command;
 };
 
-struct vc_runtime_evidence_item {
-	struct vc_measurement_snapshot measurement;
-};
-
 struct vc_published_snapshot {
 	struct vc_system_snapshot system;
 	struct vc_channel_snapshot channels[VC_MAX_CHANNELS];
@@ -36,145 +33,103 @@ struct vc_published_snapshot {
 };
 
 struct vc_runtime {
-	struct domain *domain;
+	struct vc_controller *ctrl;
 	struct k_mutex lock;
 	struct k_msgq command_queue;
-	struct k_msgq evidence_queue;
 	struct k_sem wake;
 	struct k_thread thread;
-	bool heap_allocated;
 	bool stop_requested;
 	struct vc_published_snapshot published;
 	struct k_mutex snapshot_lock;
-	char command_buffer[CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH * sizeof(struct vc_runtime_work_item)];
-	char evidence_buffer[CONFIG_VC_RUNTIME_EVIDENCE_QUEUE_DEPTH * sizeof(struct vc_runtime_evidence_item)];
+	char command_buffer[CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH *
+			    sizeof(struct vc_runtime_work_item)];
 };
 
-/* Dispatch a runtime command to the appropriate domain function by command type. */
 static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 						  const struct vc_runtime_command *cmd)
 {
+	struct vc_controller *ctrl = runtime->ctrl;
+
 	switch (cmd->type) {
 	case VC_RUNTIME_CMD_SET_OPERATING_MODE:
-		return domain_set_operating_mode(runtime->domain, cmd->payload.operating_mode);
+		return vc_controller_set_operating_mode(ctrl,
+							cmd->payload.operating_mode);
 	case VC_RUNTIME_CMD_OUTPUT_ACTION:
-		return domain_channel_output_action(runtime->domain, cmd->channel,
-						    cmd->payload.output_action);
+		return vc_controller_channel_output_action(ctrl, cmd->channel,
+							   cmd->payload.output_action);
 	case VC_RUNTIME_CMD_FAULT_COMMAND:
-		return domain_channel_fault_command(runtime->domain, cmd->channel,
-						    cmd->payload.fault_command);
+		return vc_controller_channel_fault_command(ctrl, cmd->channel,
+							   cmd->payload.fault_command);
 	case VC_RUNTIME_CMD_CALIBRATION_UNLOCK:
-		return domain_calibration_unlock(runtime->domain,
-						 cmd->payload.calibration_unlock_value);
+		return vc_controller_calibration_unlock(ctrl,
+						       cmd->payload.calibration_unlock_value);
 	case VC_RUNTIME_CMD_CALIBRATION_OUTPUT_ENABLE:
-		return domain_calibration_set_output_enable(runtime->domain, cmd->channel,
-							    cmd->payload.calibration_output_enable);
+		return vc_controller_channel_cal_output_enable(ctrl, cmd->channel,
+							      cmd->payload.calibration_output_enable);
 	case VC_RUNTIME_CMD_CALIBRATION_RAW_DAC:
-		return domain_calibration_set_raw_dac(runtime->domain, cmd->channel,
-						      cmd->payload.calibration_raw_dac);
+		return vc_controller_channel_cal_raw_dac(ctrl, cmd->channel,
+							 cmd->payload.calibration_raw_dac);
 	case VC_RUNTIME_CMD_CALIBRATION_SAMPLE:
-		return domain_calibration_sample(runtime->domain, cmd->channel);
+		return vc_controller_channel_cal_sample(ctrl, cmd->channel);
 	case VC_RUNTIME_CMD_CALIBRATION_COMMIT:
-		return domain_calibration_commit(runtime->domain, cmd->channel);
+		return vc_controller_channel_cal_commit(ctrl, cmd->channel);
 	case VC_RUNTIME_CMD_CALIBRATION_MAX_RAW_DAC:
-		return domain_calibration_set_max_raw_dac(runtime->domain, cmd->channel,
-							 cmd->payload.calibration_max_raw_dac);
+		return vc_controller_channel_cal_max_raw_dac(ctrl, cmd->channel,
+							    cmd->payload.calibration_max_raw_dac);
 	case VC_RUNTIME_CMD_SYSTEM_PARAM_ACTION:
-		return domain_system_param_action(runtime->domain, cmd->payload.param_action);
+		return vc_controller_system_param_action(ctrl,
+							 cmd->payload.param_action);
 	case VC_RUNTIME_CMD_CHANNEL_PARAM_ACTION:
-		return domain_channel_param_action(runtime->domain, cmd->channel,
-						   cmd->payload.param_action);
+		return vc_controller_channel_param_action(ctrl, cmd->channel,
+							  cmd->payload.param_action);
 	case VC_RUNTIME_CMD_SET_SYSTEM_FIELD:
-		return domain_set_system_field(runtime->domain,
-					       cmd->payload.field_write.field,
-					       cmd->payload.field_write.value);
+		return vc_controller_set_system_field(ctrl,
+						     cmd->payload.field_write.field,
+						     cmd->payload.field_write.value);
 	case VC_RUNTIME_CMD_SET_CHANNEL_FIELD:
-		return domain_set_channel_field(runtime->domain, cmd->channel,
-						cmd->payload.field_write.field,
-						cmd->payload.field_write.value);
+		return vc_controller_channel_set_field(ctrl, cmd->channel,
+						      cmd->payload.field_write.field,
+						      cmd->payload.field_write.value);
 	default:
 		return VC_ERR_INVALID_COMMAND;
 	}
 }
 
-/* Refresh the published snapshot cache: run periodic tick, copy snapshots, check stale measurements. */
 static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 {
-	uint16_t count = domain_get_supported_channel_count(runtime->domain);
-	uint32_t now_ms = k_uptime_get_32();
+	struct vc_controller *ctrl = runtime->ctrl;
+	size_t count = vc_controller_channel_count(ctrl);
 
-	k_mutex_lock(&runtime->lock, K_FOREVER);
-	domain_process_periodic(runtime->domain, 0);
 	k_mutex_lock(&runtime->snapshot_lock, K_FOREVER);
-	domain_get_system_snapshot(runtime->domain, &runtime->published.system);
-	domain_get_system_config(runtime->domain, &runtime->published.sys_config);
+	vc_controller_get_system_snapshot(ctrl, &runtime->published.system);
+	vc_controller_get_system_config(ctrl, &runtime->published.sys_config);
 	for (uint8_t ch = 0; ch < count; ch++) {
-		domain_get_channel_snapshot(runtime->domain, ch,
-					   &runtime->published.channels[ch]);
-		domain_get_channel_config(runtime->domain, ch,
-					  &runtime->published.configs[ch]);
-
-		struct vc_channel_snapshot *snap = &runtime->published.channels[ch];
-		uint16_t caps = snap->channel_capability_flags;
-		bool has_meas = (caps & CH_CAP_VOLTAGE_MEASUREMENT) ||
-				(caps & CH_CAP_CURRENT_MEASUREMENT);
-
-		if (has_meas) {
-			struct vc_measurement_snapshot meas;
-
-			if (vc_measurement_buffer_read(ch, &meas) == VC_OK &&
-			    meas.timestamp_ms != 0) {
-				uint32_t elapsed = now_ms - meas.timestamp_ms;
-
-				if (elapsed >= CONFIG_VC_MEASUREMENT_STALE_TIMEOUT_MS) {
-					snap->fault_history_cause |= VC_FAULT_STALE;
-					snap->active_fault_cause |= VC_FAULT_STALE;
-					snap->status_bits |= 0x0040;
-				}
-			}
-		}
+		vc_controller_get_channel_snapshot(ctrl, ch,
+						   &runtime->published.channels[ch]);
+		vc_controller_get_channel_config(ctrl, ch,
+						 &runtime->published.configs[ch]);
 	}
 	runtime->published.system.uptime = (uint32_t)(k_uptime_get() / 1000);
 	k_mutex_unlock(&runtime->snapshot_lock);
-	k_mutex_unlock(&runtime->lock);
 }
 
-/* Push updated runtime configs for all channels to the provider bus. */
-static void vc_runtime_publish_all_configs(struct vc_runtime *runtime)
-{
-	uint16_t count = domain_get_supported_channel_count(runtime->domain);
-
-	for (uint8_t ch = 0; ch < count; ch++) {
-		struct vc_runtime_config_snapshot cfg;
-
-		if (domain_get_runtime_config(runtime->domain, ch, &cfg) == VC_OK) {
-			(void)vc_provider_bus_publish_config(ch, &cfg);
-			(void)vc_provider_bus_dispatch_one(K_NO_WAIT);
-		}
-	}
-}
-
-/* Main runtime worker thread: processes commands, measurements, and periodic ticks. */
 static void vc_runtime_worker(void *p1, void *p2, void *p3)
 {
 	struct vc_runtime *runtime = p1;
 	struct vc_runtime_work_item work;
-	struct vc_runtime_evidence_item evidence;
 	int wake_ret;
 
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
 	while (!runtime->stop_requested) {
-		wake_ret = k_sem_take(&runtime->wake, K_MSEC(CONFIG_VC_RUNTIME_TICK_INTERVAL_MS));
+		wake_ret = k_sem_take(&runtime->wake,
+				      K_MSEC(CONFIG_VC_RUNTIME_TICK_INTERVAL_MS));
 
 		while (k_msgq_get(&runtime->command_queue, &work, K_NO_WAIT) == 0) {
 			enum vc_status result;
 
-			k_mutex_lock(&runtime->lock, K_FOREVER);
 			result = vc_runtime_dispatch_command(runtime, &work.command);
-			vc_runtime_publish_all_configs(runtime);
-			k_mutex_unlock(&runtime->lock);
 
 			if (work.command.result != NULL) {
 				*work.command.result = result;
@@ -184,146 +139,74 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 			}
 		}
 
-		while (vc_provider_bus_take_measurement(&evidence.measurement) == VC_OK) {
-			(void)vc_measurement_buffer_store(evidence.measurement.channel,
-							  &evidence.measurement);
-			k_mutex_lock(&runtime->lock, K_FOREVER);
-			(void)domain_consume_measurement(runtime->domain, &evidence.measurement);
-			vc_runtime_publish_all_configs(runtime);
-			k_mutex_unlock(&runtime->lock);
-		}
-
 		if (wake_ret == -EAGAIN) {
-			k_mutex_lock(&runtime->lock, K_FOREVER);
-			domain_process_periodic(runtime->domain,
-						CONFIG_VC_RUNTIME_TICK_INTERVAL_MS);
-			vc_runtime_publish_all_configs(runtime);
-			k_mutex_unlock(&runtime->lock);
+			vc_controller_tick(runtime->ctrl,
+					   CONFIG_VC_RUNTIME_TICK_INTERVAL_MS);
 		}
 
 		vc_runtime_publish_snapshot(runtime);
 	}
 }
 
-/* Auto-load persisted system/channel/calibration config from settings at startup. */
 static void vc_runtime_auto_load(struct vc_runtime *runtime)
 {
 #ifdef CONFIG_VC_SETTINGS_PERSISTENCE
-	struct domain *d = runtime->domain;
-	uint16_t count = domain_get_supported_channel_count(d);
-	struct vc_system_config sys_cfg;
+	struct vc_controller *ctrl = runtime->ctrl;
 
-	domain_set_storage_backend(d, &vc_settings_storage);
+	vc_controller_set_storage_backend(ctrl, &vc_settings_storage);
 	settings_subsys_init();
 
-	if (vc_settings_storage.load_system_config(&sys_cfg) == 0) {
-		(void)domain_set_system_config(d, &sys_cfg);
-	}
+	(void)vc_controller_system_param_action(ctrl, VC_PARAM_ACTION_LOAD);
+
+	size_t count = vc_controller_channel_count(ctrl);
 
 	for (uint8_t ch = 0; ch < count; ch++) {
-		struct vc_channel_config ch_cfg;
-
-		domain_get_channel_config(d, ch, &ch_cfg);
-
-		struct vc_channel_config loaded = ch_cfg;
-
-		if (vc_settings_storage.load_channel_config(ch, &loaded) == 0) {
-			loaded.output_calib_k = ch_cfg.output_calib_k;
-			loaded.output_calib_b = ch_cfg.output_calib_b;
-			loaded.measured_voltage_calib_k = ch_cfg.measured_voltage_calib_k;
-			loaded.measured_voltage_calib_b = ch_cfg.measured_voltage_calib_b;
-			loaded.measured_current_calib_k = ch_cfg.measured_current_calib_k;
-			loaded.measured_current_calib_b = ch_cfg.measured_current_calib_b;
-			(void)domain_set_channel_config(d, ch, &loaded);
-		}
-
-		domain_get_channel_config(d, ch, &ch_cfg);
-		if (vc_settings_storage.load_channel_cal(ch, &ch_cfg) == 0) {
-			(void)domain_set_channel_config(d, ch, &ch_cfg);
-		}
+		(void)vc_controller_channel_param_action(ctrl, ch,
+							 VC_PARAM_ACTION_LOAD);
 	}
 #else
 	ARG_UNUSED(runtime);
 #endif
 }
 
-/* Initialize runtime: mutexes, queues, provider bus, auto-load, start worker thread. */
-static struct vc_runtime *vc_runtime_init(struct vc_runtime *runtime,
-					 struct domain *domain,
-					 bool heap_allocated)
-{
-	if (runtime == NULL || domain == NULL) {
-		return NULL;
-	}
-
-	memset(runtime, 0, sizeof(*runtime));
-	runtime->domain = domain;
-	runtime->heap_allocated = heap_allocated;
-	runtime->stop_requested = false;
-	k_mutex_init(&runtime->lock);
-	k_mutex_init(&runtime->snapshot_lock);
-	k_sem_init(&runtime->wake, 0, 1);
-	vc_provider_bus_init();
-	vc_runtime_auto_load(runtime);
-	vc_runtime_publish_all_configs(runtime);
-	vc_runtime_publish_snapshot(runtime);
-	k_msgq_init(&runtime->command_queue, runtime->command_buffer,
-		    sizeof(struct vc_runtime_work_item), CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH);
-	k_msgq_init(&runtime->evidence_queue, runtime->evidence_buffer,
-		    sizeof(struct vc_runtime_evidence_item), CONFIG_VC_RUNTIME_EVIDENCE_QUEUE_DEPTH);
-	(void)k_thread_create(&runtime->thread, vc_runtime_stack,
-			       K_KERNEL_STACK_SIZEOF(vc_runtime_stack),
-			       vc_runtime_worker, runtime, NULL, NULL,
-			       CONFIG_VC_RUNTIME_THREAD_PRIORITY, 0, K_NO_WAIT);
-
-	return runtime;
-}
-
-/* Heap-allocate a runtime and initialize it. */
-static struct vc_runtime *vc_runtime_create_heap(struct domain *domain)
-{
-	struct vc_runtime *runtime;
-
-	if (domain == NULL) {
-		return NULL;
-	}
-
-	runtime = malloc(sizeof(*runtime));
-	if (runtime == NULL) {
-		return NULL;
-	}
-
-	return vc_runtime_init(runtime, domain, true);
-}
-
-/* Statically allocate a runtime (single-instance) and initialize it. */
-static struct vc_runtime *vc_runtime_create_local_static(struct domain *domain)
+struct vc_runtime *vc_domain_runtime_create_static(
+	const struct vc_channel_entry *channels, size_t count)
 {
 	static struct vc_runtime runtime;
+	struct vc_controller *ctrl;
 
-	return vc_runtime_init(&runtime, domain, false);
+	ctrl = vc_controller_init_static(channels, count);
+	if (ctrl == NULL) {
+		return NULL;
+	}
+
+	memset(&runtime, 0, sizeof(runtime));
+	runtime.ctrl = ctrl;
+	runtime.stop_requested = false;
+	k_mutex_init(&runtime.lock);
+	k_mutex_init(&runtime.snapshot_lock);
+	k_sem_init(&runtime.wake, 0, 1);
+
+	vc_channel_table_init(ctrl);
+	vc_runtime_auto_load(&runtime);
+	vc_runtime_publish_snapshot(&runtime);
+
+	k_msgq_init(&runtime.command_queue, runtime.command_buffer,
+		     sizeof(struct vc_runtime_work_item),
+		     CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH);
+
+	(void)k_thread_create(&runtime.thread, vc_runtime_stack,
+			       K_KERNEL_STACK_SIZEOF(vc_runtime_stack),
+			       vc_runtime_worker, &runtime, NULL, NULL,
+			       CONFIG_VC_RUNTIME_THREAD_PRIORITY, 0, K_NO_WAIT);
+
+	return &runtime;
 }
 
 struct vc_runtime *vc_domain_runtime_create(
 	const struct vc_channel_entry *channels, size_t count)
 {
-	struct domain *domain = domain_create(channels, count);
-
-	if (domain == NULL) {
-		return NULL;
-	}
-	return vc_runtime_create_heap(domain);
-}
-
-struct vc_runtime *vc_domain_runtime_create_static(
-	const struct vc_channel_entry *channels, size_t count)
-{
-	struct domain *domain = domain_create_static(channels, count);
-
-	if (domain == NULL) {
-		return NULL;
-	}
-	return vc_runtime_create_local_static(domain);
+	return vc_domain_runtime_create_static(channels, count);
 }
 
 void vc_runtime_destroy(struct vc_runtime *runtime)
@@ -335,9 +218,6 @@ void vc_runtime_destroy(struct vc_runtime *runtime)
 	runtime->stop_requested = true;
 	k_sem_give(&runtime->wake);
 	(void)k_thread_join(&runtime->thread, K_FOREVER);
-	if (runtime->heap_allocated) {
-		free(runtime);
-	}
 }
 
 enum vc_status vc_runtime_submit_command(struct vc_runtime *runtime,
@@ -377,39 +257,6 @@ enum vc_status vc_runtime_set_operating_mode(struct vc_runtime *runtime,
 	};
 
 	return vc_runtime_submit_command(runtime, &cmd, timeout);
-}
-
-enum vc_status vc_runtime_submit_measurement(
-	struct vc_runtime *runtime,
-	const struct vc_measurement_snapshot *meas)
-{
-	if (runtime == NULL || meas == NULL) {
-		return VC_ERR_INVALID_VALUE;
-	}
-
-	if (vc_provider_bus_publish_measurement(meas) != VC_OK) {
-		return VC_ERR_UNSAFE_STATE;
-	}
-	k_sem_give(&runtime->wake);
-	return VC_OK;
-}
-
-enum vc_status vc_runtime_get_channel_config(
-	struct vc_runtime *runtime,
-	uint8_t channel,
-	struct vc_runtime_config_snapshot *cfg)
-{
-	enum vc_status status;
-
-	if (runtime == NULL || cfg == NULL) {
-		return VC_ERR_INVALID_VALUE;
-	}
-
-	k_mutex_lock(&runtime->lock, K_FOREVER);
-	status = domain_get_runtime_config(runtime->domain, channel, cfg);
-	k_mutex_unlock(&runtime->lock);
-
-	return status;
 }
 
 enum vc_status vc_runtime_set_system_field(struct vc_runtime *runtime,
@@ -461,7 +308,7 @@ enum vc_status vc_runtime_get_published_channel_snapshot(
 	if (runtime == NULL || snap == NULL) {
 		return VC_ERR_INVALID_VALUE;
 	}
-	if (channel >= domain_get_supported_channel_count(runtime->domain)) {
+	if (channel >= vc_controller_channel_count(runtime->ctrl)) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
 	k_mutex_lock(&runtime->snapshot_lock, K_FOREVER);
@@ -491,7 +338,7 @@ enum vc_status vc_runtime_get_published_channel_config(
 	if (runtime == NULL || cfg == NULL) {
 		return VC_ERR_INVALID_VALUE;
 	}
-	if (channel >= domain_get_supported_channel_count(runtime->domain)) {
+	if (channel >= vc_controller_channel_count(runtime->ctrl)) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
 	k_mutex_lock(&runtime->snapshot_lock, K_FOREVER);

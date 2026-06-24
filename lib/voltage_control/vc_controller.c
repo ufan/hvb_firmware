@@ -410,3 +410,112 @@ enum vc_status vc_controller_channel_param_action(
 		return VC_ERR_INVALID_VALUE;
 	}
 }
+
+enum vc_status vc_controller_set_system_field(
+	struct vc_controller *ctrl, enum vc_config_field field, uint16_t value)
+{
+	struct vc_system_config cfg;
+
+	vc_controller_get_system_config(ctrl, &cfg);
+
+	switch (field) {
+	case VC_FIELD_OPERATING_MODE:
+		return vc_controller_set_operating_mode(ctrl,
+						       (enum vc_operating_mode)value);
+	case VC_FIELD_SLAVE_ADDRESS:
+		cfg.slave_address = value;
+		break;
+	case VC_FIELD_BAUD_RATE_CODE:
+		cfg.baud_rate_code = (enum vc_baud_rate_code)value;
+		break;
+	case VC_FIELD_RECOVERY_POLICY_MODE:
+		cfg.recovery_policy_mode = (enum vc_recovery_policy_mode)value;
+		break;
+	case VC_FIELD_AUTO_RETRY_DELAY:
+		cfg.auto_retry_delay = value;
+		break;
+	case VC_FIELD_AUTO_RETRY_MAX_COUNT:
+		cfg.auto_retry_max_count = value;
+		break;
+	case VC_FIELD_AUTO_RETRY_WINDOW:
+		cfg.auto_retry_window = value;
+		break;
+	case VC_FIELD_VOLTAGE_SAFE_BAND_PCT:
+		cfg.voltage_safe_band_pct = value;
+		break;
+	case VC_FIELD_CURRENT_SAFE_BAND_PCT:
+		cfg.current_safe_band_pct = value;
+		break;
+	default:
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	return vc_controller_set_system_config(ctrl, &cfg);
+}
+
+enum vc_status vc_controller_channel_cal_output_enable(
+	struct vc_controller *ctrl, uint8_t ch, bool enable)
+{
+	if (!channel_valid(ctrl, ch)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
+		return VC_ERR_INVALID_COMMAND;
+	}
+	enum vc_status st = vc_channel_cal_set_output_enable(
+		&ctrl->channels[ch], enable, ctrl->channels, ctrl->channel_count);
+
+	drain_pending(ctrl, ch);
+	return st;
+}
+
+enum vc_status vc_controller_channel_cal_raw_dac(
+	struct vc_controller *ctrl, uint8_t ch, uint16_t code)
+{
+	if (!channel_valid(ctrl, ch)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
+		return VC_ERR_INVALID_COMMAND;
+	}
+	enum vc_status st = vc_channel_cal_set_raw_dac(&ctrl->channels[ch], code);
+
+	drain_pending(ctrl, ch);
+	return st;
+}
+
+enum vc_status vc_controller_channel_cal_sample(
+	struct vc_controller *ctrl, uint8_t ch)
+{
+	if (!channel_valid(ctrl, ch)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
+		return VC_ERR_INVALID_COMMAND;
+	}
+	return vc_channel_cal_sample(&ctrl->channels[ch]);
+}
+
+enum vc_status vc_controller_channel_cal_commit(
+	struct vc_controller *ctrl, uint8_t ch)
+{
+	if (!channel_valid(ctrl, ch)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
+		return VC_ERR_INVALID_COMMAND;
+	}
+	return vc_channel_cal_commit(&ctrl->channels[ch]);
+}
+
+enum vc_status vc_controller_channel_cal_max_raw_dac(
+	struct vc_controller *ctrl, uint8_t ch, uint16_t limit)
+{
+	if (!channel_valid(ctrl, ch)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
+		return VC_ERR_INVALID_COMMAND;
+	}
+	return vc_channel_cal_set_max_raw_dac(&ctrl->channels[ch], limit);
+}

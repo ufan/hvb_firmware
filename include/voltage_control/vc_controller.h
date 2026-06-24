@@ -64,6 +64,20 @@ enum vc_status vc_controller_get_channel_config(
 	const struct vc_controller *ctrl, uint8_t ch,
 	struct vc_channel_config *cfg);
 
+enum vc_status vc_controller_set_system_field(
+	struct vc_controller *ctrl, enum vc_config_field field, uint16_t value);
+
+enum vc_status vc_controller_channel_cal_output_enable(
+	struct vc_controller *ctrl, uint8_t ch, bool enable);
+enum vc_status vc_controller_channel_cal_raw_dac(
+	struct vc_controller *ctrl, uint8_t ch, uint16_t code);
+enum vc_status vc_controller_channel_cal_sample(
+	struct vc_controller *ctrl, uint8_t ch);
+enum vc_status vc_controller_channel_cal_commit(
+	struct vc_controller *ctrl, uint8_t ch);
+enum vc_status vc_controller_channel_cal_max_raw_dac(
+	struct vc_controller *ctrl, uint8_t ch, uint16_t limit);
+
 void vc_controller_set_storage_backend(
 	struct vc_controller *ctrl, const struct vc_storage_backend *backend);
 
