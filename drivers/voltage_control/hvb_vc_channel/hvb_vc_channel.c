@@ -1,32 +1,33 @@
 /*
  * Copyright (c) 2026 Jianwei
- *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
-#include <zephyr/drivers/dac.h>
 #include <zephyr/drivers/adc.h>
+#include <zephyr/drivers/dac.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 
 #include <dt-bindings/voltage_control/capabilities.h>
-#include "voltage_control/vc_channel.h"
-#include "voltage_control/provider_bus.h"
+#include "voltage_control/vc_channel_hw.h"
+#include "voltage_control/vc_channel_table.h"
+#include "voltage_control/vc_controller.h"
+#include "voltage_control/domain.h"
 
 LOG_MODULE_REGISTER(hvb_vc_channel, LOG_LEVEL_INF);
 
 #define DT_DRV_COMPAT jianwei_hvb_vc_channel
 
-#define HVB_VC_WORKQ_STACK_SIZE 1024
+#define HVB_VC_WORKQ_STACK_SIZE 2048
 #define HVB_VC_WORKQ_PRIORITY   CONFIG_SYSTEM_WORKQUEUE_PRIORITY
+#define HVB_VC_DRDY_TIMEOUT_MS  420
 
 static K_THREAD_STACK_DEFINE(hvb_vc_workq_stack, HVB_VC_WORKQ_STACK_SIZE);
 static struct k_work_q hvb_vc_workq;
 static bool hvb_vc_workq_started;
 
-/* Lazily start the shared work queue for all HVB VC channel instances. */
 static void hvb_vc_ensure_workq(void)
 {
 	if (!hvb_vc_workq_started) {
@@ -49,7 +50,29 @@ struct hvb_vc_config {
 	uint8_t channel_index;
 };
 
-/* Write raw DAC code to the channel's DAC device. */
+enum hvb_adc_phase {
+	ADC_PHASE_VOLTAGE,
+	ADC_PHASE_CURRENT,
+};
+
+struct hvb_vc_data {
+	const struct device *dev;
+	uint8_t channel;
+	struct vc_measurement_buffer_entry *meas;
+
+	struct k_work_poll poll_work;
+	struct k_poll_signal adc_signal;
+	struct k_poll_event adc_event;
+	struct adc_sequence adc_seq;
+	int32_t adc_buf;
+
+	enum hvb_adc_phase adc_phase;
+	struct k_work_delayable next_cycle_work;
+	bool sampling_active;
+};
+
+/* ---- Hardware API ---- */
+
 static int hvb_vc_set_output(const struct device *dev, uint16_t code)
 {
 	const struct hvb_vc_config *cfg = dev->config;
@@ -60,7 +83,6 @@ static int hvb_vc_set_output(const struct device *dev, uint16_t code)
 	return dac_write_value(cfg->dac, 0, code);
 }
 
-/* Set the HV output enable GPIO. */
 static int hvb_vc_set_enable(const struct device *dev, bool enable)
 {
 	const struct hvb_vc_config *cfg = dev->config;
@@ -68,216 +90,133 @@ static int hvb_vc_set_enable(const struct device *dev, bool enable)
 	return gpio_pin_set_dt(&cfg->enable, enable ? 1 : 0);
 }
 
-/* Read raw 24-bit voltage ADC value (channel 0). */
-static int hvb_vc_measure_voltage(const struct device *dev, int32_t *value)
+/* ---- Async ADC read completion handler ---- */
+
+static void hvb_vc_start_next_cycle(struct hvb_vc_data *data);
+
+static void hvb_vc_poll_handler(struct k_work *work)
 {
-	const struct hvb_vc_config *cfg = dev->config;
-	struct adc_sequence seq = {
-		.channels = BIT(0),
-		.buffer = value,
-		.buffer_size = sizeof(*value),
-		.resolution = 24,
-	};
+	struct k_work_poll *pw = CONTAINER_OF(work, struct k_work_poll, work);
+	struct hvb_vc_data *data = CONTAINER_OF(pw, struct hvb_vc_data, poll_work);
+	const struct hvb_vc_config *cfg = data->dev->config;
+	struct vc_controller *ctrl = vc_channel_table_get_controller();
+	int32_t raw = data->adc_buf;
 
-	return adc_read(cfg->adc, &seq);
-}
+	if (data->poll_work.poll_result != 0) {
+		LOG_WRN("ch%d DRDY timeout phase=%d", data->channel, data->adc_phase);
+		if (ctrl) {
+			vc_controller_consume_fault(ctrl, data->channel,
+						    VC_FAULT_MEASUREMENT);
+		}
+		k_work_schedule_for_queue(&hvb_vc_workq, &data->next_cycle_work,
+					  K_MSEC(cfg->sample_rate_ms));
+		return;
+	}
 
-/* Read raw 24-bit current ADC value (channel 1). */
-static int hvb_vc_measure_current(const struct device *dev, int32_t *value)
-{
-	const struct hvb_vc_config *cfg = dev->config;
-	struct adc_sequence seq = {
-		.channels = BIT(1),
-		.buffer = value,
-		.buffer_size = sizeof(*value),
-		.resolution = 24,
-	};
+	if (data->adc_phase == ADC_PHASE_VOLTAGE) {
+		data->meas->raw_voltage = raw;
+		data->meas->voltage_timestamp_ms = k_uptime_get_32();
+		if (ctrl) {
+			vc_controller_consume_voltage(ctrl, data->channel, raw);
+		}
 
-	return adc_read(cfg->adc, &seq);
-}
-
-/* Return the DTS-declared capability bitmask for this channel. */
-static uint16_t hvb_vc_get_capabilities(const struct device *dev)
-{
-	const struct hvb_vc_config *cfg = dev->config;
-
-	return cfg->capabilities;
-}
-
-struct hvb_vc_data {
-	struct k_work_delayable work;
-	const struct device *dev;
-	uint8_t channel;
-	uint32_t applied_config_version;
-	uint32_t generation;
-	uint16_t provider_status;
-};
-
-/* Sample voltage + current ADCs and publish a measurement snapshot to the provider bus. */
-static void hvb_vc_publish_measurement(const struct device *dev)
-{
-	const struct hvb_vc_config *cfg = dev->config;
-	struct hvb_vc_data *data = dev->data;
-	struct vc_measurement_snapshot meas = {
-		.channel = data->channel,
-		.generation = ++data->generation,
-		.timestamp_ms = (uint32_t)k_uptime_get_32(),
-		.provider_status = data->provider_status | VC_PROVIDER_STATUS_READY,
-	};
-	int32_t value;
-
-	data->provider_status &= ~VC_PROVIDER_STATUS_SAMPLE_ERROR;
-
-	if ((cfg->capabilities & CH_CAP_VOLTAGE_MEASUREMENT) != 0) {
-		if (hvb_vc_measure_voltage(dev, &value) == 0) {
-			meas.present_mask |= VC_MEAS_PRESENT_VOLTAGE;
-			meas.raw_voltage = value;
+		if (cfg->capabilities & CH_CAP_CURRENT_MEASUREMENT) {
+			data->adc_phase = ADC_PHASE_CURRENT;
+			data->adc_seq.channels = BIT(1);
+			k_poll_signal_reset(&data->adc_signal);
+			adc_read_async(cfg->adc, &data->adc_seq, &data->adc_signal);
+			k_work_poll_submit_to_queue(&hvb_vc_workq,
+						    &data->poll_work,
+						    &data->adc_event, 1,
+						    K_MSEC(HVB_VC_DRDY_TIMEOUT_MS));
 		} else {
-			data->provider_status |= VC_PROVIDER_STATUS_SAMPLE_ERROR;
+			data->adc_phase = ADC_PHASE_VOLTAGE;
+			k_work_schedule_for_queue(&hvb_vc_workq,
+						  &data->next_cycle_work,
+						  K_MSEC(cfg->sample_rate_ms));
 		}
-	}
-
-	if ((cfg->capabilities & CH_CAP_CURRENT_MEASUREMENT) != 0) {
-		if (hvb_vc_measure_current(dev, &value) == 0) {
-			meas.present_mask |= VC_MEAS_PRESENT_CURRENT;
-			meas.raw_current = value;
-		} else {
-			data->provider_status |= VC_PROVIDER_STATUS_SAMPLE_ERROR;
+	} else {
+		data->meas->raw_current = raw;
+		data->meas->current_timestamp_ms = k_uptime_get_32();
+		if (ctrl) {
+			vc_controller_consume_current(ctrl, data->channel, raw);
 		}
-	}
 
-	meas.present_mask |= VC_MEAS_PRESENT_PROVIDER_STATUS;
-	if ((data->provider_status & VC_PROVIDER_STATUS_SAMPLE_ERROR) != 0) {
-		meas.provider_fault_cause = VC_FAULT_MEASUREMENT;
+		data->adc_phase = ADC_PHASE_VOLTAGE;
+		k_work_schedule_for_queue(&hvb_vc_workq,
+					  &data->next_cycle_work,
+					  K_MSEC(cfg->sample_rate_ms));
 	}
-	(void)vc_provider_bus_publish_measurement(&meas);
 }
 
-/* Apply a runtime config to hardware: set enable GPIO + DAC output based on mode/state. */
-static int hvb_vc_apply_config(const struct device *dev,
-			       const struct vc_runtime_config_snapshot *cfg)
+static void hvb_vc_next_cycle_handler(struct k_work *work)
+{
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct hvb_vc_data *data = CONTAINER_OF(dwork, struct hvb_vc_data,
+						next_cycle_work);
+
+	if (!data->sampling_active) {
+		return;
+	}
+	hvb_vc_start_next_cycle(data);
+}
+
+static void hvb_vc_start_next_cycle(struct hvb_vc_data *data)
+{
+	const struct hvb_vc_config *cfg = data->dev->config;
+
+	data->adc_phase = ADC_PHASE_VOLTAGE;
+	data->adc_seq.channels = BIT(0);
+	k_poll_signal_reset(&data->adc_signal);
+	adc_read_async(cfg->adc, &data->adc_seq, &data->adc_signal);
+	k_work_poll_submit_to_queue(&hvb_vc_workq,
+				    &data->poll_work,
+				    &data->adc_event, 1,
+				    K_MSEC(HVB_VC_DRDY_TIMEOUT_MS));
+}
+
+/* ---- Start/stop sampling ---- */
+
+static int hvb_vc_start_sampling(const struct device *dev)
 {
 	struct hvb_vc_data *data = dev->data;
-	int ret;
+	const struct hvb_vc_config *cfg = dev->config;
 
-	if (data == NULL || cfg == NULL) {
-		return -EINVAL;
-	}
-
-	data->applied_config_version = cfg->version;
-	data->generation++;
-
-	if (cfg->force_safe_state) {
-		ret = hvb_vc_set_enable(dev, false);
-		if (ret < 0) {
-			data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
-			return ret;
-		}
-		ret = hvb_vc_set_output(dev, 0);
-		if (ret < 0) {
-			data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
-			return ret;
-		}
-		data->provider_status &= ~VC_PROVIDER_STATUS_APPLY_FAILED;
+	if (!(cfg->capabilities & (CH_CAP_VOLTAGE_MEASUREMENT |
+				   CH_CAP_CURRENT_MEASUREMENT))) {
 		return 0;
 	}
 
-	if (cfg->calibration_mode) {
-		ret = hvb_vc_set_enable(dev, cfg->calibration_output_enable);
-		if (ret < 0) {
-			data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
-			return ret;
-		}
-		ret = hvb_vc_set_output(dev, cfg->calibration_raw_output_drive);
-		if (ret < 0) {
-			data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
-			return ret;
-		}
-		data->provider_status &= ~VC_PROVIDER_STATUS_APPLY_FAILED;
-		return 0;
-	}
-
-	ret = hvb_vc_set_enable(dev, cfg->output_enable);
-	if (ret < 0) {
-		data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
-		return ret;
-	}
-	ret = hvb_vc_set_output(dev, cfg->raw_output_drive);
-	if (ret < 0) {
-		data->provider_status |= VC_PROVIDER_STATUS_APPLY_FAILED;
-		return ret;
-	}
-	data->provider_status &= ~VC_PROVIDER_STATUS_APPLY_FAILED;
+	data->sampling_active = true;
+	hvb_vc_start_next_cycle(data);
 	return 0;
 }
 
-/* Periodic work handler: apply pending config, sample ADCs, reschedule at sample_rate_ms. */
-static void hvb_vc_work_handler(struct k_work *work)
-{
-	struct k_work_delayable *delayable = k_work_delayable_from_work(work);
-	struct hvb_vc_data *data = CONTAINER_OF(delayable, struct hvb_vc_data, work);
-	const struct device *dev = data->dev;
-	const struct hvb_vc_config *cfg = dev->config;
-	const struct vc_runtime_config_snapshot *runtime_cfg;
-
-	runtime_cfg = vc_provider_bus_acquire_config(data->channel);
-	if (runtime_cfg != NULL) {
-		if (runtime_cfg->version != data->applied_config_version) {
-			if (hvb_vc_apply_config(dev, runtime_cfg) == 0) {
-				data->applied_config_version = runtime_cfg->version;
-			}
-		}
-		vc_provider_bus_release_config(data->channel);
-	}
-
-	hvb_vc_publish_measurement(dev);
-	k_work_schedule_for_queue(&hvb_vc_workq, &data->work,
-				  K_MSEC(cfg->sample_rate_ms));
-}
-
-/* Start the periodic work loop immediately. */
-static int hvb_vc_start(const struct device *dev)
+static int hvb_vc_stop_sampling(const struct device *dev)
 {
 	struct hvb_vc_data *data = dev->data;
 
-	return k_work_schedule_for_queue(&hvb_vc_workq, &data->work,
-				       K_NO_WAIT) < 0 ? -EIO : 0;
+	data->sampling_active = false;
+	k_work_poll_cancel(&data->poll_work);
+	k_work_cancel_delayable(&data->next_cycle_work);
+	return 0;
 }
 
-/* Cancel the periodic work loop. */
-static int hvb_vc_stop(const struct device *dev)
-{
-	struct hvb_vc_data *data = dev->data;
+/* ---- API vtable ---- */
 
-	return k_work_cancel_delayable(&data->work);
-}
-
-/* Wake the work handler immediately so it picks up the new config version. */
-static int hvb_vc_notify_config_changed(const struct device *dev, uint32_t version)
-{
-	struct hvb_vc_data *data = dev->data;
-
-	ARG_UNUSED(version);
-	return k_work_schedule_for_queue(&hvb_vc_workq, &data->work,
-					K_NO_WAIT) < 0 ? -EIO : 0;
-}
-
-static const struct vc_channel_api hvb_vc_api = {
+static const struct vc_channel_hw_api hvb_vc_hw_api = {
 	.set_output = hvb_vc_set_output,
 	.set_enable = hvb_vc_set_enable,
-	.apply_config = hvb_vc_apply_config,
-	.start = hvb_vc_start,
-	.stop = hvb_vc_stop,
-	.notify_config_changed = hvb_vc_notify_config_changed,
-	.measure_voltage = hvb_vc_measure_voltage,
-	.measure_current = hvb_vc_measure_current,
-	.get_capabilities = hvb_vc_get_capabilities,
+	.start_sampling = hvb_vc_start_sampling,
+	.stop_sampling = hvb_vc_stop_sampling,
 };
 
-/* Device init: start workq, verify DAC/ADC/GPIO readiness, configure DAC channel, init work item. */
+/* ---- Device init ---- */
+
 static int hvb_vc_init(const struct device *dev)
 {
 	const struct hvb_vc_config *cfg = dev->config;
+	struct hvb_vc_data *data = dev->data;
 
 	hvb_vc_ensure_workq();
 
@@ -304,19 +243,27 @@ static int hvb_vc_init(const struct device *dev)
 	}
 	gpio_pin_configure_dt(&cfg->enable, GPIO_OUTPUT_INACTIVE);
 
-	{
-		struct hvb_vc_data *data = dev->data;
+	data->dev = dev;
+	data->channel = cfg->channel_index;
+	data->meas = vc_channel_table[cfg->channel_index].meas;
 
-		data->dev = dev;
-		data->channel = cfg->channel_index;
-		k_work_init_delayable(&data->work, hvb_vc_work_handler);
-	}
+	data->adc_seq.buffer = &data->adc_buf;
+	data->adc_seq.buffer_size = sizeof(data->adc_buf);
+	data->adc_seq.resolution = 24;
+
+	k_poll_signal_init(&data->adc_signal);
+	k_poll_event_init(&data->adc_event, K_POLL_TYPE_SIGNAL,
+			  K_POLL_MODE_NOTIFY_ONLY, &data->adc_signal);
+	k_work_poll_init(&data->poll_work, hvb_vc_poll_handler);
+	k_work_init_delayable(&data->next_cycle_work, hvb_vc_next_cycle_handler);
 
 	LOG_INF("ch%d ready dac=%s adc=%s caps=0x%04x",
 		cfg->channel_index,
 		cfg->dac->name, cfg->adc->name, cfg->capabilities);
 	return 0;
 }
+
+/* ---- DTS instantiation ---- */
 
 #define HVB_VC_INIT(n) \
 	static const struct hvb_vc_config hvb_vc_config_##n = { \
@@ -326,20 +273,12 @@ static int hvb_vc_init(const struct device *dev)
 		.max_raw_dac = DT_INST_PROP(n, max_raw_dac), \
 		.sample_rate_ms = DT_INST_PROP(n, sample_rate_ms), \
 		.capabilities = DT_INST_PROP(n, capabilities), \
-		.channel_index = DT_INST_PROP(n, channel_index), \
+		.channel_index = DT_REG_ADDR(DT_INST(n, jianwei_hvb_vc_channel)), \
 	}; \
 	static struct hvb_vc_data hvb_vc_data_##n; \
 	DEVICE_DT_INST_DEFINE(n, hvb_vc_init, NULL, \
 		&hvb_vc_data_##n, &hvb_vc_config_##n, \
 		POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, \
-		&hvb_vc_api); \
-	STRUCT_SECTION_ITERABLE(vc_provider_binding, hvb_vc_binding_##n) = { \
-		.channel = DT_INST_PROP(n, channel_index), \
-		.dev = DEVICE_DT_INST_GET(n), \
-		.config_slot = &vc_runtime_config_slots[DT_INST_PROP(n, channel_index)], \
-		.route_bit = BIT(DT_INST_PROP(n, channel_index)), \
-	}; \
-	STRUCT_SECTION_ITERABLE_NAMED(vc_measurement_buffer_entry, \
-		_##n##_, hvb_meas_buf_##n) = {0};
+		&hvb_vc_hw_api);
 
 DT_INST_FOREACH_STATUS_OKAY(HVB_VC_INIT)
