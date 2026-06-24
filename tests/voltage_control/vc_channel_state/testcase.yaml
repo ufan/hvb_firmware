@@ -1,0 +1,4 @@
+tests:
+  voltage_control.vc_channel_state:
+    platform_allow: native_posix
+    tags: voltage_control
