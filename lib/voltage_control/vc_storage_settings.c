@@ -17,9 +17,6 @@ struct vc_channel_config_no_cal {
 	uint16_t ramp_up_interval;
 	uint16_t ramp_down_step;
 	uint16_t ramp_down_interval;
-	enum vc_protection_mode voltage_protection_mode;
-	enum vc_output_action voltage_protection_output_action;
-	int16_t voltage_limit_threshold;
 	enum vc_protection_mode current_protection_mode;
 	enum vc_output_action current_protection_output_action;
 	int16_t current_limit_threshold;
@@ -45,9 +42,6 @@ static void pack_no_cal(struct vc_channel_config_no_cal *dst,
 	dst->ramp_up_interval = src->ramp_up_interval;
 	dst->ramp_down_step = src->ramp_down_step;
 	dst->ramp_down_interval = src->ramp_down_interval;
-	dst->voltage_protection_mode = src->voltage_protection_mode;
-	dst->voltage_protection_output_action = src->voltage_protection_output_action;
-	dst->voltage_limit_threshold = src->voltage_limit_threshold;
 	dst->current_protection_mode = src->current_protection_mode;
 	dst->current_protection_output_action = src->current_protection_output_action;
 	dst->current_limit_threshold = src->current_limit_threshold;
@@ -64,9 +58,6 @@ static void unpack_no_cal(struct vc_channel_config *dst,
 	dst->ramp_up_interval = src->ramp_up_interval;
 	dst->ramp_down_step = src->ramp_down_step;
 	dst->ramp_down_interval = src->ramp_down_interval;
-	dst->voltage_protection_mode = src->voltage_protection_mode;
-	dst->voltage_protection_output_action = src->voltage_protection_output_action;
-	dst->voltage_limit_threshold = src->voltage_limit_threshold;
 	dst->current_protection_mode = src->current_protection_mode;
 	dst->current_protection_output_action = src->current_protection_output_action;
 	dst->current_limit_threshold = src->current_limit_threshold;

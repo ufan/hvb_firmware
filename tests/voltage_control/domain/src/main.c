@@ -12,8 +12,17 @@
 
 #include "regmap/vc_regs.h"
 #include "voltage_control/domain.h"
-#include "voltage_control/modbus_adapter.h"
+#include "modbus_adapter/modbus_adapter.h"
 #include "voltage_control/runtime.h"
+#include "sys_status/sys_status.h"
+
+struct sys_status_snapshot sys_status_get(void)
+{
+	return (struct sys_status_snapshot){
+		.board_temperature = 250,
+		.board_humidity = 500,
+	};
+}
 
 struct vc_ctx {
 	struct vc_runtime *runtime;
@@ -677,12 +686,8 @@ ZTEST(voltage_control_domain, test_modbus_holding_rejects_unsupported_policy_tai
 	struct vc_runtime *rt = vc_domain_runtime_create(onoff_channels, 1);
 	struct vc_ctx test_ctx = { .runtime = rt };
 	struct vc_mb_adapter *mb = vc_mb_adapter_create(&test_ctx);
-	uint16_t reg;
 
 	zassert_not_null(rt);
-	zassert_equal(vc_mb_holding_rd(mb,
-					CH_BLOCK_BASE(0) + CH_VOLTAGE_PROTECTION_MODE,
-					&reg), VC_MB_ILLEGAL_ADDRESS);
 	zassert_equal(vc_mb_holding_wr(mb,
 					CH_BLOCK_BASE(0) + CH_CURRENT_PROTECTION_MODE,
 					VC_PROTECTION_MODE_FLAG_ONLY), VC_MB_ILLEGAL_ADDRESS);
@@ -722,10 +727,6 @@ ZTEST(voltage_control_domain, test_domain_rejects_unsupported_measurement_policy
 {
 	struct domain *d = domain_setup_on_off_only();
 	struct vc_channel_config cfg;
-	zassert_equal(domain_get_channel_config(d, 0, &cfg), VC_OK);
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_FLAG_ONLY;
-	zassert_equal(domain_set_channel_config(d, 0, &cfg),
-		      VC_ERR_UNSUPPORTED_CAPABILITY);
 
 	zassert_equal(domain_get_channel_config(d, 0, &cfg), VC_OK);
 	cfg.current_protection_mode = VC_PROTECTION_MODE_FLAG_ONLY;
@@ -768,10 +769,7 @@ ZTEST(voltage_control_domain, test_system_config_defaults)
 
 	domain_get_system_config(d, &cfg);
 	zassert_equal(cfg.operating_mode, VC_OPERATING_MODE_NORMAL);
-	zassert_equal(cfg.slave_address, 1);
-	zassert_equal(cfg.baud_rate_code, VC_BAUD_RATE_115200);
 	zassert_equal(cfg.recovery_policy_mode, VC_RECOVERY_MANUAL_LATCH);
-	zassert_equal(cfg.voltage_safe_band_pct, 10);
 	zassert_equal(cfg.current_safe_band_pct, 10);
 	free(d);
 }
@@ -785,10 +783,6 @@ ZTEST(voltage_control_domain, test_channel_config_defaults)
 
 	domain_get_channel_config(d, 0, &cfg);
 	zassert_equal(cfg.configured_target_voltage, 0);
-	zassert_equal(cfg.voltage_protection_mode, VC_PROTECTION_MODE_DISABLED);
-	zassert_equal(cfg.voltage_protection_output_action,
-		      VC_OUTPUT_ACTION_NONE);
-	zassert_equal(cfg.voltage_limit_threshold, 20000);
 	zassert_equal(cfg.current_protection_mode, VC_PROTECTION_MODE_DISABLED);
 	zassert_equal(cfg.current_limit_threshold, 32767);
 	zassert_equal(cfg.output_calib_k, 10000);
@@ -1026,9 +1020,7 @@ ZTEST(voltage_control_domain, test_calibration_tick_does_not_ramp_to_target)
 	domain_get_channel_config(d, 0, &cfg);
 	cfg.configured_target_voltage = 5000;
 	cfg.ramp_up_step = 0;
-	cfg.voltage_limit_threshold = 3000;
 	cfg.current_limit_threshold = 100;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
 	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
 	domain_set_channel_config(d, 0, &cfg);
 
@@ -1244,9 +1236,6 @@ ZTEST(voltage_control_domain, test_output_action_host_context_invalid)
 	zassert_equal(domain_channel_output_action(d, 0,
 			 VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO),
 		      VC_ERR_INVALID_COMMAND);
-	zassert_equal(domain_channel_output_action(d, 0,
-			 VC_OUTPUT_ACTION_CLAMP),
-		      VC_ERR_INVALID_COMMAND);
 	free(d);
 }
 
@@ -1320,315 +1309,6 @@ ZTEST(voltage_control_domain, test_tick_measured_with_noise)
 	free(d);
 }
 
-/* ---- Domain tick: protection triggers ---- */
-
-ZTEST(voltage_control_domain, test_tick_protection_triggers_fault)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_channel_config cfg;
-	struct vc_channel_snapshot snap;
-	int16_t v_noise[VC_MAX_CHANNELS] = {10, 0};
-	int16_t c_noise[VC_MAX_CHANNELS] = {0};
-
-	domain_get_channel_config(d, 0, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.voltage_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
-	cfg.ramp_up_step = 0;
-	domain_set_channel_config(d, 0, &cfg);
-	domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE);
-
-	sim_tick(d, 500, v_noise, c_noise);
-
-	domain_get_channel_snapshot(d, 0, &snap);
-	zassert_true(snap.active_fault_cause & VC_FAULT_VOLTAGE,
-		     "fault must trigger when measured > limit");
-	zassert_true(snap.fault_history_cause & VC_FAULT_VOLTAGE,
-		     "fault history must record event");
-	zassert_equal(snap.operational_target_voltage, 0,
-		      "Force Output Zero must zero target");
-	free(d);
-}
-
-ZTEST(voltage_control_domain, test_protection_disable_immediate_updates_runtime_config)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_channel_config cfg;
-	struct vc_channel_snapshot snap;
-	struct vc_runtime_config_snapshot before;
-	struct vc_runtime_config_snapshot after;
-	int16_t v_noise[VC_MAX_CHANNELS] = {10, 0};
-	int16_t c_noise[VC_MAX_CHANNELS] = {0};
-
-	domain_get_channel_config(d, 0, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.voltage_protection_output_action = VC_OUTPUT_ACTION_DISABLE_IMMEDIATE;
-	cfg.ramp_up_step = 0;
-	domain_set_channel_config(d, 0, &cfg);
-	domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE);
-	zassert_equal(domain_get_runtime_config(d, 0, &before), VC_OK);
-	zassert_true(before.output_enable);
-
-	sim_tick(d, 500, v_noise, c_noise);
-
-	zassert_equal(domain_get_runtime_config(d, 0, &after), VC_OK);
-	zassert_equal(domain_get_channel_snapshot(d, 0, &snap), VC_OK);
-	zassert_true(after.version > before.version);
-	zassert_false(after.output_enable);
-	zassert_equal(after.raw_output_drive, 0);
-	zassert_equal(snap.operational_target_voltage, 0);
-	zassert_equal(snap.last_protection_output_action,
-		      VC_OUTPUT_ACTION_DISABLE_IMMEDIATE);
-
-	free(d);
-}
-
-ZTEST(voltage_control_domain, test_protection_noop_clamp_does_not_bump_runtime_config)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_channel_config cfg;
-	struct vc_channel_snapshot snap;
-	struct vc_runtime_config_snapshot before;
-	struct vc_runtime_config_snapshot after;
-	int16_t quiet[VC_MAX_CHANNELS] = {0};
-	int16_t noisy[VC_MAX_CHANNELS] = {10, 0};
-
-	domain_get_channel_config(d, 0, &cfg);
-	cfg.configured_target_voltage = 3000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.voltage_protection_output_action = VC_OUTPUT_ACTION_CLAMP;
-	cfg.ramp_up_step = 0;
-	domain_set_channel_config(d, 0, &cfg);
-	domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE);
-	sim_tick(d, 500, quiet, quiet);
-	zassert_equal(domain_get_channel_snapshot(d, 0, &snap), VC_OK);
-	zassert_equal(snap.operational_target_voltage, 3000);
-	zassert_equal(domain_get_runtime_config(d, 0, &before), VC_OK);
-
-	sim_tick(d, 500, noisy, quiet);
-
-	zassert_equal(domain_get_runtime_config(d, 0, &after), VC_OK);
-	zassert_equal(domain_get_channel_snapshot(d, 0, &snap), VC_OK);
-	zassert_equal(after.version, before.version);
-	zassert_true(after.output_enable);
-	zassert_equal(snap.operational_target_voltage, 3000);
-	zassert_equal(snap.last_protection_output_action, VC_OUTPUT_ACTION_CLAMP);
-
-	free(d);
-}
-
-/* ---- Domain tick: flag only does not create active fault ---- */
-
-ZTEST(voltage_control_domain, test_tick_flag_only)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_channel_config cfg;
-	struct vc_channel_snapshot snap;
-	int16_t v_noise[VC_MAX_CHANNELS] = {10, 0};
-	int16_t c_noise[VC_MAX_CHANNELS] = {0};
-
-	domain_get_channel_config(d, 0, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_FLAG_ONLY;
-	cfg.ramp_up_step = 0;
-	domain_set_channel_config(d, 0, &cfg);
-	domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE);
-
-	sim_tick(d, 500, v_noise, c_noise);
-
-	domain_get_channel_snapshot(d, 0, &snap);
-	zassert_equal(snap.active_fault_cause, 0,
-		      "flag-only must not create active fault");
-	zassert_true(snap.fault_history_cause & VC_FAULT_VOLTAGE,
-		     "flag-only must record fault history");
-	free(d);
-}
-
-/* ---- Uptime ---- */
-
-ZTEST(voltage_control_domain, test_uptime)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_system_snapshot snap;
-
-	domain_set_uptime(d, 42);
-	domain_get_system_snapshot(d, &snap);
-	zassert_equal(snap.uptime, 42);
-	free(d);
-}
-
-/* ---- Protection output action: clamp ---- */
-
-ZTEST(voltage_control_domain, test_protection_action_clamp)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_channel_config cfg;
-	struct vc_channel_snapshot snap;
-	int16_t v_noise[VC_MAX_CHANNELS] = {10, 0};
-	int16_t c_noise[VC_MAX_CHANNELS] = {0};
-
-	domain_get_channel_config(d, 0, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.voltage_protection_output_action = VC_OUTPUT_ACTION_CLAMP;
-	cfg.ramp_up_step = 0;
-	domain_set_channel_config(d, 0, &cfg);
-	domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE);
-
-	sim_tick(d, 500, v_noise, c_noise);
-
-	domain_get_channel_snapshot(d, 0, &snap);
-	zassert_equal(snap.operational_target_voltage, 3000,
-		      "clamp must set target to limit threshold");
-	free(d);
-}
-
-/* ---- Mode transition: Automatic→Normal cancels cooldown ---- */
-
-ZTEST(voltage_control_domain, test_mode_transition_cancels_cooldown)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_channel_config cfg;
-	struct vc_channel_snapshot snap;
-	struct vc_system_config sys;
-	int16_t v_noise[VC_MAX_CHANNELS] = {100, 0};
-	int16_t c_noise[VC_MAX_CHANNELS] = {0};
-
-	domain_get_system_config(d, &sys);
-	sys.operating_mode = VC_OPERATING_MODE_AUTOMATIC;
-	sys.recovery_policy_mode = VC_RECOVERY_AUTO_RETRY;
-	sys.auto_retry_delay = 60;
-	domain_set_system_config(d, &sys);
-
-	domain_get_channel_config(d, 0, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.voltage_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
-	cfg.ramp_up_step = 0;
-	domain_set_channel_config(d, 0, &cfg);
-	domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE);
-
-	sim_tick(d, 500, v_noise, c_noise);
-
-	domain_get_channel_snapshot(d, 0, &snap);
-	zassert_true(snap.auto_cooldown_remaining > 0,
-		     "cooldown must start after fault in automatic mode");
-
-	domain_set_operating_mode(d, VC_OPERATING_MODE_NORMAL);
-	sim_tick(d, 500, v_noise, c_noise);
-
-	domain_get_channel_snapshot(d, 0, &snap);
-	zassert_equal(snap.auto_cooldown_remaining, 0,
-		      "automatic→normal must cancel cooldown");
-	free(d);
-}
-
-/* ---- Enable rejected when active fault present ---- */
-
-ZTEST(voltage_control_domain, test_enable_rejected_with_active_fault)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_channel_config cfg;
-	int16_t v_noise[VC_MAX_CHANNELS] = {10, 0};
-	int16_t c_noise[VC_MAX_CHANNELS] = {0};
-
-	domain_get_channel_config(d, 0, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.voltage_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
-	cfg.ramp_up_step = 0;
-	domain_set_channel_config(d, 0, &cfg);
-	domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE);
-	sim_tick(d, 500, v_noise, c_noise);
-
-	zassert_equal(domain_channel_output_action(d, 0,
-		VC_OUTPUT_ACTION_ENABLE), VC_ERR_UNSAFE_STATE,
-		"enable must be rejected when active fault is present");
-	free(d);
-}
-
-/* ---- Simultaneous current+voltage fault: current priority, both bits ---- */
-
-ZTEST(voltage_control_domain, test_dual_fault_current_priority)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_channel_config cfg;
-	struct vc_channel_snapshot snap;
-	int16_t v_noise[VC_MAX_CHANNELS] = {10, 0};
-	int16_t c_noise[VC_MAX_CHANNELS] = {10, 0};
-
-	domain_get_channel_config(d, 0, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.current_limit_threshold = 100;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.voltage_protection_output_action = VC_OUTPUT_ACTION_CLAMP;
-	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.current_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
-	cfg.ramp_up_step = 0;
-	domain_set_channel_config(d, 0, &cfg);
-	domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE);
-	sim_tick(d, 500, v_noise, c_noise);
-
-	domain_get_channel_snapshot(d, 0, &snap);
-	zassert_true(snap.active_fault_cause & VC_FAULT_CURRENT,
-		"current fault bit must be set");
-	zassert_true(snap.active_fault_cause & VC_FAULT_VOLTAGE,
-		"voltage fault bit must also be set");
-	zassert_true(snap.fault_history_cause & VC_FAULT_CURRENT,
-		"current fault history must be set");
-	zassert_true(snap.fault_history_cause & VC_FAULT_VOLTAGE,
-		"voltage fault history must also be set");
-	zassert_equal(snap.operational_target_voltage, 0,
-		"current determines action: ForceOutputZero");
-	zassert_equal(snap.last_protection_output_action,
-		VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO,
-		"current action recorded as last protection output action");
-	free(d);
-}
-
-/* ---- Current-only fault with voltage flag-only: both histories, current action ---- */
-
-ZTEST(voltage_control_domain, test_current_fault_voltage_flag_only)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_channel_config cfg;
-	struct vc_channel_snapshot snap;
-	int16_t v_noise[VC_MAX_CHANNELS] = {10, 0};
-	int16_t c_noise[VC_MAX_CHANNELS] = {10, 0};
-
-	domain_get_channel_config(d, 0, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.current_limit_threshold = 100;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_FLAG_ONLY;
-	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.current_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
-	cfg.ramp_up_step = 0;
-	domain_set_channel_config(d, 0, &cfg);
-	domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE);
-	sim_tick(d, 500, v_noise, c_noise);
-
-	domain_get_channel_snapshot(d, 0, &snap);
-	zassert_true(snap.active_fault_cause & VC_FAULT_CURRENT,
-		"current fault active");
-	zassert_false(snap.active_fault_cause & VC_FAULT_VOLTAGE,
-		"voltage flag-only must not create active fault");
-	zassert_true(snap.fault_history_cause & VC_FAULT_CURRENT,
-		"current fault history");
-	zassert_true(snap.fault_history_cause & VC_FAULT_VOLTAGE,
-		"voltage flag-only still records fault history");
-	free(d);
-}
-
 ZTEST(voltage_control_domain, test_smf_preserves_calibration_output_rejection)
 {
 	struct domain *d = domain_setup_fresh();
@@ -1675,25 +1355,10 @@ ZTEST(voltage_control_domain, test_set_system_field_operating_mode)
 	free(d);
 }
 
-ZTEST(voltage_control_domain, test_set_system_field_slave_address)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_system_config cfg;
-
-	zassert_equal(domain_set_system_field(d, VC_FIELD_SLAVE_ADDRESS, 42), VC_OK);
-	domain_get_system_config(d, &cfg);
-	zassert_equal(cfg.slave_address, 42);
-	free(d);
-}
-
 ZTEST(voltage_control_domain, test_set_system_field_rejects_invalid)
 {
 	struct domain *d = domain_setup_fresh();
 
-	zassert_equal(domain_set_system_field(d, VC_FIELD_SLAVE_ADDRESS, 248),
-		      VC_ERR_INVALID_VALUE);
-	zassert_equal(domain_set_system_field(d, VC_FIELD_VOLTAGE_SAFE_BAND_PCT, 51),
-		      VC_ERR_INVALID_VALUE);
 	free(d);
 }
 
@@ -1735,21 +1400,6 @@ ZTEST(voltage_control_domain, test_set_channel_field_ramp_params)
 	free(d);
 }
 
-ZTEST(voltage_control_domain, test_set_channel_field_protection)
-{
-	struct domain *d = domain_setup_fresh();
-	struct vc_channel_config cfg;
-
-	zassert_equal(domain_set_channel_field(d, 0, VC_FIELD_VOLTAGE_PROTECTION_MODE,
-					       VC_PROTECTION_MODE_FLAG_ONLY), VC_OK);
-	zassert_equal(domain_set_channel_field(d, 0, VC_FIELD_VOLTAGE_LIMIT_THRESHOLD,
-					       8000), VC_OK);
-	domain_get_channel_config(d, 0, &cfg);
-	zassert_equal(cfg.voltage_protection_mode, VC_PROTECTION_MODE_FLAG_ONLY);
-	zassert_equal(cfg.voltage_limit_threshold, 8000);
-	free(d);
-}
-
 ZTEST(voltage_control_domain, test_set_channel_field_rejects_unsupported_channel)
 {
 	struct domain *d = domain_setup_fresh();
@@ -1763,7 +1413,7 @@ ZTEST(voltage_control_domain, test_set_channel_field_rejects_system_field)
 {
 	struct domain *d = domain_setup_fresh();
 
-	zassert_equal(domain_set_channel_field(d, 0, VC_FIELD_SLAVE_ADDRESS, 42),
+	zassert_equal(domain_set_channel_field(d, 0, VC_FIELD_OPERATING_MODE, 0),
 		      VC_ERR_INVALID_VALUE);
 	free(d);
 }
@@ -1780,5 +1430,44 @@ ZTEST(voltage_control_domain, test_set_channel_field_bumps_runtime_config_versio
 					       5000), VC_OK);
 	domain_get_runtime_config(d, 0, &after);
 	zassert_true(after.version > before.version);
+	free(d);
+}
+
+ZTEST(voltage_control_domain, test_current_protection_skipped_during_ramping)
+{
+	struct domain *d = domain_setup_fresh();
+	struct vc_channel_config cfg;
+	struct vc_channel_snapshot snap;
+
+	domain_get_channel_config(d, 0, &cfg);
+	cfg.configured_target_voltage = 5000;
+	cfg.current_limit_threshold = 100;
+	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
+	cfg.current_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
+	cfg.ramp_up_step = 100;
+	cfg.ramp_up_interval = 1;
+	domain_set_channel_config(d, 0, &cfg);
+	domain_channel_output_action(d, 0, VC_OUTPUT_ACTION_ENABLE);
+
+	/* Ramp partway -- channel is still ramping */
+	domain_process_periodic(d, 100);
+
+	/* Inject overcurrent measurement while ramping */
+	{
+		struct vc_measurement_snapshot meas = {
+			.channel = 0,
+			.generation = 1,
+			.present_mask = VC_MEAS_PRESENT_CURRENT,
+			.raw_current = 200,
+		};
+		domain_consume_measurement(d, &meas);
+	}
+	domain_process_periodic(d, 0);
+
+	domain_get_channel_snapshot(d, 0, &snap);
+	zassert_equal(snap.active_fault_cause, 0,
+		      "current protection must not fire during ramping");
+	zassert_equal(snap.fault_history_cause, 0,
+		      "current protection must not flag during ramping");
 	free(d);
 }

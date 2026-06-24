@@ -12,7 +12,6 @@
 
 static struct vc_channel ch;
 static const struct vc_system_config default_sys = {
-	.voltage_safe_band_pct = 10,
 	.current_safe_band_pct = 10,
 };
 
@@ -49,9 +48,7 @@ ZTEST(vc_channel_state, test_default_config)
 	zassert_equal(cfg.output_calib_b, 0);
 	zassert_equal(cfg.measured_voltage_calib_k, 10000);
 	zassert_equal(cfg.measured_current_calib_k, 10000);
-	zassert_equal(cfg.voltage_limit_threshold, 20000);
 	zassert_equal(cfg.current_limit_threshold, 32767);
-	zassert_equal(cfg.voltage_protection_mode, VC_PROTECTION_MODE_DISABLED);
 	zassert_equal(cfg.current_protection_mode, VC_PROTECTION_MODE_DISABLED);
 }
 
@@ -104,7 +101,7 @@ ZTEST(vc_channel_state, test_output_action_rejected_in_calibration)
 
 ZTEST(vc_channel_state, test_output_action_rejected_with_active_fault)
 {
-	ch.active_fault_cause = VC_FAULT_VOLTAGE;
+	ch.active_fault_cause = VC_FAULT_CURRENT;
 	zassert_equal(vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false),
 		      VC_ERR_UNSAFE_STATE);
 }
@@ -113,15 +110,13 @@ ZTEST(vc_channel_state, test_output_action_invalid_host_action)
 {
 	zassert_equal(vc_channel_output_action(&ch, VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO, false),
 		      VC_ERR_INVALID_COMMAND);
-	zassert_equal(vc_channel_output_action(&ch, VC_OUTPUT_ACTION_CLAMP, false),
-		      VC_ERR_INVALID_COMMAND);
 }
 
 /* ---- Fault command ---- */
 
 ZTEST(vc_channel_state, test_fault_command_clear_history)
 {
-	ch.fault_history_cause = VC_FAULT_VOLTAGE;
+	ch.fault_history_cause = VC_FAULT_CURRENT;
 	zassert_equal(vc_channel_fault_command(&ch, VC_CHANNEL_FAULT_COMMAND_CLEAR_HISTORY,
 					       &default_sys), VC_OK);
 	zassert_equal(ch.fault_history_cause, 0);
@@ -164,77 +159,6 @@ ZTEST(vc_channel_state, test_consume_voltage_clamps_to_int16)
 
 	vc_channel_consume_voltage(&ch, 20000);
 	zassert_equal(ch.measured_voltage, INT16_MAX);
-}
-
-ZTEST(vc_channel_state, test_voltage_protection_triggers_fault)
-{
-	struct vc_channel_config cfg;
-
-	vc_channel_get_config(&ch, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.voltage_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
-	cfg.ramp_up_step = 0;
-	vc_channel_set_config(&ch, &cfg, false);
-	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	ch.pending.valid = false;
-
-	vc_channel_tick_ramp(&ch, 100, &default_sys);
-	ch.pending.valid = false;
-
-	vc_channel_consume_voltage(&ch, 3100);
-
-	zassert_true(ch.active_fault_cause & VC_FAULT_VOLTAGE);
-	zassert_true(ch.fault_history_cause & VC_FAULT_VOLTAGE);
-	zassert_equal(ch.operational_target_voltage, 0);
-	zassert_true(ch.pending.valid);
-	zassert_false(ch.pending.output_enable);
-}
-
-ZTEST(vc_channel_state, test_voltage_protection_flag_only_no_active_fault)
-{
-	struct vc_channel_config cfg;
-
-	vc_channel_get_config(&ch, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_FLAG_ONLY;
-	cfg.ramp_up_step = 0;
-	vc_channel_set_config(&ch, &cfg, false);
-	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	ch.pending.valid = false;
-
-	vc_channel_tick_ramp(&ch, 100, &default_sys);
-	ch.pending.valid = false;
-
-	vc_channel_consume_voltage(&ch, 3100);
-
-	zassert_equal(ch.active_fault_cause, 0);
-	zassert_true(ch.fault_history_cause & VC_FAULT_VOLTAGE);
-}
-
-ZTEST(vc_channel_state, test_voltage_protection_clamp)
-{
-	struct vc_channel_config cfg;
-
-	vc_channel_get_config(&ch, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.voltage_protection_output_action = VC_OUTPUT_ACTION_CLAMP;
-	cfg.ramp_up_step = 0;
-	vc_channel_set_config(&ch, &cfg, false);
-	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	ch.pending.valid = false;
-
-	vc_channel_tick_ramp(&ch, 100, &default_sys);
-	ch.pending.valid = false;
-
-	vc_channel_consume_voltage(&ch, 3100);
-
-	zassert_equal(ch.operational_target_voltage, 3000);
-	zassert_true(ch.active_fault_cause & VC_FAULT_VOLTAGE);
 }
 
 /* ---- Consume current ---- */
@@ -421,7 +345,7 @@ ZTEST(vc_channel_state, test_set_field_target_voltage)
 
 ZTEST(vc_channel_state, test_set_field_rejects_system_field)
 {
-	zassert_equal(vc_channel_set_field(&ch, VC_FIELD_SLAVE_ADDRESS, 42, false),
+	zassert_equal(vc_channel_set_field(&ch, VC_FIELD_OPERATING_MODE, 0, false),
 		      VC_ERR_INVALID_VALUE);
 }
 
@@ -533,4 +457,33 @@ ZTEST(vc_channel_state, test_take_pending_command_clears_valid)
 	zassert_true(cmd.valid);
 	zassert_true(cmd.output_enable);
 	zassert_false(ch.pending.valid);
+}
+
+ZTEST(vc_channel_state, test_current_protection_skipped_during_ramping)
+{
+	struct vc_channel_config cfg;
+
+	vc_channel_get_config(&ch, &cfg);
+	cfg.configured_target_voltage = 5000;
+	cfg.current_limit_threshold = 100;
+	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
+	cfg.current_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
+	cfg.ramp_up_step = 100;
+	cfg.ramp_up_interval = 1;
+	vc_channel_set_config(&ch, &cfg, false);
+	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
+	ch.pending.valid = false;
+
+	/* Ramp partway — channel is still ramping */
+	vc_channel_tick_ramp(&ch, 100, &default_sys);
+	zassert_true(ch.ramping);
+	ch.pending.valid = false;
+
+	/* Inject overcurrent while ramping */
+	vc_channel_consume_current(&ch, 200);
+
+	zassert_equal(ch.active_fault_cause, 0,
+		      "current protection must not fire during ramping");
+	zassert_equal(ch.fault_history_cause, 0,
+		      "current protection must not flag during ramping");
 }

@@ -9,8 +9,20 @@
 #include <zephyr/ztest.h>
 
 #include "regmap/vc_regs.h"
-#include "voltage_control/modbus_adapter.h"
+#include "modbus_adapter/modbus_adapter.h"
 #include "voltage_control/vc.h"
+#include "sys_status/sys_status.h"
+
+struct sys_status_snapshot sys_status_get(void)
+{
+	return (struct sys_status_snapshot){
+		.board_temperature = 250,
+		.board_humidity = 500,
+		.uptime = 0,
+		.fw_version_high = 0,
+		.fw_version_low = 1,
+	};
+}
 
 struct vc_ctx {
 	struct vc_runtime *runtime;
@@ -130,7 +142,6 @@ ZTEST(modbus_adapter, test_sys_holding_write_slave_address)
 
 	zassert_not_null(ctx);
 	zassert_equal(vc_mb_holding_wr(mb, SYS_SLAVE_ADDRESS, 42), VC_MB_OK);
-	k_msleep(50);
 	zassert_equal(vc_mb_holding_rd(mb, SYS_SLAVE_ADDRESS, &reg), VC_MB_OK);
 	zassert_equal(reg, 42);
 
@@ -224,7 +235,7 @@ ZTEST(modbus_adapter, test_onoff_channel_rejects_protection_write)
 
 	zassert_not_null(ctx);
 	zassert_equal(vc_mb_holding_wr(mb,
-				       CH_BLOCK_BASE(0) + CH_VOLTAGE_PROTECTION_MODE,
+				       CH_BLOCK_BASE(0) + CH_CURRENT_PROTECTION_MODE,
 				       VC_PROTECTION_MODE_FLAG_ONLY),
 		      VC_MB_ILLEGAL_ADDRESS);
 

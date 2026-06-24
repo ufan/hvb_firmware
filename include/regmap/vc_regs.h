@@ -78,7 +78,6 @@
 #define SYS_AUTO_RETRY_DELAY          4
 #define SYS_AUTO_RETRY_MAX_COUNT      5
 #define SYS_AUTO_RETRY_WINDOW         6
-#define SYS_VOLTAGE_SAFE_BAND_PCT     7
 #define SYS_CURRENT_SAFE_BAND_PCT     8
 /* 9..38 reserved */
 #define SYS_PARAM_ACTION              39
@@ -119,9 +118,6 @@
 #define CH_RAMP_UP_INTERVAL           5
 #define CH_RAMP_DOWN_STEP             6
 #define CH_RAMP_DOWN_INTERVAL         7
-#define CH_VOLTAGE_PROTECTION_MODE    8
-#define CH_VOLTAGE_PROT_OUT_ACTION    9
-#define CH_VOLTAGE_LIMIT_THRESHOLD    10
 #define CH_CURRENT_PROTECTION_MODE    11
 #define CH_CURRENT_PROT_OUT_ACTION    12
 #define CH_CURRENT_LIMIT_THRESHOLD    13

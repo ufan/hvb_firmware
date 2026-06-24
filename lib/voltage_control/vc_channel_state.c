@@ -24,7 +24,6 @@ static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT] = {
 static struct vc_channel_config default_channel_config(void)
 {
 	return (struct vc_channel_config){
-		.voltage_limit_threshold = VC_DEFAULT_MAX_VOLTAGE_RAW,
 		.current_limit_threshold = VC_DEFAULT_MAX_CURRENT_RAW,
 		.output_calib_k = 10000,
 		.measured_voltage_calib_k = 10000,
@@ -131,8 +130,7 @@ static bool is_valid_protection_mode(enum vc_protection_mode mode)
 	return mode <= VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
 }
 
-static bool is_valid_protection_output_action(enum vc_output_action action,
-					      bool is_voltage)
+static bool is_valid_protection_output_action(enum vc_output_action action)
 {
 	switch (action) {
 	case VC_OUTPUT_ACTION_NONE:
@@ -140,8 +138,6 @@ static bool is_valid_protection_output_action(enum vc_output_action action,
 	case VC_OUTPUT_ACTION_DISABLE_IMMEDIATE:
 	case VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO:
 		return true;
-	case VC_OUTPUT_ACTION_CLAMP:
-		return is_voltage;
 	default:
 		return false;
 	}
@@ -176,10 +172,7 @@ static enum vc_status validate_capability_config(
 		}
 	}
 	if (!channel_has_cap(ch, CH_CAP_VOLTAGE_MEASUREMENT)) {
-		if (new_cfg->voltage_protection_mode != VC_PROTECTION_MODE_DISABLED ||
-		    new_cfg->voltage_protection_output_action != old_cfg->voltage_protection_output_action ||
-		    new_cfg->voltage_limit_threshold != old_cfg->voltage_limit_threshold ||
-		    new_cfg->measured_voltage_calib_k != old_cfg->measured_voltage_calib_k ||
+		if (new_cfg->measured_voltage_calib_k != old_cfg->measured_voltage_calib_k ||
 		    new_cfg->measured_voltage_calib_b != old_cfg->measured_voltage_calib_b) {
 			return VC_ERR_UNSUPPORTED_CAPABILITY;
 		}
@@ -203,8 +196,7 @@ static enum vc_status validate_capability_config(
 }
 
 static void apply_protection_action(struct vc_channel *ch,
-				    enum vc_output_action action,
-				    int16_t clamp_limit)
+				    enum vc_output_action action)
 {
 	ch->last_protection_output_action = action;
 
@@ -212,9 +204,6 @@ static void apply_protection_action(struct vc_channel *ch,
 	case VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO:
 		ch->operational_target_voltage = 0;
 		ch->output_enabled = false;
-		break;
-	case VC_OUTPUT_ACTION_CLAMP:
-		ch->operational_target_voltage = clamp_limit;
 		break;
 	case VC_OUTPUT_ACTION_DISABLE_IMMEDIATE:
 		ch->output_enabled = false;
@@ -232,38 +221,14 @@ static void apply_protection_action(struct vc_channel *ch,
 	set_pending(ch);
 }
 
-static void tick_voltage_protection(struct vc_channel *ch)
-{
-	const struct vc_channel_config *cfg = &ch->config;
-
-	if (ch->active_fault_cause != 0) {
-		return;
-	}
-	if (cfg->voltage_protection_mode == VC_PROTECTION_MODE_DISABLED) {
-		return;
-	}
-	if (ch->measured_voltage <= cfg->voltage_limit_threshold) {
-		return;
-	}
-
-	ch->fault_history_cause |= VC_FAULT_VOLTAGE;
-
-	if (cfg->voltage_protection_mode != VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION) {
-		return;
-	}
-
-	ch->active_fault_cause |= VC_FAULT_VOLTAGE;
-	ch->last_fault_timestamp = ch->uptime_ref;
-	apply_protection_action(ch, cfg->voltage_protection_output_action,
-				cfg->voltage_limit_threshold);
-	set_smf_state(ch, VC_CHANNEL_SMF_FAULT_LATCHED);
-}
-
 static void tick_current_protection(struct vc_channel *ch)
 {
 	const struct vc_channel_config *cfg = &ch->config;
 
 	if (ch->active_fault_cause != 0) {
+		return;
+	}
+	if (ch->ramping) {
 		return;
 	}
 	if (cfg->current_protection_mode == VC_PROTECTION_MODE_DISABLED) {
@@ -281,8 +246,7 @@ static void tick_current_protection(struct vc_channel *ch)
 
 	ch->active_fault_cause |= VC_FAULT_CURRENT;
 	ch->last_fault_timestamp = ch->uptime_ref;
-	apply_protection_action(ch, cfg->current_protection_output_action,
-				cfg->current_limit_threshold);
+	apply_protection_action(ch, cfg->current_protection_output_action);
 	set_smf_state(ch, VC_CHANNEL_SMF_FAULT_LATCHED);
 }
 
@@ -303,13 +267,6 @@ static bool is_safe_to_clear_active(const struct vc_channel *ch,
 	const struct vc_channel_config *cfg = &ch->config;
 	int32_t safe_limit;
 
-	if (ch->active_fault_cause & VC_FAULT_VOLTAGE) {
-		safe_limit = (int32_t)cfg->voltage_limit_threshold *
-			     (100 - (int32_t)sys_cfg->voltage_safe_band_pct) / 100;
-		if (ch->measured_voltage > safe_limit) {
-			return false;
-		}
-	}
 	if (ch->active_fault_cause & VC_FAULT_CURRENT) {
 		safe_limit = (int32_t)cfg->current_limit_threshold *
 			     (100 - (int32_t)sys_cfg->current_safe_band_pct) / 100;
@@ -369,19 +326,12 @@ enum vc_status vc_channel_set_config(struct vc_channel *ch,
 		st = VC_ERR_INVALID_VALUE;
 		goto out;
 	}
-	if (cfg->voltage_limit_threshold > VC_DEFAULT_MAX_VOLTAGE_RAW ||
-	    cfg->voltage_limit_threshold < VC_DEFAULT_MIN_VOLTAGE_RAW) {
-		st = VC_ERR_INVALID_VALUE;
-		goto out;
-	}
 	if (cfg->current_limit_threshold < 0) {
 		st = VC_ERR_INVALID_VALUE;
 		goto out;
 	}
-	if (!is_valid_protection_mode(cfg->voltage_protection_mode) ||
-	    !is_valid_protection_output_action(cfg->voltage_protection_output_action, true) ||
-	    !is_valid_protection_mode(cfg->current_protection_mode) ||
-	    !is_valid_protection_output_action(cfg->current_protection_output_action, false)) {
+	if (!is_valid_protection_mode(cfg->current_protection_mode) ||
+	    !is_valid_protection_output_action(cfg->current_protection_output_action)) {
 		st = VC_ERR_INVALID_VALUE;
 		goto out;
 	}
@@ -392,7 +342,6 @@ enum vc_status vc_channel_set_config(struct vc_channel *ch,
 
 	ch->config = *cfg;
 	if (!calibration_mode) {
-		tick_voltage_protection(ch);
 		tick_current_protection(ch);
 	}
 	set_pending(ch);
@@ -431,15 +380,6 @@ enum vc_status vc_channel_set_field(struct vc_channel *ch,
 		break;
 	case VC_FIELD_RAMP_DOWN_INTERVAL:
 		cfg.ramp_down_interval = value;
-		break;
-	case VC_FIELD_VOLTAGE_PROTECTION_MODE:
-		cfg.voltage_protection_mode = (enum vc_protection_mode)value;
-		break;
-	case VC_FIELD_VOLTAGE_PROT_OUT_ACTION:
-		cfg.voltage_protection_output_action = (enum vc_output_action)value;
-		break;
-	case VC_FIELD_VOLTAGE_LIMIT_THRESHOLD:
-		cfg.voltage_limit_threshold = (int16_t)value;
 		break;
 	case VC_FIELD_CURRENT_PROTECTION_MODE:
 		cfg.current_protection_mode = (enum vc_protection_mode)value;
@@ -604,7 +544,6 @@ void vc_channel_consume_voltage(struct vc_channel *ch, int32_t raw_voltage)
 		((int64_t)raw_voltage * ch->config.measured_voltage_calib_k) /
 		10000 + ch->config.measured_voltage_calib_b);
 
-	tick_voltage_protection(ch);
 	update_status_bits(ch);
 
 	k_spin_unlock(&ch->lock, key);
@@ -619,7 +558,9 @@ void vc_channel_consume_current(struct vc_channel *ch, int32_t raw_current)
 		((int64_t)raw_current * ch->config.measured_current_calib_k) /
 		10000 + ch->config.measured_current_calib_b);
 
-	tick_current_protection(ch);
+	if (!ch->ramping) {
+		tick_current_protection(ch);
+	}
 	update_status_bits(ch);
 
 	k_spin_unlock(&ch->lock, key);

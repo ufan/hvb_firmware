@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config SYS_STATUS
+	bool "System status module (heartbeat, environment sensor, uptime)"
+	default n
+	help
+	  Self-contained module: SYS_RUN heartbeat LED, SHT3x temp/humidity,
+	  uptime. Initialized via SYS_INIT, runs its own thread.
+
+if SYS_STATUS
+
+config SYS_STATUS_HEARTBEAT_INTERVAL_MS
+	int "Heartbeat LED toggle interval (ms)"
+	default 500
+	range 100 5000
+	help
+	  Interval in milliseconds between SYS_RUN LED toggles.
+
+config SYS_STATUS_SENSOR_INTERVAL_MS
+	int "Temperature/humidity sensor poll interval (ms)"
+	default 1000
+	range 500 60000
+	help
+	  Interval in milliseconds between SHT3x sensor reads.
+
+config SYS_STATUS_THREAD_STACK_SIZE
+	int "sys_status thread stack size"
+	default 1024
+	range 512 4096
+	help
+	  Stack size in bytes for the sys_status worker thread.
+
+config SYS_STATUS_THREAD_PRIORITY
+	int "sys_status thread priority"
+	default 7
+	range 1 15
+	help
+	  Zephyr thread priority for the sys_status worker.
+
+endif # SYS_STATUS

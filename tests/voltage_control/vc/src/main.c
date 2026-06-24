@@ -78,14 +78,15 @@ ZTEST(vc_api, test_dispatch_channel_field)
 ZTEST(vc_api, test_dispatch_system_field)
 {
 	zassert_equal(vc_dispatch(ctx,
-				  vc_cmd_sys_field(VC_FIELD_SLAVE_ADDRESS, 42),
+				  vc_cmd_sys_field(VC_FIELD_RECOVERY_POLICY_MODE,
+						   VC_RECOVERY_AUTO_RETRY),
 				  K_SECONDS(1)), VC_OK);
 
 	struct vc_system_config cfg;
 
 	k_msleep(50);
 	zassert_equal(vc_query(ctx, vc_q_system_config(&cfg)), VC_OK);
-	zassert_equal(cfg.slave_address, 42);
+	zassert_equal(cfg.recovery_policy_mode, VC_RECOVERY_AUTO_RETRY);
 }
 
 ZTEST(vc_api, test_dispatch_calibration)

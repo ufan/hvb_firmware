@@ -109,7 +109,6 @@ static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 		vc_controller_get_channel_config(ctrl, ch,
 						 &runtime->published.configs[ch]);
 	}
-	runtime->published.system.uptime = (uint32_t)(k_uptime_get() / 1000);
 	k_mutex_unlock(&runtime->snapshot_lock);
 }
 

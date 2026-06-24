@@ -56,27 +56,6 @@ ZTEST(vc_controller, test_consume_voltage_routes_and_drains)
 	zassert_false(ctrl->channels[0].pending.valid);
 }
 
-ZTEST(vc_controller, test_consume_voltage_triggers_protection)
-{
-	struct vc_channel_config cfg;
-
-	vc_controller_get_channel_config(ctrl, 0, &cfg);
-	cfg.configured_target_voltage = 5000;
-	cfg.voltage_limit_threshold = 3000;
-	cfg.voltage_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.voltage_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
-	cfg.ramp_up_step = 0;
-	vc_channel_set_config(&ctrl->channels[0], &cfg, false);
-	vc_controller_channel_output_action(ctrl, 0, VC_OUTPUT_ACTION_ENABLE);
-	vc_controller_tick(ctrl, 100);
-
-	vc_controller_consume_voltage(ctrl, 0, 3100);
-
-	zassert_true(ctrl->channels[0].active_fault_cause & VC_FAULT_VOLTAGE);
-	zassert_false(ctrl->channels[0].output_enabled);
-	zassert_false(ctrl->channels[0].pending.valid);
-}
-
 ZTEST(vc_controller, test_tick_ramps_and_drains)
 {
 	struct vc_channel_config cfg;
@@ -127,8 +106,6 @@ ZTEST(vc_controller, test_system_config_defaults)
 	struct vc_system_config cfg;
 
 	vc_controller_get_system_config(ctrl, &cfg);
-	zassert_equal(cfg.slave_address, 1);
-	zassert_equal(cfg.baud_rate_code, VC_BAUD_RATE_115200);
 	zassert_equal(cfg.recovery_policy_mode, VC_RECOVERY_MANUAL_LATCH);
 }
 

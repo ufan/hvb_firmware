@@ -20,7 +20,6 @@ struct vc_channel_entry {
 	uint16_t           capabilities;
 };
 
-#define VC_FAULT_VOLTAGE       0x0001
 #define VC_FAULT_CURRENT       0x0002
 #define VC_FAULT_MEASUREMENT   0x0004
 #define VC_FAULT_HARDWARE      0x0008
@@ -58,7 +57,6 @@ enum vc_output_action {
 	VC_OUTPUT_ACTION_DISABLE_GRACEFUL = 2,
 	VC_OUTPUT_ACTION_DISABLE_IMMEDIATE = 3,
 	VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO = 4,
-	VC_OUTPUT_ACTION_CLAMP = 5,
 };
 
 enum vc_channel_fault_command {
@@ -88,20 +86,12 @@ enum vc_param_action {
 	VC_PARAM_ACTION_SOFTWARE_RESET = 255,
 };
 
-enum vc_baud_rate_code {
-	VC_BAUD_RATE_115200 = 0,
-	VC_BAUD_RATE_9600 = 1,
-};
-
 struct vc_channel_config {
 	int16_t configured_target_voltage;
 	uint16_t ramp_up_step;
 	uint16_t ramp_up_interval;
 	uint16_t ramp_down_step;
 	uint16_t ramp_down_interval;
-	enum vc_protection_mode voltage_protection_mode;
-	enum vc_output_action voltage_protection_output_action;
-	int16_t voltage_limit_threshold;
 	enum vc_protection_mode current_protection_mode;
 	enum vc_output_action current_protection_output_action;
 	int16_t current_limit_threshold;
@@ -117,13 +107,10 @@ struct vc_channel_config {
 
 struct vc_system_config {
 	enum vc_operating_mode operating_mode;
-	uint16_t slave_address;
-	enum vc_baud_rate_code baud_rate_code;
 	enum vc_recovery_policy_mode recovery_policy_mode;
 	uint16_t auto_retry_delay;
 	uint16_t auto_retry_max_count;
 	uint16_t auto_retry_window;
-	uint16_t voltage_safe_band_pct;
 	uint16_t current_safe_band_pct;
 };
 
@@ -154,11 +141,6 @@ struct vc_system_snapshot {
 	uint16_t system_capability_flags;
 	uint16_t supported_channel_count;
 	uint16_t active_channel_mask;
-	int16_t board_temperature;
-	uint16_t board_humidity;
-	uint32_t uptime;
-	uint16_t fw_version_high;
-	uint16_t fw_version_low;
 	enum vc_operating_mode active_operating_mode;
 	uint16_t system_status;
 	uint16_t system_fault_cause;
@@ -166,13 +148,10 @@ struct vc_system_snapshot {
 
 enum vc_config_field {
 	VC_FIELD_OPERATING_MODE,
-	VC_FIELD_SLAVE_ADDRESS,
-	VC_FIELD_BAUD_RATE_CODE,
 	VC_FIELD_RECOVERY_POLICY_MODE,
 	VC_FIELD_AUTO_RETRY_DELAY,
 	VC_FIELD_AUTO_RETRY_MAX_COUNT,
 	VC_FIELD_AUTO_RETRY_WINDOW,
-	VC_FIELD_VOLTAGE_SAFE_BAND_PCT,
 	VC_FIELD_CURRENT_SAFE_BAND_PCT,
 
 	VC_FIELD_CONFIGURED_TARGET_VOLTAGE,
@@ -180,9 +159,6 @@ enum vc_config_field {
 	VC_FIELD_RAMP_UP_INTERVAL,
 	VC_FIELD_RAMP_DOWN_STEP,
 	VC_FIELD_RAMP_DOWN_INTERVAL,
-	VC_FIELD_VOLTAGE_PROTECTION_MODE,
-	VC_FIELD_VOLTAGE_PROT_OUT_ACTION,
-	VC_FIELD_VOLTAGE_LIMIT_THRESHOLD,
 	VC_FIELD_CURRENT_PROTECTION_MODE,
 	VC_FIELD_CURRENT_PROT_OUT_ACTION,
 	VC_FIELD_CURRENT_LIMIT_THRESHOLD,

@@ -10,17 +10,14 @@
 
 #define VC_VARIANT_ID 1
 #define VC_DEFAULT_SYSTEM_CAPS \
-	(SYS_CAP_AUTOMATIC_MODE | SYS_CAP_ENV_SENSOR | SYS_CAP_CALIBRATION_MODE)
+	(SYS_CAP_AUTOMATIC_MODE | SYS_CAP_CALIBRATION_MODE)
 #define VC_CHANNEL_MASK(c) ((1U << (c)) - 1)
 
 static struct vc_system_config default_system_config(void)
 {
 	return (struct vc_system_config){
 		.operating_mode = VC_OPERATING_MODE_NORMAL,
-		.slave_address = 1,
-		.baud_rate_code = VC_BAUD_RATE_115200,
 		.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
-		.voltage_safe_band_pct = 10,
 		.current_safe_band_pct = 10,
 	};
 }
@@ -218,13 +215,7 @@ enum vc_status vc_controller_get_system_config(
 enum vc_status vc_controller_set_system_config(
 	struct vc_controller *ctrl, const struct vc_system_config *cfg)
 {
-	if (cfg->slave_address > 247) {
-		return VC_ERR_INVALID_VALUE;
-	}
-	if (cfg->baud_rate_code > VC_BAUD_RATE_9600) {
-		return VC_ERR_INVALID_VALUE;
-	}
-	if (cfg->voltage_safe_band_pct > 50 || cfg->current_safe_band_pct > 50) {
+	if (cfg->current_safe_band_pct > 50) {
 		return VC_ERR_INVALID_VALUE;
 	}
 
@@ -383,7 +374,6 @@ enum vc_status vc_controller_channel_param_action(
 	case VC_PARAM_ACTION_FACTORY_RESET: {
 		struct vc_channel_config cfg;
 		struct vc_channel_config defaults = {
-			.voltage_limit_threshold = 20000,
 			.current_limit_threshold = 32767,
 			.output_calib_k = 10000,
 			.measured_voltage_calib_k = 10000,
@@ -422,12 +412,6 @@ enum vc_status vc_controller_set_system_field(
 	case VC_FIELD_OPERATING_MODE:
 		return vc_controller_set_operating_mode(ctrl,
 						       (enum vc_operating_mode)value);
-	case VC_FIELD_SLAVE_ADDRESS:
-		cfg.slave_address = value;
-		break;
-	case VC_FIELD_BAUD_RATE_CODE:
-		cfg.baud_rate_code = (enum vc_baud_rate_code)value;
-		break;
 	case VC_FIELD_RECOVERY_POLICY_MODE:
 		cfg.recovery_policy_mode = (enum vc_recovery_policy_mode)value;
 		break;
@@ -439,9 +423,6 @@ enum vc_status vc_controller_set_system_field(
 		break;
 	case VC_FIELD_AUTO_RETRY_WINDOW:
 		cfg.auto_retry_window = value;
-		break;
-	case VC_FIELD_VOLTAGE_SAFE_BAND_PCT:
-		cfg.voltage_safe_band_pct = value;
 		break;
 	case VC_FIELD_CURRENT_SAFE_BAND_PCT:
 		cfg.current_safe_band_pct = value;

@@ -199,8 +199,7 @@ static bool is_valid_protection_mode(enum vc_protection_mode mode)
 	return mode <= VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
 }
 
-static bool is_valid_protection_output_action(enum vc_output_action action,
-					      bool is_voltage)
+static bool is_valid_protection_output_action(enum vc_output_action action)
 {
 	switch (action) {
 	case VC_OUTPUT_ACTION_NONE:
@@ -208,8 +207,6 @@ static bool is_valid_protection_output_action(enum vc_output_action action,
 	case VC_OUTPUT_ACTION_DISABLE_IMMEDIATE:
 	case VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO:
 		return true;
-	case VC_OUTPUT_ACTION_CLAMP:
-		return is_voltage;
 	default:
 		return false;
 	}
@@ -372,10 +369,7 @@ static enum vc_status validate_channel_capability_config(
 		}
 	}
 	if (!channel_has_cap(domain, channel, CH_CAP_VOLTAGE_MEASUREMENT)) {
-		if (new_cfg->voltage_protection_mode != VC_PROTECTION_MODE_DISABLED ||
-		    new_cfg->voltage_protection_output_action != old_cfg->voltage_protection_output_action ||
-		    new_cfg->voltage_limit_threshold != old_cfg->voltage_limit_threshold ||
-		    new_cfg->measured_voltage_calib_k != old_cfg->measured_voltage_calib_k ||
+		if (new_cfg->measured_voltage_calib_k != old_cfg->measured_voltage_calib_k ||
 		    new_cfg->measured_voltage_calib_b != old_cfg->measured_voltage_calib_b) {
 			return VC_ERR_UNSUPPORTED_CAPABILITY;
 		}
@@ -448,15 +442,12 @@ static void domain_init_smf(struct domain *domain)
 	}
 }
 
-/* Factory default system config: address=1, 115200 baud, manual latch recovery, 10% safe bands. */
+/* Factory default system config: manual latch recovery, 10% safe bands. */
 static struct vc_system_config domain_default_system_config(void)
 {
 	return (struct vc_system_config){
 		.operating_mode = VC_OPERATING_MODE_NORMAL,
-		.slave_address = 1,
-		.baud_rate_code = VC_BAUD_RATE_115200,
 		.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
-		.voltage_safe_band_pct = 10,
 		.current_safe_band_pct = 10,
 	};
 }
@@ -465,7 +456,6 @@ static struct vc_system_config domain_default_system_config(void)
 static struct vc_channel_config domain_default_channel_config(void)
 {
 	return (struct vc_channel_config){
-		.voltage_limit_threshold = VC_DEFAULT_MAX_VOLTAGE_RAW,
 		.current_limit_threshold = VC_DEFAULT_MAX_CURRENT_RAW,
 		.output_calib_k = 10000,
 		.measured_voltage_calib_k = 10000,
@@ -672,16 +662,7 @@ enum vc_status domain_set_system_config(struct domain *domain,
 	    !domain->cal_unlocked) {
 		return VC_ERR_INVALID_COMMAND;
 	}
-	if (cfg->slave_address > 247) {
-		return VC_ERR_INVALID_VALUE;
-	}
-	if (cfg->baud_rate_code > VC_BAUD_RATE_9600) {
-		return VC_ERR_INVALID_VALUE;
-	}
 	if (!is_valid_recovery_policy(cfg->recovery_policy_mode)) {
-		return VC_ERR_INVALID_VALUE;
-	}
-	if (cfg->voltage_safe_band_pct > 50) {
 		return VC_ERR_INVALID_VALUE;
 	}
 	if (cfg->current_safe_band_pct > 50) {
@@ -770,25 +751,13 @@ enum vc_status domain_set_channel_config(struct domain *domain,
 	    cfg->configured_target_voltage < min_v) {
 		return VC_ERR_INVALID_VALUE;
 	}
-	if (cfg->voltage_limit_threshold > max_v ||
-	    cfg->voltage_limit_threshold < min_v) {
-		return VC_ERR_INVALID_VALUE;
-	}
 	if (cfg->current_limit_threshold < 0) {
-		return VC_ERR_INVALID_VALUE;
-	}
-	if (!is_valid_protection_mode(cfg->voltage_protection_mode)) {
-		return VC_ERR_INVALID_VALUE;
-	}
-	if (!is_valid_protection_output_action(cfg->voltage_protection_output_action,
-					       true)) {
 		return VC_ERR_INVALID_VALUE;
 	}
 	if (!is_valid_protection_mode(cfg->current_protection_mode)) {
 		return VC_ERR_INVALID_VALUE;
 	}
-	if (!is_valid_protection_output_action(cfg->current_protection_output_action,
-					       false)) {
+	if (!is_valid_protection_output_action(cfg->current_protection_output_action)) {
 		return VC_ERR_INVALID_VALUE;
 	}
 	if (cfg->save_target_policy > 1) {
@@ -903,7 +872,6 @@ enum vc_status domain_get_system_snapshot(const struct domain *domain,
 	snap->system_capability_flags = VC_DEFAULT_SYSTEM_CAPS;
 	snap->supported_channel_count = (uint16_t)domain->channel_count;
 	snap->active_channel_mask = VC_CHANNEL_MASK(domain->channel_count);
-	snap->uptime = domain->uptime_seconds;
 	snap->active_operating_mode = domain->operating_mode;
 	snap->system_fault_cause = domain->system_fault_cause;
 	return VC_OK;
@@ -1167,13 +1135,6 @@ static bool vc_is_safe_to_clear_active(const struct domain *domain,
 	const struct vc_system_config *sys = &domain->sys_cfg;
 	int32_t safe_limit;
 
-	if (fault_bits & VC_FAULT_VOLTAGE) {
-		safe_limit = (int32_t)cfg->voltage_limit_threshold *
-			     (100 - (int32_t)sys->voltage_safe_band_pct) / 100;
-		if (snap->measured_voltage > safe_limit) {
-			return false;
-		}
-	}
 	if (fault_bits & VC_FAULT_CURRENT) {
 		safe_limit = (int32_t)cfg->current_limit_threshold *
 			     (100 - (int32_t)sys->current_safe_band_pct) / 100;
@@ -1360,12 +1321,6 @@ enum vc_status domain_set_system_field(struct domain *domain,
 	switch (field) {
 	case VC_FIELD_OPERATING_MODE:
 		return domain_set_operating_mode(domain, (enum vc_operating_mode)value);
-	case VC_FIELD_SLAVE_ADDRESS:
-		cfg.slave_address = value;
-		break;
-	case VC_FIELD_BAUD_RATE_CODE:
-		cfg.baud_rate_code = (enum vc_baud_rate_code)value;
-		break;
 	case VC_FIELD_RECOVERY_POLICY_MODE:
 		cfg.recovery_policy_mode = (enum vc_recovery_policy_mode)value;
 		break;
@@ -1377,9 +1332,6 @@ enum vc_status domain_set_system_field(struct domain *domain,
 		break;
 	case VC_FIELD_AUTO_RETRY_WINDOW:
 		cfg.auto_retry_window = value;
-		break;
-	case VC_FIELD_VOLTAGE_SAFE_BAND_PCT:
-		cfg.voltage_safe_band_pct = value;
 		break;
 	case VC_FIELD_CURRENT_SAFE_BAND_PCT:
 		cfg.current_safe_band_pct = value;
@@ -1423,15 +1375,6 @@ enum vc_status domain_set_channel_field(struct domain *domain,
 		break;
 	case VC_FIELD_RAMP_DOWN_INTERVAL:
 		cfg.ramp_down_interval = value;
-		break;
-	case VC_FIELD_VOLTAGE_PROTECTION_MODE:
-		cfg.voltage_protection_mode = (enum vc_protection_mode)value;
-		break;
-	case VC_FIELD_VOLTAGE_PROT_OUT_ACTION:
-		cfg.voltage_protection_output_action = (enum vc_output_action)value;
-		break;
-	case VC_FIELD_VOLTAGE_LIMIT_THRESHOLD:
-		cfg.voltage_limit_threshold = (int16_t)value;
 		break;
 	case VC_FIELD_CURRENT_PROTECTION_MODE:
 		cfg.current_protection_mode = (enum vc_protection_mode)value;
@@ -1544,8 +1487,7 @@ static void vc_tick_ramp(struct domain *domain, uint8_t ch, uint32_t dt_ms)
 
 /* Execute a protection output action (force zero, clamp, disable) on a faulted channel. */
 static void apply_protection_action(struct domain *domain, uint8_t channel,
-				    enum vc_output_action action,
-				    int16_t clamp_limit)
+				    enum vc_output_action action)
 {
 	struct vc_channel_snapshot *snap = &domain->snapshots[channel];
 	struct vc_channel_runtime *rt = &domain->runtime[channel];
@@ -1558,9 +1500,6 @@ static void apply_protection_action(struct domain *domain, uint8_t channel,
 	case VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO:
 		snap->operational_target_voltage = 0;
 		rt->output_enabled = false;
-		break;
-	case VC_OUTPUT_ACTION_CLAMP:
-		snap->operational_target_voltage = clamp_limit;
 		break;
 	case VC_OUTPUT_ACTION_DISABLE_IMMEDIATE:
 		rt->output_enabled = false;
@@ -1596,65 +1535,36 @@ static bool should_start_cooldown(const struct domain *domain)
 	       sys->recovery_policy_mode != VC_RECOVERY_NEVER_RETRY;
 }
 
-/* Check voltage/current limits; set faults and apply protection actions if exceeded. */
+/* Check current limit; set faults and apply protection action if exceeded. */
 static void vc_tick_protection(struct domain *domain, uint8_t ch)
 {
 	struct vc_channel_config *cfg = &domain->channels[ch];
 	struct vc_channel_snapshot *snap = &domain->snapshots[ch];
 	struct vc_channel_runtime *rt = &domain->runtime[ch];
-	bool cur_fault, vol_fault;
-	bool cur_block, vol_block;
-	enum vc_output_action cur_action, vol_action;
 
 	if (snap->active_fault_cause != 0) {
 		return;
 	}
-
-	cur_fault = (cfg->current_protection_mode != VC_PROTECTION_MODE_DISABLED &&
-		     snap->measured_current > cfg->current_limit_threshold);
-	vol_fault = (cfg->voltage_protection_mode != VC_PROTECTION_MODE_DISABLED &&
-		     snap->measured_voltage > cfg->voltage_limit_threshold);
-
-	if (!cur_fault && !vol_fault) {
+	/* Current protection only evaluates when holding (not ramping). */
+	if (rt->ramping) {
+		return;
+	}
+	if (cfg->current_protection_mode == VC_PROTECTION_MODE_DISABLED) {
+		return;
+	}
+	if (snap->measured_current <= cfg->current_limit_threshold) {
 		return;
 	}
 
-	cur_block = cur_fault &&
-		    cfg->current_protection_mode == VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	vol_block = vol_fault &&
-		    cfg->voltage_protection_mode == VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
+	snap->fault_history_cause |= VC_FAULT_CURRENT;
 
-	cur_action = (cur_fault) ? cfg->current_protection_output_action
-				 : VC_OUTPUT_ACTION_NONE;
-	vol_action = (vol_fault) ? cfg->voltage_protection_output_action
-				 : VC_OUTPUT_ACTION_NONE;
-
-	if (cur_fault) {
-		snap->fault_history_cause |= VC_FAULT_CURRENT;
-	}
-	if (vol_fault) {
-		snap->fault_history_cause |= VC_FAULT_VOLTAGE;
-	}
-
-	if (!cur_block && !vol_block) {
+	if (cfg->current_protection_mode != VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION) {
 		return;
 	}
 
+	snap->active_fault_cause |= VC_FAULT_CURRENT;
 	snap->last_fault_timestamp = domain->uptime_seconds;
-
-	if (cur_block && vol_block) {
-		snap->active_fault_cause |= VC_FAULT_CURRENT | VC_FAULT_VOLTAGE;
-		apply_protection_action(domain, ch, cur_action,
-					cfg->current_limit_threshold);
-	} else if (cur_block) {
-		snap->active_fault_cause |= VC_FAULT_CURRENT;
-		apply_protection_action(domain, ch, cur_action,
-					cfg->current_limit_threshold);
-	} else {
-		snap->active_fault_cause |= VC_FAULT_VOLTAGE;
-		apply_protection_action(domain, ch, vol_action,
-					cfg->voltage_limit_threshold);
-	}
+	apply_protection_action(domain, ch, cfg->current_protection_output_action);
 
 	if (should_start_cooldown(domain)) {
 		start_cooldown(rt, &domain->sys_cfg);
