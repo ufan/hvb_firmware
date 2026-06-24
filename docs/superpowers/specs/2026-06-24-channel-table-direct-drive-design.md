@@ -555,7 +555,132 @@ The spinlock also serializes pending command production. Only one pending comman
 
 ## DTS Binding Changes
 
-No changes to any DTS bindings. The `drdy-gpios` property already exists in `ti,ads1232.yaml`. GPIO interrupt configuration happens at runtime in the driver via `gpio_pin_interrupt_configure_dt()`.
+### `jianwei,vc-controller.yaml` — Revised: child node composition
+
+The controller binding changes from a phandle array to child node composition. Virtual channels become direct children of the controller node with `reg` for explicit index assignment:
+
+```yaml
+compatible: "jianwei,vc-controller"
+
+child-binding:
+  description: Virtual voltage channel
+  properties:
+    reg:
+      type: int
+      required: true
+      description: Channel index (0-based).
+    label:
+      type: string
+      required: true
+      description: Human-readable channel name (e.g. "HV1", "HV2").
+    capabilities:
+      type: int
+      required: true
+      description: Bitmask of CH_CAP_* flags.
+    enable-gpios:
+      type: phandle-array
+      required: true
+      description: GPIO that gates channel output.
+```
+
+Variant-specific properties (dac, adc, sample-rate-ms, max-raw-dac) are declared in variant child bindings that extend this base child binding.
+
+### New DTS Layout (jw_hvb.dts)
+
+```dts
+vc_controller: vc-controller {
+    compatible = "jianwei,vc-controller";
+    #address-cells = <1>;
+    #size-cells = <0>;
+    status = "okay";
+
+    vc_ch0: channel@0 {
+        compatible = "jianwei,hvb-vc-channel";
+        reg = <0>;
+        label = "HV1";
+        capabilities = <(CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+                         CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)>;
+        dac = <&dac_hv1>;
+        adc = <&ads1232_hv1>;
+        enable-gpios = <&gpiod 9 GPIO_ACTIVE_LOW>;
+        max-raw-dac = <0xFFFF>;
+        sample-rate-ms = <100>;
+    };
+
+    vc_ch1: channel@1 {
+        compatible = "jianwei,hvb-vc-channel";
+        reg = <1>;
+        label = "HV2";
+        capabilities = <(CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+                         CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)>;
+        dac = <&dac_hv2>;
+        adc = <&ads1232_hv2>;
+        enable-gpios = <&gpioc 4 GPIO_ACTIVE_LOW>;
+        max-raw-dac = <0xFFFF>;
+        sample-rate-ms = <100>;
+    };
+};
+```
+
+Benefits over the current phandle array approach:
+- Channel index is `reg`, not a redundant `channel-index` property
+- The `channels = <&vc_ch0 &vc_ch1>` phandle array is eliminated — child node order and `reg` values define the topology
+- Channel names are explicit via `label`
+- The controller node is self-contained — no dangling top-level channel nodes
+- `DT_FOREACH_CHILD` iterates channels naturally
+- Future variant boards override only the controller's children
+
+### `jianwei,hvb-vc-channel.yaml` — Revised: child binding of controller
+
+No longer a standalone top-level binding. Becomes a child-compatible of `jianwei,vc-controller` that adds HVB-specific properties:
+
+```yaml
+compatible: "jianwei,hvb-vc-channel"
+description: HVB Virtual Voltage Channel (child of vc-controller)
+
+properties:
+  dac:
+    type: phandle
+    required: true
+  adc:
+    type: phandle
+    required: true
+  max-raw-dac:
+    type: int
+    default: 0xFFFF
+  sample-rate-ms:
+    type: int
+    default: 100
+```
+
+Base properties (`reg`, `label`, `capabilities`, `enable-gpios`) are inherited from the controller's child-binding.
+
+### `jianwei,vc-channel-base.yaml` — Deleted
+
+The base properties move into the controller's child-binding. No separate base yaml needed.
+
+### `ti,ads1232.yaml` — No changes
+
+The `drdy-gpios` property already exists. GPIO interrupt configuration happens at runtime via `gpio_pin_interrupt_configure_dt()`.
+
+### Channel Table Macro Update
+
+The `controller.c` DTS macro changes from `DT_FOREACH_PROP_ELEM` on a phandle array to `DT_FOREACH_CHILD` on the controller node:
+
+```c
+#define VC_CONTROLLER_NODE DT_NODELABEL(vc_controller)
+
+#define CH_ENTRY(node_id) \
+    { \
+        .dev = DEVICE_DT_GET(node_id), \
+        .index = DT_REG_ADDR(node_id), \
+        .capabilities = DT_PROP(node_id, capabilities), \
+    },
+
+const struct vc_channel_entry vc_channel_entries[] = {
+    DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, CH_ENTRY)
+};
+```
 
 ## Test Impact
 
@@ -571,3 +696,7 @@ No changes to any DTS bindings. The `drdy-gpios` property already exists in `ti,
 - The `vc_measurement_snapshot` struct is deleted. Replaced by `vc_measurement_buffer_entry` with bare raw values + timestamps for the monitoring path only.
 - Calibration mode: `domain_calibration_set_raw_dac` becomes `vc_channel_cal_set_raw_dac` on the virtual channel, with the voltage controller draining the pending command to `vc_channel_table_set_output`.
 - The `struct domain` shrinks to system-level state only. `vc_controller` owns channel state.
+- `VC_MAX_CHANNELS` macro changes from `DT_PROP_LEN(vc_controller, channels)` to `DT_CHILD_NUM_STATUS_OKAY(vc_controller)`.
+- DTS layout changes: channel nodes move from top-level to children of `vc-controller`. `channel-index` property replaced by `reg`. New `label` property for human-readable channel names. Boards using the old phandle array layout must be updated.
+- `jianwei,vc-channel-base.yaml` is deleted — base properties move into the controller's child-binding.
+- `jianwei,vc-channel-stub.yaml` updated to work as a child of `vc-controller` with `reg` instead of `channel-index`.
