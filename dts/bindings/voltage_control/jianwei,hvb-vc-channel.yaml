@@ -6,6 +6,22 @@ description: HVB Virtual Voltage Channel (child of vc-controller)
 compatible: "jianwei,hvb-vc-channel"
 
 properties:
+  reg:
+    type: array
+    required: true
+    description: Channel index (0-based).
+  label:
+    type: string
+    required: true
+    description: Human-readable channel name.
+  capabilities:
+    type: int
+    required: true
+    description: Bitmask of CH_CAP_* flags.
+  enable-gpios:
+    type: phandle-array
+    required: false
+    description: GPIO that gates channel output.
   dac:
     type: phandle
     required: true

@@ -4,7 +4,6 @@ config HVB_VC_CHANNEL
 	bool "HVB virtual voltage channel provider"
 	default y
 	depends on DT_HAS_JIANWEI_HVB_VC_CHANNEL_ENABLED
-	select VC_CHANNEL_PROVIDER
 	select ADS1232_INTERRUPT_DRIVEN
 	help
 	  Virtual voltage channel provider for Jianwei HVB boards.
