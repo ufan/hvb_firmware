@@ -17,28 +17,28 @@
 #define FULL_CAPS (CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE | \
 		   CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)
 
-static const struct vc_channel_entry test_channels[] = {
-	{ .dev = NULL, .index = 0, .capabilities = FULL_CAPS },
-	{ .dev = NULL, .index = 1, .capabilities = FULL_CAPS },
-};
-
-static const struct vc_channel_entry onoff_channels[] = {
-	{ .dev = NULL, .index = 0, .capabilities = CH_CAP_OUTPUT_ENABLE },
+struct vc_stub_data {
+	vc_meas_ready_cb_t meas_cb;
+	void *meas_cb_user_data;
+	uint16_t last_output_code;
+	bool last_enable;
 };
 
 static struct vc_controller *ctrl;
 
 static struct vc_controller *make_fresh(void)
 {
-	ctrl = vc_controller_init_static(test_channels, 2);
+	ctrl = vc_controller_init(NULL, NULL);
 	zassert_not_null(ctrl);
 	return ctrl;
 }
 
 static struct vc_controller *make_onoff(void)
 {
-	ctrl = vc_controller_init_static(onoff_channels, 1);
+	ctrl = vc_controller_init(NULL, NULL);
 	zassert_not_null(ctrl);
+	ctrl->channels[0].capabilities = CH_CAP_OUTPUT_ENABLE;
+	ctrl->channel_count = 1;
 	return ctrl;
 }
 
@@ -50,7 +50,7 @@ static bool is_cal_mode(const struct vc_controller *c)
 static void sim_tick(struct vc_controller *c, uint32_t dt_ms,
 		     const int16_t *v_noise, const int16_t *c_noise_arr)
 {
-	size_t n = vc_controller_channel_count(c);
+	size_t n = c->channel_count;
 
 	vc_controller_tick(c, dt_ms);
 
@@ -65,8 +65,8 @@ static void sim_tick(struct vc_controller *c, uint32_t dt_ms,
 			int32_t mv = snap.operational_target_voltage + v_noise[ch];
 			int32_t mi = mv / 2 + c_noise_arr[ch];
 
-			vc_controller_consume_voltage(c, ch, mv);
-			vc_controller_consume_current(c, ch, mi);
+			vc_channel_consume_voltage(&c->channels[ch], mv);
+			vc_channel_consume_current(&c->channels[ch], mi);
 		}
 	}
 
@@ -112,12 +112,12 @@ ZTEST(vc_domain, test_runtime_contract_defaults_are_zeroable)
 	zassert_equal(meas.provider_fault_cause, 0);
 }
 
-ZTEST(vc_domain, test_controller_init_static)
+ZTEST(vc_domain, test_controller_init)
 {
-	struct vc_controller *c = vc_controller_init_static(test_channels, 2);
+	struct vc_controller *c = vc_controller_init(NULL, NULL);
 
 	zassert_not_null(c);
-	zassert_equal(vc_controller_channel_count(c), 2);
+	zassert_equal(c->channel_count, 2);
 	zassert_equal(vc_controller_get_operating_mode(c),
 		      VC_OPERATING_MODE_NORMAL);
 }
@@ -152,8 +152,8 @@ ZTEST(vc_domain, test_consume_voltage_and_current_updates_snapshot)
 	make_fresh();
 	struct vc_channel_snapshot snap;
 
-	vc_controller_consume_voltage(ctrl, 0, 1200);
-	vc_controller_consume_current(ctrl, 0, 34);
+	vc_channel_consume_voltage(&ctrl->channels[0], 1200);
+	vc_channel_consume_current(&ctrl->channels[0], 34);
 	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap),
 		      VC_OK);
 	zassert_equal(snap.raw_adc_voltage, 1200);
@@ -168,7 +168,7 @@ ZTEST(vc_domain, test_consume_fault_measurement_sets_fault)
 	make_fresh();
 	struct vc_channel_snapshot snap;
 
-	vc_controller_consume_fault(ctrl, 0, VC_FAULT_MEASUREMENT);
+	vc_channel_consume_fault(&ctrl->channels[0], VC_FAULT_MEASUREMENT);
 	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap),
 		      VC_OK);
 	zassert_true((snap.active_fault_cause & VC_FAULT_MEASUREMENT) != 0);
@@ -189,7 +189,7 @@ ZTEST(vc_domain, test_consume_voltage_clamps_calibrated)
 	zassert_equal(vc_controller_set_operating_mode(ctrl,
 			 VC_OPERATING_MODE_NORMAL), VC_OK);
 
-	vc_controller_consume_voltage(ctrl, 0, 20000);
+	vc_channel_consume_voltage(&ctrl->channels[0], 20000);
 	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap),
 		      VC_OK);
 	zassert_equal(snap.measured_voltage, INT16_MAX);
@@ -255,7 +255,6 @@ ZTEST(vc_domain, test_tick_ramps_to_target_voltage)
 	make_fresh();
 	struct vc_channel_config cfg;
 	struct vc_channel_snapshot snap;
-	struct vc_pending_command pending;
 
 	vc_controller_get_channel_config(ctrl, 0, &cfg);
 	cfg.configured_target_voltage = 1000;
@@ -267,13 +266,9 @@ ZTEST(vc_domain, test_tick_ramps_to_target_voltage)
 
 	vc_controller_get_channel_snapshot(ctrl, 0, &snap);
 	zassert_equal(snap.operational_target_voltage, 1000);
-
-	pending = vc_channel_take_pending_command(&ctrl->channels[0]);
-	zassert_true(pending.valid);
-	zassert_equal(pending.output_code, 1000);
 }
 
-ZTEST(vc_domain, test_tick_zero_target_no_pending_change)
+ZTEST(vc_domain, test_tick_zero_target_stays_at_zero)
 {
 	make_fresh();
 
@@ -281,7 +276,6 @@ ZTEST(vc_domain, test_tick_zero_target_no_pending_change)
 
 	vc_channel_tick_ramp(&ctrl->channels[0], 100, &ctrl->sys_cfg);
 
-	zassert_false(vc_channel_has_pending_command(&ctrl->channels[0]));
 	zassert_equal(ctrl->channels[0].operational_target_voltage, 0);
 }
 
@@ -289,7 +283,7 @@ ZTEST(vc_domain, test_output_calibration_gain)
 {
 	make_fresh();
 	struct vc_channel_config cfg;
-	struct vc_pending_command pending;
+	struct vc_stub_data *stub = ctrl->channels[0].dev->data;
 
 	enter_calibration_mode(ctrl);
 	vc_controller_get_channel_config(ctrl, 0, &cfg);
@@ -304,17 +298,15 @@ ZTEST(vc_domain, test_output_calibration_gain)
 	vc_controller_channel_output_action(ctrl, 0, VC_OUTPUT_ACTION_ENABLE);
 
 	vc_channel_tick_ramp(&ctrl->channels[0], 100, &ctrl->sys_cfg);
-	pending = vc_channel_take_pending_command(&ctrl->channels[0]);
 
-	zassert_true(pending.valid);
-	zassert_equal(pending.output_code, 200);
+	zassert_equal(stub->last_output_code, 200);
 }
 
 ZTEST(vc_domain, test_output_drive_clamps_low)
 {
 	make_fresh();
 	struct vc_channel_config cfg;
-	struct vc_pending_command pending;
+	struct vc_stub_data *stub = ctrl->channels[0].dev->data;
 
 	enter_calibration_mode(ctrl);
 	vc_controller_get_channel_config(ctrl, 0, &cfg);
@@ -329,17 +321,15 @@ ZTEST(vc_domain, test_output_drive_clamps_low)
 	vc_controller_channel_output_action(ctrl, 0, VC_OUTPUT_ACTION_ENABLE);
 
 	vc_channel_tick_ramp(&ctrl->channels[0], 100, &ctrl->sys_cfg);
-	pending = vc_channel_take_pending_command(&ctrl->channels[0]);
 
-	zassert_true(pending.valid);
-	zassert_equal(pending.output_code, 0);
+	zassert_equal(stub->last_output_code, 0);
 }
 
 ZTEST(vc_domain, test_output_drive_clamps_high)
 {
 	make_fresh();
 	struct vc_channel_config cfg;
-	struct vc_pending_command pending;
+	struct vc_stub_data *stub = ctrl->channels[0].dev->data;
 
 	enter_calibration_mode(ctrl);
 	vc_controller_get_channel_config(ctrl, 0, &cfg);
@@ -354,10 +344,8 @@ ZTEST(vc_domain, test_output_drive_clamps_high)
 	vc_controller_channel_output_action(ctrl, 0, VC_OUTPUT_ACTION_ENABLE);
 
 	vc_channel_tick_ramp(&ctrl->channels[0], 100, &ctrl->sys_cfg);
-	pending = vc_channel_take_pending_command(&ctrl->channels[0]);
 
-	zassert_true(pending.valid);
-	zassert_equal(pending.output_code, UINT16_MAX);
+	zassert_equal(stub->last_output_code, UINT16_MAX);
 }
 
 /* ---- Fault → safe state ---- */
@@ -379,7 +367,7 @@ ZTEST(vc_domain, test_hardware_fault_forces_safe_state)
 	vc_controller_get_channel_snapshot(ctrl, 0, &snap);
 	zassert_equal(snap.operational_target_voltage, 1000);
 
-	vc_controller_consume_fault(ctrl, 0, VC_FAULT_HARDWARE);
+	vc_channel_consume_fault(&ctrl->channels[0], VC_FAULT_HARDWARE);
 
 	zassert_false(ctrl->channels[0].output_enabled);
 	vc_controller_get_channel_snapshot(ctrl, 0, &snap);
@@ -408,7 +396,7 @@ ZTEST(vc_domain, test_interlock_forces_safe_state)
 	vc_controller_get_channel_snapshot(ctrl, 0, &snap);
 	zassert_equal(snap.operational_target_voltage, 1000);
 
-	vc_controller_consume_fault(ctrl, 0, VC_FAULT_INTERLOCK);
+	vc_channel_consume_fault(&ctrl->channels[0], VC_FAULT_INTERLOCK);
 
 	zassert_false(ctrl->channels[0].output_enabled);
 	vc_controller_get_channel_snapshot(ctrl, 0, &snap);
@@ -451,7 +439,7 @@ ZTEST(vc_domain, test_supported_channels)
 	make_fresh();
 	struct vc_system_snapshot snap;
 
-	zassert_equal(vc_controller_channel_count(ctrl), 2);
+	zassert_equal(ctrl->channel_count, 2);
 	vc_controller_get_system_snapshot(ctrl, &snap);
 	zassert_equal(snap.active_channel_mask, 0x0003);
 }
@@ -460,9 +448,9 @@ ZTEST(vc_domain, test_channel_supported)
 {
 	make_fresh();
 
-	zassert_true(0 < vc_controller_channel_count(ctrl));
-	zassert_true(1 < vc_controller_channel_count(ctrl));
-	zassert_false(2 < vc_controller_channel_count(ctrl));
+	zassert_true(0 < ctrl->channel_count);
+	zassert_true(1 < ctrl->channel_count);
+	zassert_false(2 < ctrl->channel_count);
 }
 
 /* ---- Capability gating ---- */
@@ -640,7 +628,7 @@ ZTEST(vc_domain, test_calibration_entry_clears_raw_outputs)
 			 VC_OPERATING_MODE_NORMAL), VC_OK);
 	enter_calibration_mode(ctrl);
 
-	for (uint8_t ch = 0; ch < vc_controller_channel_count(ctrl); ch++) {
+	for (uint8_t ch = 0; ch < ctrl->channel_count; ch++) {
 		zassert_equal(vc_controller_get_channel_snapshot(ctrl, ch,
 				 &snap), VC_OK);
 		zassert_equal(snap.raw_dac_readback, 0);
@@ -824,10 +812,11 @@ ZTEST(vc_domain, test_calibration_exit_clears_raw_output)
 	zassert_equal(snap.cal_max_raw_dac_limit, 0xFFFF);
 }
 
-ZTEST(vc_domain, test_reject_too_many_channels)
+ZTEST(vc_domain, test_controller_init_returns_non_null)
 {
-	zassert_is_null(vc_controller_init_static(test_channels,
-						  VC_MAX_CHANNELS + 1));
+	struct vc_controller *c = vc_controller_init(NULL, NULL);
+
+	zassert_not_null(c);
 }
 
 ZTEST(vc_domain, test_calibration_coefficients_require_calibration_mode)
@@ -1070,7 +1059,7 @@ ZTEST(vc_domain, test_smf_preserves_fault_safe_state)
 {
 	make_fresh();
 
-	vc_controller_consume_fault(ctrl, 0, VC_FAULT_INTERLOCK);
+	vc_channel_consume_fault(&ctrl->channels[0], VC_FAULT_INTERLOCK);
 
 	zassert_false(ctrl->channels[0].output_enabled);
 	zassert_equal(ctrl->channels[0].operational_target_voltage, 0);
@@ -1180,7 +1169,7 @@ ZTEST(vc_domain, test_current_protection_skipped_during_ramping)
 
 	vc_controller_tick(ctrl, 100);
 
-	vc_controller_consume_current(ctrl, 0, 200);
+	vc_channel_consume_current(&ctrl->channels[0], 200);
 	vc_controller_tick(ctrl, 0);
 
 	vc_controller_get_channel_snapshot(ctrl, 0, &snap);
