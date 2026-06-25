@@ -12,12 +12,9 @@
 #include <zephyr/smf.h>
 
 #include "voltage_control/vc_types.h"
+#include "voltage_control/vc_channel_hw.h"
 
-struct vc_pending_command {
-	uint16_t output_code;
-	bool output_enable;
-	bool valid;
-};
+typedef void (*vc_wake_fn_t)(void *user_data);
 
 enum vc_channel_smf_state {
 	VC_CHANNEL_SMF_DISABLED_SAFE,
@@ -30,7 +27,11 @@ enum vc_channel_smf_state {
 };
 
 struct vc_channel {
-	struct k_spinlock lock;
+	const struct device *dev;
+	struct vc_meas_buffer *meas;
+	vc_wake_fn_t wake_fn;
+	void *wake_user_data;
+
 	struct smf_ctx smf;
 	uint8_t index;
 	uint16_t capabilities;
@@ -61,10 +62,18 @@ struct vc_channel {
 
 	uint32_t uptime_ref;
 
-	struct vc_pending_command pending;
+	uint32_t last_consumed_voltage_ts;
+	uint32_t last_consumed_current_ts;
 };
 
-void vc_channel_init(struct vc_channel *ch, uint8_t index, uint16_t caps);
+void vc_channel_init(struct vc_channel *ch,
+		     const struct device *dev,
+		     uint8_t index, uint16_t caps,
+		     struct vc_meas_buffer *meas,
+		     vc_wake_fn_t wake_fn, void *wake_user_data);
+
+void vc_channel_run(struct vc_channel *ch, uint32_t dt_ms,
+		    const struct vc_system_config *sys_cfg);
 
 enum vc_status vc_channel_set_config(struct vc_channel *ch,
 				     const struct vc_channel_config *cfg,
@@ -92,9 +101,7 @@ void vc_channel_get_snapshot(const struct vc_channel *ch,
 			     struct vc_channel_snapshot *snap);
 
 enum vc_status vc_channel_cal_set_output_enable(struct vc_channel *ch,
-						bool enable,
-						const struct vc_channel *all_channels,
-						size_t channel_count);
+						bool enable);
 enum vc_status vc_channel_cal_set_raw_dac(struct vc_channel *ch, uint16_t code);
 enum vc_status vc_channel_cal_sample(struct vc_channel *ch);
 enum vc_status vc_channel_cal_commit(struct vc_channel *ch);
@@ -102,9 +109,6 @@ enum vc_status vc_channel_cal_set_max_raw_dac(struct vc_channel *ch,
 					      uint16_t limit);
 
 void vc_channel_reset_calibration(struct vc_channel *ch, bool entering);
-
-bool vc_channel_has_pending_command(const struct vc_channel *ch);
-struct vc_pending_command vc_channel_take_pending_command(struct vc_channel *ch);
 
 enum vc_channel_smf_state vc_channel_get_smf_state(const struct vc_channel *ch);
 

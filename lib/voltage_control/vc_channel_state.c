@@ -72,12 +72,38 @@ static uint16_t raw_drive_from_target(const struct vc_channel_config *cfg,
 	return (uint16_t)raw;
 }
 
-static void set_pending(struct vc_channel *ch)
+static void apply_hw(struct vc_channel *ch)
 {
-	ch->pending.valid = true;
-	ch->pending.output_enable = ch->output_enabled;
-	ch->pending.output_code = ch->output_enabled ?
-		raw_drive_from_target(&ch->config, ch->operational_target_voltage) : 0;
+	if (ch->dev == NULL) {
+		return;
+	}
+	const struct vc_channel_hw_api *api = ch->dev->api;
+
+	if (api == NULL) {
+		return;
+	}
+
+	bool enable;
+	uint16_t code;
+
+	if (ch->cal_output_enabled) {
+		enable = true;
+		code = ch->raw_dac_readback;
+	} else if (ch->output_enabled) {
+		enable = true;
+		code = raw_drive_from_target(&ch->config,
+					     ch->operational_target_voltage);
+	} else {
+		enable = false;
+		code = 0;
+	}
+
+	if (api->set_output) {
+		api->set_output(ch->dev, code);
+	}
+	if (api->set_enable) {
+		api->set_enable(ch->dev, enable);
+	}
 }
 
 static void update_status_bits(struct vc_channel *ch)
@@ -218,7 +244,7 @@ static void apply_protection_action(struct vc_channel *ch,
 	default:
 		break;
 	}
-	set_pending(ch);
+	apply_hw(ch);
 }
 
 static void tick_current_protection(struct vc_channel *ch)
@@ -258,7 +284,7 @@ static void force_safe_state(struct vc_channel *ch)
 	ch->raw_dac_readback = 0;
 	ch->operational_target_voltage = 0;
 	set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
-	set_pending(ch);
+	apply_hw(ch);
 }
 
 static bool is_safe_to_clear_active(const struct vc_channel *ch,
@@ -277,16 +303,61 @@ static bool is_safe_to_clear_active(const struct vc_channel *ch,
 	return true;
 }
 
+/* ---- Measurement callback — registered with hw driver ---- */
+
+static void vc_channel_meas_ready(uint8_t channel, void *user_data)
+{
+	struct vc_channel *ch = user_data;
+
+	ARG_UNUSED(channel);
+	if (ch->wake_fn) {
+		ch->wake_fn(ch->wake_user_data);
+	}
+}
+
 /* ---- Public API ---- */
 
-void vc_channel_init(struct vc_channel *ch, uint8_t index, uint16_t caps)
+void vc_channel_init(struct vc_channel *ch,
+		     const struct device *dev,
+		     uint8_t index, uint16_t caps,
+		     struct vc_meas_buffer *meas,
+		     vc_wake_fn_t wake_fn, void *wake_user_data)
 {
 	memset(ch, 0, sizeof(*ch));
+	ch->dev = dev;
 	ch->index = index;
 	ch->capabilities = caps;
+	ch->meas = meas;
+	ch->wake_fn = wake_fn;
+	ch->wake_user_data = wake_user_data;
 	ch->config = default_channel_config();
 	ch->cal_max_raw_dac_limit = VC_DEFAULT_MAX_RAW_DAC;
 	smf_set_initial(SMF_CTX(ch), &vc_channel_states[VC_CHANNEL_SMF_DISABLED_SAFE]);
+
+	if (dev != NULL && dev->api != NULL) {
+		const struct vc_channel_hw_api *api = dev->api;
+
+		if (api->set_meas_callback) {
+			api->set_meas_callback(dev, vc_channel_meas_ready, ch);
+		}
+	}
+}
+
+void vc_channel_run(struct vc_channel *ch, uint32_t dt_ms,
+		    const struct vc_system_config *sys_cfg)
+{
+	if (ch->meas != NULL) {
+		if (ch->meas->voltage_timestamp_ms != ch->last_consumed_voltage_ts) {
+			vc_channel_consume_voltage(ch, ch->meas->raw_voltage);
+			ch->last_consumed_voltage_ts = ch->meas->voltage_timestamp_ms;
+		}
+		if (ch->meas->current_timestamp_ms != ch->last_consumed_current_ts) {
+			vc_channel_consume_current(ch, ch->meas->raw_current);
+			ch->last_consumed_current_ts = ch->meas->current_timestamp_ms;
+		}
+	}
+
+	vc_channel_tick_ramp(ch, dt_ms, sys_cfg);
 }
 
 enum vc_channel_smf_state vc_channel_get_smf_state(const struct vc_channel *ch)
@@ -299,10 +370,7 @@ enum vc_channel_smf_state vc_channel_get_smf_state(const struct vc_channel *ch)
 enum vc_status vc_channel_get_config(const struct vc_channel *ch,
 				     struct vc_channel_config *cfg)
 {
-	k_spinlock_key_t key = k_spin_lock((struct k_spinlock *)&ch->lock);
-
 	*cfg = ch->config;
-	k_spin_unlock((struct k_spinlock *)&ch->lock, key);
 	return VC_OK;
 }
 
@@ -310,47 +378,37 @@ enum vc_status vc_channel_set_config(struct vc_channel *ch,
 				     const struct vc_channel_config *cfg,
 				     bool calibration_mode)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
 	enum vc_status st;
 
 	st = validate_capability_config(ch, &ch->config, cfg);
 	if (st != VC_OK) {
-		goto out;
+		return st;
 	}
 	if (!calibration_mode && calibration_fields_changed(&ch->config, cfg)) {
-		st = VC_ERR_INVALID_COMMAND;
-		goto out;
+		return VC_ERR_INVALID_COMMAND;
 	}
 	if (cfg->configured_target_voltage > VC_DEFAULT_MAX_VOLTAGE_RAW ||
 	    cfg->configured_target_voltage < VC_DEFAULT_MIN_VOLTAGE_RAW) {
-		st = VC_ERR_INVALID_VALUE;
-		goto out;
+		return VC_ERR_INVALID_VALUE;
 	}
 	if (cfg->current_limit_threshold < 0) {
-		st = VC_ERR_INVALID_VALUE;
-		goto out;
+		return VC_ERR_INVALID_VALUE;
 	}
 	if (!is_valid_protection_mode(cfg->current_protection_mode) ||
 	    !is_valid_protection_output_action(cfg->current_protection_output_action)) {
-		st = VC_ERR_INVALID_VALUE;
-		goto out;
+		return VC_ERR_INVALID_VALUE;
 	}
 	if (cfg->save_target_policy > 1) {
-		st = VC_ERR_INVALID_VALUE;
-		goto out;
+		return VC_ERR_INVALID_VALUE;
 	}
 
 	ch->config = *cfg;
 	if (!calibration_mode) {
 		tick_current_protection(ch);
 	}
-	set_pending(ch);
+	apply_hw(ch);
 	update_status_bits(ch);
-	st = VC_OK;
-
-out:
-	k_spin_unlock(&ch->lock, key);
-	return st;
+	return VC_OK;
 }
 
 enum vc_status vc_channel_set_field(struct vc_channel *ch,
@@ -424,8 +482,6 @@ enum vc_status vc_channel_set_field(struct vc_channel *ch,
 void vc_channel_get_snapshot(const struct vc_channel *ch,
 			     struct vc_channel_snapshot *snap)
 {
-	k_spinlock_key_t key = k_spin_lock((struct k_spinlock *)&ch->lock);
-
 	memset(snap, 0, sizeof(*snap));
 	snap->measured_voltage = ch->measured_voltage;
 	snap->measured_current = ch->measured_current;
@@ -444,31 +500,23 @@ void vc_channel_get_snapshot(const struct vc_channel *ch,
 	snap->raw_dac_readback = ch->raw_dac_readback;
 	snap->cal_output_enabled = ch->cal_output_enabled;
 	snap->cal_max_raw_dac_limit = ch->cal_max_raw_dac_limit;
-
-	k_spin_unlock((struct k_spinlock *)&ch->lock, key);
 }
 
 enum vc_status vc_channel_output_action(struct vc_channel *ch,
 					enum vc_output_action action,
 					bool calibration_mode)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-	enum vc_status st = VC_OK;
-
 	if (!is_valid_host_output_action(action)) {
-		st = VC_ERR_INVALID_COMMAND;
-		goto out;
+		return VC_ERR_INVALID_COMMAND;
 	}
 	if (calibration_mode) {
-		st = VC_ERR_INVALID_COMMAND;
-		goto out;
+		return VC_ERR_INVALID_COMMAND;
 	}
 
 	switch (action) {
 	case VC_OUTPUT_ACTION_ENABLE:
 		if (ch->active_fault_cause != 0) {
-			st = VC_ERR_UNSAFE_STATE;
-			goto out;
+			return VC_ERR_UNSAFE_STATE;
 		}
 		ch->output_enabled = true;
 		ch->ramping = true;
@@ -488,26 +536,19 @@ enum vc_status vc_channel_output_action(struct vc_channel *ch,
 		set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
 		break;
 	default:
-		goto out;
+		return VC_OK;
 	}
-	set_pending(ch);
+	apply_hw(ch);
 	update_status_bits(ch);
-
-out:
-	k_spin_unlock(&ch->lock, key);
-	return st;
+	return VC_OK;
 }
 
 enum vc_status vc_channel_fault_command(struct vc_channel *ch,
 					enum vc_channel_fault_command cmd,
 					const struct vc_system_config *sys_cfg)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-	enum vc_status st = VC_OK;
-
 	if (!is_valid_channel_fault_command(cmd)) {
-		st = VC_ERR_INVALID_COMMAND;
-		goto out;
+		return VC_ERR_INVALID_COMMAND;
 	}
 
 	switch (cmd) {
@@ -516,8 +557,7 @@ enum vc_status vc_channel_fault_command(struct vc_channel *ch,
 			break;
 		}
 		if (!is_safe_to_clear_active(ch, sys_cfg)) {
-			st = VC_ERR_UNSAFE_STATE;
-			goto out;
+			return VC_ERR_UNSAFE_STATE;
 		}
 		ch->active_fault_cause = 0;
 		set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
@@ -529,30 +569,21 @@ enum vc_status vc_channel_fault_command(struct vc_channel *ch,
 		break;
 	}
 	update_status_bits(ch);
-
-out:
-	k_spin_unlock(&ch->lock, key);
-	return st;
+	return VC_OK;
 }
 
 void vc_channel_consume_voltage(struct vc_channel *ch, int32_t raw_voltage)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-
 	ch->raw_adc_voltage = raw_voltage;
 	ch->measured_voltage = clamp_int16(
 		((int64_t)raw_voltage * ch->config.measured_voltage_calib_k) /
 		10000 + ch->config.measured_voltage_calib_b);
 
 	update_status_bits(ch);
-
-	k_spin_unlock(&ch->lock, key);
 }
 
 void vc_channel_consume_current(struct vc_channel *ch, int32_t raw_current)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-
 	ch->raw_adc_current = raw_current;
 	ch->measured_current = clamp_int16(
 		((int64_t)raw_current * ch->config.measured_current_calib_k) /
@@ -562,26 +593,19 @@ void vc_channel_consume_current(struct vc_channel *ch, int32_t raw_current)
 		tick_current_protection(ch);
 	}
 	update_status_bits(ch);
-
-	k_spin_unlock(&ch->lock, key);
 }
 
 void vc_channel_consume_fault(struct vc_channel *ch, uint16_t fault_cause)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-
 	ch->active_fault_cause |= fault_cause;
 	ch->fault_history_cause |= fault_cause;
 	force_safe_state(ch);
 	update_status_bits(ch);
-
-	k_spin_unlock(&ch->lock, key);
 }
 
 void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 			  const struct vc_system_config *sys_cfg)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
 	const struct vc_channel_config *cfg = &ch->config;
 	int16_t target, current;
 	uint16_t step, interval;
@@ -590,7 +614,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 	ARG_UNUSED(sys_cfg);
 
 	if (!ch->output_enabled || ch->active_fault_cause != 0) {
-		goto out;
+		return;
 	}
 
 	target = cfg->configured_target_voltage;
@@ -601,7 +625,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 			ch->ramping = false;
 			set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
 		}
-		goto out;
+		return;
 	}
 
 	ch->ramping = true;
@@ -618,9 +642,9 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 		ch->operational_target_voltage = target;
 		ch->ramping = false;
 		set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
-		set_pending(ch);
+		apply_hw(ch);
 		update_status_bits(ch);
-		goto out;
+		return;
 	}
 
 	interval_ms = (uint32_t)interval * 100;
@@ -646,34 +670,14 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 		ch->ramping = false;
 		set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
 	}
-	set_pending(ch);
+	apply_hw(ch);
 	update_status_bits(ch);
-
-out:
-	k_spin_unlock(&ch->lock, key);
-}
-
-bool vc_channel_has_pending_command(const struct vc_channel *ch)
-{
-	return ch->pending.valid;
-}
-
-struct vc_pending_command vc_channel_take_pending_command(struct vc_channel *ch)
-{
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-	struct vc_pending_command cmd = ch->pending;
-
-	ch->pending.valid = false;
-	k_spin_unlock(&ch->lock, key);
-	return cmd;
 }
 
 /* ---- Calibration ---- */
 
 void vc_channel_reset_calibration(struct vc_channel *ch, bool entering)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-
 	ch->output_enabled = false;
 	ch->ramping = false;
 	ch->ramp_accum_ms = 0;
@@ -693,41 +697,20 @@ void vc_channel_reset_calibration(struct vc_channel *ch, bool entering)
 	} else {
 		set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
 	}
-	set_pending(ch);
+	apply_hw(ch);
 	update_status_bits(ch);
-
-	k_spin_unlock(&ch->lock, key);
 }
 
 enum vc_status vc_channel_cal_set_output_enable(struct vc_channel *ch,
-						bool enable,
-						const struct vc_channel *all_channels,
-						size_t channel_count)
+						bool enable)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-	enum vc_status st = VC_OK;
-
 	if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
-		st = VC_ERR_UNSUPPORTED_CAPABILITY;
-		goto out;
+		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
 
 	if (enable) {
 		if (has_hard_safety_fault(ch)) {
-			st = VC_ERR_UNSAFE_STATE;
-			goto out;
-		}
-		if (all_channels != NULL) {
-			for (size_t i = 0; i < channel_count; i++) {
-				if (&all_channels[i] == ch) {
-					continue;
-				}
-				if (all_channels[i].cal_output_enabled ||
-				    all_channels[i].raw_dac_readback != 0) {
-					st = VC_ERR_UNSAFE_STATE;
-					goto out;
-				}
-			}
+			return VC_ERR_UNSAFE_STATE;
 		}
 		ch->cal_output_enabled = 1;
 	} else {
@@ -737,98 +720,62 @@ enum vc_status vc_channel_cal_set_output_enable(struct vc_channel *ch,
 		ch->raw_adc_current = 0;
 		ch->cal_sample_status = VC_CAL_SAMPLE_NONE;
 	}
-	set_pending(ch);
-
-out:
-	k_spin_unlock(&ch->lock, key);
-	return st;
+	apply_hw(ch);
+	return VC_OK;
 }
 
 enum vc_status vc_channel_cal_set_raw_dac(struct vc_channel *ch, uint16_t code)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-	enum vc_status st = VC_OK;
-
 	if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
-		st = VC_ERR_UNSUPPORTED_CAPABILITY;
-		goto out;
+		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
 	if (code > ch->cal_max_raw_dac_limit) {
-		st = VC_ERR_INVALID_VALUE;
-		goto out;
+		return VC_ERR_INVALID_VALUE;
 	}
 	if (code != 0 && has_hard_safety_fault(ch)) {
-		st = VC_ERR_UNSAFE_STATE;
-		goto out;
+		return VC_ERR_UNSAFE_STATE;
 	}
 	if (code != 0 && !ch->cal_output_enabled) {
-		st = VC_ERR_UNSAFE_STATE;
-		goto out;
+		return VC_ERR_UNSAFE_STATE;
 	}
 	ch->raw_dac_readback = code;
-	set_pending(ch);
-
-out:
-	k_spin_unlock(&ch->lock, key);
-	return st;
+	apply_hw(ch);
+	return VC_OK;
 }
 
 enum vc_status vc_channel_cal_set_max_raw_dac(struct vc_channel *ch,
 					      uint16_t limit)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-	enum vc_status st = VC_OK;
-
 	if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
-		st = VC_ERR_UNSUPPORTED_CAPABILITY;
-		goto out;
+		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
 	if (limit > VC_DEFAULT_MAX_RAW_DAC) {
-		st = VC_ERR_INVALID_VALUE;
-		goto out;
+		return VC_ERR_INVALID_VALUE;
 	}
 	if (limit < ch->raw_dac_readback) {
-		st = VC_ERR_UNSAFE_STATE;
-		goto out;
+		return VC_ERR_UNSAFE_STATE;
 	}
 	ch->cal_max_raw_dac_limit = limit;
-
-out:
-	k_spin_unlock(&ch->lock, key);
-	return st;
+	return VC_OK;
 }
 
 enum vc_status vc_channel_cal_sample(struct vc_channel *ch)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-	enum vc_status st = VC_OK;
-
 	if ((ch->capabilities &
 	     (CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)) == 0) {
-		st = VC_ERR_UNSUPPORTED_CAPABILITY;
-		goto out;
+		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
 	ch->raw_adc_voltage = ch->raw_dac_readback;
 	ch->raw_adc_current = 0;
 	ch->cal_sample_status = VC_CAL_SAMPLE_VALID;
-
-out:
-	k_spin_unlock(&ch->lock, key);
-	return st;
+	return VC_OK;
 }
 
 enum vc_status vc_channel_cal_commit(struct vc_channel *ch)
 {
-	k_spinlock_key_t key = k_spin_lock(&ch->lock);
-	enum vc_status st = VC_OK;
-
 	if (ch->cal_output_enabled || ch->raw_dac_readback != 0 ||
 	    has_hard_safety_fault(ch)) {
-		st = VC_ERR_UNSAFE_STATE;
-		goto out;
+		return VC_ERR_UNSAFE_STATE;
 	}
-
-out:
-	k_spin_unlock(&ch->lock, key);
-	return st;
+	return VC_OK;
 }
