@@ -17,6 +17,10 @@ LOG_MODULE_REGISTER(hvb_vc_channel, LOG_LEVEL_INF);
 
 #define DT_DRV_COMPAT jianwei_hvb_vc_channel
 
+/* ADS1232: BIT(0) = current (MUX ch0), BIT(1) = voltage (MUX ch1) */
+#define ADC_CH_CURRENT BIT(0)
+#define ADC_CH_VOLTAGE BIT(1)
+
 #define HVB_VC_WORKQ_STACK_SIZE 2048
 #define HVB_VC_WORKQ_PRIORITY   CONFIG_SYSTEM_WORKQUEUE_PRIORITY
 #define HVB_VC_DRDY_TIMEOUT_MS  420
@@ -42,7 +46,6 @@ struct hvb_vc_config {
 	const struct device *adc;
 	struct gpio_dt_spec enable;
 	uint16_t max_raw_dac;
-	uint32_t sample_rate_ms;
 	uint16_t capabilities;
 	uint8_t channel_index;
 };
@@ -66,7 +69,6 @@ struct hvb_vc_data {
 	int32_t adc_buf;
 
 	enum hvb_adc_phase adc_phase;
-	struct k_work_delayable next_cycle_work;
 	bool sampling_active;
 };
 
@@ -89,7 +91,7 @@ static int hvb_vc_set_enable(const struct device *dev, bool enable)
 	return gpio_pin_set_dt(&cfg->enable, enable ? 1 : 0);
 }
 
-/* ---- Async ADC read completion handler ---- */
+/* ---- Async ADC sampling loop ---- */
 
 static void hvb_vc_start_next_cycle(struct hvb_vc_data *data);
 
@@ -98,6 +100,19 @@ static void hvb_vc_notify_meas(struct hvb_vc_data *data)
 	if (data->meas_cb) {
 		data->meas_cb(data->channel, data->meas_cb_user_data);
 	}
+}
+
+static void hvb_vc_submit_read(struct hvb_vc_data *data, uint8_t adc_ch)
+{
+	const struct hvb_vc_config *cfg = data->dev->config;
+
+	data->adc_seq.channels = adc_ch;
+	k_poll_signal_reset(&data->adc_signal);
+	adc_read_async(cfg->adc, &data->adc_seq, &data->adc_signal);
+	k_work_poll_submit_to_queue(&hvb_vc_workq,
+				    &data->poll_work,
+				    &data->adc_event, 1,
+				    K_MSEC(HVB_VC_DRDY_TIMEOUT_MS));
 }
 
 static void hvb_vc_poll_handler(struct k_work *work)
@@ -109,68 +124,46 @@ static void hvb_vc_poll_handler(struct k_work *work)
 
 	if (data->poll_work.poll_result != 0) {
 		LOG_WRN("ch%d DRDY timeout phase=%d", data->channel, data->adc_phase);
-		hvb_vc_notify_meas(data);
-		k_work_schedule_for_queue(&hvb_vc_workq, &data->next_cycle_work,
-					  K_MSEC(cfg->sample_rate_ms));
+		if (data->sampling_active) {
+			hvb_vc_start_next_cycle(data);
+		}
 		return;
 	}
 
 	if (data->adc_phase == ADC_PHASE_VOLTAGE) {
 		data->meas->raw_voltage = raw;
 		data->meas->voltage_timestamp_ms = k_uptime_get_32();
-		hvb_vc_notify_meas(data);
 
 		if (cfg->capabilities & CH_CAP_CURRENT_MEASUREMENT) {
 			data->adc_phase = ADC_PHASE_CURRENT;
-			data->adc_seq.channels = BIT(1);
-			k_poll_signal_reset(&data->adc_signal);
-			adc_read_async(cfg->adc, &data->adc_seq, &data->adc_signal);
-			k_work_poll_submit_to_queue(&hvb_vc_workq,
-						    &data->poll_work,
-						    &data->adc_event, 1,
-						    K_MSEC(HVB_VC_DRDY_TIMEOUT_MS));
-		} else {
-			data->adc_phase = ADC_PHASE_VOLTAGE;
-			k_work_schedule_for_queue(&hvb_vc_workq,
-						  &data->next_cycle_work,
-						  K_MSEC(cfg->sample_rate_ms));
+			hvb_vc_submit_read(data, ADC_CH_CURRENT);
+			return;
 		}
+
+		hvb_vc_notify_meas(data);
 	} else {
 		data->meas->raw_current = raw;
 		data->meas->current_timestamp_ms = k_uptime_get_32();
+
 		hvb_vc_notify_meas(data);
-
-		data->adc_phase = ADC_PHASE_VOLTAGE;
-		k_work_schedule_for_queue(&hvb_vc_workq,
-					  &data->next_cycle_work,
-					  K_MSEC(cfg->sample_rate_ms));
 	}
-}
 
-static void hvb_vc_next_cycle_handler(struct k_work *work)
-{
-	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
-	struct hvb_vc_data *data = CONTAINER_OF(dwork, struct hvb_vc_data,
-						next_cycle_work);
-
-	if (!data->sampling_active) {
-		return;
+	if (data->sampling_active) {
+		hvb_vc_start_next_cycle(data);
 	}
-	hvb_vc_start_next_cycle(data);
 }
 
 static void hvb_vc_start_next_cycle(struct hvb_vc_data *data)
 {
 	const struct hvb_vc_config *cfg = data->dev->config;
 
-	data->adc_phase = ADC_PHASE_VOLTAGE;
-	data->adc_seq.channels = BIT(0);
-	k_poll_signal_reset(&data->adc_signal);
-	adc_read_async(cfg->adc, &data->adc_seq, &data->adc_signal);
-	k_work_poll_submit_to_queue(&hvb_vc_workq,
-				    &data->poll_work,
-				    &data->adc_event, 1,
-				    K_MSEC(HVB_VC_DRDY_TIMEOUT_MS));
+	if (cfg->capabilities & CH_CAP_VOLTAGE_MEASUREMENT) {
+		data->adc_phase = ADC_PHASE_VOLTAGE;
+		hvb_vc_submit_read(data, ADC_CH_VOLTAGE);
+	} else {
+		data->adc_phase = ADC_PHASE_CURRENT;
+		hvb_vc_submit_read(data, ADC_CH_CURRENT);
+	}
 }
 
 /* ---- Start/stop sampling ---- */
@@ -196,11 +189,10 @@ static int hvb_vc_stop_sampling(const struct device *dev)
 
 	data->sampling_active = false;
 	k_work_poll_cancel(&data->poll_work);
-	k_work_cancel_delayable(&data->next_cycle_work);
 	return 0;
 }
 
-/* ---- New API ops ---- */
+/* ---- Capability + callback ops ---- */
 
 static uint16_t hvb_vc_get_capabilities(const struct device *dev)
 {
@@ -273,7 +265,6 @@ static int hvb_vc_init(const struct device *dev)
 	k_poll_event_init(&data->adc_event, K_POLL_TYPE_SIGNAL,
 			  K_POLL_MODE_NOTIFY_ONLY, &data->adc_signal);
 	k_work_poll_init(&data->poll_work, hvb_vc_poll_handler);
-	k_work_init_delayable(&data->next_cycle_work, hvb_vc_next_cycle_handler);
 
 	LOG_INF("ch%d ready dac=%s adc=%s caps=0x%04x",
 		cfg->channel_index,
@@ -290,7 +281,6 @@ static int hvb_vc_init(const struct device *dev)
 		.adc = DEVICE_DT_GET(DT_INST_PHANDLE(n, adc)), \
 		.enable = GPIO_DT_SPEC_INST_GET(n, enable_gpios), \
 		.max_raw_dac = DT_INST_PROP(n, max_raw_dac), \
-		.sample_rate_ms = DT_INST_PROP(n, sample_rate_ms), \
 		.capabilities = DT_INST_PROP(n, capabilities), \
 		.channel_index = DT_REG_ADDR(DT_INST(n, jianwei_hvb_vc_channel)), \
 	}; \
