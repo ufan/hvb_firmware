@@ -6,7 +6,7 @@
 #ifndef VOLTAGE_CONTROL_VC_CONTROLLER_H
 #define VOLTAGE_CONTROL_VC_CONTROLLER_H
 
-#include "voltage_control/vc_channel_state.h"
+#include "voltage_control/vc_channel.h"
 #include "voltage_control/vc_storage.h"
 
 struct vc_controller {

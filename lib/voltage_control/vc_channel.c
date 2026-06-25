@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "voltage_control/vc_channel_state.h"
+#include "voltage_control/vc_channel.h"
 #include "regmap/vc_regs.h"
 #include <string.h>
 

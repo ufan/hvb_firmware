@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef VOLTAGE_CONTROL_VC_CHANNEL_STATE_H
-#define VOLTAGE_CONTROL_VC_CHANNEL_STATE_H
+#ifndef VOLTAGE_CONTROL_VC_CHANNEL_H
+#define VOLTAGE_CONTROL_VC_CHANNEL_H
 
 #include <stdint.h>
 #include <stdbool.h>

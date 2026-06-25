@@ -4,7 +4,7 @@
  */
 
 #include <zephyr/ztest.h>
-#include "voltage_control/vc_channel_state.h"
+#include "voltage_control/vc_channel.h"
 #include <dt-bindings/voltage_control/capabilities.h>
 
 #define FULL_CAPS (CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE | \
