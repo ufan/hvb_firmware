@@ -13,6 +13,10 @@
 #include "modbus_adapter/modbus_adapter.h"
 #endif
 
+#if IS_ENABLED(CONFIG_VC_SHELL)
+#include "shell_adapter/shell_adapter.h"
+#endif
+
 int main(void)
 {
 	struct vc_ctx *ctx = vc_init();
@@ -34,6 +38,10 @@ int main(void)
 	if (ret < 0) {
 		return 0;
 	}
+#endif
+
+#if IS_ENABLED(CONFIG_VC_SHELL)
+	vc_shell_init(ctx);
 #endif
 
 	printk("hvb_controller ready\n");
