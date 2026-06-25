@@ -440,7 +440,7 @@ ZTEST(vc_channel_state, test_reset_calibration_exiting)
 
 ZTEST(vc_channel_state, test_run_consumes_meas_buffer)
 {
-	struct vc_meas_buffer meas = {
+	struct vc_channel_buffer meas = {
 		.channel_id = 0,
 		.raw_voltage = 1500,
 		.voltage_timestamp_ms = 100,
@@ -461,7 +461,7 @@ ZTEST(vc_channel_state, test_run_consumes_meas_buffer)
 
 ZTEST(vc_channel_state, test_run_skips_unchanged_timestamps)
 {
-	struct vc_meas_buffer meas = {
+	struct vc_channel_buffer meas = {
 		.channel_id = 0,
 		.raw_voltage = 1500,
 		.voltage_timestamp_ms = 100,

@@ -30,7 +30,7 @@ struct vc_channel {
 	struct smf_ctx smf;
 
 	const struct device *dev;
-	struct vc_meas_buffer *meas;
+	struct vc_channel_buffer *meas;
 	vc_wake_fn_t wake_fn;
 	void *wake_user_data;
 
@@ -70,7 +70,7 @@ struct vc_channel {
 void vc_channel_init(struct vc_channel *ch,
 		     const struct device *dev,
 		     uint8_t index, uint16_t caps,
-		     struct vc_meas_buffer *meas,
+		     struct vc_channel_buffer *meas,
 		     vc_wake_fn_t wake_fn, void *wake_user_data);
 
 void vc_channel_run(struct vc_channel *ch, uint32_t dt_ms,

@@ -320,7 +320,7 @@ static void vc_channel_meas_ready(uint8_t channel, void *user_data)
 void vc_channel_init(struct vc_channel *ch,
 		     const struct device *dev,
 		     uint8_t index, uint16_t caps,
-		     struct vc_meas_buffer *meas,
+		     struct vc_channel_buffer *meas,
 		     vc_wake_fn_t wake_fn, void *wake_user_data)
 {
 	memset(ch, 0, sizeof(*ch));

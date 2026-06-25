@@ -58,7 +58,7 @@ enum hvb_adc_phase {
 struct hvb_vc_data {
 	const struct device *dev;
 	uint8_t channel;
-	struct vc_meas_buffer *meas;
+	struct vc_channel_buffer *meas;
 	vc_meas_ready_cb_t meas_cb;
 	void *meas_cb_user_data;
 
@@ -275,7 +275,7 @@ static int hvb_vc_init(const struct device *dev)
 /* ---- DTS instantiation ---- */
 
 #define HVB_VC_INIT(n) \
-	VC_MEAS_BUFFER_EXTERN(DT_DRV_INST(n)); \
+	VC_CHANNEL_BUFFER_EXTERN(DT_DRV_INST(n)); \
 	static const struct hvb_vc_config hvb_vc_config_##n = { \
 		.dac = DEVICE_DT_GET(DT_INST_PHANDLE(n, dac)), \
 		.adc = DEVICE_DT_GET(DT_INST_PHANDLE(n, adc)), \
@@ -285,7 +285,7 @@ static int hvb_vc_init(const struct device *dev)
 		.channel_index = DT_REG_ADDR(DT_INST(n, jianwei_hvb_vc_channel)), \
 	}; \
 	static struct hvb_vc_data hvb_vc_data_##n = { \
-		.meas = VC_MEAS_BUFFER_PTR(DT_DRV_INST(n)), \
+		.meas = VC_CHANNEL_BUFFER_PTR(DT_DRV_INST(n)), \
 	}; \
 	DEVICE_DT_INST_DEFINE(n, hvb_vc_init, NULL, \
 		&hvb_vc_data_##n, &hvb_vc_config_##n, \

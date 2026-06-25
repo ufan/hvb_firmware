@@ -25,7 +25,7 @@ struct vc_channel_api {
 				 vc_meas_ready_cb_t cb, void *user_data);
 };
 
-struct vc_meas_buffer {
+struct vc_channel_buffer {
 	uint8_t channel_id;
 	int32_t raw_voltage;
 	uint32_t voltage_timestamp_ms;
@@ -33,13 +33,13 @@ struct vc_meas_buffer {
 	uint32_t current_timestamp_ms;
 };
 
-#define VC_MEAS_BUFFER_NAME(node_id) \
-	UTIL_CAT(_vc_meas_, DT_REG_ADDR(node_id))
+#define VC_CHANNEL_BUFFER_NAME(node_id) \
+	UTIL_CAT(_vc_ch_buf_, DT_REG_ADDR(node_id))
 
-#define VC_MEAS_BUFFER_EXTERN(node_id) \
-	extern struct vc_meas_buffer VC_MEAS_BUFFER_NAME(node_id)
+#define VC_CHANNEL_BUFFER_EXTERN(node_id) \
+	extern struct vc_channel_buffer VC_CHANNEL_BUFFER_NAME(node_id)
 
-#define VC_MEAS_BUFFER_PTR(node_id) \
-	(&VC_MEAS_BUFFER_NAME(node_id))
+#define VC_CHANNEL_BUFFER_PTR(node_id) \
+	(&VC_CHANNEL_BUFFER_NAME(node_id))
 
 #endif

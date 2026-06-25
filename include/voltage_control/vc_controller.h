@@ -12,7 +12,7 @@
 struct vc_controller {
 	struct vc_channel channels[VC_MAX_CHANNELS];
 	size_t channel_count;
-	struct vc_meas_buffer *meas_index[VC_MAX_CHANNELS];
+	struct vc_channel_buffer *meas_index[VC_MAX_CHANNELS];
 	enum vc_operating_mode operating_mode;
 	uint8_t cal_unlock_step;
 	bool cal_unlocked;

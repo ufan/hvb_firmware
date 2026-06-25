@@ -16,8 +16,8 @@
 #define VC_CONTROLLER_NODE DT_NODELABEL(vc_controller)
 
 #define MEAS_ENTRY(node_id)                                             \
-	STRUCT_SECTION_ITERABLE(vc_meas_buffer,                         \
-		VC_MEAS_BUFFER_NAME(node_id)) = {                       \
+	STRUCT_SECTION_ITERABLE(vc_channel_buffer,                         \
+		VC_CHANNEL_BUFFER_NAME(node_id)) = {                       \
 		.channel_id = DT_REG_ADDR(node_id),                     \
 	};
 
@@ -47,7 +47,7 @@ static void build_meas_index(struct vc_controller *ctrl)
 {
 	memset(ctrl->meas_index, 0, sizeof(ctrl->meas_index));
 #ifdef CONFIG_VC_CHANNEL_CONTROLLER
-	STRUCT_SECTION_FOREACH(vc_meas_buffer, entry) {
+	STRUCT_SECTION_FOREACH(vc_channel_buffer, entry) {
 		if (entry->channel_id < VC_MAX_CHANNELS) {
 			ctrl->meas_index[entry->channel_id] = entry;
 		}
