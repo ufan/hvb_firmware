@@ -34,4 +34,6 @@ enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 enum vc_status vc_reg_write_ext(struct vc_ctx *ctx, uint16_t off,
 				uint16_t val, k_timeout_t timeout);
 
+int sys_status_reg_read_input(uint16_t off, uint16_t *reg);
+
 #endif

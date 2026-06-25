@@ -15,7 +15,6 @@
 #endif
 
 #include "modbus_adapter/modbus_adapter.h"
-#include "sys_status/sys_status.h"
 #include "modbus_register.h"
 #include "regmap/vc_regs.h"
 
@@ -102,7 +101,7 @@ static enum vc_mb_result read_sys_input(struct vc_mb_adapter *a, uint16_t off,
 					uint16_t *reg)
 {
 	if (off >= SYS_BOARD_TEMPERATURE && off <= SYS_FW_VERSION_LO) {
-		return sys_status_read_input_reg(off, reg) == 0
+		return sys_status_reg_read_input(off, reg) == 0
 			? VC_MB_OK : VC_MB_ILLEGAL_ADDRESS;
 	}
 
