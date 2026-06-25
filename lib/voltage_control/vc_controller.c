@@ -6,7 +6,23 @@
 #include "voltage_control/vc_controller.h"
 #include "regmap/vc_regs.h"
 #include <string.h>
+#include <errno.h>
 #include <zephyr/sys/reboot.h>
+
+#ifdef CONFIG_VC_CHANNEL_CONTROLLER
+#include <zephyr/sys/iterable_sections.h>
+#include <dt-bindings/voltage_control/capabilities.h>
+
+#define VC_CONTROLLER_NODE DT_NODELABEL(vc_controller)
+
+#define MEAS_ENTRY(node_id)                                             \
+	STRUCT_SECTION_ITERABLE(vc_meas_buffer,                         \
+		VC_MEAS_BUFFER_NAME(node_id)) = {                       \
+		.channel_id = DT_REG_ADDR(node_id),                     \
+	};
+
+DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, MEAS_ENTRY)
+#endif
 
 #define VC_VARIANT_ID 1
 #define VC_DEFAULT_SYSTEM_CAPS \
@@ -27,32 +43,46 @@ static bool channel_valid(const struct vc_controller *ctrl, uint8_t ch)
 	return ch < ctrl->channel_count;
 }
 
-static void drain_pending(struct vc_controller *ctrl, uint8_t ch)
+static void build_meas_index(struct vc_controller *ctrl)
 {
-	(void)vc_channel_take_pending_command(&ctrl->channels[ch]);
+	memset(ctrl->meas_index, 0, sizeof(ctrl->meas_index));
+#ifdef CONFIG_VC_CHANNEL_CONTROLLER
+	STRUCT_SECTION_FOREACH(vc_meas_buffer, entry) {
+		if (entry->channel_id < VC_MAX_CHANNELS) {
+			ctrl->meas_index[entry->channel_id] = entry;
+		}
+	}
+#endif
 }
 
-struct vc_controller *vc_controller_init_static(
-	const struct vc_channel_entry *entries, size_t count)
+struct vc_controller *vc_controller_init(
+	vc_wake_fn_t wake_fn, void *wake_user_data)
 {
 	static struct vc_controller ctrl;
 
-	if (entries == NULL || count == 0 || count > VC_MAX_CHANNELS) {
-		return NULL;
-	}
-
 	memset(&ctrl, 0, sizeof(ctrl));
-	ctrl.channel_count = count;
 	ctrl.operating_mode = VC_OPERATING_MODE_NORMAL;
 	ctrl.sys_cfg = default_system_config();
 
-	for (size_t i = 0; i < count; i++) {
-		vc_channel_init(&ctrl.channels[i], entries[i].index,
-				entries[i].capabilities);
-	}
+#ifdef CONFIG_VC_CHANNEL_CONTROLLER
+	ctrl.channel_count = DT_CHILD_NUM_STATUS_OKAY(VC_CONTROLLER_NODE);
+	build_meas_index(&ctrl);
+
+#define INIT_CHANNEL(node_id)                                            \
+	vc_channel_init(&ctrl.channels[DT_REG_ADDR(node_id)],           \
+			DEVICE_DT_GET(node_id),                          \
+			DT_REG_ADDR(node_id),                            \
+			DT_PROP(node_id, capabilities),                  \
+			ctrl.meas_index[DT_REG_ADDR(node_id)],          \
+			wake_fn, wake_user_data);
+
+	DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, INIT_CHANNEL)
+#endif
 
 	return &ctrl;
 }
+
+/* ---- Thin wrappers: route to vc_channel ---- */
 
 enum vc_status vc_controller_channel_output_action(
 	struct vc_controller *ctrl, uint8_t ch, enum vc_output_action action)
@@ -61,11 +91,8 @@ enum vc_status vc_controller_channel_output_action(
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
 	bool cal = ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION;
-	enum vc_status st = vc_channel_output_action(&ctrl->channels[ch],
-						     action, cal);
 
-	drain_pending(ctrl, ch);
-	return st;
+	return vc_channel_output_action(&ctrl->channels[ch], action, cal);
 }
 
 enum vc_status vc_controller_channel_fault_command(
@@ -74,11 +101,7 @@ enum vc_status vc_controller_channel_fault_command(
 	if (!channel_valid(ctrl, ch)) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
-	enum vc_status st = vc_channel_fault_command(&ctrl->channels[ch], cmd,
-						     &ctrl->sys_cfg);
-
-	drain_pending(ctrl, ch);
-	return st;
+	return vc_channel_fault_command(&ctrl->channels[ch], cmd, &ctrl->sys_cfg);
 }
 
 enum vc_status vc_controller_channel_set_field(
@@ -89,41 +112,8 @@ enum vc_status vc_controller_channel_set_field(
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
 	bool cal = ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION;
-	enum vc_status st = vc_channel_set_field(&ctrl->channels[ch],
-						 field, value, cal);
 
-	drain_pending(ctrl, ch);
-	return st;
-}
-
-void vc_controller_consume_voltage(
-	struct vc_controller *ctrl, uint8_t ch, int32_t raw_voltage)
-{
-	if (!channel_valid(ctrl, ch)) {
-		return;
-	}
-	vc_channel_consume_voltage(&ctrl->channels[ch], raw_voltage);
-	drain_pending(ctrl, ch);
-}
-
-void vc_controller_consume_current(
-	struct vc_controller *ctrl, uint8_t ch, int32_t raw_current)
-{
-	if (!channel_valid(ctrl, ch)) {
-		return;
-	}
-	vc_channel_consume_current(&ctrl->channels[ch], raw_current);
-	drain_pending(ctrl, ch);
-}
-
-void vc_controller_consume_fault(
-	struct vc_controller *ctrl, uint8_t ch, uint16_t fault_cause)
-{
-	if (!channel_valid(ctrl, ch)) {
-		return;
-	}
-	vc_channel_consume_fault(&ctrl->channels[ch], fault_cause);
-	drain_pending(ctrl, ch);
+	return vc_channel_set_field(&ctrl->channels[ch], field, value, cal);
 }
 
 void vc_controller_tick(struct vc_controller *ctrl, uint32_t dt_ms)
@@ -132,10 +122,11 @@ void vc_controller_tick(struct vc_controller *ctrl, uint32_t dt_ms)
 		return;
 	}
 	for (size_t i = 0; i < ctrl->channel_count; i++) {
-		vc_channel_tick_ramp(&ctrl->channels[i], dt_ms, &ctrl->sys_cfg);
-		drain_pending(ctrl, i);
+		vc_channel_run(&ctrl->channels[i], dt_ms, &ctrl->sys_cfg);
 	}
 }
+
+/* ---- Operating mode (collective behavior) ---- */
 
 enum vc_status vc_controller_set_operating_mode(
 	struct vc_controller *ctrl, enum vc_operating_mode mode)
@@ -160,12 +151,10 @@ enum vc_status vc_controller_set_operating_mode(
 	if (mode == VC_OPERATING_MODE_CALIBRATION) {
 		for (size_t i = 0; i < ctrl->channel_count; i++) {
 			vc_channel_reset_calibration(&ctrl->channels[i], true);
-			drain_pending(ctrl, i);
 		}
 	} else if (ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
 		for (size_t i = 0; i < ctrl->channel_count; i++) {
 			vc_channel_reset_calibration(&ctrl->channels[i], false);
-			drain_pending(ctrl, i);
 		}
 	}
 
@@ -205,6 +194,8 @@ enum vc_status vc_controller_calibration_unlock(
 	return VC_ERR_INVALID_COMMAND;
 }
 
+/* ---- System config ---- */
+
 enum vc_status vc_controller_get_system_config(
 	const struct vc_controller *ctrl, struct vc_system_config *cfg)
 {
@@ -231,6 +222,41 @@ enum vc_status vc_controller_set_system_config(
 	}
 	return VC_OK;
 }
+
+enum vc_status vc_controller_set_system_field(
+	struct vc_controller *ctrl, enum vc_config_field field, uint16_t value)
+{
+	struct vc_system_config cfg;
+
+	vc_controller_get_system_config(ctrl, &cfg);
+
+	switch (field) {
+	case VC_FIELD_OPERATING_MODE:
+		return vc_controller_set_operating_mode(ctrl,
+						       (enum vc_operating_mode)value);
+	case VC_FIELD_RECOVERY_POLICY_MODE:
+		cfg.recovery_policy_mode = (enum vc_recovery_policy_mode)value;
+		break;
+	case VC_FIELD_AUTO_RETRY_DELAY:
+		cfg.auto_retry_delay = value;
+		break;
+	case VC_FIELD_AUTO_RETRY_MAX_COUNT:
+		cfg.auto_retry_max_count = value;
+		break;
+	case VC_FIELD_AUTO_RETRY_WINDOW:
+		cfg.auto_retry_window = value;
+		break;
+	case VC_FIELD_CURRENT_SAFE_BAND_PCT:
+		cfg.current_safe_band_pct = value;
+		break;
+	default:
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	return vc_controller_set_system_config(ctrl, &cfg);
+}
+
+/* ---- Snapshots ---- */
 
 void vc_controller_get_system_snapshot(
 	const struct vc_controller *ctrl, struct vc_system_snapshot *snap)
@@ -266,6 +292,8 @@ enum vc_status vc_controller_get_channel_config(
 	return vc_channel_get_config(&ctrl->channels[ch], cfg);
 }
 
+/* ---- Storage ---- */
+
 void vc_controller_set_storage_backend(
 	struct vc_controller *ctrl, const struct vc_storage_backend *backend)
 {
@@ -277,14 +305,7 @@ size_t vc_controller_channel_count(const struct vc_controller *ctrl)
 	return ctrl->channel_count;
 }
 
-uint16_t vc_controller_channel_capabilities(
-	const struct vc_controller *ctrl, uint8_t ch)
-{
-	if (!channel_valid(ctrl, ch)) {
-		return 0;
-	}
-	return ctrl->channels[ch].capabilities;
-}
+/* ---- Param actions ---- */
 
 enum vc_status vc_controller_system_param_action(
 	struct vc_controller *ctrl, enum vc_param_action action)
@@ -401,38 +422,7 @@ enum vc_status vc_controller_channel_param_action(
 	}
 }
 
-enum vc_status vc_controller_set_system_field(
-	struct vc_controller *ctrl, enum vc_config_field field, uint16_t value)
-{
-	struct vc_system_config cfg;
-
-	vc_controller_get_system_config(ctrl, &cfg);
-
-	switch (field) {
-	case VC_FIELD_OPERATING_MODE:
-		return vc_controller_set_operating_mode(ctrl,
-						       (enum vc_operating_mode)value);
-	case VC_FIELD_RECOVERY_POLICY_MODE:
-		cfg.recovery_policy_mode = (enum vc_recovery_policy_mode)value;
-		break;
-	case VC_FIELD_AUTO_RETRY_DELAY:
-		cfg.auto_retry_delay = value;
-		break;
-	case VC_FIELD_AUTO_RETRY_MAX_COUNT:
-		cfg.auto_retry_max_count = value;
-		break;
-	case VC_FIELD_AUTO_RETRY_WINDOW:
-		cfg.auto_retry_window = value;
-		break;
-	case VC_FIELD_CURRENT_SAFE_BAND_PCT:
-		cfg.current_safe_band_pct = value;
-		break;
-	default:
-		return VC_ERR_INVALID_VALUE;
-	}
-
-	return vc_controller_set_system_config(ctrl, &cfg);
-}
+/* ---- Calibration (cross-channel check lives here) ---- */
 
 enum vc_status vc_controller_channel_cal_output_enable(
 	struct vc_controller *ctrl, uint8_t ch, bool enable)
@@ -443,11 +433,18 @@ enum vc_status vc_controller_channel_cal_output_enable(
 	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
 		return VC_ERR_INVALID_COMMAND;
 	}
-	enum vc_status st = vc_channel_cal_set_output_enable(
-		&ctrl->channels[ch], enable, ctrl->channels, ctrl->channel_count);
-
-	drain_pending(ctrl, ch);
-	return st;
+	if (enable) {
+		for (size_t i = 0; i < ctrl->channel_count; i++) {
+			if (i == (size_t)ch) {
+				continue;
+			}
+			if (ctrl->channels[i].cal_output_enabled ||
+			    ctrl->channels[i].raw_dac_readback != 0) {
+				return VC_ERR_UNSAFE_STATE;
+			}
+		}
+	}
+	return vc_channel_cal_set_output_enable(&ctrl->channels[ch], enable);
 }
 
 enum vc_status vc_controller_channel_cal_raw_dac(
@@ -459,10 +456,7 @@ enum vc_status vc_controller_channel_cal_raw_dac(
 	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
 		return VC_ERR_INVALID_COMMAND;
 	}
-	enum vc_status st = vc_channel_cal_set_raw_dac(&ctrl->channels[ch], code);
-
-	drain_pending(ctrl, ch);
-	return st;
+	return vc_channel_cal_set_raw_dac(&ctrl->channels[ch], code);
 }
 
 enum vc_status vc_controller_channel_cal_sample(
@@ -499,4 +493,27 @@ enum vc_status vc_controller_channel_cal_max_raw_dac(
 		return VC_ERR_INVALID_COMMAND;
 	}
 	return vc_channel_cal_set_max_raw_dac(&ctrl->channels[ch], limit);
+}
+
+/* ---- Start sampling ---- */
+
+enum vc_status vc_controller_start_sampling(struct vc_controller *ctrl)
+{
+	for (size_t i = 0; i < ctrl->channel_count; i++) {
+		const struct device *dev = ctrl->channels[i].dev;
+
+		if (dev == NULL || dev->api == NULL) {
+			continue;
+		}
+		const struct vc_channel_hw_api *api = dev->api;
+
+		if (api->start_sampling) {
+			int ret = api->start_sampling(dev);
+
+			if (ret < 0 && ret != -ENOTSUP) {
+				return VC_ERR_UNSAFE_STATE;
+			}
+		}
+	}
+	return VC_OK;
 }

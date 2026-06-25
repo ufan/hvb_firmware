@@ -14,12 +14,6 @@
 
 #define VC_MAX_CHANNELS DT_CHILD_NUM_STATUS_OKAY(DT_NODELABEL(vc_controller))
 
-struct vc_channel_entry {
-	const struct device *dev;
-	uint8_t            index;
-	uint16_t           capabilities;
-};
-
 #define VC_FAULT_CURRENT       0x0002
 #define VC_FAULT_MEASUREMENT   0x0004
 #define VC_FAULT_HARDWARE      0x0008

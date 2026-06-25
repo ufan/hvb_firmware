@@ -13,11 +13,6 @@
 #include "voltage_control/vc_controller.h"
 #include "voltage_control/vc_storage.h"
 
-#ifdef CONFIG_VC_CHANNEL_CONTROLLER
-#include "voltage_control/vc_channel_table.h"
-#endif
-#include <dt-bindings/voltage_control/capabilities.h>
-
 #ifdef CONFIG_VC_SETTINGS_PERSISTENCE
 #include <zephyr/settings/settings.h>
 #endif
@@ -115,18 +110,24 @@ static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 	k_mutex_unlock(&runtime->snapshot_lock);
 }
 
+static void runtime_wake(void *user_data)
+{
+	struct vc_runtime *runtime = user_data;
+
+	k_sem_give(&runtime->wake);
+}
+
 static void vc_runtime_worker(void *p1, void *p2, void *p3)
 {
 	struct vc_runtime *runtime = p1;
 	struct vc_runtime_work_item work;
-	int wake_ret;
 
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
 	while (!runtime->stop_requested) {
-		wake_ret = k_sem_take(&runtime->wake,
-				      K_MSEC(CONFIG_VC_RUNTIME_TICK_INTERVAL_MS));
+		k_sem_take(&runtime->wake,
+			   K_MSEC(CONFIG_VC_RUNTIME_TICK_INTERVAL_MS));
 
 		while (k_msgq_get(&runtime->command_queue, &work, K_NO_WAIT) == 0) {
 			enum vc_status result;
@@ -141,10 +142,8 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 			}
 		}
 
-		if (wake_ret == -EAGAIN) {
-			vc_controller_tick(runtime->ctrl,
-					   CONFIG_VC_RUNTIME_TICK_INTERVAL_MS);
-		}
+		vc_controller_tick(runtime->ctrl,
+				   CONFIG_VC_RUNTIME_TICK_INTERVAL_MS);
 
 		vc_runtime_publish_snapshot(runtime);
 	}
@@ -171,27 +170,24 @@ static void vc_runtime_auto_load(struct vc_runtime *runtime)
 #endif
 }
 
-struct vc_runtime *vc_runtime_create_static(
-	const struct vc_channel_entry *channels, size_t count)
+struct vc_runtime *vc_runtime_create_static(void)
 {
 	static struct vc_runtime runtime;
 	struct vc_controller *ctrl;
 
-	ctrl = vc_controller_init_static(channels, count);
-	if (ctrl == NULL) {
-		return NULL;
-	}
-
 	memset(&runtime, 0, sizeof(runtime));
-	runtime.ctrl = ctrl;
 	runtime.stop_requested = false;
 	k_mutex_init(&runtime.lock);
 	k_mutex_init(&runtime.snapshot_lock);
 	k_sem_init(&runtime.wake, 0, 1);
 
-#ifdef CONFIG_VC_CHANNEL_CONTROLLER
-	vc_channel_table_init(ctrl);
-#endif
+	ctrl = vc_controller_init(runtime_wake, &runtime);
+	if (ctrl == NULL) {
+		return NULL;
+	}
+
+	runtime.ctrl = ctrl;
+
 	vc_runtime_auto_load(&runtime);
 	vc_runtime_publish_snapshot(&runtime);
 
@@ -205,12 +201,6 @@ struct vc_runtime *vc_runtime_create_static(
 			       CONFIG_VC_RUNTIME_THREAD_PRIORITY, 0, K_NO_WAIT);
 
 	return &runtime;
-}
-
-struct vc_runtime *vc_runtime_create(
-	const struct vc_channel_entry *channels, size_t count)
-{
-	return vc_runtime_create_static(channels, count);
 }
 
 void vc_runtime_destroy(struct vc_runtime *runtime)
@@ -322,14 +312,14 @@ enum vc_status vc_runtime_submit_measurement(
 			fault_cause |= VC_FAULT_INTERLOCK;
 		}
 		if (fault_cause) {
-			vc_controller_consume_fault(ctrl, ch, fault_cause);
+			vc_channel_consume_fault(&ctrl->channels[ch], fault_cause);
 		}
 	}
 	if (meas->present_mask & VC_MEAS_PRESENT_VOLTAGE) {
-		vc_controller_consume_voltage(ctrl, ch, meas->raw_voltage);
+		vc_channel_consume_voltage(&ctrl->channels[ch], meas->raw_voltage);
 	}
 	if (meas->present_mask & VC_MEAS_PRESENT_CURRENT) {
-		vc_controller_consume_current(ctrl, ch, meas->raw_current);
+		vc_channel_consume_current(&ctrl->channels[ch], meas->raw_current);
 	}
 
 	return VC_OK;

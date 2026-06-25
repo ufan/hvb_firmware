@@ -90,12 +90,8 @@ struct domain;
 /* Stop the runtime worker thread and free if heap-allocated. */
 void vc_runtime_destroy(struct vc_runtime *runtime);
 
-/* Create a runtime + controller from a channel list (delegates to static). */
-struct vc_runtime *vc_runtime_create(
-	const struct vc_channel_entry *channels, size_t count);
 /* Create a runtime + controller in static storage (single-instance). */
-struct vc_runtime *vc_runtime_create_static(
-	const struct vc_channel_entry *channels, size_t count);
+struct vc_runtime *vc_runtime_create_static(void);
 /* Submit a measurement snapshot; decomposes into consume_voltage/current/fault. */
 enum vc_status vc_runtime_submit_measurement(
 	struct vc_runtime *runtime,

@@ -11,17 +11,20 @@
 #define FULL_CAPS (CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE | \
 		   CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)
 
-static const struct vc_channel_entry test_entries[] = {
-	{ .dev = NULL, .index = 0, .capabilities = FULL_CAPS },
-	{ .dev = NULL, .index = 1, .capabilities = FULL_CAPS },
-};
-
 static struct vc_controller *ctrl;
+static int wake_count;
+
+static void test_wake_fn(void *user_data)
+{
+	ARG_UNUSED(user_data);
+	wake_count++;
+}
 
 static void before_each(void *fixture)
 {
 	ARG_UNUSED(fixture);
-	ctrl = vc_controller_init_static(test_entries, 2);
+	wake_count = 0;
+	ctrl = vc_controller_init(test_wake_fn, NULL);
 	zassert_not_null(ctrl);
 }
 
@@ -32,6 +35,12 @@ ZTEST(vc_controller, test_init)
 	zassert_equal(vc_controller_channel_count(ctrl), 2);
 	zassert_equal(vc_controller_get_operating_mode(ctrl),
 		      VC_OPERATING_MODE_NORMAL);
+}
+
+ZTEST(vc_controller, test_channels_have_devices)
+{
+	zassert_not_null(ctrl->channels[0].dev);
+	zassert_not_null(ctrl->channels[1].dev);
 }
 
 ZTEST(vc_controller, test_channel_output_action_routes)
@@ -48,15 +57,7 @@ ZTEST(vc_controller, test_channel_output_action_rejects_invalid_channel)
 		VC_OUTPUT_ACTION_ENABLE), VC_ERR_UNSUPPORTED_CHANNEL);
 }
 
-ZTEST(vc_controller, test_consume_voltage_routes_and_drains)
-{
-	vc_controller_channel_output_action(ctrl, 0, VC_OUTPUT_ACTION_ENABLE);
-	vc_controller_consume_voltage(ctrl, 0, 1200);
-	zassert_equal(ctrl->channels[0].measured_voltage, 1200);
-	zassert_false(ctrl->channels[0].pending.valid);
-}
-
-ZTEST(vc_controller, test_tick_ramps_and_drains)
+ZTEST(vc_controller, test_tick_ramps)
 {
 	struct vc_channel_config cfg;
 
@@ -69,7 +70,6 @@ ZTEST(vc_controller, test_tick_ramps_and_drains)
 	vc_controller_tick(ctrl, 100);
 
 	zassert_equal(ctrl->channels[0].operational_target_voltage, 1000);
-	zassert_false(ctrl->channels[0].pending.valid);
 }
 
 ZTEST(vc_controller, test_calibration_unlock_and_mode_entry)
@@ -156,13 +156,17 @@ ZTEST(vc_controller, test_calibration_entry_resets_channels)
 	zassert_equal(snap.cal_output_enabled, 0);
 }
 
-ZTEST(vc_controller, test_consume_fault_routes)
+ZTEST(vc_controller, test_cal_single_output_across_channels)
 {
-	vc_controller_channel_output_action(ctrl, 0, VC_OUTPUT_ACTION_ENABLE);
-	vc_controller_consume_fault(ctrl, 0, VC_FAULT_HARDWARE);
-	zassert_true(ctrl->channels[0].active_fault_cause & VC_FAULT_HARDWARE);
-	zassert_false(ctrl->channels[0].output_enabled);
-	zassert_false(ctrl->channels[0].pending.valid);
+	vc_controller_calibration_unlock(ctrl, CAL_UNLOCK_STEP1);
+	vc_controller_calibration_unlock(ctrl, CAL_UNLOCK_STEP2);
+	vc_controller_set_operating_mode(ctrl, VC_OPERATING_MODE_CALIBRATION);
+
+	zassert_equal(vc_controller_channel_cal_output_enable(ctrl, 0, true), VC_OK);
+	zassert_equal(vc_controller_channel_cal_output_enable(ctrl, 1, true),
+		      VC_ERR_UNSAFE_STATE);
+	zassert_equal(vc_controller_channel_cal_output_enable(ctrl, 0, false), VC_OK);
+	zassert_equal(vc_controller_channel_cal_output_enable(ctrl, 1, true), VC_OK);
 }
 
 ZTEST(vc_controller, test_system_param_action_no_storage)
@@ -177,4 +181,9 @@ ZTEST(vc_controller, test_channel_param_action_no_storage)
 {
 	zassert_equal(vc_controller_channel_param_action(ctrl, 0, VC_PARAM_ACTION_SAVE),
 		      VC_ERR_STORAGE);
+}
+
+ZTEST(vc_controller, test_start_sampling)
+{
+	zassert_equal(vc_controller_start_sampling(ctrl), VC_OK);
 }

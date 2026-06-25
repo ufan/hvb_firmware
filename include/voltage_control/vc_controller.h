@@ -12,6 +12,7 @@
 struct vc_controller {
 	struct vc_channel channels[VC_MAX_CHANNELS];
 	size_t channel_count;
+	struct vc_meas_buffer *meas_index[VC_MAX_CHANNELS];
 	enum vc_operating_mode operating_mode;
 	uint8_t cal_unlock_step;
 	bool cal_unlocked;
@@ -19,8 +20,8 @@ struct vc_controller {
 	struct vc_system_config sys_cfg;
 };
 
-struct vc_controller *vc_controller_init_static(
-	const struct vc_channel_entry *entries, size_t count);
+struct vc_controller *vc_controller_init(
+	vc_wake_fn_t wake_fn, void *wake_user_data);
 
 enum vc_status vc_controller_set_operating_mode(
 	struct vc_controller *ctrl, enum vc_operating_mode mode);
@@ -36,13 +37,6 @@ enum vc_status vc_controller_channel_output_action(
 	struct vc_controller *ctrl, uint8_t ch, enum vc_output_action action);
 enum vc_status vc_controller_channel_fault_command(
 	struct vc_controller *ctrl, uint8_t ch, enum vc_channel_fault_command cmd);
-
-void vc_controller_consume_voltage(
-	struct vc_controller *ctrl, uint8_t ch, int32_t raw_voltage);
-void vc_controller_consume_current(
-	struct vc_controller *ctrl, uint8_t ch, int32_t raw_current);
-void vc_controller_consume_fault(
-	struct vc_controller *ctrl, uint8_t ch, uint16_t fault_cause);
 
 void vc_controller_tick(struct vc_controller *ctrl, uint32_t dt_ms);
 
@@ -81,8 +75,8 @@ enum vc_status vc_controller_channel_cal_max_raw_dac(
 void vc_controller_set_storage_backend(
 	struct vc_controller *ctrl, const struct vc_storage_backend *backend);
 
+enum vc_status vc_controller_start_sampling(struct vc_controller *ctrl);
+
 size_t vc_controller_channel_count(const struct vc_controller *ctrl);
-uint16_t vc_controller_channel_capabilities(
-	const struct vc_controller *ctrl, uint8_t ch);
 
 #endif

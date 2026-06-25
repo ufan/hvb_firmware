@@ -10,15 +10,30 @@
 #define FULL_CAPS (CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE | \
 		   CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)
 
+struct vc_stub_data {
+	vc_meas_ready_cb_t meas_cb;
+	void *meas_cb_user_data;
+	uint16_t last_output_code;
+	bool last_enable;
+};
+
 static struct vc_channel ch;
 static const struct vc_system_config default_sys = {
 	.current_safe_band_pct = 10,
 };
+static int wake_count;
+
+static void test_wake_fn(void *user_data)
+{
+	ARG_UNUSED(user_data);
+	wake_count++;
+}
 
 static void before_each(void *fixture)
 {
 	ARG_UNUSED(fixture);
-	vc_channel_init(&ch, 0, FULL_CAPS);
+	wake_count = 0;
+	vc_channel_init(&ch, NULL, 0, FULL_CAPS, NULL, test_wake_fn, &ch);
 }
 
 ZTEST_SUITE(vc_channel_state, NULL, NULL, before_each, NULL, NULL);
@@ -34,8 +49,18 @@ ZTEST(vc_channel_state, test_init_defaults)
 	zassert_equal(ch.active_fault_cause, 0);
 	zassert_equal(ch.measured_voltage, 0);
 	zassert_equal(ch.measured_current, 0);
-	zassert_false(ch.pending.valid);
 	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_DISABLED_SAFE);
+	zassert_is_null(ch.dev);
+	zassert_is_null(ch.meas);
+}
+
+ZTEST(vc_channel_state, test_init_with_device)
+{
+	const struct device *dev = DEVICE_DT_GET(DT_NODELABEL(vc_ch0));
+	struct vc_channel hw_ch;
+
+	vc_channel_init(&hw_ch, dev, 0, FULL_CAPS, NULL, test_wake_fn, &hw_ch);
+	zassert_equal(hw_ch.dev, dev);
 }
 
 ZTEST(vc_channel_state, test_default_config)
@@ -75,22 +100,17 @@ ZTEST(vc_channel_state, test_output_action_enable)
 	zassert_true(ch.output_enabled);
 	zassert_true(ch.ramping);
 	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_RAMPING);
-	zassert_true(ch.pending.valid);
 }
 
 ZTEST(vc_channel_state, test_output_action_disable_immediate)
 {
 	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	ch.pending.valid = false;
 
 	zassert_equal(vc_channel_output_action(&ch, VC_OUTPUT_ACTION_DISABLE_IMMEDIATE, false),
 		      VC_OK);
 	zassert_false(ch.output_enabled);
 	zassert_equal(ch.operational_target_voltage, 0);
 	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_DISABLED_SAFE);
-	zassert_true(ch.pending.valid);
-	zassert_equal(ch.pending.output_code, 0);
-	zassert_false(ch.pending.output_enable);
 }
 
 ZTEST(vc_channel_state, test_output_action_rejected_in_calibration)
@@ -182,15 +202,12 @@ ZTEST(vc_channel_state, test_current_protection_triggers_fault)
 	cfg.ramp_up_step = 0;
 	vc_channel_set_config(&ch, &cfg, false);
 	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	ch.pending.valid = false;
 	vc_channel_tick_ramp(&ch, 100, &default_sys);
-	ch.pending.valid = false;
 
 	vc_channel_consume_current(&ch, 200);
 
 	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT);
-	zassert_true(ch.pending.valid);
-	zassert_false(ch.pending.output_enable);
+	zassert_false(ch.output_enabled);
 }
 
 /* ---- Consume fault ---- */
@@ -198,7 +215,6 @@ ZTEST(vc_channel_state, test_current_protection_triggers_fault)
 ZTEST(vc_channel_state, test_consume_fault_sets_hardware_fault)
 {
 	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	ch.pending.valid = false;
 
 	vc_channel_consume_fault(&ch, VC_FAULT_HARDWARE);
 
@@ -206,13 +222,11 @@ ZTEST(vc_channel_state, test_consume_fault_sets_hardware_fault)
 	zassert_true(ch.fault_history_cause & VC_FAULT_HARDWARE);
 	zassert_false(ch.output_enabled);
 	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_DISABLED_SAFE);
-	zassert_true(ch.pending.valid);
 }
 
 ZTEST(vc_channel_state, test_consume_fault_interlock)
 {
 	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	ch.pending.valid = false;
 
 	vc_channel_consume_fault(&ch, VC_FAULT_INTERLOCK);
 
@@ -232,15 +246,12 @@ ZTEST(vc_channel_state, test_tick_ramp_instant)
 	cfg.ramp_up_step = 0;
 	vc_channel_set_config(&ch, &cfg, false);
 	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	ch.pending.valid = false;
 
 	vc_channel_tick_ramp(&ch, 100, &default_sys);
 
 	zassert_equal(ch.operational_target_voltage, 5000);
 	zassert_false(ch.ramping);
 	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_ENABLED_HOLDING);
-	zassert_true(ch.pending.valid);
-	zassert_equal(ch.pending.output_code, 5000);
 }
 
 ZTEST(vc_channel_state, test_tick_ramp_gradual)
@@ -253,7 +264,6 @@ ZTEST(vc_channel_state, test_tick_ramp_gradual)
 	cfg.ramp_up_interval = 1;
 	vc_channel_set_config(&ch, &cfg, false);
 	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	ch.pending.valid = false;
 
 	vc_channel_tick_ramp(&ch, 100, &default_sys);
 
@@ -283,15 +293,10 @@ ZTEST(vc_channel_state, test_tick_ramp_at_target_stops_ramping)
 	cfg.ramp_up_step = 0;
 	vc_channel_set_config(&ch, &cfg, false);
 	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	ch.pending.valid = false;
 
 	vc_channel_tick_ramp(&ch, 100, &default_sys);
 	zassert_equal(ch.operational_target_voltage, 100);
 	zassert_false(ch.ramping);
-
-	ch.pending.valid = false;
-	vc_channel_tick_ramp(&ch, 100, &default_sys);
-	zassert_false(ch.pending.valid);
 }
 
 /* ---- Set config validation ---- */
@@ -354,7 +359,7 @@ ZTEST(vc_channel_state, test_onoff_channel_rejects_output_drive_config)
 	struct vc_channel onoff_ch;
 	struct vc_channel_config cfg;
 
-	vc_channel_init(&onoff_ch, 0, CH_CAP_OUTPUT_ENABLE);
+	vc_channel_init(&onoff_ch, NULL, 0, CH_CAP_OUTPUT_ENABLE, NULL, NULL, NULL);
 	vc_channel_get_config(&onoff_ch, &cfg);
 	cfg.configured_target_voltage = 100;
 	zassert_equal(vc_channel_set_config(&onoff_ch, &cfg, false),
@@ -365,15 +370,14 @@ ZTEST(vc_channel_state, test_onoff_channel_rejects_output_drive_config)
 
 ZTEST(vc_channel_state, test_cal_set_output_enable)
 {
-	zassert_equal(vc_channel_cal_set_output_enable(&ch, true, NULL, 0), VC_OK);
+	zassert_equal(vc_channel_cal_set_output_enable(&ch, true), VC_OK);
 	zassert_equal(ch.cal_output_enabled, 1);
-	zassert_true(ch.pending.valid);
 }
 
 ZTEST(vc_channel_state, test_cal_set_raw_dac_requires_output_enabled)
 {
 	zassert_equal(vc_channel_cal_set_raw_dac(&ch, 100), VC_ERR_UNSAFE_STATE);
-	vc_channel_cal_set_output_enable(&ch, true, NULL, 0);
+	vc_channel_cal_set_output_enable(&ch, true);
 	zassert_equal(vc_channel_cal_set_raw_dac(&ch, 100), VC_OK);
 	zassert_equal(ch.raw_dac_readback, 100);
 }
@@ -381,14 +385,14 @@ ZTEST(vc_channel_state, test_cal_set_raw_dac_requires_output_enabled)
 ZTEST(vc_channel_state, test_cal_max_raw_dac_limit)
 {
 	vc_channel_cal_set_max_raw_dac(&ch, 50);
-	vc_channel_cal_set_output_enable(&ch, true, NULL, 0);
+	vc_channel_cal_set_output_enable(&ch, true);
 	zassert_equal(vc_channel_cal_set_raw_dac(&ch, 51), VC_ERR_INVALID_VALUE);
 	zassert_equal(vc_channel_cal_set_raw_dac(&ch, 50), VC_OK);
 }
 
 ZTEST(vc_channel_state, test_cal_sample_captures_raw)
 {
-	vc_channel_cal_set_output_enable(&ch, true, NULL, 0);
+	vc_channel_cal_set_output_enable(&ch, true);
 	vc_channel_cal_set_raw_dac(&ch, 123);
 	zassert_equal(vc_channel_cal_sample(&ch), VC_OK);
 	zassert_equal(ch.cal_sample_status, VC_CAL_SAMPLE_VALID);
@@ -397,40 +401,26 @@ ZTEST(vc_channel_state, test_cal_sample_captures_raw)
 
 ZTEST(vc_channel_state, test_cal_commit_requires_output_disabled)
 {
-	vc_channel_cal_set_output_enable(&ch, true, NULL, 0);
+	vc_channel_cal_set_output_enable(&ch, true);
 	zassert_equal(vc_channel_cal_commit(&ch), VC_ERR_UNSAFE_STATE);
-	vc_channel_cal_set_output_enable(&ch, false, NULL, 0);
+	vc_channel_cal_set_output_enable(&ch, false);
 	zassert_equal(vc_channel_cal_commit(&ch), VC_OK);
 }
 
 ZTEST(vc_channel_state, test_cal_disable_clears_sample_state)
 {
-	vc_channel_cal_set_output_enable(&ch, true, NULL, 0);
+	vc_channel_cal_set_output_enable(&ch, true);
 	vc_channel_cal_set_raw_dac(&ch, 50);
 	vc_channel_cal_sample(&ch);
-	vc_channel_cal_set_output_enable(&ch, false, NULL, 0);
+	vc_channel_cal_set_output_enable(&ch, false);
 	zassert_equal(ch.raw_adc_voltage, 0);
 	zassert_equal(ch.raw_adc_current, 0);
 	zassert_equal(ch.cal_sample_status, VC_CAL_SAMPLE_NONE);
 }
 
-ZTEST(vc_channel_state, test_cal_single_output_enabled_across_channels)
-{
-	struct vc_channel channels[2];
-
-	vc_channel_init(&channels[0], 0, FULL_CAPS);
-	vc_channel_init(&channels[1], 1, FULL_CAPS);
-
-	zassert_equal(vc_channel_cal_set_output_enable(&channels[0], true, channels, 2), VC_OK);
-	zassert_equal(vc_channel_cal_set_output_enable(&channels[1], true, channels, 2),
-		      VC_ERR_UNSAFE_STATE);
-	zassert_equal(vc_channel_cal_set_output_enable(&channels[0], false, channels, 2), VC_OK);
-	zassert_equal(vc_channel_cal_set_output_enable(&channels[1], true, channels, 2), VC_OK);
-}
-
 ZTEST(vc_channel_state, test_reset_calibration_entering)
 {
-	vc_channel_cal_set_output_enable(&ch, true, NULL, 0);
+	vc_channel_cal_set_output_enable(&ch, true);
 	vc_channel_cal_set_raw_dac(&ch, 100);
 	vc_channel_reset_calibration(&ch, true);
 
@@ -446,17 +436,96 @@ ZTEST(vc_channel_state, test_reset_calibration_exiting)
 	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_DISABLED_SAFE);
 }
 
-/* ---- Pending command ---- */
+/* ---- vc_channel_run ---- */
 
-ZTEST(vc_channel_state, test_take_pending_command_clears_valid)
+ZTEST(vc_channel_state, test_run_consumes_meas_buffer)
 {
-	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	zassert_true(ch.pending.valid);
+	struct vc_meas_buffer meas = {
+		.channel_id = 0,
+		.raw_voltage = 1500,
+		.voltage_timestamp_ms = 100,
+		.raw_current = 300,
+		.current_timestamp_ms = 100,
+	};
+	struct vc_channel run_ch;
 
-	struct vc_pending_command cmd = vc_channel_take_pending_command(&ch);
-	zassert_true(cmd.valid);
-	zassert_true(cmd.output_enable);
-	zassert_false(ch.pending.valid);
+	vc_channel_init(&run_ch, NULL, 0, FULL_CAPS, &meas, NULL, NULL);
+
+	vc_channel_run(&run_ch, 100, &default_sys);
+
+	zassert_equal(run_ch.measured_voltage, 1500);
+	zassert_equal(run_ch.measured_current, 300);
+	zassert_equal(run_ch.last_consumed_voltage_ts, 100);
+	zassert_equal(run_ch.last_consumed_current_ts, 100);
+}
+
+ZTEST(vc_channel_state, test_run_skips_unchanged_timestamps)
+{
+	struct vc_meas_buffer meas = {
+		.channel_id = 0,
+		.raw_voltage = 1500,
+		.voltage_timestamp_ms = 100,
+		.raw_current = 300,
+		.current_timestamp_ms = 100,
+	};
+	struct vc_channel run_ch;
+
+	vc_channel_init(&run_ch, NULL, 0, FULL_CAPS, &meas, NULL, NULL);
+	vc_channel_run(&run_ch, 100, &default_sys);
+
+	meas.raw_voltage = 9999;
+	vc_channel_run(&run_ch, 100, &default_sys);
+
+	zassert_equal(run_ch.measured_voltage, 1500,
+		      "should not re-consume with same timestamp");
+}
+
+ZTEST(vc_channel_state, test_run_null_meas_is_safe)
+{
+	struct vc_channel run_ch;
+
+	vc_channel_init(&run_ch, NULL, 0, FULL_CAPS, NULL, NULL, NULL);
+	vc_channel_run(&run_ch, 100, &default_sys);
+	zassert_equal(run_ch.measured_voltage, 0);
+}
+
+/* ---- apply_hw with stub driver ---- */
+
+ZTEST(vc_channel_state, test_apply_hw_calls_driver)
+{
+	const struct device *dev = DEVICE_DT_GET(DT_NODELABEL(vc_ch0));
+	struct vc_channel hw_ch;
+
+	vc_channel_init(&hw_ch, dev, 0, FULL_CAPS, NULL, NULL, NULL);
+
+	struct vc_channel_config cfg;
+
+	vc_channel_get_config(&hw_ch, &cfg);
+	cfg.configured_target_voltage = 5000;
+	cfg.ramp_up_step = 0;
+	vc_channel_set_config(&hw_ch, &cfg, false);
+	vc_channel_output_action(&hw_ch, VC_OUTPUT_ACTION_ENABLE, false);
+	vc_channel_tick_ramp(&hw_ch, 100, &default_sys);
+
+	struct vc_stub_data *stub = dev->data;
+
+	zassert_true(stub->last_enable, "hw should be enabled");
+	zassert_equal(stub->last_output_code, 5000, "hw should have DAC code 5000");
+}
+
+ZTEST(vc_channel_state, test_apply_hw_disable_zeros_output)
+{
+	const struct device *dev = DEVICE_DT_GET(DT_NODELABEL(vc_ch0));
+	struct vc_channel hw_ch;
+
+	vc_channel_init(&hw_ch, dev, 0, FULL_CAPS, NULL, NULL, NULL);
+	vc_channel_output_action(&hw_ch, VC_OUTPUT_ACTION_ENABLE, false);
+	vc_channel_output_action(&hw_ch, VC_OUTPUT_ACTION_DISABLE_IMMEDIATE, false);
+
+	struct vc_stub_data *stub = dev->data;
+
+	zassert_false(stub->last_enable);
+	zassert_equal(stub->last_output_code, 0);
 }
 
 ZTEST(vc_channel_state, test_current_protection_skipped_during_ramping)
@@ -472,18 +541,32 @@ ZTEST(vc_channel_state, test_current_protection_skipped_during_ramping)
 	cfg.ramp_up_interval = 1;
 	vc_channel_set_config(&ch, &cfg, false);
 	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE, false);
-	ch.pending.valid = false;
 
-	/* Ramp partway — channel is still ramping */
 	vc_channel_tick_ramp(&ch, 100, &default_sys);
 	zassert_true(ch.ramping);
-	ch.pending.valid = false;
 
-	/* Inject overcurrent while ramping */
 	vc_channel_consume_current(&ch, 200);
 
 	zassert_equal(ch.active_fault_cause, 0,
 		      "current protection must not fire during ramping");
 	zassert_equal(ch.fault_history_cause, 0,
 		      "current protection must not flag during ramping");
+}
+
+/* ---- Meas callback registration ---- */
+
+ZTEST(vc_channel_state, test_meas_callback_registered_with_hw)
+{
+	const struct device *dev = DEVICE_DT_GET(DT_NODELABEL(vc_ch0));
+	struct vc_channel hw_ch;
+
+	vc_channel_init(&hw_ch, dev, 0, FULL_CAPS, NULL, test_wake_fn, &hw_ch);
+
+	struct vc_stub_data *stub = dev->data;
+
+	zassert_not_null(stub->meas_cb, "init should register meas callback on hw");
+
+	wake_count = 0;
+	stub->meas_cb(0, stub->meas_cb_user_data);
+	zassert_equal(wake_count, 1, "meas callback should invoke wake_fn");
 }

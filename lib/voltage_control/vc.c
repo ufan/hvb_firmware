@@ -5,10 +5,7 @@
  */
 
 #include "voltage_control/vc.h"
-
-#ifdef CONFIG_VC_CHANNEL_CONTROLLER
-#include "voltage_control/vc_channel_table.h"
-#endif
+#include "voltage_control/vc_controller.h"
 
 struct vc_ctx {
 	struct vc_runtime *runtime;
@@ -27,27 +24,7 @@ static struct vc_ctx *init_from_runtime(struct vc_runtime *rt)
 
 struct vc_ctx *vc_init(void)
 {
-#ifdef CONFIG_VC_CHANNEL_CONTROLLER
-	size_t count = vc_channel_table_count();
-	struct vc_channel_entry entries[VC_MAX_CHANNELS];
-
-	for (size_t i = 0; i < count; i++) {
-		entries[i].dev = vc_channel_table[i].dev;
-		entries[i].index = vc_channel_table[i].index;
-		entries[i].capabilities = vc_channel_table[i].capabilities;
-	}
-	return init_from_runtime(
-		vc_runtime_create_static(entries, count));
-#else
-	return NULL;
-#endif
-}
-
-struct vc_ctx *vc_init_custom(const struct vc_channel_entry *channels,
-			      size_t count)
-{
-	return init_from_runtime(
-		vc_runtime_create_static(channels, count));
+	return init_from_runtime(vc_runtime_create_static());
 }
 
 void vc_destroy(struct vc_ctx *ctx)
@@ -64,18 +41,6 @@ enum vc_status vc_ctx_start(struct vc_ctx *ctx)
 	if (ctx == NULL) {
 		return VC_ERR_INVALID_VALUE;
 	}
-
-#ifdef CONFIG_VC_CHANNEL_CONTROLLER
-	size_t count = vc_channel_table_count();
-
-	for (size_t i = 0; i < count; i++) {
-		int ret = vc_channel_table_start_sampling((uint8_t)i);
-
-		if (ret < 0 && ret != -ENOTSUP) {
-			return VC_ERR_UNSAFE_STATE;
-		}
-	}
-#endif
 
 	return VC_OK;
 }
