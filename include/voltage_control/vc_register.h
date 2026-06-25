@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 #include <zephyr/kernel.h>
-#include "voltage_control/domain.h"
+#include "voltage_control/vc_types.h"
 
 struct vc_ctx;
 

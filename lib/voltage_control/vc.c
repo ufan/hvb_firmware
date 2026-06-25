@@ -5,10 +5,10 @@
  */
 
 #include "voltage_control/vc.h"
-#include "voltage_control/vc_channel_table.h"
 
-extern const struct vc_channel_entry vc_domain_channels[];
-extern const size_t vc_domain_channel_count;
+#ifdef CONFIG_VC_CHANNEL_CONTROLLER
+#include "voltage_control/vc_channel_table.h"
+#endif
 
 struct vc_ctx {
 	struct vc_runtime *runtime;
@@ -16,29 +16,58 @@ struct vc_ctx {
 
 static struct vc_ctx g_ctx;
 
-struct vc_ctx *vc_init(void)
+static struct vc_ctx *init_from_runtime(struct vc_runtime *rt)
 {
-	struct vc_runtime *rt;
-
-	rt = vc_domain_runtime_create_static(vc_domain_channels,
-					     vc_domain_channel_count);
 	if (rt == NULL) {
 		return NULL;
 	}
-
 	g_ctx.runtime = rt;
 	return &g_ctx;
 }
 
+struct vc_ctx *vc_init(void)
+{
+#ifdef CONFIG_VC_CHANNEL_CONTROLLER
+	size_t count = vc_channel_table_count();
+	struct vc_channel_entry entries[VC_MAX_CHANNELS];
+
+	for (size_t i = 0; i < count; i++) {
+		entries[i].dev = vc_channel_table[i].dev;
+		entries[i].index = vc_channel_table[i].index;
+		entries[i].capabilities = vc_channel_table[i].capabilities;
+	}
+	return init_from_runtime(
+		vc_runtime_create_static(entries, count));
+#else
+	return NULL;
+#endif
+}
+
+struct vc_ctx *vc_init_custom(const struct vc_channel_entry *channels,
+			      size_t count)
+{
+	return init_from_runtime(
+		vc_runtime_create_static(channels, count));
+}
+
+void vc_destroy(struct vc_ctx *ctx)
+{
+	if (ctx == NULL) {
+		return;
+	}
+	vc_runtime_destroy(ctx->runtime);
+	ctx->runtime = NULL;
+}
+
 enum vc_status vc_ctx_start(struct vc_ctx *ctx)
 {
-	size_t count;
-
 	if (ctx == NULL) {
 		return VC_ERR_INVALID_VALUE;
 	}
 
-	count = vc_channel_table_count();
+#ifdef CONFIG_VC_CHANNEL_CONTROLLER
+	size_t count = vc_channel_table_count();
+
 	for (size_t i = 0; i < count; i++) {
 		int ret = vc_channel_table_start_sampling((uint8_t)i);
 
@@ -46,6 +75,7 @@ enum vc_status vc_ctx_start(struct vc_ctx *ctx)
 			return VC_ERR_UNSAFE_STATE;
 		}
 	}
+#endif
 
 	return VC_OK;
 }
@@ -138,7 +168,7 @@ enum vc_status vc_dispatch(struct vc_ctx *ctx, struct vc_cmd cmd,
 		return vc_runtime_submit_command(ctx->runtime, &rtcmd, timeout);
 
 	case VC_CMD_SUBMIT_MEASUREMENT:
-		return VC_ERR_INVALID_COMMAND;
+		return vc_runtime_submit_measurement(ctx->runtime, &cmd.measurement);
 
 	default:
 		return VC_ERR_INVALID_COMMAND;

@@ -7,7 +7,7 @@
 #ifndef VOLTAGE_CONTROL_VC_STORAGE_H
 #define VOLTAGE_CONTROL_VC_STORAGE_H
 
-#include "voltage_control/domain.h"
+#include "voltage_control/vc_types.h"
 
 struct vc_storage_backend {
 	int (*save_system_config)(const struct vc_system_config *cfg);

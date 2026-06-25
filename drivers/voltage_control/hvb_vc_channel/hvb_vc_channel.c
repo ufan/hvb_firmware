@@ -14,7 +14,7 @@
 #include "voltage_control/vc_channel_hw.h"
 #include "voltage_control/vc_channel_table.h"
 #include "voltage_control/vc_controller.h"
-#include "voltage_control/domain.h"
+#include "voltage_control/vc_types.h"
 
 LOG_MODULE_REGISTER(hvb_vc_channel, LOG_LEVEL_INF);
 

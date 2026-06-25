@@ -9,10 +9,13 @@
 
 #include <zephyr/kernel.h>
 
-#include "voltage_control/runtime.h"
+#include "voltage_control/vc_runtime.h"
 #include "voltage_control/vc_controller.h"
-#include "voltage_control/vc_channel_table.h"
 #include "voltage_control/vc_storage.h"
+
+#ifdef CONFIG_VC_CHANNEL_CONTROLLER
+#include "voltage_control/vc_channel_table.h"
+#endif
 #include <dt-bindings/voltage_control/capabilities.h>
 
 #ifdef CONFIG_VC_SETTINGS_PERSISTENCE
@@ -168,7 +171,7 @@ static void vc_runtime_auto_load(struct vc_runtime *runtime)
 #endif
 }
 
-struct vc_runtime *vc_domain_runtime_create_static(
+struct vc_runtime *vc_runtime_create_static(
 	const struct vc_channel_entry *channels, size_t count)
 {
 	static struct vc_runtime runtime;
@@ -186,7 +189,9 @@ struct vc_runtime *vc_domain_runtime_create_static(
 	k_mutex_init(&runtime.snapshot_lock);
 	k_sem_init(&runtime.wake, 0, 1);
 
+#ifdef CONFIG_VC_CHANNEL_CONTROLLER
 	vc_channel_table_init(ctrl);
+#endif
 	vc_runtime_auto_load(&runtime);
 	vc_runtime_publish_snapshot(&runtime);
 
@@ -202,10 +207,10 @@ struct vc_runtime *vc_domain_runtime_create_static(
 	return &runtime;
 }
 
-struct vc_runtime *vc_domain_runtime_create(
+struct vc_runtime *vc_runtime_create(
 	const struct vc_channel_entry *channels, size_t count)
 {
-	return vc_domain_runtime_create_static(channels, count);
+	return vc_runtime_create_static(channels, count);
 }
 
 void vc_runtime_destroy(struct vc_runtime *runtime)
@@ -284,6 +289,50 @@ enum vc_status vc_runtime_set_channel_field(struct vc_runtime *runtime,
 	};
 
 	return vc_runtime_submit_command(runtime, &cmd, timeout);
+}
+
+enum vc_status vc_runtime_submit_measurement(
+	struct vc_runtime *runtime,
+	const struct vc_measurement_snapshot *meas)
+{
+	struct vc_controller *ctrl;
+	uint8_t ch;
+
+	if (runtime == NULL || meas == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	ctrl = runtime->ctrl;
+	ch = meas->channel;
+
+	if (ch >= vc_controller_channel_count(ctrl)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+
+	if (meas->present_mask & VC_MEAS_PRESENT_PROVIDER_STATUS) {
+		uint16_t fault_cause = 0;
+
+		if (meas->provider_status & VC_PROVIDER_STATUS_APPLY_FAILED) {
+			fault_cause |= VC_FAULT_HARDWARE;
+		}
+		if (meas->provider_status & VC_PROVIDER_STATUS_SAMPLE_ERROR) {
+			fault_cause |= VC_FAULT_MEASUREMENT;
+		}
+		if (meas->provider_status & VC_PROVIDER_STATUS_INTERLOCK) {
+			fault_cause |= VC_FAULT_INTERLOCK;
+		}
+		if (fault_cause) {
+			vc_controller_consume_fault(ctrl, ch, fault_cause);
+		}
+	}
+	if (meas->present_mask & VC_MEAS_PRESENT_VOLTAGE) {
+		vc_controller_consume_voltage(ctrl, ch, meas->raw_voltage);
+	}
+	if (meas->present_mask & VC_MEAS_PRESENT_CURRENT) {
+		vc_controller_consume_current(ctrl, ch, meas->raw_current);
+	}
+
+	return VC_OK;
 }
 
 enum vc_status vc_runtime_get_published_system_snapshot(

@@ -24,10 +24,6 @@ struct sys_status_snapshot sys_status_get(void)
 	};
 }
 
-struct vc_ctx {
-	struct vc_runtime *runtime;
-};
-
 static const struct vc_channel_entry full_cap_channels[] = {
 	{ .dev = NULL, .index = 0,
 	  .capabilities = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
@@ -41,21 +37,15 @@ static const struct vc_channel_entry onoff_channels[] = {
 	{ .dev = NULL, .index = 0, .capabilities = CH_CAP_OUTPUT_ENABLE },
 };
 
-static struct vc_ctx test_ctx;
-
 static struct vc_ctx *make_ctx(const struct vc_channel_entry *channels,
 			       size_t count)
 {
-	test_ctx.runtime = vc_domain_runtime_create(channels, count);
-	return test_ctx.runtime ? &test_ctx : NULL;
+	return vc_init_custom(channels, count);
 }
 
 static void destroy_ctx(struct vc_ctx *ctx)
 {
-	if (ctx && ctx->runtime) {
-		vc_runtime_destroy(ctx->runtime);
-		ctx->runtime = NULL;
-	}
+	vc_destroy(ctx);
 }
 
 ZTEST_SUITE(modbus_adapter, NULL, NULL, NULL, NULL, NULL);

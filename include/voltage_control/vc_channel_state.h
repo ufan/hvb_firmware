@@ -11,7 +11,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/smf.h>
 
-#include "voltage_control/domain.h"
+#include "voltage_control/vc_types.h"
 
 struct vc_pending_command {
 	uint16_t output_code;

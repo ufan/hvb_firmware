@@ -13,10 +13,9 @@
 #include <zephyr/random/random.h>
 #include <zephyr/sys/printk.h>
 
-#include "voltage_control/domain.h"
+#include <dt-bindings/voltage_control/capabilities.h>
+#include "voltage_control/vc.h"
 #include "voltage_control/modbus_adapter.h"
-#include "voltage_control/runtime.h"
-#include "voltage_control/vc_channel.h"
 
 #define HEARTBEAT_INTERVAL_MS 500
 #define MODBUS_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_modbus_serial)
@@ -80,10 +79,20 @@ static int init_modbus_server(void)
 	return modbus_init_server(iface, server_param);
 }
 
+static const struct vc_channel_entry sim_channels[] = {
+	{ .dev = NULL, .index = 0,
+	  .capabilities = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+			  CH_CAP_VOLTAGE_MEASUREMENT |
+			  CH_CAP_CURRENT_MEASUREMENT },
+	{ .dev = NULL, .index = 1,
+	  .capabilities = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+			  CH_CAP_VOLTAGE_MEASUREMENT |
+			  CH_CAP_CURRENT_MEASUREMENT },
+};
+
 int main(void)
 {
-	struct vc_runtime *runtime;
-	struct domain *domain;
+	struct vc_ctx *ctx;
 	struct vc_system_snapshot system_snapshot;
 	int ret;
 
@@ -98,26 +107,14 @@ int main(void)
 		return 0;
 	}
 
-	static const struct vc_channel_entry hvb_channels[] = {
-		{ .dev = NULL, .index = 0,
-		  .capabilities = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
-				  CH_CAP_VOLTAGE_MEASUREMENT |
-				  CH_CAP_CURRENT_MEASUREMENT },
-		{ .dev = NULL, .index = 1,
-		  .capabilities = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
-				  CH_CAP_VOLTAGE_MEASUREMENT |
-				  CH_CAP_CURRENT_MEASUREMENT },
-	};
-
-	runtime = vc_domain_runtime_create(hvb_channels, 2);
-	if (!runtime) {
-		printk("Failed to create domain runtime\n");
+	ctx = vc_init_custom(sim_channels, ARRAY_SIZE(sim_channels));
+	if (!ctx) {
+		printk("Failed to initialize voltage control\n");
 		return 0;
 	}
-	domain = vc_runtime_get_domain(runtime);
-	domain_get_system_snapshot(domain, &system_snapshot);
+	vc_query(ctx, vc_q_system_snapshot(&system_snapshot));
 
-	mb = vc_mb_adapter_create(runtime);
+	mb = vc_mb_adapter_create(ctx);
 	if (!mb) {
 		printk("Failed to create Modbus adapter\n");
 		return 0;
@@ -131,8 +128,8 @@ int main(void)
 
 	printk("modbus_sim ready: slave=1 USART6 115200 8N1 RS485_DIR=PG11"
 	       " variant=%u channels=%u protocol=%u.%u simulated_runtime=1\n",
-	       domain_get_variant_id(domain),
-	       domain_get_supported_channel_count(domain),
+	       system_snapshot.variant_id,
+	       system_snapshot.supported_channel_count,
 	       system_snapshot.protocol_major, system_snapshot.protocol_minor);
 
 	while (1) {
@@ -141,12 +138,12 @@ int main(void)
 			printk("Failed to toggle SYS_RUN GPIO: %d\n", ret);
 		}
 
-		uint8_t n = domain_get_supported_channel_count(domain);
-
-		for (uint8_t ch = 0; ch < n; ch++) {
+		for (uint8_t ch = 0; ch < system_snapshot.supported_channel_count;
+		     ch++) {
 			struct vc_channel_snapshot snap;
 
-			if (domain_get_channel_snapshot(domain, ch, &snap) == VC_OK) {
+			if (vc_query(ctx, vc_q_channel_snapshot(ch, &snap))
+			    == VC_OK) {
 				struct vc_measurement_snapshot meas = {
 					.channel = ch,
 					.generation = 1,
@@ -154,8 +151,10 @@ int main(void)
 					.present_mask = VC_MEAS_PRESENT_VOLTAGE |
 							VC_MEAS_PRESENT_CURRENT,
 				};
-				int32_t v = snap.operational_target_voltage + gen_noise(5);
-				int32_t i = snap.operational_target_voltage / 2 + gen_noise(20);
+				int32_t v = snap.operational_target_voltage +
+					    gen_noise(5);
+				int32_t i = snap.operational_target_voltage / 2 +
+					    gen_noise(20);
 
 				if (v > 20000) v = 20000;
 				if (v < 0) v = 0;
@@ -163,11 +162,11 @@ int main(void)
 				if (i < 0) i = 0;
 				meas.raw_voltage = v;
 				meas.raw_current = i;
-				(void)domain_consume_measurement(domain, &meas);
+				vc_dispatch(ctx, vc_cmd_measurement(&meas),
+					    K_FOREVER);
 			}
 		}
 
-		domain_process_periodic(domain, HEARTBEAT_INTERVAL_MS);
 		k_msleep(HEARTBEAT_INTERVAL_MS);
 	}
 }

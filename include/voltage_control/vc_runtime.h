@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef VOLTAGE_CONTROL_RUNTIME_H
-#define VOLTAGE_CONTROL_RUNTIME_H
+#ifndef VOLTAGE_CONTROL_VC_RUNTIME_H
+#define VOLTAGE_CONTROL_VC_RUNTIME_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -48,7 +48,7 @@ struct vc_measurement_snapshot {
 	uint16_t provider_fault_cause;
 };
 
-#include "voltage_control/domain.h"
+#include "voltage_control/vc_types.h"
 
 enum vc_runtime_command_type {
 	VC_RUNTIME_CMD_SET_OPERATING_MODE = 0,
@@ -90,13 +90,13 @@ struct domain;
 /* Stop the runtime worker thread and free if heap-allocated. */
 void vc_runtime_destroy(struct vc_runtime *runtime);
 
-/* Create a runtime + domain on the heap from DTS channel entries. */
-struct vc_runtime *vc_domain_runtime_create(
+/* Create a runtime + controller from a channel list (delegates to static). */
+struct vc_runtime *vc_runtime_create(
 	const struct vc_channel_entry *channels, size_t count);
-/* Create a runtime + domain in static storage (single-instance). */
-struct vc_runtime *vc_domain_runtime_create_static(
+/* Create a runtime + controller in static storage (single-instance). */
+struct vc_runtime *vc_runtime_create_static(
 	const struct vc_channel_entry *channels, size_t count);
-/* Publish a measurement to the provider bus and wake the runtime worker. */
+/* Submit a measurement snapshot; decomposes into consume_voltage/current/fault. */
 enum vc_status vc_runtime_submit_measurement(
 	struct vc_runtime *runtime,
 	const struct vc_measurement_snapshot *meas);
