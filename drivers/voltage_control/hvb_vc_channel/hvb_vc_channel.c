@@ -12,9 +12,6 @@
 
 #include <dt-bindings/voltage_control/capabilities.h>
 #include "voltage_control/vc_channel_hw.h"
-#include "voltage_control/vc_channel_table.h"
-#include "voltage_control/vc_controller.h"
-#include "voltage_control/vc_types.h"
 
 LOG_MODULE_REGISTER(hvb_vc_channel, LOG_LEVEL_INF);
 
@@ -58,7 +55,9 @@ enum hvb_adc_phase {
 struct hvb_vc_data {
 	const struct device *dev;
 	uint8_t channel;
-	struct vc_measurement_buffer_entry *meas;
+	struct vc_meas_buffer *meas;
+	vc_meas_ready_cb_t meas_cb;
+	void *meas_cb_user_data;
 
 	struct k_work_poll poll_work;
 	struct k_poll_signal adc_signal;
@@ -94,20 +93,23 @@ static int hvb_vc_set_enable(const struct device *dev, bool enable)
 
 static void hvb_vc_start_next_cycle(struct hvb_vc_data *data);
 
+static void hvb_vc_notify_meas(struct hvb_vc_data *data)
+{
+	if (data->meas_cb) {
+		data->meas_cb(data->channel, data->meas_cb_user_data);
+	}
+}
+
 static void hvb_vc_poll_handler(struct k_work *work)
 {
 	struct k_work_poll *pw = CONTAINER_OF(work, struct k_work_poll, work);
 	struct hvb_vc_data *data = CONTAINER_OF(pw, struct hvb_vc_data, poll_work);
 	const struct hvb_vc_config *cfg = data->dev->config;
-	struct vc_controller *ctrl = vc_channel_table_get_controller();
 	int32_t raw = data->adc_buf;
 
 	if (data->poll_work.poll_result != 0) {
 		LOG_WRN("ch%d DRDY timeout phase=%d", data->channel, data->adc_phase);
-		if (ctrl) {
-			vc_controller_consume_fault(ctrl, data->channel,
-						    VC_FAULT_MEASUREMENT);
-		}
+		hvb_vc_notify_meas(data);
 		k_work_schedule_for_queue(&hvb_vc_workq, &data->next_cycle_work,
 					  K_MSEC(cfg->sample_rate_ms));
 		return;
@@ -116,9 +118,7 @@ static void hvb_vc_poll_handler(struct k_work *work)
 	if (data->adc_phase == ADC_PHASE_VOLTAGE) {
 		data->meas->raw_voltage = raw;
 		data->meas->voltage_timestamp_ms = k_uptime_get_32();
-		if (ctrl) {
-			vc_controller_consume_voltage(ctrl, data->channel, raw);
-		}
+		hvb_vc_notify_meas(data);
 
 		if (cfg->capabilities & CH_CAP_CURRENT_MEASUREMENT) {
 			data->adc_phase = ADC_PHASE_CURRENT;
@@ -138,9 +138,7 @@ static void hvb_vc_poll_handler(struct k_work *work)
 	} else {
 		data->meas->raw_current = raw;
 		data->meas->current_timestamp_ms = k_uptime_get_32();
-		if (ctrl) {
-			vc_controller_consume_current(ctrl, data->channel, raw);
-		}
+		hvb_vc_notify_meas(data);
 
 		data->adc_phase = ADC_PHASE_VOLTAGE;
 		k_work_schedule_for_queue(&hvb_vc_workq,
@@ -202,6 +200,25 @@ static int hvb_vc_stop_sampling(const struct device *dev)
 	return 0;
 }
 
+/* ---- New API ops ---- */
+
+static uint16_t hvb_vc_get_capabilities(const struct device *dev)
+{
+	const struct hvb_vc_config *cfg = dev->config;
+
+	return cfg->capabilities;
+}
+
+static int hvb_vc_set_meas_callback(const struct device *dev,
+				    vc_meas_ready_cb_t cb, void *user_data)
+{
+	struct hvb_vc_data *data = dev->data;
+
+	data->meas_cb = cb;
+	data->meas_cb_user_data = user_data;
+	return 0;
+}
+
 /* ---- API vtable ---- */
 
 static const struct vc_channel_hw_api hvb_vc_hw_api = {
@@ -209,6 +226,8 @@ static const struct vc_channel_hw_api hvb_vc_hw_api = {
 	.set_enable = hvb_vc_set_enable,
 	.start_sampling = hvb_vc_start_sampling,
 	.stop_sampling = hvb_vc_stop_sampling,
+	.get_capabilities = hvb_vc_get_capabilities,
+	.set_meas_callback = hvb_vc_set_meas_callback,
 };
 
 /* ---- Device init ---- */
@@ -245,7 +264,6 @@ static int hvb_vc_init(const struct device *dev)
 
 	data->dev = dev;
 	data->channel = cfg->channel_index;
-	data->meas = vc_channel_table[cfg->channel_index].meas;
 
 	data->adc_seq.buffer = &data->adc_buf;
 	data->adc_seq.buffer_size = sizeof(data->adc_buf);
@@ -266,6 +284,7 @@ static int hvb_vc_init(const struct device *dev)
 /* ---- DTS instantiation ---- */
 
 #define HVB_VC_INIT(n) \
+	VC_MEAS_BUFFER_EXTERN(DT_DRV_INST(n)); \
 	static const struct hvb_vc_config hvb_vc_config_##n = { \
 		.dac = DEVICE_DT_GET(DT_INST_PHANDLE(n, dac)), \
 		.adc = DEVICE_DT_GET(DT_INST_PHANDLE(n, adc)), \
@@ -275,7 +294,9 @@ static int hvb_vc_init(const struct device *dev)
 		.capabilities = DT_INST_PROP(n, capabilities), \
 		.channel_index = DT_REG_ADDR(DT_INST(n, jianwei_hvb_vc_channel)), \
 	}; \
-	static struct hvb_vc_data hvb_vc_data_##n; \
+	static struct hvb_vc_data hvb_vc_data_##n = { \
+		.meas = VC_MEAS_BUFFER_PTR(DT_DRV_INST(n)), \
+	}; \
 	DEVICE_DT_INST_DEFINE(n, hvb_vc_init, NULL, \
 		&hvb_vc_data_##n, &hvb_vc_config_##n, \
 		POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, \
