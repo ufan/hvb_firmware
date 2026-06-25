@@ -32,8 +32,10 @@ struct ads1232_data {
 	const struct device *dev;
 #ifdef CONFIG_ADS1232_INTERRUPT_DRIVEN
 	struct gpio_callback drdy_cb;
+	struct k_work async_work;
 	struct k_poll_signal *async_signal;
 	const struct adc_sequence *async_seq;
+	uint8_t async_ch;
 #endif
 };
 
@@ -84,7 +86,7 @@ static int32_t ads1232_bitbang_read(const struct ads1232_config *cfg)
 
 	for (int i = 0; i < 24; i++) {
 		gpio_pin_set_dt(&cfg->sclk, 1);
-		k_busy_wait(1);
+		k_busy_wait(1); // todo: shorten the busy wait
 		val = (val << 1) |
 		      gpio_pin_get_raw(cfg->drdy.port, cfg->drdy.pin);
 		gpio_pin_set_dt(&cfg->sclk, 0);
@@ -172,6 +174,33 @@ unlock:
 
 #ifdef CONFIG_ADS1232_INTERRUPT_DRIVEN
 
+static void ads1232_async_work_handler(struct k_work *work)
+{
+	struct ads1232_data *data = CONTAINER_OF(work, struct ads1232_data, async_work);
+	const struct ads1232_config *cfg = data->dev->config;
+	struct k_poll_signal *signal;
+	const struct adc_sequence *sequence;
+	int32_t *buf;
+	int ret = 0;
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	sequence = data->async_seq;
+	signal = data->async_signal;
+
+	if (sequence != NULL) {
+		buf = (int32_t *)sequence->buffer;
+		*buf = ads1232_bitbang_read(cfg);
+		data->async_seq = NULL;
+		data->async_signal = NULL;
+	}
+
+	k_mutex_unlock(&data->lock);
+
+	if (signal != NULL) {
+		k_poll_signal_raise(signal, ret);
+	}
+}
+
 static void ads1232_drdy_isr(const struct device *port,
 			     struct gpio_callback *cb,
 			     gpio_port_pins_t pins)
@@ -183,19 +212,7 @@ static void ads1232_drdy_isr(const struct device *port,
 	ARG_UNUSED(pins);
 
 	gpio_pin_interrupt_configure_dt(&cfg->drdy, GPIO_INT_DISABLE);
-
-	int32_t val = ads1232_bitbang_read(cfg);
-
-	if (data->async_seq != NULL) {
-		int32_t *buf = (int32_t *)data->async_seq->buffer;
-
-		*buf = val;
-	}
-
-	if (data->async_signal != NULL) {
-		k_poll_signal_raise(data->async_signal, 0);
-		data->async_signal = NULL;
-	}
+	k_work_submit(&data->async_work);
 }
 
 static int ads1232_read_async(const struct device *dev,
@@ -209,8 +226,19 @@ static int ads1232_read_async(const struct device *dev,
 	if (sequence->channels == 0 || (sequence->channels & ~(BIT(0) | BIT(1)))) {
 		return -EINVAL;
 	}
+
+	if ((sequence->channels & (BIT(0) | BIT(1))) == (BIT(0) | BIT(1))) {
+		return -ENOTSUP;
+	}
+
 	if (sequence->buffer_size < sizeof(int32_t)) {
 		return -ENOMEM;
+	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	if (data->async_seq != NULL) {
+		k_mutex_unlock(&data->lock);
+		return -EBUSY;
 	}
 
 	if (sequence->channels & BIT(0)) {
@@ -223,11 +251,16 @@ static int ads1232_read_async(const struct device *dev,
 		gpio_pin_set_dt(&cfg->a0, ch);
 	}
 
+	data->async_ch = ch;
 	data->async_signal = async;
 	data->async_seq = sequence;
 
-	k_poll_signal_reset(async);
+	if (async != NULL) {
+		k_poll_signal_reset(async);
+	}
+
 	gpio_pin_interrupt_configure_dt(&cfg->drdy, GPIO_INT_EDGE_TO_ACTIVE);
+	k_mutex_unlock(&data->lock);
 
 	return 0;
 }
@@ -244,6 +277,12 @@ static int ads1232_init(const struct device *dev)
 
 	k_mutex_init(&data->lock);
 	data->dev = dev;
+#ifdef CONFIG_ADS1232_INTERRUPT_DRIVEN
+	k_work_init(&data->async_work, ads1232_async_work_handler);
+	data->async_signal = NULL;
+	data->async_seq = NULL;
+	data->async_ch = 0;
+#endif
 
 	if (!device_is_ready(cfg->drdy.port)) {
 		LOG_ERR("DRDY GPIO port not ready");
