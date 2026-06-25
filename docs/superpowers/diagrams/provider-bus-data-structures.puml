@@ -1,0 +1,112 @@
+@startuml
+title Provider Bus — Data Structures & Concurrency Model
+
+skinparam backgroundColor #FAFAFA
+skinparam ArrowColor #333333
+skinparam FontName Arial
+skinparam componentBorderColor #555555
+skinparam rectangleBorderColor #555555
+skinparam packageBorderColor #888888
+skinparam classBorderColor #555555
+skinparam noteBorderColor #888888
+
+left to right direction
+
+rectangle "Runtime Worker Thread" as RTW #E8F8E8 {
+  component "vc_runtime_worker()\nk_sem wake\nTICK_INTERVAL_MS" as worker #A9DFBF
+
+  rectangle "Domain (under k_mutex lock)" as domBox #C8E6C9 {
+    component "domain_state.c\nSMF states\nconfig, snapshots\nramp, protection" as domain #81C784
+  }
+
+  rectangle "Published Snapshot\n(under snapshot_lock)" as pubSnap #AED6F1 {
+    component "vc_system_snapshot\nvc_channel_snapshot[N]\nvc_channel_config[N]\nvc_system_config" as snapData #85C1E9
+  }
+}
+
+rectangle "Provider Bus (provider_bus.c)" as PBus #FFF3E0 {
+  rectangle "Config Slots\nvc_runtime_config_slots[VC_MAX_CHANNELS]" as cfgSlotBox #FAD7A0 {
+    component "slot[0]: k_mutex\n+ vc_runtime_config_snapshot" as slot0 #F8C471
+    component "slot[1]: k_mutex\n+ vc_runtime_config_snapshot" as slot1 #F8C471
+  }
+
+  component "vc_provider_msgq\nk_msgq: vc_provider_msg\n{type, channel, config_version}" as provQ #FAD7A0
+
+  component "vc_runtime_evidence_msgq\nk_msgq: vc_measurement_snapshot\n{channel, raw_V, raw_I,\npresent_mask, provider_status}" as evidQ #FAD7A0
+
+  rectangle "Measurement Buffer\n(iterable section entries)" as measBufBox #FAD7A0 {
+    component "buf[0]: k_mutex\n+ vc_measurement_snapshot\n(latest-wins)" as mbuf0 #F8C471
+    component "buf[1]: k_mutex\n+ vc_measurement_snapshot\n(latest-wins)" as mbuf1 #F8C471
+  }
+}
+
+rectangle "Provider Bindings\n(linker iterable section)" as bindBox #EEEEEE {
+  component "vc_provider_binding[0]\n{channel=0, dev, config_slot,\nroute_bit=BIT(0)}" as bind0 #D5D8DC
+  component "vc_provider_binding[1]\n{channel=1, dev, config_slot,\nroute_bit=BIT(1)}" as bind1 #D5D8DC
+}
+
+rectangle "HVB VC Channel Drivers (hvb_vc_workq)" as HW #FFEBEE {
+  component "hvb_vc_channel[0]\nhvb_vc_data:\napplied_config_version\ngeneration\nprovider_status" as drv0 #F1948A
+  component "hvb_vc_channel[1]\nhvb_vc_data:\napplied_config_version\ngeneration\nprovider_status" as drv1 #F1948A
+
+  rectangle "Hardware" as hwBox #FFCDD2 {
+    component "DAC (AD5541)\nSPI 16-bit" as dac #EF9A9A
+    component "ADC (ADS1232)\nGPIO bit-bang 24-bit" as adc #EF9A9A
+    component "Enable GPIO" as gpio #EF9A9A
+  }
+}
+
+' Config push path
+worker --> slot0 : publish_config()\nlock, copy, unlock
+worker --> slot1 : publish_config()
+worker --> provQ : enqueue\nCONFIG_CHANGED
+
+provQ --> bind0 : dispatch_one()\nnotify_config_changed()
+provQ --> bind1 : dispatch_one()
+
+bind0 ..> drv0 : dev->api->
+bind1 ..> drv1 : dev->api->
+
+drv0 --> slot0 : acquire_config()\nrelease_config()
+drv1 --> slot1 : acquire_config()\nrelease_config()
+
+' Hardware interaction
+drv0 --> dac : dac_write_value()
+drv0 --> adc : adc_read()
+drv0 --> gpio : gpio_pin_set_dt()
+drv1 --> dac
+drv1 --> adc
+
+' Measurement feedback path
+drv0 --> evidQ : publish_measurement()
+drv1 --> evidQ : publish_measurement()
+
+evidQ --> worker : take_measurement()\n[non-blocking drain]
+worker --> mbuf0 : buffer_store()
+worker --> mbuf1 : buffer_store()
+worker --> domain : consume_measurement()\n+ protection tick
+
+domain --> pubSnap : snapshot\nrefresh
+
+note right of cfgSlotBox
+  <b>Zero-copy shared memory</b>
+  Provider locks slot mutex,
+  reads snapshot pointer directly,
+  then unlocks. No queue copy.
+end note
+
+note right of evidQ
+  <b>Fire-and-forget queue</b>
+  Providers enqueue K_NO_WAIT.
+  Worker drains all pending
+  measurements each wake cycle.
+end note
+
+note right of measBufBox
+  <b>Staleness detection</b>
+  publish_snapshot() reads buffer
+  timestamps to flag FAULT_STALE
+  if > STALE_TIMEOUT_MS elapsed.
+end note
+
+@enduml

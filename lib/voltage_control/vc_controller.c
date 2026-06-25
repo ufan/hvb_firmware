@@ -505,7 +505,7 @@ enum vc_status vc_controller_start_sampling(struct vc_controller *ctrl)
 		if (dev == NULL || dev->api == NULL) {
 			continue;
 		}
-		const struct vc_channel_hw_api *api = dev->api;
+		const struct vc_channel_api *api = dev->api;
 
 		if (api->start_sampling) {
 			int ret = api->start_sampling(dev);

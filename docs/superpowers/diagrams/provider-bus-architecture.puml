@@ -1,0 +1,80 @@
+@startuml
+title Provider Bus Architecture
+
+skinparam backgroundColor #FAFAFA
+skinparam ArrowColor #333333
+skinparam FontName Arial
+skinparam componentBorderColor #555555
+skinparam rectangleBorderColor #555555
+skinparam packageBorderColor #888888
+
+rectangle "External Interface" #F5F5F5 {
+  component "Modbus\nAdapter" as modbus #D7BDE2
+  component "vc.h\nCQRS Facade" as vc #D7BDE2
+}
+
+rectangle "Runtime Worker Thread" #E8F8E8 {
+  component "Command\nDispatcher" as dispatch #A9DFBF
+  component "Domain\nState" as domain #A9DFBF
+  component "Snapshot\nPublisher" as snapPub #A9DFBF
+  component "Evidence\nConsumer" as evConsumer #A9DFBF
+}
+
+rectangle "Provider Bus" #FFF3E0 {
+  component "command_queue\n(k_msgq)" as cmdQ #FAD7A0
+  component "evidence_queue\n(k_msgq)" as evidQ #FAD7A0
+  component "provider_msgq\n(k_msgq)" as provQ #FAD7A0
+  rectangle "Config Slots\n(per-channel, k_mutex)" as cfgSlots #FAD7A0
+  rectangle "Measurement Buffer\n(per-channel, k_mutex)" as measBuf #FAD7A0
+}
+
+rectangle "Published Snapshot\n(k_mutex protected)" as pubSnap #AED6F1
+
+rectangle "Hardware Providers" #FFEBEE {
+  component "hvb_vc_channel[0]\n(k_work_delayable)" as prov0 #F1948A
+  component "hvb_vc_channel[1]\n(k_work_delayable)" as prov1 #F1948A
+}
+
+rectangle "Build-Time Binding\n(iterable sections)" as binding #D3D3D3
+
+modbus --> vc : vc_dispatch()\nvc_query()
+vc --> cmdQ : submit_command()\n[blocks on result_sem]
+vc --> pubSnap : get_published_*()\n[read-only]
+
+cmdQ --> dispatch : k_msgq_get(K_NO_WAIT)
+dispatch --> domain : domain_*() calls
+domain --> snapPub : domain_process_periodic()
+snapPub --> pubSnap : atomic snapshot\nupdate
+
+domain --> cfgSlots : publish_config(ch, cfg)\n[lock, update, unlock]
+cfgSlots --> provQ : CONFIG_CHANGED msg
+provQ --> prov0 : notify_config_changed()
+provQ --> prov1 : notify_config_changed()
+
+prov0 --> cfgSlots : acquire_config()\n[zero-copy read]\nrelease_config()
+prov1 --> cfgSlots : acquire_config()\n[zero-copy read]\nrelease_config()
+
+prov0 --> evidQ : publish_measurement()
+prov1 --> evidQ : publish_measurement()
+
+evidQ --> evConsumer : take_measurement(K_NO_WAIT)
+evConsumer --> measBuf : buffer_store()
+evConsumer --> domain : consume_measurement()
+
+binding ..> prov0 : STRUCT_SECTION_ITERABLE\n(DTS-driven)
+binding ..> prov1
+
+note bottom of cfgSlots
+  Zero-copy design:
+  Config NOT copied through queues.
+  Providers borrow read-only
+  pointers under per-channel mutex.
+end note
+
+note bottom of cmdQ
+  k_sem wake signals worker.
+  Caller blocks on stack-local
+  result_sem until worker completes.
+end note
+
+@enduml

@@ -6,7 +6,7 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <dt-bindings/voltage_control/capabilities.h>
-#include "voltage_control/vc_channel_hw.h"
+#include "voltage_control/vc_channel_api.h"
 
 #define DT_DRV_COMPAT jianwei_vc_channel_stub
 
@@ -66,7 +66,7 @@ static int stub_set_meas_callback(const struct device *dev,
 	return 0;
 }
 
-static const struct vc_channel_hw_api stub_hw_api = {
+static const struct vc_channel_api stub_hw_api = {
 	.set_output = stub_set_output,
 	.set_enable = stub_set_enable,
 	.start_sampling = stub_start_sampling,

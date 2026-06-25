@@ -1,0 +1,68 @@
+@startuml
+title Channel State Machine (per channel)
+
+skinparam backgroundColor #FAFAFA
+skinparam ArrowColor #333333
+skinparam FontName Arial
+skinparam stateBorderColor #555555
+
+[*] -down-> DISABLED_SAFE : boot
+
+state DISABLED_SAFE #A9DFBF : Output disabled\nDAC zeroed\nSafe state
+
+state RAMPING #AED6F1 : Actively stepping\nvoltage toward target
+
+state ENABLED_HOLDING #AED6F1 : At target voltage\nMonitoring protection
+
+state FAULT_LATCHED #F1948A : Hard fault\nManual clear required\n(NORMAL mode)
+
+state RETRY_COOLDOWN #FAD7A0 : Cooling down\nbefore auto-retry\n(AUTOMATIC mode)
+
+state CALIBRATION_OUTPUT #F9E79F : Raw DAC/ADC\naccess
+
+DISABLED_SAFE -right-> RAMPING : ENABLE\n[no faults]
+
+RAMPING -right-> ENABLED_HOLDING : ramp complete
+
+ENABLED_HOLDING -left-> RAMPING : target changed
+
+RAMPING -down-> FAULT_LATCHED : violation\n[NORMAL]
+ENABLED_HOLDING -down-> FAULT_LATCHED : violation\n[NORMAL]
+
+RAMPING -down-> RETRY_COOLDOWN : violation\n[AUTOMATIC]
+ENABLED_HOLDING -down-> RETRY_COOLDOWN : violation\n[AUTOMATIC]
+
+FAULT_LATCHED -left-> DISABLED_SAFE : CLEAR\n[safe band]
+RETRY_COOLDOWN -left-> DISABLED_SAFE : cooldown\nexpires
+
+RAMPING -up-> DISABLED_SAFE : DISABLE
+ENABLED_HOLDING -up-> DISABLED_SAFE : DISABLE
+
+RAMPING -[#CC0000]-> DISABLED_SAFE : HW fault
+ENABLED_HOLDING -[#CC0000]-> DISABLED_SAFE : HW fault
+
+DISABLED_SAFE -[#FF6600]down-> CALIBRATION_OUTPUT : enter cal
+CALIBRATION_OUTPUT -[#FF6600]up-> DISABLED_SAFE : exit cal
+
+note right of RAMPING
+  Sub-states:
+  Ramp Up / Ramp Down / Instant
+  Accumulator-based timing
+end note
+
+note right of FAULT_LATCHED
+  Fault bits: VOLTAGE, CURRENT,
+  MEASUREMENT, HARDWARE,
+  INTERLOCK, RETRY_EXHAUST,
+  CFG_INVALID, STALE
+end note
+
+note left of RETRY_COOLDOWN
+  Policies:
+  AUTO_RETRY
+  AUTO_DERATE
+  MANUAL_LATCH
+  NEVER_RETRY
+end note
+
+@enduml

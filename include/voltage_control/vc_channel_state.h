@@ -12,7 +12,7 @@
 #include <zephyr/smf.h>
 
 #include "voltage_control/vc_types.h"
-#include "voltage_control/vc_channel_hw.h"
+#include "voltage_control/vc_channel_api.h"
 
 typedef void (*vc_wake_fn_t)(void *user_data);
 

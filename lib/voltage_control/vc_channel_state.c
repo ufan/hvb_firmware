@@ -77,7 +77,7 @@ static void apply_hw(struct vc_channel *ch)
 	if (ch->dev == NULL) {
 		return;
 	}
-	const struct vc_channel_hw_api *api = ch->dev->api;
+	const struct vc_channel_api *api = ch->dev->api;
 
 	if (api == NULL) {
 		return;
@@ -335,7 +335,7 @@ void vc_channel_init(struct vc_channel *ch,
 	smf_set_initial(SMF_CTX(ch), &vc_channel_states[VC_CHANNEL_SMF_DISABLED_SAFE]);
 
 	if (dev != NULL && dev->api != NULL) {
-		const struct vc_channel_hw_api *api = dev->api;
+		const struct vc_channel_api *api = dev->api;
 
 		if (api->set_meas_callback) {
 			api->set_meas_callback(dev, vc_channel_meas_ready, ch);

@@ -11,7 +11,7 @@
 #include <zephyr/logging/log.h>
 
 #include <dt-bindings/voltage_control/capabilities.h>
-#include "voltage_control/vc_channel_hw.h"
+#include "voltage_control/vc_channel_api.h"
 
 LOG_MODULE_REGISTER(hvb_vc_channel, LOG_LEVEL_INF);
 
@@ -213,7 +213,7 @@ static int hvb_vc_set_meas_callback(const struct device *dev,
 
 /* ---- API vtable ---- */
 
-static const struct vc_channel_hw_api hvb_vc_hw_api = {
+static const struct vc_channel_api hvb_vc_hw_api = {
 	.set_output = hvb_vc_set_output,
 	.set_enable = hvb_vc_set_enable,
 	.start_sampling = hvb_vc_start_sampling,

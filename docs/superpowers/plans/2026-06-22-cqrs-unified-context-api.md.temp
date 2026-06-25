@@ -1,0 +1,1275 @@
+# CQRS Unified Context API Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Replace the split domain.h + runtime.h public interface with a unified `vc.h` exposing a single opaque `vc_ctx` handle, typed command/query dispatch via `vc_dispatch()`/`vc_query()`, and inline builder helpers. The singleton context is DTS-driven — no explicit creation in main.c.
+
+**Architecture:** `vc_init()` constructs the singleton from DTS-composed channel data (produced by `controller.c`). `vc_dispatch(ctx, &cmd, timeout)` handles all mutations; `vc_query(ctx, &q)` handles all reads. `vc.c` is a thin facade over `domain_runtime.c` — no state machine or threading changes. Six calibration functions collapse into one `vc_cal_command` struct. `vc_runtime_get_domain()` is removed. The provider bus remains internal.
+
+**Tech Stack:** C11, Zephyr RTOS, ztest, native_posix
+
+**Run tests:** `west twister -T tests/voltage_control/<suite> -p native_posix`
+
+**Design decisions (from grilling session):**
+- `vc_init()` returns `struct vc_ctx *` (no separate getter)
+- `vc_ctx_start()` is a separate explicit call (not folded into init)
+- No `vc_ctx_create*` / `vc_ctx_destroy` / `vc_ctx_get` in the public API
+- Settings auto-load happens inside `vc_init()`
+- `controller.c` stays separate — `vc_init()` references its globals via extern
+- Tests use DTS overlay with fixed 2-channel config (thin smoke tests only)
+- No test-only creation path — domain/runtime tests cover capability permutations
+
+---
+
+## File Map
+
+| Action | File | Responsibility |
+|--------|------|----------------|
+| Create | `include/voltage_control/vc.h` | Public API: vc_ctx handle, vc_cmd/vc_query types, builders, vc_init/dispatch/query |
+| Create | `lib/voltage_control/vc.c` | Facade: singleton init from DTS, cmd→runtime_command translation, query→snapshot reads |
+| Create | `tests/voltage_control/vc/CMakeLists.txt` | Test build for vc API |
+| Create | `tests/voltage_control/vc/prj.conf` | Test Kconfig |
+| Create | `tests/voltage_control/vc/testcase.yaml` | Twister metadata |
+| Create | `tests/voltage_control/vc/boards/native_posix.overlay` | DTS overlay (2-ch full-cap) |
+| Create | `tests/voltage_control/vc/src/main.c` | Smoke tests for facade wiring |
+| Modify | `lib/voltage_control/CMakeLists.txt` | Add `vc.c` to build |
+| Modify | `lib/voltage_control/modbus_adapter.c` | Use vc_ctx + dispatch/query |
+| Modify | `include/voltage_control/modbus_adapter.h` | Change create signature to take vc_ctx |
+| Modify | `applications/hvb_controller/src/main.c` | Use vc_init + vc_ctx_start |
+| Modify | `include/voltage_control/runtime.h` | Remove vc_runtime_get_domain, legacy create |
+| Modify | `lib/voltage_control/domain_runtime.c` | Remove vc_runtime_get_domain, legacy create |
+| Modify | `tests/voltage_control/modbus_adapter/src/main.c` | Use vc_ctx in tests |
+| Modify | `tests/voltage_control/runtime/src/main.c` | Remove tests for deleted functions |
+
+---
+
+### Task 1: Create vc.h header
+
+**Files:**
+- Create: `include/voltage_control/vc.h`
+
+- [ ] **Step 1: Write the complete vc.h header**
+
+```c
+/*
+ * Copyright (c) 2026 Jianwei
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Unified voltage-control API.
+ *
+ * vc_init() constructs the singleton from DTS-composed channel data.
+ * vc_dispatch() handles all state mutations.
+ * vc_query() handles all state reads.
+ */
+
+#ifndef VOLTAGE_CONTROL_VC_H
+#define VOLTAGE_CONTROL_VC_H
+
+#include "voltage_control/runtime.h"
+
+/* ------------------------------------------------------------------ */
+/* Opaque context                                                      */
+/* ------------------------------------------------------------------ */
+
+struct vc_ctx;
+
+struct vc_ctx *vc_init(void);
+enum vc_status vc_ctx_start(struct vc_ctx *ctx);
+
+/* ------------------------------------------------------------------ */
+/* Calibration command (6 functions → 1 struct)                        */
+/* ------------------------------------------------------------------ */
+
+enum vc_cal_action {
+	VC_CAL_UNLOCK,
+	VC_CAL_SET_OUTPUT_ENABLE,
+	VC_CAL_SET_RAW_DAC,
+	VC_CAL_SAMPLE,
+	VC_CAL_COMMIT,
+	VC_CAL_SET_MAX_RAW_DAC,
+};
+
+struct vc_cal_command {
+	enum vc_cal_action action;
+	uint8_t channel;
+	uint16_t value;
+	bool enable;
+};
+
+/* ------------------------------------------------------------------ */
+/* Command types                                                       */
+/* ------------------------------------------------------------------ */
+
+enum vc_cmd_type {
+	VC_CMD_SET_OPERATING_MODE,
+	VC_CMD_OUTPUT_ACTION,
+	VC_CMD_FAULT_COMMAND,
+	VC_CMD_SET_SYSTEM_FIELD,
+	VC_CMD_SET_CHANNEL_FIELD,
+	VC_CMD_CALIBRATION,
+	VC_CMD_SYSTEM_PARAM_ACTION,
+	VC_CMD_CHANNEL_PARAM_ACTION,
+	VC_CMD_SUBMIT_MEASUREMENT,
+};
+
+struct vc_cmd {
+	enum vc_cmd_type type;
+	uint8_t channel;
+	union {
+		enum vc_operating_mode operating_mode;
+		enum vc_output_action output_action;
+		enum vc_channel_fault_command fault_command;
+		struct vc_field_write field_write;
+		struct vc_cal_command cal;
+		enum vc_param_action param_action;
+		struct vc_measurement_snapshot measurement;
+	};
+};
+
+enum vc_status vc_dispatch(struct vc_ctx *ctx, const struct vc_cmd *cmd,
+			   k_timeout_t timeout);
+
+/* ------------------------------------------------------------------ */
+/* Query types                                                         */
+/* ------------------------------------------------------------------ */
+
+enum vc_query_type {
+	VC_QUERY_SYSTEM_SNAPSHOT,
+	VC_QUERY_CHANNEL_SNAPSHOT,
+	VC_QUERY_SYSTEM_CONFIG,
+	VC_QUERY_CHANNEL_CONFIG,
+	VC_QUERY_RUNTIME_CONFIG,
+};
+
+struct vc_query {
+	enum vc_query_type type;
+	uint8_t channel;
+	union {
+		struct vc_system_snapshot *system_snapshot;
+		struct vc_channel_snapshot *channel_snapshot;
+		struct vc_system_config *system_config;
+		struct vc_channel_config *channel_config;
+		struct vc_runtime_config_snapshot *runtime_config;
+	} out;
+};
+
+enum vc_status vc_query(struct vc_ctx *ctx, const struct vc_query *q);
+
+/* ------------------------------------------------------------------ */
+/* Command builders                                                    */
+/* ------------------------------------------------------------------ */
+
+static inline struct vc_cmd vc_cmd_set_mode(enum vc_operating_mode mode)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_SET_OPERATING_MODE,
+		.operating_mode = mode,
+	};
+}
+
+static inline struct vc_cmd vc_cmd_output(uint8_t ch,
+					  enum vc_output_action action)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_OUTPUT_ACTION,
+		.channel = ch,
+		.output_action = action,
+	};
+}
+
+static inline struct vc_cmd vc_cmd_fault(uint8_t ch,
+					 enum vc_channel_fault_command cmd)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_FAULT_COMMAND,
+		.channel = ch,
+		.fault_command = cmd,
+	};
+}
+
+static inline struct vc_cmd vc_cmd_sys_field(enum vc_config_field field,
+					     uint16_t value)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_SET_SYSTEM_FIELD,
+		.field_write = { .field = field, .value = value },
+	};
+}
+
+static inline struct vc_cmd vc_cmd_ch_field(uint8_t ch,
+					    enum vc_config_field field,
+					    uint16_t value)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_SET_CHANNEL_FIELD,
+		.channel = ch,
+		.field_write = { .field = field, .value = value },
+	};
+}
+
+static inline struct vc_cmd vc_cmd_cal_unlock(uint16_t value)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_CALIBRATION,
+		.cal = { .action = VC_CAL_UNLOCK, .value = value },
+	};
+}
+
+static inline struct vc_cmd vc_cmd_cal_output(uint8_t ch, bool enable)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_CALIBRATION,
+		.channel = ch,
+		.cal = { .action = VC_CAL_SET_OUTPUT_ENABLE,
+			 .channel = ch, .enable = enable },
+	};
+}
+
+static inline struct vc_cmd vc_cmd_cal_dac(uint8_t ch, uint16_t code)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_CALIBRATION,
+		.channel = ch,
+		.cal = { .action = VC_CAL_SET_RAW_DAC,
+			 .channel = ch, .value = code },
+	};
+}
+
+static inline struct vc_cmd vc_cmd_cal_sample(uint8_t ch)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_CALIBRATION,
+		.channel = ch,
+		.cal = { .action = VC_CAL_SAMPLE, .channel = ch },
+	};
+}
+
+static inline struct vc_cmd vc_cmd_cal_commit(uint8_t ch)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_CALIBRATION,
+		.channel = ch,
+		.cal = { .action = VC_CAL_COMMIT, .channel = ch },
+	};
+}
+
+static inline struct vc_cmd vc_cmd_cal_max_dac(uint8_t ch, uint16_t limit)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_CALIBRATION,
+		.channel = ch,
+		.cal = { .action = VC_CAL_SET_MAX_RAW_DAC,
+			 .channel = ch, .value = limit },
+	};
+}
+
+static inline struct vc_cmd vc_cmd_sys_param(enum vc_param_action action)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_SYSTEM_PARAM_ACTION,
+		.param_action = action,
+	};
+}
+
+static inline struct vc_cmd vc_cmd_ch_param(uint8_t ch,
+					    enum vc_param_action action)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_CHANNEL_PARAM_ACTION,
+		.channel = ch,
+		.param_action = action,
+	};
+}
+
+static inline struct vc_cmd vc_cmd_measurement(
+	const struct vc_measurement_snapshot *meas)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_SUBMIT_MEASUREMENT,
+		.channel = meas->channel,
+		.measurement = *meas,
+	};
+}
+
+/* ------------------------------------------------------------------ */
+/* Query builders                                                      */
+/* ------------------------------------------------------------------ */
+
+static inline struct vc_query vc_q_system_snapshot(
+	struct vc_system_snapshot *out)
+{
+	return (struct vc_query){
+		.type = VC_QUERY_SYSTEM_SNAPSHOT,
+		.out.system_snapshot = out,
+	};
+}
+
+static inline struct vc_query vc_q_channel_snapshot(
+	uint8_t ch, struct vc_channel_snapshot *out)
+{
+	return (struct vc_query){
+		.type = VC_QUERY_CHANNEL_SNAPSHOT,
+		.channel = ch,
+		.out.channel_snapshot = out,
+	};
+}
+
+static inline struct vc_query vc_q_system_config(
+	struct vc_system_config *out)
+{
+	return (struct vc_query){
+		.type = VC_QUERY_SYSTEM_CONFIG,
+		.out.system_config = out,
+	};
+}
+
+static inline struct vc_query vc_q_channel_config(
+	uint8_t ch, struct vc_channel_config *out)
+{
+	return (struct vc_query){
+		.type = VC_QUERY_CHANNEL_CONFIG,
+		.channel = ch,
+		.out.channel_config = out,
+	};
+}
+
+static inline struct vc_query vc_q_runtime_config(
+	uint8_t ch, struct vc_runtime_config_snapshot *out)
+{
+	return (struct vc_query){
+		.type = VC_QUERY_RUNTIME_CONFIG,
+		.channel = ch,
+		.out.runtime_config = out,
+	};
+}
+
+#endif /* VOLTAGE_CONTROL_VC_H */
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add include/voltage_control/vc.h
+git commit -m "feat: add vc.h unified API header with cmd/query types and builders"
+```
+
+---
+
+### Task 2: Implement vc_init, vc_dispatch, and vc_query
+
+**Files:**
+- Create: `lib/voltage_control/vc.c`
+- Create: `tests/voltage_control/vc/CMakeLists.txt`
+- Create: `tests/voltage_control/vc/prj.conf`
+- Create: `tests/voltage_control/vc/testcase.yaml`
+- Create: `tests/voltage_control/vc/boards/native_posix.overlay`
+- Create: `tests/voltage_control/vc/src/main.c`
+- Modify: `lib/voltage_control/CMakeLists.txt`
+
+- [ ] **Step 1: Create test infrastructure**
+
+`tests/voltage_control/vc/CMakeLists.txt`:
+```cmake
+# SPDX-License-Identifier: Apache-2.0
+
+cmake_minimum_required(VERSION 3.20.0)
+get_filename_component(HVB_FIRMWARE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../.. ABSOLUTE)
+set(ZEPHYR_EXTRA_MODULES ${HVB_FIRMWARE_ROOT})
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(voltage_control_vc)
+
+FILE(GLOB app_sources src/*.c)
+target_sources(app PRIVATE ${app_sources})
+target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../include)
+```
+
+`tests/voltage_control/vc/prj.conf`:
+```
+CONFIG_ZTEST=y
+CONFIG_VC_RUNTIME=y
+CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH=2
+CONFIG_VC_RUNTIME_EVIDENCE_QUEUE_DEPTH=2
+CONFIG_VC_RUNTIME_THREAD_STACK_SIZE=2048
+CONFIG_VC_RUNTIME_THREAD_PRIORITY=5
+CONFIG_VC_RUNTIME_TICK_INTERVAL_MS=1000
+CONFIG_VC_PROVIDER_BUS=y
+CONFIG_VC_PROVIDER_MSGQ_DEPTH=2
+CONFIG_VC_MEASUREMENT_STALE_TIMEOUT_MS=100
+```
+
+`tests/voltage_control/vc/testcase.yaml`:
+```yaml
+tests:
+  voltage_control.vc:
+    platform_allow: native_posix
+```
+
+`tests/voltage_control/vc/boards/native_posix.overlay`:
+```dts
+/ {
+	vc_ch0: vc-channel-0 {
+		compatible = "jianwei,vc-channel-stub";
+		channel-index = <0>;
+		capabilities = <0x000f>;
+	};
+	vc_ch1: vc-channel-1 {
+		compatible = "jianwei,vc-channel-stub";
+		channel-index = <1>;
+		capabilities = <0x000f>;
+	};
+	vc_controller: vc-controller {
+		compatible = "jianwei,vc-controller";
+		channels = <&vc_ch0 &vc_ch1>;
+		status = "okay";
+	};
+};
+```
+
+- [ ] **Step 2: Write failing smoke tests**
+
+`tests/voltage_control/vc/src/main.c`:
+```c
+/*
+ * Copyright (c) 2026 Jianwei
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <zephyr/ztest.h>
+
+#include "regmap/hvb_regs.h"
+#include "voltage_control/vc.h"
+
+ZTEST_SUITE(vc_api, NULL, NULL, NULL, NULL, NULL);
+
+/* ---- Init ---- */
+
+ZTEST(vc_api, test_init_returns_non_null)
+{
+	struct vc_ctx *ctx = vc_init();
+
+	zassert_not_null(ctx);
+}
+
+ZTEST(vc_api, test_start_returns_ok)
+{
+	struct vc_ctx *ctx = vc_init();
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_ctx_start(ctx), VC_OK);
+}
+
+/* ---- Dispatch: one per command category ---- */
+
+ZTEST(vc_api, test_dispatch_set_mode)
+{
+	struct vc_ctx *ctx = vc_init();
+	struct vc_system_snapshot snap;
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_dispatch(ctx,
+				  &vc_cmd_set_mode(VC_OPERATING_MODE_AUTOMATIC),
+				  K_SECONDS(1)), VC_OK);
+	k_msleep(50);
+
+	zassert_equal(vc_query(ctx, &vc_q_system_snapshot(&snap)), VC_OK);
+	zassert_equal(snap.active_operating_mode, VC_OPERATING_MODE_AUTOMATIC);
+}
+
+ZTEST(vc_api, test_dispatch_output_action)
+{
+	struct vc_ctx *ctx = vc_init();
+	struct vc_channel_snapshot snap;
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_dispatch(ctx,
+				  &vc_cmd_output(0, VC_OUTPUT_ACTION_ENABLE),
+				  K_SECONDS(1)), VC_OK);
+	k_msleep(50);
+
+	zassert_equal(vc_query(ctx, &vc_q_channel_snapshot(0, &snap)), VC_OK);
+	zassert_true(snap.status_bits & 0x0002);
+}
+
+ZTEST(vc_api, test_dispatch_channel_field)
+{
+	struct vc_ctx *ctx = vc_init();
+	struct vc_channel_config cfg;
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_dispatch(ctx,
+				  &vc_cmd_ch_field(0, VC_FIELD_CONFIGURED_TARGET_VOLTAGE, 5000),
+				  K_SECONDS(1)), VC_OK);
+	k_msleep(50);
+
+	zassert_equal(vc_query(ctx, &vc_q_channel_config(0, &cfg)), VC_OK);
+	zassert_equal(cfg.configured_target_voltage, 5000);
+}
+
+ZTEST(vc_api, test_dispatch_system_field)
+{
+	struct vc_ctx *ctx = vc_init();
+	struct vc_system_config cfg;
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_dispatch(ctx,
+				  &vc_cmd_sys_field(VC_FIELD_SLAVE_ADDRESS, 42),
+				  K_SECONDS(1)), VC_OK);
+	k_msleep(50);
+
+	zassert_equal(vc_query(ctx, &vc_q_system_config(&cfg)), VC_OK);
+	zassert_equal(cfg.slave_address, 42);
+}
+
+ZTEST(vc_api, test_dispatch_calibration_unlock_and_enter)
+{
+	struct vc_ctx *ctx = vc_init();
+	struct vc_system_snapshot snap;
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_dispatch(ctx, &vc_cmd_cal_unlock(CAL_UNLOCK_STEP1),
+				  K_SECONDS(1)), VC_OK);
+	zassert_equal(vc_dispatch(ctx, &vc_cmd_cal_unlock(CAL_UNLOCK_STEP2),
+				  K_SECONDS(1)), VC_OK);
+	zassert_equal(vc_dispatch(ctx,
+				  &vc_cmd_set_mode(VC_OPERATING_MODE_CALIBRATION),
+				  K_SECONDS(1)), VC_OK);
+	k_msleep(50);
+
+	zassert_equal(vc_query(ctx, &vc_q_system_snapshot(&snap)), VC_OK);
+	zassert_equal(snap.active_operating_mode, VC_OPERATING_MODE_CALIBRATION);
+}
+
+ZTEST(vc_api, test_dispatch_measurement)
+{
+	struct vc_ctx *ctx = vc_init();
+	struct vc_measurement_snapshot meas = {
+		.channel = 0,
+		.generation = 1,
+		.timestamp_ms = 10,
+		.present_mask = VC_MEAS_PRESENT_VOLTAGE,
+		.raw_voltage = 77,
+	};
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_dispatch(ctx, &vc_cmd_measurement(&meas),
+				  K_NO_WAIT), VC_OK);
+}
+
+/* ---- Query: one per type ---- */
+
+ZTEST(vc_api, test_query_system_snapshot)
+{
+	struct vc_ctx *ctx = vc_init();
+	struct vc_system_snapshot snap;
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_query(ctx, &vc_q_system_snapshot(&snap)), VC_OK);
+	zassert_equal(snap.supported_channel_count, 2);
+}
+
+ZTEST(vc_api, test_query_runtime_config)
+{
+	struct vc_ctx *ctx = vc_init();
+	struct vc_runtime_config_snapshot cfg;
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_query(ctx, &vc_q_runtime_config(0, &cfg)), VC_OK);
+	zassert_equal(cfg.channel, 0);
+	zassert_true(cfg.force_safe_state);
+}
+```
+
+- [ ] **Step 3: Run tests to verify they fail**
+
+Run: `west twister -T tests/voltage_control/vc -p native_posix`
+Expected: Build fails — `vc_init`, `vc_dispatch`, `vc_query` not defined.
+
+- [ ] **Step 4: Add vc.c to CMakeLists.txt**
+
+In `lib/voltage_control/CMakeLists.txt`, add after the `domain_state.c` line:
+
+```cmake
+zephyr_library_sources_ifdef(CONFIG_VC_RUNTIME vc.c)
+```
+
+- [ ] **Step 5: Write vc.c implementation**
+
+`lib/voltage_control/vc.c`:
+```c
+/*
+ * Copyright (c) 2026 Jianwei
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "voltage_control/vc.h"
+#include "voltage_control/provider_bus.h"
+
+extern const struct vc_channel_entry vc_domain_channels[];
+extern const size_t vc_domain_channel_count;
+
+struct vc_ctx {
+	struct vc_runtime *runtime;
+};
+
+static struct vc_ctx g_ctx;
+
+struct vc_ctx *vc_init(void)
+{
+	struct vc_runtime *rt;
+
+	rt = vc_domain_runtime_create_static(vc_domain_channels,
+					     vc_domain_channel_count);
+	if (rt == NULL) {
+		return NULL;
+	}
+
+	g_ctx.runtime = rt;
+	return &g_ctx;
+}
+
+enum vc_status vc_ctx_start(struct vc_ctx *ctx)
+{
+	if (ctx == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+	return vc_provider_bus_start_all();
+}
+
+static enum vc_status dispatch_calibration(struct vc_runtime *rt,
+					   const struct vc_cal_command *cal,
+					   k_timeout_t timeout)
+{
+	struct vc_runtime_command cmd = { .channel = cal->channel };
+
+	switch (cal->action) {
+	case VC_CAL_UNLOCK:
+		cmd.type = VC_RUNTIME_CMD_CALIBRATION_UNLOCK;
+		cmd.payload.calibration_unlock_value = cal->value;
+		break;
+	case VC_CAL_SET_OUTPUT_ENABLE:
+		cmd.type = VC_RUNTIME_CMD_CALIBRATION_OUTPUT_ENABLE;
+		cmd.payload.calibration_output_enable = cal->enable;
+		break;
+	case VC_CAL_SET_RAW_DAC:
+		cmd.type = VC_RUNTIME_CMD_CALIBRATION_RAW_DAC;
+		cmd.payload.calibration_raw_dac = cal->value;
+		break;
+	case VC_CAL_SAMPLE:
+		cmd.type = VC_RUNTIME_CMD_CALIBRATION_SAMPLE;
+		break;
+	case VC_CAL_COMMIT:
+		cmd.type = VC_RUNTIME_CMD_CALIBRATION_COMMIT;
+		break;
+	case VC_CAL_SET_MAX_RAW_DAC:
+		cmd.type = VC_RUNTIME_CMD_CALIBRATION_MAX_RAW_DAC;
+		cmd.payload.calibration_max_raw_dac = cal->value;
+		break;
+	default:
+		return VC_ERR_INVALID_COMMAND;
+	}
+
+	return vc_runtime_submit_command(rt, &cmd, timeout);
+}
+
+enum vc_status vc_dispatch(struct vc_ctx *ctx, const struct vc_cmd *cmd,
+			   k_timeout_t timeout)
+{
+	struct vc_runtime_command rtcmd = {0};
+
+	if (ctx == NULL || cmd == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	switch (cmd->type) {
+	case VC_CMD_SET_OPERATING_MODE:
+		return vc_runtime_set_operating_mode(ctx->runtime,
+						     cmd->operating_mode,
+						     timeout);
+	case VC_CMD_OUTPUT_ACTION:
+		rtcmd.type = VC_RUNTIME_CMD_OUTPUT_ACTION;
+		rtcmd.channel = cmd->channel;
+		rtcmd.payload.output_action = cmd->output_action;
+		return vc_runtime_submit_command(ctx->runtime, &rtcmd, timeout);
+
+	case VC_CMD_FAULT_COMMAND:
+		rtcmd.type = VC_RUNTIME_CMD_FAULT_COMMAND;
+		rtcmd.channel = cmd->channel;
+		rtcmd.payload.fault_command = cmd->fault_command;
+		return vc_runtime_submit_command(ctx->runtime, &rtcmd, timeout);
+
+	case VC_CMD_SET_SYSTEM_FIELD:
+		return vc_runtime_set_system_field(ctx->runtime,
+						   cmd->field_write.field,
+						   cmd->field_write.value,
+						   timeout);
+	case VC_CMD_SET_CHANNEL_FIELD:
+		return vc_runtime_set_channel_field(ctx->runtime,
+						    cmd->channel,
+						    cmd->field_write.field,
+						    cmd->field_write.value,
+						    timeout);
+	case VC_CMD_CALIBRATION:
+		return dispatch_calibration(ctx->runtime, &cmd->cal, timeout);
+
+	case VC_CMD_SYSTEM_PARAM_ACTION:
+		rtcmd.type = VC_RUNTIME_CMD_SYSTEM_PARAM_ACTION;
+		rtcmd.payload.param_action = cmd->param_action;
+		return vc_runtime_submit_command(ctx->runtime, &rtcmd, timeout);
+
+	case VC_CMD_CHANNEL_PARAM_ACTION:
+		rtcmd.type = VC_RUNTIME_CMD_CHANNEL_PARAM_ACTION;
+		rtcmd.channel = cmd->channel;
+		rtcmd.payload.param_action = cmd->param_action;
+		return vc_runtime_submit_command(ctx->runtime, &rtcmd, timeout);
+
+	case VC_CMD_SUBMIT_MEASUREMENT:
+		return vc_runtime_submit_measurement(ctx->runtime,
+						     &cmd->measurement);
+	default:
+		return VC_ERR_INVALID_COMMAND;
+	}
+}
+
+enum vc_status vc_query(struct vc_ctx *ctx, const struct vc_query *q)
+{
+	if (ctx == NULL || q == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+
+	switch (q->type) {
+	case VC_QUERY_SYSTEM_SNAPSHOT:
+		return vc_runtime_get_published_system_snapshot(
+			ctx->runtime, q->out.system_snapshot);
+
+	case VC_QUERY_CHANNEL_SNAPSHOT:
+		return vc_runtime_get_published_channel_snapshot(
+			ctx->runtime, q->channel, q->out.channel_snapshot);
+
+	case VC_QUERY_SYSTEM_CONFIG:
+		return vc_runtime_get_published_system_config(
+			ctx->runtime, q->out.system_config);
+
+	case VC_QUERY_CHANNEL_CONFIG:
+		return vc_runtime_get_published_channel_config(
+			ctx->runtime, q->channel, q->out.channel_config);
+
+	case VC_QUERY_RUNTIME_CONFIG:
+		return vc_runtime_get_channel_config(
+			ctx->runtime, q->channel, q->out.runtime_config);
+
+	default:
+		return VC_ERR_INVALID_COMMAND;
+	}
+}
+```
+
+- [ ] **Step 6: Run tests to verify they pass**
+
+Run: `west twister -T tests/voltage_control/vc -p native_posix`
+Expected: All tests PASS.
+
+- [ ] **Step 7: Run existing test suites to verify no regression**
+
+Run: `west twister -T tests/voltage_control -p native_posix`
+Expected: All existing tests still PASS — domain, runtime, modbus_adapter, provider_bus suites unchanged.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add lib/voltage_control/vc.c lib/voltage_control/CMakeLists.txt tests/voltage_control/vc/
+git commit -m "feat: implement vc_init, vc_dispatch, and vc_query facade"
+```
+
+---
+
+### Task 3: Migrate modbus_adapter to vc.h
+
+**Files:**
+- Modify: `include/voltage_control/modbus_adapter.h`
+- Modify: `lib/voltage_control/modbus_adapter.c`
+- Modify: `tests/voltage_control/modbus_adapter/src/main.c`
+
+- [ ] **Step 1: Update modbus_adapter.h**
+
+Replace the `struct vc_runtime` forward declaration with `struct vc_ctx`:
+
+```c
+#ifndef VOLTAGE_CONTROL_MODBUS_ADAPTER_H
+#define VOLTAGE_CONTROL_MODBUS_ADAPTER_H
+
+#include <stdint.h>
+
+struct vc_ctx;
+struct vc_mb_adapter;
+
+enum vc_mb_result {
+	VC_MB_OK = 0,
+	VC_MB_ILLEGAL_FUNCTION = 1,
+	VC_MB_ILLEGAL_ADDRESS = 2,
+	VC_MB_ILLEGAL_VALUE = 3,
+	VC_MB_DEVICE_FAILURE = 4,
+};
+
+struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx);
+enum vc_mb_result vc_mb_input_rd(struct vc_mb_adapter *a, uint16_t addr,
+				 uint16_t *reg);
+enum vc_mb_result vc_mb_holding_rd(struct vc_mb_adapter *a, uint16_t addr,
+				   uint16_t *reg);
+enum vc_mb_result vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr,
+				   uint16_t val);
+
+#endif
+```
+
+- [ ] **Step 2: Update modbus_adapter.c**
+
+Replace includes:
+```c
+#include "voltage_control/modbus_adapter.h"
+#include "voltage_control/vc.h"
+#include "regmap/hvb_regs.h"
+```
+
+Replace adapter struct:
+```c
+struct vc_mb_adapter {
+	struct vc_ctx *ctx;
+};
+```
+
+Replace `submit_cmd` helper with dispatch helper:
+```c
+static enum vc_mb_result dispatch(struct vc_ctx *ctx, const struct vc_cmd *cmd)
+{
+	return domain_st_to_mb_result(vc_dispatch(ctx, cmd, MB_CMD_TIMEOUT));
+}
+```
+
+Replace all `read_*` functions — change `struct vc_runtime *rt` to `struct vc_ctx *ctx` and replace `vc_runtime_get_published_*` with `vc_query`:
+
+`read_sys_input`:
+```c
+static enum vc_mb_result read_sys_input(struct vc_ctx *ctx, uint16_t off,
+					uint16_t *reg)
+{
+	struct vc_system_snapshot snap;
+
+	vc_query(ctx, &vc_q_system_snapshot(&snap));
+	/* switch body unchanged */
+}
+```
+
+`read_ch_input`:
+```c
+static enum vc_mb_result read_ch_input(struct vc_ctx *ctx, uint8_t ch,
+				       uint16_t off, uint16_t *reg)
+{
+	struct vc_channel_snapshot snap;
+	struct vc_system_snapshot sys;
+
+	if (vc_query(ctx, &vc_q_channel_snapshot(ch, &snap)) != VC_OK) {
+		return VC_MB_ILLEGAL_ADDRESS;
+	}
+
+	vc_query(ctx, &vc_q_system_snapshot(&sys));
+	/* remainder unchanged */
+}
+```
+
+`read_sys_holding`:
+```c
+static enum vc_mb_result read_sys_holding(struct vc_ctx *ctx, uint16_t off,
+					  uint16_t *reg)
+{
+	struct vc_system_config cfg;
+
+	vc_query(ctx, &vc_q_system_config(&cfg));
+	/* switch body unchanged */
+}
+```
+
+`read_ch_holding`:
+```c
+static enum vc_mb_result read_ch_holding(struct vc_ctx *ctx, uint8_t ch,
+					 uint16_t off, uint16_t *reg)
+{
+	struct vc_channel_config cfg;
+	struct vc_channel_snapshot snap;
+	struct vc_system_snapshot sys;
+
+	if (vc_query(ctx, &vc_q_channel_snapshot(ch, &snap)) != VC_OK) {
+		return VC_MB_ILLEGAL_ADDRESS;
+	}
+	/* ... */
+	vc_query(ctx, &vc_q_system_snapshot(&sys));
+	/* ... */
+	if (vc_query(ctx, &vc_q_channel_config(ch, &cfg)) != VC_OK) {
+		return VC_MB_ILLEGAL_ADDRESS;
+	}
+	/* switch body unchanged */
+}
+```
+
+Replace `write_sys_holding`:
+```c
+static enum vc_mb_result write_sys_holding(struct vc_ctx *ctx, uint16_t off,
+					   uint16_t val)
+{
+	if (off > SYS_CURRENT_SAFE_BAND_PCT) {
+		return VC_MB_ILLEGAL_ADDRESS;
+	}
+	struct vc_cmd cmd = vc_cmd_sys_field(sys_reg_to_field[off], val);
+	return dispatch(ctx, &cmd);
+}
+```
+
+Replace calibration writes in `write_ch_holding` — from manual `vc_runtime_command` to builders:
+```c
+case CH_CAL_OUTPUT_ENABLE:
+	if (val > 1) return VC_MB_ILLEGAL_VALUE;
+	return dispatch(ctx, &vc_cmd_cal_output(ch, val != 0));
+case CH_RAW_DAC_CODE:
+	return dispatch(ctx, &vc_cmd_cal_dac(ch, val));
+case CH_CAL_SAMPLE_CMD:
+	if (val == CAL_COMMAND_NONE) return VC_MB_OK;
+	if (val != CAL_COMMAND_EXECUTE) return VC_MB_ILLEGAL_ADDRESS;
+	return dispatch(ctx, &vc_cmd_cal_sample(ch));
+case CH_CAL_COMMIT_CMD:
+	if (val == CAL_COMMAND_NONE) return VC_MB_OK;
+	if (val != CAL_COMMAND_EXECUTE) return VC_MB_ILLEGAL_ADDRESS;
+	return dispatch(ctx, &vc_cmd_cal_commit(ch));
+case CH_CAL_MAX_RAW_DAC_LIMIT:
+	return dispatch(ctx, &vc_cmd_cal_max_dac(ch, val));
+```
+
+Replace channel field write tail in `write_ch_holding`:
+```c
+struct vc_cmd cmd = vc_cmd_ch_field(ch, ch_reg_to_field[off], val);
+return dispatch(ctx, &cmd);
+```
+
+Replace action dispatches in `vc_mb_holding_wr`:
+```c
+if (off == SYS_PARAM_ACTION) {
+	return dispatch(a->ctx, &vc_cmd_sys_param((enum vc_param_action)val));
+}
+/* ... */
+case CH_OUTPUT_ACTION:
+	return dispatch(a->ctx, &vc_cmd_output(ch, (enum vc_output_action)val));
+case CH_FAULT_CMD:
+	return dispatch(a->ctx, &vc_cmd_fault(ch, (enum vc_channel_fault_command)val));
+case CH_PARAM_ACTION:
+	return dispatch(a->ctx, &vc_cmd_ch_param(ch, (enum vc_param_action)val));
+```
+
+Replace extension handler:
+```c
+if (addr == EXT_CAL_UNLOCK_ABS) {
+	return dispatch(a->ctx, &vc_cmd_cal_unlock(val));
+}
+```
+
+Replace all `a->runtime` references in `vc_mb_input_rd`, `vc_mb_holding_rd`, `vc_mb_holding_wr` with `a->ctx`.
+
+Replace create function:
+```c
+struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx)
+{
+	static struct vc_mb_adapter adapter;
+
+	adapter.ctx = ctx;
+	return &adapter;
+}
+```
+
+- [ ] **Step 3: Update modbus_adapter tests**
+
+In `tests/voltage_control/modbus_adapter/src/main.c`:
+
+Replace includes — remove `domain.h` and `runtime.h`, add `vc.h`:
+```c
+#include "regmap/hvb_regs.h"
+#include "voltage_control/vc.h"
+#include "voltage_control/modbus_adapter.h"
+```
+
+Replace all `vc_domain_runtime_create(channels, N)` → `vc_init()`.
+Replace all `vc_runtime_destroy(rt)` — remove (singleton, no destroy).
+Replace all `struct vc_runtime *rt` → `struct vc_ctx *ctx`.
+
+Example — first test:
+```c
+ZTEST(modbus_adapter, test_sys_input_reads_protocol_version)
+{
+	struct vc_ctx *ctx = vc_init();
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	uint16_t major, minor;
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_mb_input_rd(mb, SYS_PROTOCOL_MAJOR, &major), VC_MB_OK);
+	zassert_equal(vc_mb_input_rd(mb, SYS_PROTOCOL_MINOR, &minor), VC_MB_OK);
+	zassert_equal(major, HVB_PROTOCOL_MAJOR);
+	zassert_equal(minor, HVB_PROTOCOL_MINOR);
+}
+```
+
+Apply the same pattern to all tests in the file.
+
+- [ ] **Step 4: Run modbus adapter tests**
+
+Run: `west twister -T tests/voltage_control/modbus_adapter -p native_posix`
+Expected: All tests PASS.
+
+- [ ] **Step 5: Run all tests for regression**
+
+Run: `west twister -T tests/voltage_control -p native_posix`
+Expected: All suites PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add include/voltage_control/modbus_adapter.h lib/voltage_control/modbus_adapter.c tests/voltage_control/modbus_adapter/
+git commit -m "refactor: migrate modbus_adapter from vc_runtime to vc_ctx dispatch/query"
+```
+
+---
+
+### Task 4: Migrate main.c to vc.h
+
+**Files:**
+- Modify: `applications/hvb_controller/src/main.c`
+
+- [ ] **Step 1: Update includes**
+
+Replace:
+```c
+#include "voltage_control/domain.h"
+#include "voltage_control/modbus_adapter.h"
+#include "voltage_control/provider_bus.h"
+#include "voltage_control/runtime.h"
+```
+With:
+```c
+#include "voltage_control/vc.h"
+#include "voltage_control/modbus_adapter.h"
+```
+
+- [ ] **Step 2: Remove channel extern declarations and runtime variable**
+
+Remove:
+```c
+extern const struct vc_channel_entry vc_domain_channels[];
+extern const size_t vc_domain_channel_count;
+static struct vc_runtime *runtime;
+```
+
+- [ ] **Step 3: Update main() body**
+
+Replace the runtime creation + provider bus start + adapter creation + boot log:
+```c
+runtime = vc_domain_runtime_create_static(vc_domain_channels,
+					  vc_domain_channel_count);
+if (!runtime) {
+	printk("Failed to create domain runtime\n");
+	return 0;
+}
+
+ret = vc_provider_bus_start_all();
+if (ret != VC_OK) {
+	printk("Failed to start provider bus: %d\n", ret);
+	return 0;
+}
+
+mb = vc_mb_adapter_create(runtime);
+if (!mb) {
+	printk("Failed to create Modbus adapter\n");
+	return 0;
+}
+
+ret = init_modbus_server();
+if (ret < 0) {
+	printk("Modbus RTU server initialization failed: %d\n", ret);
+	return 0;
+}
+
+vc_runtime_get_published_system_snapshot(runtime, &snap);
+printk("hvb_controller ready: slave=%d baud=%d"
+       " variant=%u channels=%u protocol=%u.%u\n",
+       CONFIG_VC_MODBUS_UNIT_ID, CONFIG_VC_MODBUS_BAUD_RATE,
+       snap.variant_id, snap.supported_channel_count,
+       snap.protocol_major, snap.protocol_minor);
+```
+
+With:
+```c
+struct vc_ctx *ctx = vc_init();
+if (!ctx) {
+	printk("Failed to init vc\n");
+	return 0;
+}
+
+ret = vc_ctx_start(ctx);
+if (ret != VC_OK) {
+	printk("Failed to start vc: %d\n", ret);
+	return 0;
+}
+
+mb = vc_mb_adapter_create(ctx);
+if (!mb) {
+	printk("Failed to create Modbus adapter\n");
+	return 0;
+}
+
+ret = init_modbus_server();
+if (ret < 0) {
+	printk("Modbus RTU server initialization failed: %d\n", ret);
+	return 0;
+}
+
+vc_query(ctx, &vc_q_system_snapshot(&snap));
+printk("hvb_controller ready: slave=%d baud=%d"
+       " variant=%u channels=%u protocol=%u.%u\n",
+       CONFIG_VC_MODBUS_UNIT_ID, CONFIG_VC_MODBUS_BAUD_RATE,
+       snap.variant_id, snap.supported_channel_count,
+       snap.protocol_major, snap.protocol_minor);
+```
+
+- [ ] **Step 4: Build the application target**
+
+Run: `west build -b jw_hvb applications/hvb_controller -- -DBOARD_ROOT=$(pwd)/boards`
+Expected: Compiles without errors.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add applications/hvb_controller/src/main.c
+git commit -m "refactor: migrate main.c to vc_init/vc_dispatch/vc_query"
+```
+
+---
+
+### Task 5: Remove legacy public API
+
+**Files:**
+- Modify: `include/voltage_control/runtime.h`
+- Modify: `lib/voltage_control/domain_runtime.c`
+- Modify: `tests/voltage_control/runtime/src/main.c`
+
+- [ ] **Step 1: Remove from runtime.h**
+
+Remove these declarations:
+
+```c
+/*
+ * Legacy API: runtime borrows domain. Caller owns domain lifetime.
+ */
+struct vc_runtime *vc_runtime_create(struct domain *domain);
+struct vc_runtime *vc_runtime_create_static(struct domain *domain);
+```
+
+```c
+struct domain *vc_runtime_get_domain(struct vc_runtime *runtime);
+```
+
+Keep all other declarations — `vc_domain_runtime_create*`, `vc_runtime_destroy`, `vc_runtime_submit_*`, `vc_runtime_set_*`, `vc_runtime_get_published_*`, `vc_runtime_get_channel_config`.
+
+- [ ] **Step 2: Remove from domain_runtime.c**
+
+Remove these three functions:
+
+`vc_runtime_create` (takes `struct domain *domain`, lines 276-290)
+
+`vc_runtime_create_static` (takes `struct domain *domain`, lines 292-297)
+
+`vc_runtime_get_domain` (lines 321-327)
+
+- [ ] **Step 3: Update runtime tests**
+
+In `tests/voltage_control/runtime/src/main.c`, remove tests that use deleted functions:
+
+Remove:
+- `test_runtime_create_rejects_null_domain`
+- `test_runtime_create_and_destroy`
+- `test_runtime_create_static_initializes_runtime_without_heap`
+- `test_domain_runtime_create_static` (uses `vc_runtime_get_domain`)
+- `test_domain_runtime_create_heap` (uses `vc_runtime_get_domain`)
+- `test_runtime_get_domain_null_returns_null`
+
+For tests that used `domain_create()` + `vc_runtime_create()`, replace with `vc_domain_runtime_create()` and read assertions via `vc_runtime_get_published_*` instead of direct domain access.
+
+Example — `test_runtime_set_operating_mode_is_processed_by_worker`:
+```c
+ZTEST(voltage_control_runtime, test_runtime_set_operating_mode_is_processed_by_worker)
+{
+	struct vc_runtime *rt = vc_domain_runtime_create(test_channels, 1);
+	struct vc_system_snapshot snap;
+
+	zassert_not_null(rt);
+	zassert_equal(vc_runtime_set_operating_mode(rt, VC_OPERATING_MODE_AUTOMATIC,
+						    K_SECONDS(1)), VC_OK);
+	k_msleep(50);
+	zassert_equal(vc_runtime_get_published_system_snapshot(rt, &snap), VC_OK);
+	zassert_equal(snap.active_operating_mode, VC_OPERATING_MODE_AUTOMATIC);
+
+	vc_runtime_destroy(rt);
+}
+```
+
+Example — `test_set_system_field_through_queue`:
+```c
+ZTEST(voltage_control_runtime, test_set_system_field_through_queue)
+{
+	struct vc_runtime *rt = vc_domain_runtime_create(test_channels, 1);
+	struct vc_system_config cfg;
+
+	zassert_not_null(rt);
+	zassert_equal(vc_runtime_set_system_field(rt, VC_FIELD_SLAVE_ADDRESS,
+						  42, K_SECONDS(1)), VC_OK);
+	k_msleep(50);
+	zassert_equal(vc_runtime_get_published_system_config(rt, &cfg), VC_OK);
+	zassert_equal(cfg.slave_address, 42);
+
+	vc_runtime_destroy(rt);
+}
+```
+
+Storage tests (`test_system_save_and_load_round_trip`, etc.) remain unchanged — they use `domain_create()` + `domain_set_storage_backend()` directly to test domain-internal persistence behavior.
+
+- [ ] **Step 4: Run all tests**
+
+Run: `west twister -T tests/voltage_control -p native_posix`
+Expected: All suites PASS.
+
+- [ ] **Step 5: Build the application target**
+
+Run: `west build -b jw_hvb applications/hvb_controller -- -DBOARD_ROOT=$(pwd)/boards`
+Expected: Compiles without errors.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add include/voltage_control/runtime.h lib/voltage_control/domain_runtime.c tests/voltage_control/runtime/
+git commit -m "refactor: remove vc_runtime_get_domain and legacy create APIs"
+```
+
+---
+
+## Summary of Public API After Migration
+
+**Callers include only `voltage_control/vc.h`.** The complete public surface:
+
+| Function | Purpose |
+|----------|---------|
+| # CQRS Unified Context API Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Replace the split domain.h + runtime.h public interface with a unified `vc.h` exposing a single opaque `vc_ctx` handle, typed command/query dispatch via `vc_dispatch()`/`vc_query()`, and inline builder helpers.
+
+**Internal headers** (not for frontend adapters):
+- `domain.h` — domain state machine functions, used by domain tests and domain_runtime.c
+- `runtime.h` — runtime threading internals, used by vc.c
+- `provider_bus.h` — provider-to-runtime communication, used by vc.c and channel drivers
