@@ -85,33 +85,6 @@ static void enter_calibration_mode(struct vc_controller *c)
 
 ZTEST_SUITE(vc_domain, NULL, NULL, NULL, NULL, NULL);
 
-/* ---- Runtime contract structs ---- */
-
-ZTEST(vc_domain, test_runtime_contract_defaults_are_zeroable)
-{
-	struct vc_runtime_config_snapshot cfg = {0};
-	struct vc_measurement_snapshot meas = {0};
-
-	zassert_equal(cfg.channel, 0);
-	zassert_equal(cfg.version, 0);
-	zassert_equal(cfg.capability_flags, 0);
-	zassert_false(cfg.output_enable);
-	zassert_equal(cfg.raw_output_drive, 0);
-	zassert_false(cfg.calibration_mode);
-	zassert_false(cfg.calibration_output_enable);
-	zassert_equal(cfg.calibration_raw_output_drive, 0);
-	zassert_false(cfg.force_safe_state);
-
-	zassert_equal(meas.channel, 0);
-	zassert_equal(meas.generation, 0);
-	zassert_equal(meas.timestamp_ms, 0);
-	zassert_equal(meas.present_mask, 0);
-	zassert_equal(meas.raw_voltage, 0);
-	zassert_equal(meas.raw_current, 0);
-	zassert_equal(meas.provider_status, 0);
-	zassert_equal(meas.provider_fault_cause, 0);
-}
-
 ZTEST(vc_domain, test_controller_init)
 {
 	struct vc_controller *c = vc_controller_init(NULL, NULL);

@@ -61,7 +61,6 @@ enum vc_cmd_type {
 	VC_CMD_CALIBRATION,
 	VC_CMD_SYSTEM_PARAM_ACTION,
 	VC_CMD_CHANNEL_PARAM_ACTION,
-	VC_CMD_SUBMIT_MEASUREMENT,
 };
 
 struct vc_cmd {
@@ -74,7 +73,6 @@ struct vc_cmd {
 		struct vc_field_write field_write;
 		struct vc_cal_command cal;
 		enum vc_param_action param_action;
-		struct vc_measurement_snapshot measurement;
 	};
 };
 
@@ -91,7 +89,6 @@ enum vc_query_type {
 	VC_QUERY_CHANNEL_SNAPSHOT,
 	VC_QUERY_SYSTEM_CONFIG,
 	VC_QUERY_CHANNEL_CONFIG,
-	VC_QUERY_RUNTIME_CONFIG,
 };
 
 struct vc_query_msg {
@@ -102,7 +99,6 @@ struct vc_query_msg {
 		struct vc_channel_snapshot *channel_snapshot;
 		struct vc_system_config *system_config;
 		struct vc_channel_config *channel_config;
-		struct vc_runtime_config_snapshot *runtime_config;
 	} out;
 };
 
@@ -248,17 +244,6 @@ static inline struct vc_cmd vc_cmd_ch_param(uint8_t ch,
 	};
 }
 
-/* Build a command to submit a measurement snapshot from a provider. */
-static inline struct vc_cmd vc_cmd_measurement(
-	const struct vc_measurement_snapshot *meas)
-{
-	return (struct vc_cmd){
-		.type = VC_CMD_SUBMIT_MEASUREMENT,
-		.channel = meas->channel,
-		.measurement = *meas,
-	};
-}
-
 /* ------------------------------------------------------------------ */
 /* Query builders                                                      */
 /* ------------------------------------------------------------------ */
@@ -302,17 +287,6 @@ static inline struct vc_query_msg vc_q_channel_config(
 		.type = VC_QUERY_CHANNEL_CONFIG,
 		.channel = ch,
 		.out.channel_config = out,
-	};
-}
-
-/* Build a query for a channel's runtime config (output drive, cal state). */
-static inline struct vc_query_msg vc_q_runtime_config(
-	uint8_t ch, struct vc_runtime_config_snapshot *out)
-{
-	return (struct vc_query_msg){
-		.type = VC_QUERY_RUNTIME_CONFIG,
-		.channel = ch,
-		.out.runtime_config = out,
 	};
 }
 

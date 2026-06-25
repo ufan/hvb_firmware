@@ -241,7 +241,7 @@ enum vc_status vc_runtime_submit_command(struct vc_runtime *runtime,
 	}
 	k_sem_give(&runtime->wake);
 
-	k_sem_take(&result_sem, K_FOREVER);
+	k_sem_take(&result_sem, timeout);
 
 	return result;
 }
@@ -286,48 +286,13 @@ enum vc_status vc_runtime_set_channel_field(struct vc_runtime *runtime,
 	return vc_runtime_submit_command(runtime, &cmd, timeout);
 }
 
-enum vc_status vc_runtime_submit_measurement(
-	struct vc_runtime *runtime,
-	const struct vc_measurement_snapshot *meas)
+enum vc_status vc_runtime_start_sampling(struct vc_runtime *runtime)
 {
-	struct vc_controller *ctrl;
-	uint8_t ch;
-
-	if (runtime == NULL || meas == NULL) {
+	if (runtime == NULL) {
 		return VC_ERR_INVALID_VALUE;
 	}
 
-	ctrl = runtime->ctrl;
-	ch = meas->channel;
-
-	if (ch >= vc_controller_channel_count(ctrl)) {
-		return VC_ERR_UNSUPPORTED_CHANNEL;
-	}
-
-	if (meas->present_mask & VC_MEAS_PRESENT_PROVIDER_STATUS) {
-		uint16_t fault_cause = 0;
-
-		if (meas->provider_status & VC_PROVIDER_STATUS_APPLY_FAILED) {
-			fault_cause |= VC_FAULT_HARDWARE;
-		}
-		if (meas->provider_status & VC_PROVIDER_STATUS_SAMPLE_ERROR) {
-			fault_cause |= VC_FAULT_MEASUREMENT;
-		}
-		if (meas->provider_status & VC_PROVIDER_STATUS_INTERLOCK) {
-			fault_cause |= VC_FAULT_INTERLOCK;
-		}
-		if (fault_cause) {
-			vc_channel_consume_fault(&ctrl->channels[ch], fault_cause);
-		}
-	}
-	if (meas->present_mask & VC_MEAS_PRESENT_VOLTAGE) {
-		vc_channel_consume_voltage(&ctrl->channels[ch], meas->raw_voltage);
-	}
-	if (meas->present_mask & VC_MEAS_PRESENT_CURRENT) {
-		vc_channel_consume_current(&ctrl->channels[ch], meas->raw_current);
-	}
-
-	return VC_OK;
+	return vc_controller_start_sampling(runtime->ctrl);
 }
 
 enum vc_status vc_runtime_get_published_system_snapshot(

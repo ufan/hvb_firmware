@@ -455,6 +455,8 @@ static int cmd_sys_set(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_ch_status(const struct shell *sh, uint8_t ch)
 {
+	CTX_CHECK(sh);
+
 	struct vc_channel_snapshot snap;
 
 	vc_query(ctx, vc_q_channel_snapshot(ch, &snap));

@@ -42,7 +42,7 @@ enum vc_status vc_ctx_start(struct vc_ctx *ctx)
 		return VC_ERR_INVALID_VALUE;
 	}
 
-	return VC_OK;
+	return vc_runtime_start_sampling(ctx->runtime);
 }
 
 static enum vc_status dispatch_calibration(struct vc_runtime *rt,
@@ -132,9 +132,6 @@ enum vc_status vc_dispatch(struct vc_ctx *ctx, struct vc_cmd cmd,
 		rtcmd.payload.param_action = cmd.param_action;
 		return vc_runtime_submit_command(ctx->runtime, &rtcmd, timeout);
 
-	case VC_CMD_SUBMIT_MEASUREMENT:
-		return vc_runtime_submit_measurement(ctx->runtime, &cmd.measurement);
-
 	default:
 		return VC_ERR_INVALID_COMMAND;
 	}
@@ -162,9 +159,6 @@ enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query_msg q)
 	case VC_QUERY_CHANNEL_CONFIG:
 		return vc_runtime_get_published_channel_config(
 			ctx->runtime, q.channel, q.out.channel_config);
-
-	case VC_QUERY_RUNTIME_CONFIG:
-		return VC_ERR_INVALID_COMMAND;
 
 	default:
 		return VC_ERR_INVALID_COMMAND;
