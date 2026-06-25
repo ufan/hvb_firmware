@@ -121,6 +121,7 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 {
 	struct vc_runtime *runtime = p1;
 	struct vc_runtime_work_item work;
+	uint32_t last_tick = k_uptime_get_32();
 
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
@@ -142,8 +143,12 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 			}
 		}
 
-		vc_controller_tick(runtime->ctrl,
-				   CONFIG_VC_RUNTIME_TICK_INTERVAL_MS);
+		uint32_t now = k_uptime_get_32();
+		uint32_t dt_ms = now - last_tick;
+
+		last_tick = now;
+
+		vc_controller_tick(runtime->ctrl, dt_ms);
 
 		vc_runtime_publish_snapshot(runtime);
 	}
