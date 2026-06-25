@@ -7,7 +7,6 @@ zephyr_library_sources(
 )
 zephyr_library_sources_ifdef(CONFIG_VC_RUNTIME vc_runtime.c)
 zephyr_library_sources_ifdef(CONFIG_VC_RUNTIME vc.c)
-zephyr_library_sources_ifdef(CONFIG_VC_RUNTIME vc_register.c)
 zephyr_library_sources_ifdef(CONFIG_VC_SETTINGS_PERSISTENCE vc_storage_settings.c)
 
 zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../include)

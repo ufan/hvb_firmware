@@ -2,3 +2,4 @@
 
 zephyr_library_named(modbus_adapter)
 zephyr_library_sources(modbus_adapter.c)
+zephyr_library_sources(vc_register.c)

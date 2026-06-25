@@ -140,7 +140,7 @@ enum vc_status vc_dispatch(struct vc_ctx *ctx, struct vc_cmd cmd,
 	}
 }
 
-enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query q)
+enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query_msg q)
 {
 	if (ctx == NULL) {
 		return VC_ERR_INVALID_VALUE;

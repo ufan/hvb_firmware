@@ -16,7 +16,7 @@
 
 #include "modbus_adapter/modbus_adapter.h"
 #include "sys_status/sys_status.h"
-#include "voltage_control/vc_register.h"
+#include "vc_register.h"
 #include "regmap/vc_regs.h"
 
 #ifdef CONFIG_SETTINGS

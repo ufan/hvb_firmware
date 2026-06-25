@@ -94,7 +94,7 @@ enum vc_query_type {
 	VC_QUERY_RUNTIME_CONFIG,
 };
 
-struct vc_query {
+struct vc_query_msg {
 	enum vc_query_type type;
 	uint8_t channel;
 	union {
@@ -107,7 +107,7 @@ struct vc_query {
 };
 
 /* Read published state (snapshot or config) from the runtime; non-blocking. */
-enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query q);
+enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query_msg q);
 
 /* ------------------------------------------------------------------ */
 /* Command builders                                                    */
@@ -264,20 +264,20 @@ static inline struct vc_cmd vc_cmd_measurement(
 /* ------------------------------------------------------------------ */
 
 /* Build a query for the system snapshot (protocol, uptime, channel info). */
-static inline struct vc_query vc_q_system_snapshot(
+static inline struct vc_query_msg vc_q_system_snapshot(
 	struct vc_system_snapshot *out)
 {
-	return (struct vc_query){
+	return (struct vc_query_msg){
 		.type = VC_QUERY_SYSTEM_SNAPSHOT,
 		.out.system_snapshot = out,
 	};
 }
 
 /* Build a query for a channel snapshot (measurements, status, faults). */
-static inline struct vc_query vc_q_channel_snapshot(
+static inline struct vc_query_msg vc_q_channel_snapshot(
 	uint8_t ch, struct vc_channel_snapshot *out)
 {
-	return (struct vc_query){
+	return (struct vc_query_msg){
 		.type = VC_QUERY_CHANNEL_SNAPSHOT,
 		.channel = ch,
 		.out.channel_snapshot = out,
@@ -285,20 +285,20 @@ static inline struct vc_query vc_q_channel_snapshot(
 }
 
 /* Build a query for the system config (address, baud, recovery, etc.). */
-static inline struct vc_query vc_q_system_config(
+static inline struct vc_query_msg vc_q_system_config(
 	struct vc_system_config *out)
 {
-	return (struct vc_query){
+	return (struct vc_query_msg){
 		.type = VC_QUERY_SYSTEM_CONFIG,
 		.out.system_config = out,
 	};
 }
 
 /* Build a query for a channel config (target voltage, ramp, protection, cal). */
-static inline struct vc_query vc_q_channel_config(
+static inline struct vc_query_msg vc_q_channel_config(
 	uint8_t ch, struct vc_channel_config *out)
 {
-	return (struct vc_query){
+	return (struct vc_query_msg){
 		.type = VC_QUERY_CHANNEL_CONFIG,
 		.channel = ch,
 		.out.channel_config = out,
@@ -306,10 +306,10 @@ static inline struct vc_query vc_q_channel_config(
 }
 
 /* Build a query for a channel's runtime config (output drive, cal state). */
-static inline struct vc_query vc_q_runtime_config(
+static inline struct vc_query_msg vc_q_runtime_config(
 	uint8_t ch, struct vc_runtime_config_snapshot *out)
 {
-	return (struct vc_query){
+	return (struct vc_query_msg){
 		.type = VC_QUERY_RUNTIME_CONFIG,
 		.channel = ch,
 		.out.runtime_config = out,
