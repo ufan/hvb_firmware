@@ -121,6 +121,36 @@ ZTEST(modbus_adapter, test_sys_holding_write_slave_address)
 	zassert_equal(vc_mb_holding_rd(mb, SYS_SLAVE_ADDRESS, &reg), VC_MB_OK);
 	zassert_equal(reg, 42);
 
+	zassert_equal(vc_mb_holding_wr(mb, SYS_SLAVE_ADDRESS, 0),
+		      VC_MB_ILLEGAL_VALUE);
+	zassert_equal(vc_mb_holding_wr(mb, SYS_SLAVE_ADDRESS, 248),
+		      VC_MB_ILLEGAL_VALUE);
+	zassert_equal(vc_mb_holding_rd(mb, SYS_SLAVE_ADDRESS, &reg), VC_MB_OK);
+	zassert_equal(reg, 42);
+
+	destroy_ctx(ctx);
+}
+
+ZTEST(modbus_adapter, test_sys_holding_write_baud_rate_code)
+{
+	struct vc_ctx *ctx = make_ctx();
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	uint16_t reg;
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_mb_holding_rd(mb, SYS_BAUD_RATE_CODE, &reg), VC_MB_OK);
+	zassert_equal(reg, VC_BAUD_RATE_115200);
+
+	zassert_equal(vc_mb_holding_wr(mb, SYS_BAUD_RATE_CODE, VC_BAUD_RATE_9600),
+		      VC_MB_OK);
+	zassert_equal(vc_mb_holding_rd(mb, SYS_BAUD_RATE_CODE, &reg), VC_MB_OK);
+	zassert_equal(reg, VC_BAUD_RATE_9600);
+
+	zassert_equal(vc_mb_holding_wr(mb, SYS_BAUD_RATE_CODE, 99),
+		      VC_MB_ILLEGAL_VALUE);
+	zassert_equal(vc_mb_holding_rd(mb, SYS_BAUD_RATE_CODE, &reg), VC_MB_OK);
+	zassert_equal(reg, VC_BAUD_RATE_9600);
+
 	destroy_ctx(ctx);
 }
 

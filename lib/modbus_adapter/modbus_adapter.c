@@ -41,7 +41,16 @@ struct mb_adapter_config {
 struct vc_mb_adapter {
 	struct vc_ctx *ctx;
 	struct mb_adapter_config cfg;
+	bool needs_reconfig;
 };
+
+static uint32_t baud_code_to_rate(uint16_t code)
+{
+	switch (code) {
+	case VC_BAUD_RATE_9600:   return 9600;
+	default:                  return 115200;
+	}
+}
 
 /* ------------------------------------------------------------------ */
 /* Address decode                                                      */
@@ -131,17 +140,23 @@ static enum vc_mb_result write_sys_holding(struct vc_mb_adapter *a,
 					   uint16_t off, uint16_t val)
 {
 	if (off == SYS_SLAVE_ADDRESS) {
-		if (val > 247) {
+		if (val < 1 || val > 247) {
 			return VC_MB_ILLEGAL_VALUE;
 		}
-		a->cfg.slave_address = val;
+		if (a->cfg.slave_address != val) {
+			a->cfg.slave_address = val;
+			a->needs_reconfig = true;
+		}
 		return VC_MB_OK;
 	}
 	if (off == SYS_BAUD_RATE_CODE) {
 		if (val > VC_BAUD_RATE_9600) {
 			return VC_MB_ILLEGAL_VALUE;
 		}
-		a->cfg.baud_rate_code = val;
+		if (a->cfg.baud_rate_code != val) {
+			a->cfg.baud_rate_code = val;
+			a->needs_reconfig = true;
+		}
 		return VC_MB_OK;
 	}
 	return domain_st_to_mb_result(
@@ -240,19 +255,27 @@ static enum vc_mb_result handle_sys_param_action(struct vc_mb_adapter *a,
 			a->cfg.slave_address = CONFIG_VC_MODBUS_UNIT_ID;
 			a->cfg.baud_rate_code = VC_BAUD_RATE_115200;
 		}
+		a->needs_reconfig = true;
 		break;
 	case VC_PARAM_ACTION_FACTORY_RESET:
 		adapter_erase_config();
 		a->cfg.slave_address = CONFIG_VC_MODBUS_UNIT_ID;
 		a->cfg.baud_rate_code = VC_BAUD_RATE_115200;
+		a->needs_reconfig = true;
 		break;
 	default:
 		break;
 	}
 
-	return domain_st_to_mb_result(
+	enum vc_mb_result res = domain_st_to_mb_result(
 		vc_reg_write_sys_holding(a->ctx, SYS_PARAM_ACTION, val,
 					 MB_CMD_TIMEOUT));
+
+	if (a->needs_reconfig) {
+		modbus_adapter_apply_config();
+	}
+
+	return res;
 }
 
 /* ------------------------------------------------------------------ */
@@ -352,6 +375,7 @@ struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx)
 #define MODBUS_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_modbus_serial)
 
 static struct vc_mb_adapter *mb;
+static int mb_iface = -1;
 
 static int input_reg_rd(uint16_t addr, uint16_t *reg)
 {
@@ -374,17 +398,43 @@ static struct modbus_user_callbacks modbus_callbacks = {
 	.holding_reg_wr = holding_reg_wr,
 };
 
-static const struct modbus_iface_param server_param = {
-	.mode = MODBUS_MODE_RTU,
-	.server = {
-		.user_cb = &modbus_callbacks,
-		.unit_id = CONFIG_VC_MODBUS_UNIT_ID,
-	},
-	.serial = {
-		.baud = CONFIG_VC_MODBUS_BAUD_RATE,
-		.parity = UART_CFG_PARITY_NONE,
-	},
-};
+static int modbus_server_start(uint8_t unit_id, uint32_t baud)
+{
+	struct modbus_iface_param param = {
+		.mode = MODBUS_MODE_RTU,
+		.server = {
+			.user_cb = &modbus_callbacks,
+			.unit_id = unit_id,
+		},
+		.serial = {
+			.baud = baud,
+			.parity = UART_CFG_PARITY_NONE,
+		},
+	};
+
+	return modbus_init_server(mb_iface, param);
+}
+
+void modbus_adapter_apply_config(void)
+{
+	if (mb == NULL || mb_iface < 0) {
+		return;
+	}
+
+	mb->needs_reconfig = false;
+	modbus_disable(mb_iface);
+
+	int ret = modbus_server_start(mb->cfg.slave_address,
+				      baud_code_to_rate(mb->cfg.baud_rate_code));
+	if (ret < 0) {
+		printk("modbus reconfig failed: %d\n", ret);
+		return;
+	}
+
+	printk("modbus_adapter: reconfig slave=%d baud=%d\n",
+	       mb->cfg.slave_address,
+	       baud_code_to_rate(mb->cfg.baud_rate_code));
+}
 
 int modbus_adapter_init(struct vc_ctx *ctx)
 {
@@ -395,23 +445,31 @@ int modbus_adapter_init(struct vc_ctx *ctx)
 	}
 
 	const char iface_name[] = DEVICE_DT_NAME(MODBUS_NODE);
-	int iface = modbus_iface_get_by_name(iface_name);
 
-	if (iface < 0) {
-		printk("Failed to get Modbus iface %s: %d\n", iface_name, iface);
-		return iface;
+	mb_iface = modbus_iface_get_by_name(iface_name);
+	if (mb_iface < 0) {
+		printk("Failed to get Modbus iface %s: %d\n",
+		       iface_name, mb_iface);
+		return mb_iface;
 	}
 
-	int ret = modbus_init_server(iface, server_param);
+	uint8_t unit_id = mb->cfg.slave_address;
+	uint32_t baud = baud_code_to_rate(mb->cfg.baud_rate_code);
+	int ret = modbus_server_start(unit_id, baud);
 
 	if (ret < 0) {
 		printk("Modbus RTU server init failed: %d\n", ret);
 		return ret;
 	}
 
-	printk("modbus_adapter: slave=%d baud=%d\n",
-	       CONFIG_VC_MODBUS_UNIT_ID, CONFIG_VC_MODBUS_BAUD_RATE);
+	printk("modbus_adapter: slave=%d baud=%d\n", unit_id, baud);
 	return 0;
+}
+
+#else /* !CONFIG_MODBUS */
+
+void modbus_adapter_apply_config(void)
+{
 }
 
 #endif /* CONFIG_MODBUS */
