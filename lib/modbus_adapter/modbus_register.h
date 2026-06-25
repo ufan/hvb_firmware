@@ -9,8 +9,8 @@
  * domain snapshots or config structs directly.
  */
 
-#ifndef MODBUS_ADAPTER_VC_REGISTER_H
-#define MODBUS_ADAPTER_VC_REGISTER_H
+#ifndef MODBUS_ADAPTER_MODBUS_REGISTER_H
+#define MODBUS_ADAPTER_MODBUS_REGISTER_H
 
 #include <stdint.h>
 #include <zephyr/kernel.h>

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "vc_register.h"
+#include "modbus_register.h"
 #include "voltage_control/vc.h"
 #include "regmap/vc_regs.h"
 
