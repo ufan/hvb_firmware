@@ -161,6 +161,9 @@
 #define EXT_CAL_UNLOCK                0
 #define EXT_CAL_UNLOCK_ABS            (EXT_BLOCK_BASE + EXT_CAL_UNLOCK)
 
+#define EXT_CAL_EXIT                  1
+#define EXT_CAL_EXIT_ABS              (EXT_BLOCK_BASE + EXT_CAL_EXIT)
+
 #define CAL_UNLOCK_STEP1              0xCA1B
 #define CAL_UNLOCK_STEP2              0xA11B
 #define CAL_COMMAND_NONE              0

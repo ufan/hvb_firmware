@@ -469,8 +469,11 @@ int sys_status_reg_read_input(uint16_t off, uint16_t *reg)
 enum vc_status vc_reg_write_ext(struct vc_ctx *ctx, uint16_t off,
 				uint16_t val, k_timeout_t timeout)
 {
-	if (off == EXT_CAL_UNLOCK_ABS - EXT_BLOCK_BASE) {
+	if (off == EXT_CAL_UNLOCK) {
 		return vc_dispatch(ctx, vc_cmd_cal_unlock(val), timeout);
+	}
+	if (off == EXT_CAL_EXIT) {
+		return vc_dispatch(ctx, vc_cmd_cal_exit(), timeout);
 	}
 	return VC_ERR_UNSUPPORTED_CAPABILITY;
 }

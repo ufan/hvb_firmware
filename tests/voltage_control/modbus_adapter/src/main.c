@@ -292,8 +292,37 @@ ZTEST(modbus_adapter, test_extension_write_non_unlock_rejected)
 	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
 
 	zassert_not_null(ctx);
-	zassert_equal(vc_mb_holding_wr(mb, EXT_BLOCK_BASE + 1, 0),
+	/* Offset 2 is not assigned — must be rejected */
+	zassert_equal(vc_mb_holding_wr(mb, EXT_BLOCK_BASE + 2, 0),
 		      VC_MB_ILLEGAL_ADDRESS);
+
+	destroy_ctx(ctx);
+}
+
+ZTEST(modbus_adapter, test_cal_exit_via_ext_register)
+{
+	struct vc_ctx *ctx = make_ctx();
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	uint16_t reg;
+
+	zassert_not_null(ctx);
+
+	/* Unlock + enter CAL */
+	zassert_equal(vc_mb_holding_wr(mb, EXT_CAL_UNLOCK_ABS, CAL_UNLOCK_STEP1),
+		      VC_MB_OK);
+	zassert_equal(vc_mb_holding_wr(mb, EXT_CAL_UNLOCK_ABS, CAL_UNLOCK_STEP2),
+		      VC_MB_OK);
+	zassert_equal(vc_mb_holding_wr(mb, SYS_OPERATING_MODE,
+				       VC_OPERATING_MODE_CALIBRATION), VC_MB_OK);
+	k_msleep(50);
+	zassert_equal(vc_mb_input_rd(mb, SYS_ACTIVE_OPERATING_MODE, &reg), VC_MB_OK);
+	zassert_equal(reg, VC_OPERATING_MODE_CALIBRATION);
+
+	/* Exit via EXT_CAL_EXIT — must restore to NORMAL (the pre-cal mode) */
+	zassert_equal(vc_mb_holding_wr(mb, EXT_CAL_EXIT_ABS, 1), VC_MB_OK);
+	k_msleep(50);
+	zassert_equal(vc_mb_input_rd(mb, SYS_ACTIVE_OPERATING_MODE, &reg), VC_MB_OK);
+	zassert_equal(reg, VC_OPERATING_MODE_NORMAL);
 
 	destroy_ctx(ctx);
 }
