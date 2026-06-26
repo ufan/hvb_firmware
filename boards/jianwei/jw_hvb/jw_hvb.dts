@@ -299,9 +299,14 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
-		storage_partition: partition@1c0000 {
+		/*
+		 * NVS stores sector size in uint16_t, so use the small 16 KiB
+		 * sectors at the start of flash bank 2 instead of the 128 KiB
+		 * sectors at the end of flash.
+		 */
+		storage_partition: partition@100000 {
 			label = "storage";
-			reg = <0x1c0000 0x40000>;
+			reg = <0x100000 DT_SIZE_K(48)>;
 		};
 	};
 };
