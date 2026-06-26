@@ -74,6 +74,9 @@ static enum vc_status dispatch_calibration(struct vc_runtime *rt,
 		cmd.type = VC_RUNTIME_CMD_CALIBRATION_MAX_RAW_DAC;
 		cmd.payload.calibration_max_raw_dac = cal->value;
 		break;
+	case VC_CAL_EXIT:
+		cmd.type = VC_RUNTIME_CMD_CALIBRATION_EXIT;
+		break;
 	default:
 		return VC_ERR_INVALID_COMMAND;
 	}

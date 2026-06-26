@@ -75,6 +75,8 @@ static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 	case VC_RUNTIME_CMD_CALIBRATION_MAX_RAW_DAC:
 		return vc_controller_channel_cal_max_raw_dac(ctrl, cmd->channel,
 							    cmd->payload.calibration_max_raw_dac);
+	case VC_RUNTIME_CMD_CALIBRATION_EXIT:
+		return vc_controller_cal_exit(ctrl);
 	case VC_RUNTIME_CMD_SYSTEM_PARAM_ACTION:
 		return vc_controller_system_param_action(ctrl,
 							 cmd->payload.param_action);

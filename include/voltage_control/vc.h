@@ -39,6 +39,7 @@ enum vc_cal_action {
 	VC_CAL_SAMPLE,
 	VC_CAL_COMMIT,
 	VC_CAL_SET_MAX_RAW_DAC,
+	VC_CAL_EXIT,
 };
 
 struct vc_cal_command {
@@ -112,6 +113,15 @@ enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query_msg q);
 /* ------------------------------------------------------------------ */
 /* Command builders                                                    */
 /* ------------------------------------------------------------------ */
+
+/* Build a calibration exit command — restores the pre-calibration operating mode. */
+static inline struct vc_cmd vc_cmd_cal_exit(void)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_CALIBRATION,
+		.cal = { .action = VC_CAL_EXIT },
+	};
+}
 
 /* Build a command to switch operating mode (normal/automatic/calibration). */
 static inline struct vc_cmd vc_cmd_set_mode(enum vc_operating_mode mode)
