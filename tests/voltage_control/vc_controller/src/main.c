@@ -64,7 +64,7 @@ ZTEST(vc_controller, test_tick_ramps)
 	vc_controller_get_channel_config(ctrl, 0, &cfg);
 	cfg.configured_target_voltage = 1000;
 	cfg.ramp_up_step = 0;
-	vc_channel_set_config(&ctrl->channels[0], &cfg, false);
+	vc_channel_set_config(&ctrl->channels[0], &cfg);
 	vc_controller_channel_output_action(ctrl, 0, VC_OUTPUT_ACTION_ENABLE);
 
 	vc_controller_tick(ctrl, 100);
@@ -106,7 +106,7 @@ ZTEST(vc_controller, test_system_config_defaults)
 	struct vc_system_config cfg;
 
 	vc_controller_get_system_config(ctrl, &cfg);
-	zassert_equal(cfg.recovery_policy_mode, VC_RECOVERY_MANUAL_LATCH);
+	zassert_equal(cfg.operating_mode, VC_OPERATING_MODE_NORMAL);
 }
 
 ZTEST(vc_controller, test_channel_set_field_routes)
@@ -128,13 +128,7 @@ ZTEST(vc_controller, test_channel_set_field_rejects_invalid_channel)
 
 ZTEST(vc_controller, test_mode_transition_auto_to_normal_clears_cooldown)
 {
-	struct vc_system_config sys;
-
-	vc_controller_get_system_config(ctrl, &sys);
-	sys.operating_mode = VC_OPERATING_MODE_AUTOMATIC;
-	sys.recovery_policy_mode = VC_RECOVERY_AUTO_RETRY;
-	sys.auto_retry_delay = 60;
-	vc_controller_set_system_config(ctrl, &sys);
+	vc_controller_set_operating_mode(ctrl, VC_OPERATING_MODE_AUTOMATIC);
 
 	ctrl->channels[0].cooldown_remaining_ms = 5000;
 	vc_controller_set_operating_mode(ctrl, VC_OPERATING_MODE_NORMAL);
@@ -186,4 +180,51 @@ ZTEST(vc_controller, test_channel_param_action_no_storage)
 ZTEST(vc_controller, test_start_sampling)
 {
 	zassert_equal(vc_controller_start_sampling(ctrl), VC_OK);
+}
+
+static void enter_cal(struct vc_controller *c)
+{
+	vc_controller_calibration_unlock(c, CAL_UNLOCK_STEP1);
+	vc_controller_calibration_unlock(c, CAL_UNLOCK_STEP2);
+	vc_controller_set_operating_mode(c, VC_OPERATING_MODE_CALIBRATION);
+}
+
+ZTEST(vc_controller, test_cal_exit_rejected_when_not_in_cal)
+{
+	zassert_equal(vc_controller_cal_exit(ctrl), VC_ERR_INVALID_COMMAND);
+}
+
+ZTEST(vc_controller, test_cal_exit_from_normal_restores_normal)
+{
+	enter_cal(ctrl);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_CALIBRATION);
+
+	zassert_equal(vc_controller_cal_exit(ctrl), VC_OK);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_NORMAL);
+}
+
+ZTEST(vc_controller, test_cal_exit_from_auto_restores_auto)
+{
+	vc_controller_set_operating_mode(ctrl, VC_OPERATING_MODE_AUTOMATIC);
+	enter_cal(ctrl);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_CALIBRATION);
+
+	zassert_equal(vc_controller_cal_exit(ctrl), VC_OK);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_AUTOMATIC);
+}
+
+ZTEST(vc_controller, test_cal_exit_resets_channels_to_disabled_safe)
+{
+	enter_cal(ctrl);
+	zassert_equal(vc_controller_cal_exit(ctrl), VC_OK);
+
+	struct vc_channel_snapshot snap;
+
+	vc_controller_get_channel_snapshot(ctrl, 0, &snap);
+	zassert_equal(snap.cal_output_enabled, 0);
+	zassert_equal(snap.raw_dac_readback, 0);
 }

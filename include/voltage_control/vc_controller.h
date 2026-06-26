@@ -14,6 +14,7 @@ struct vc_controller {
 	size_t channel_count;
 	struct vc_channel_buffer *meas_index[VC_MAX_CHANNELS];
 	enum vc_operating_mode operating_mode;
+	enum vc_operating_mode pre_cal_mode;
 	uint8_t cal_unlock_step;
 	bool cal_unlocked;
 	const struct vc_storage_backend *storage;
@@ -29,6 +30,7 @@ enum vc_operating_mode vc_controller_get_operating_mode(
 	const struct vc_controller *ctrl);
 enum vc_status vc_controller_calibration_unlock(
 	struct vc_controller *ctrl, uint16_t value);
+enum vc_status vc_controller_cal_exit(struct vc_controller *ctrl);
 
 enum vc_status vc_controller_channel_set_field(
 	struct vc_controller *ctrl, uint8_t ch,

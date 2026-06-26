@@ -494,6 +494,7 @@ enum vc_status vc_channel_output_action(struct vc_channel *ch,
 		ch->output_enabled = false;
 		ch->ramping = false;
 		ch->operational_target_voltage = 0;
+		ch->cooldown_remaining_ms = 0;
 		set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
 		break;
 	case VC_OUTPUT_ACTION_DISABLE_IMMEDIATE:

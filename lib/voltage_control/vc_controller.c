@@ -173,6 +173,7 @@ enum vc_status vc_controller_set_operating_mode(
 
 	/* → CAL: reset all channels into calibration state */
 	if (mode == VC_OPERATING_MODE_CALIBRATION) {
+		ctrl->pre_cal_mode = ctrl->operating_mode;
 		for (size_t i = 0; i < ctrl->channel_count; i++) {
 			vc_channel_reset_calibration(&ctrl->channels[i], true);
 		}
@@ -217,6 +218,14 @@ enum vc_status vc_controller_calibration_unlock(
 	ctrl->cal_unlock_step = 0;
 	ctrl->cal_unlocked = false;
 	return VC_ERR_INVALID_COMMAND;
+}
+
+enum vc_status vc_controller_cal_exit(struct vc_controller *ctrl)
+{
+	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
+		return VC_ERR_INVALID_COMMAND;
+	}
+	return vc_controller_set_operating_mode(ctrl, ctrl->pre_cal_mode);
 }
 
 /* ---- System config ---- */
