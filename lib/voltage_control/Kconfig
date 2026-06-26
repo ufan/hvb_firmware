@@ -46,6 +46,13 @@ config VC_RUNTIME_TICK_INTERVAL_MS
 	help
 	  Runtime policy tick interval in milliseconds.
 
+config VC_CAL_WATCHDOG_TIMEOUT_S
+	int "VC calibration inactivity watchdog timeout"
+	default 30
+	range 1 3600
+	help
+	  Time in seconds before inactive calibration mode automatically exits.
+
 config VC_SETTINGS_PERSISTENCE
 	bool "VC settings persistence via NVS"
 	depends on VC_RUNTIME
@@ -56,4 +63,3 @@ config VC_SETTINGS_PERSISTENCE
 	help
 	  Enable save/load/factory-reset of system and channel configs
 	  using Zephyr Settings backed by NVS on internal flash.
-

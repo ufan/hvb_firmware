@@ -25,7 +25,7 @@ DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, MEAS_ENTRY)
 #endif
 
 #define VC_VARIANT_ID 1
-#define VC_CAL_WATCHDOG_MS 30000U
+#define VC_CAL_WATCHDOG_MS (CONFIG_VC_CAL_WATCHDOG_TIMEOUT_S * 1000U)
 
 static void cal_watchdog_reset(struct vc_controller *ctrl)
 {
