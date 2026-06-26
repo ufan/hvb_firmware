@@ -25,6 +25,13 @@ static struct vc_channel_config default_channel_config(void)
 {
 	return (struct vc_channel_config){
 		.current_limit_threshold = VC_DEFAULT_MAX_CURRENT_RAW,
+		.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
+	};
+}
+
+static struct vc_channel_cal_config default_cal_config(void)
+{
+	return (struct vc_channel_cal_config){
 		.output_calib_k = 10000,
 		.measured_voltage_calib_k = 10000,
 		.measured_current_calib_k = 10000,
@@ -57,11 +64,10 @@ static int16_t clamp_int16(int64_t value)
 	return (int16_t)value;
 }
 
-static uint16_t raw_drive_from_target(const struct vc_channel_config *cfg,
-				      int32_t target)
+static uint16_t raw_drive_from_target(const struct vc_channel *ch, int32_t target)
 {
-	int64_t raw = ((int64_t)target * cfg->output_calib_k) / 10000 +
-		      cfg->output_calib_b;
+	int64_t raw = ((int64_t)target * ch->cal_config.output_calib_k) / 10000 +
+		      ch->cal_config.output_calib_b;
 
 	if (raw <= 0) {
 		return 0;
@@ -91,8 +97,7 @@ static void apply_hw(struct vc_channel *ch)
 		code = ch->raw_dac_readback;
 	} else if (ch->output_enabled) {
 		enable = true;
-		code = raw_drive_from_target(&ch->config,
-					     ch->operational_target_voltage);
+		code = raw_drive_from_target(ch, ch->operational_target_voltage);
 	} else {
 		enable = false;
 		code = 0;
@@ -169,17 +174,6 @@ static bool is_valid_protection_output_action(enum vc_output_action action)
 	}
 }
 
-static bool calibration_fields_changed(const struct vc_channel_config *old_cfg,
-				       const struct vc_channel_config *new_cfg)
-{
-	return old_cfg->output_calib_k != new_cfg->output_calib_k ||
-	       old_cfg->output_calib_b != new_cfg->output_calib_b ||
-	       old_cfg->measured_voltage_calib_k != new_cfg->measured_voltage_calib_k ||
-	       old_cfg->measured_voltage_calib_b != new_cfg->measured_voltage_calib_b ||
-	       old_cfg->measured_current_calib_k != new_cfg->measured_current_calib_k ||
-	       old_cfg->measured_current_calib_b != new_cfg->measured_current_calib_b;
-}
-
 static enum vc_status validate_capability_config(
 	const struct vc_channel *ch,
 	const struct vc_channel_config *old_cfg,
@@ -190,25 +184,14 @@ static enum vc_status validate_capability_config(
 		    new_cfg->ramp_up_step != old_cfg->ramp_up_step ||
 		    new_cfg->ramp_up_interval != old_cfg->ramp_up_interval ||
 		    new_cfg->ramp_down_step != old_cfg->ramp_down_step ||
-		    new_cfg->ramp_down_interval != old_cfg->ramp_down_interval ||
-		    new_cfg->save_target_policy != old_cfg->save_target_policy ||
-		    new_cfg->output_calib_k != old_cfg->output_calib_k ||
-		    new_cfg->output_calib_b != old_cfg->output_calib_b) {
-			return VC_ERR_UNSUPPORTED_CAPABILITY;
-		}
-	}
-	if (!channel_has_cap(ch, CH_CAP_VOLTAGE_MEASUREMENT)) {
-		if (new_cfg->measured_voltage_calib_k != old_cfg->measured_voltage_calib_k ||
-		    new_cfg->measured_voltage_calib_b != old_cfg->measured_voltage_calib_b) {
+		    new_cfg->ramp_down_interval != old_cfg->ramp_down_interval) {
 			return VC_ERR_UNSUPPORTED_CAPABILITY;
 		}
 	}
 	if (!channel_has_cap(ch, CH_CAP_CURRENT_MEASUREMENT)) {
 		if (new_cfg->current_protection_mode != VC_PROTECTION_MODE_DISABLED ||
 		    new_cfg->current_protection_output_action != old_cfg->current_protection_output_action ||
-		    new_cfg->current_limit_threshold != old_cfg->current_limit_threshold ||
-		    new_cfg->measured_current_calib_k != old_cfg->measured_current_calib_k ||
-		    new_cfg->measured_current_calib_b != old_cfg->measured_current_calib_b) {
+		    new_cfg->current_limit_threshold != old_cfg->current_limit_threshold) {
 			return VC_ERR_UNSUPPORTED_CAPABILITY;
 		}
 	}
@@ -287,15 +270,14 @@ static void force_safe_state(struct vc_channel *ch)
 	apply_hw(ch);
 }
 
-static bool is_safe_to_clear_active(const struct vc_channel *ch,
-				    const struct vc_system_config *sys_cfg)
+static bool is_safe_to_clear_active(const struct vc_channel *ch)
 {
 	const struct vc_channel_config *cfg = &ch->config;
 	int32_t safe_limit;
 
 	if (ch->active_fault_cause & VC_FAULT_CURRENT) {
 		safe_limit = (int32_t)cfg->current_limit_threshold *
-			     (100 - (int32_t)sys_cfg->current_safe_band_pct) / 100;
+			     (100 - (int32_t)cfg->current_safe_band_pct) / 100;
 		if (ch->measured_current > safe_limit) {
 			return false;
 		}
@@ -331,6 +313,7 @@ void vc_channel_init(struct vc_channel *ch,
 	ch->wake_fn = wake_fn;
 	ch->wake_user_data = wake_user_data;
 	ch->config = default_channel_config();
+	ch->cal_config = default_cal_config();
 	ch->cal_max_raw_dac_limit = VC_DEFAULT_MAX_RAW_DAC;
 	smf_set_initial(SMF_CTX(ch), &vc_channel_states[VC_CHANNEL_SMF_DISABLED_SAFE]);
 
@@ -375,17 +358,13 @@ enum vc_status vc_channel_get_config(const struct vc_channel *ch,
 }
 
 enum vc_status vc_channel_set_config(struct vc_channel *ch,
-				     const struct vc_channel_config *cfg,
-				     bool calibration_mode)
+				     const struct vc_channel_config *cfg)
 {
 	enum vc_status st;
 
 	st = validate_capability_config(ch, &ch->config, cfg);
 	if (st != VC_OK) {
 		return st;
-	}
-	if (!calibration_mode && calibration_fields_changed(&ch->config, cfg)) {
-		return VC_ERR_INVALID_COMMAND;
 	}
 	if (cfg->configured_target_voltage > VC_DEFAULT_MAX_VOLTAGE_RAW ||
 	    cfg->configured_target_voltage < VC_DEFAULT_MIN_VOLTAGE_RAW) {
@@ -398,22 +377,16 @@ enum vc_status vc_channel_set_config(struct vc_channel *ch,
 	    !is_valid_protection_output_action(cfg->current_protection_output_action)) {
 		return VC_ERR_INVALID_VALUE;
 	}
-	if (cfg->save_target_policy > 1) {
-		return VC_ERR_INVALID_VALUE;
-	}
 
 	ch->config = *cfg;
-	if (!calibration_mode) {
-		tick_current_protection(ch);
-	}
+	tick_current_protection(ch);
 	apply_hw(ch);
 	update_status_bits(ch);
 	return VC_OK;
 }
 
 enum vc_status vc_channel_set_field(struct vc_channel *ch,
-				    enum vc_config_field field, uint16_t value,
-				    bool calibration_mode)
+				    enum vc_config_field field, uint16_t value)
 {
 	struct vc_channel_config cfg;
 	enum vc_status st;
@@ -439,6 +412,21 @@ enum vc_status vc_channel_set_field(struct vc_channel *ch,
 	case VC_FIELD_RAMP_DOWN_INTERVAL:
 		cfg.ramp_down_interval = value;
 		break;
+	case VC_FIELD_RECOVERY_POLICY_MODE:
+		cfg.recovery_policy_mode = (enum vc_recovery_policy_mode)value;
+		break;
+	case VC_FIELD_AUTO_RETRY_DELAY:
+		cfg.auto_retry_delay = value;
+		break;
+	case VC_FIELD_AUTO_RETRY_MAX_COUNT:
+		cfg.auto_retry_max_count = value;
+		break;
+	case VC_FIELD_AUTO_RETRY_WINDOW:
+		cfg.auto_retry_window = value;
+		break;
+	case VC_FIELD_CURRENT_SAFE_BAND_PCT:
+		cfg.current_safe_band_pct = value;
+		break;
 	case VC_FIELD_CURRENT_PROTECTION_MODE:
 		cfg.current_protection_mode = (enum vc_protection_mode)value;
 		break;
@@ -451,32 +439,11 @@ enum vc_status vc_channel_set_field(struct vc_channel *ch,
 	case VC_FIELD_AUTO_DERATE_STEP:
 		cfg.auto_derate_step = value;
 		break;
-	case VC_FIELD_SAVE_TARGET_POLICY:
-		cfg.save_target_policy = value;
-		break;
-	case VC_FIELD_OUTPUT_CAL_K:
-		cfg.output_calib_k = value;
-		break;
-	case VC_FIELD_OUTPUT_CAL_B:
-		cfg.output_calib_b = (int16_t)value;
-		break;
-	case VC_FIELD_MEASURED_V_CAL_K:
-		cfg.measured_voltage_calib_k = value;
-		break;
-	case VC_FIELD_MEASURED_V_CAL_B:
-		cfg.measured_voltage_calib_b = (int16_t)value;
-		break;
-	case VC_FIELD_MEASURED_I_CAL_K:
-		cfg.measured_current_calib_k = value;
-		break;
-	case VC_FIELD_MEASURED_I_CAL_B:
-		cfg.measured_current_calib_b = (int16_t)value;
-		break;
 	default:
 		return VC_ERR_INVALID_VALUE;
 	}
 
-	return vc_channel_set_config(ch, &cfg, calibration_mode);
+	return vc_channel_set_config(ch, &cfg);
 }
 
 void vc_channel_get_snapshot(const struct vc_channel *ch,
@@ -496,20 +463,15 @@ void vc_channel_get_snapshot(const struct vc_channel *ch,
 	snap->channel_capability_flags = ch->capabilities;
 	snap->raw_adc_voltage = ch->raw_adc_voltage;
 	snap->raw_adc_current = ch->raw_adc_current;
-	snap->cal_sample_status = ch->cal_sample_status;
 	snap->raw_dac_readback = ch->raw_dac_readback;
 	snap->cal_output_enabled = ch->cal_output_enabled;
 	snap->cal_max_raw_dac_limit = ch->cal_max_raw_dac_limit;
 }
 
 enum vc_status vc_channel_output_action(struct vc_channel *ch,
-					enum vc_output_action action,
-					bool calibration_mode)
+					enum vc_output_action action)
 {
 	if (!is_valid_host_output_action(action)) {
-		return VC_ERR_INVALID_COMMAND;
-	}
-	if (calibration_mode) {
 		return VC_ERR_INVALID_COMMAND;
 	}
 
@@ -544,8 +506,7 @@ enum vc_status vc_channel_output_action(struct vc_channel *ch,
 }
 
 enum vc_status vc_channel_fault_command(struct vc_channel *ch,
-					enum vc_channel_fault_command cmd,
-					const struct vc_system_config *sys_cfg)
+					enum vc_channel_fault_command cmd)
 {
 	if (!is_valid_channel_fault_command(cmd)) {
 		return VC_ERR_INVALID_COMMAND;
@@ -556,7 +517,7 @@ enum vc_status vc_channel_fault_command(struct vc_channel *ch,
 		if (ch->active_fault_cause == 0) {
 			break;
 		}
-		if (!is_safe_to_clear_active(ch, sys_cfg)) {
+		if (!is_safe_to_clear_active(ch)) {
 			return VC_ERR_UNSAFE_STATE;
 		}
 		ch->active_fault_cause = 0;
@@ -576,8 +537,8 @@ void vc_channel_consume_voltage(struct vc_channel *ch, int32_t raw_voltage)
 {
 	ch->raw_adc_voltage = raw_voltage;
 	ch->measured_voltage = clamp_int16(
-		((int64_t)raw_voltage * ch->config.measured_voltage_calib_k) /
-		10000 + ch->config.measured_voltage_calib_b);
+		((int64_t)raw_voltage * ch->cal_config.measured_voltage_calib_k) /
+		10000 + ch->cal_config.measured_voltage_calib_b);
 
 	update_status_bits(ch);
 }
@@ -586,8 +547,8 @@ void vc_channel_consume_current(struct vc_channel *ch, int32_t raw_current)
 {
 	ch->raw_adc_current = raw_current;
 	ch->measured_current = clamp_int16(
-		((int64_t)raw_current * ch->config.measured_current_calib_k) /
-		10000 + ch->config.measured_current_calib_b);
+		((int64_t)raw_current * ch->cal_config.measured_current_calib_k) /
+		10000 + ch->cal_config.measured_current_calib_b);
 
 	if (!ch->ramping) {
 		tick_current_protection(ch);
@@ -674,7 +635,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 	update_status_bits(ch);
 }
 
-/* ---- Calibration ---- */
+/* ---- Calibration session ---- */
 
 void vc_channel_reset_calibration(struct vc_channel *ch, bool entering)
 {
@@ -778,4 +739,49 @@ enum vc_status vc_channel_cal_commit(struct vc_channel *ch)
 		return VC_ERR_UNSAFE_STATE;
 	}
 	return VC_OK;
+}
+
+/* ---- Calibration config API ---- */
+
+enum vc_status vc_channel_get_cal_config(const struct vc_channel *ch,
+					  struct vc_channel_cal_config *cal)
+{
+	*cal = ch->cal_config;
+	return VC_OK;
+}
+
+enum vc_status vc_channel_set_cal_field(struct vc_channel *ch,
+					 enum vc_cal_field field, uint16_t value)
+{
+	switch (field) {
+	case VC_CAL_FIELD_OUTPUT_K:
+		ch->cal_config.output_calib_k = value;
+		break;
+	case VC_CAL_FIELD_OUTPUT_B:
+		ch->cal_config.output_calib_b = (int16_t)value;
+		break;
+	case VC_CAL_FIELD_MEASURED_V_K:
+		ch->cal_config.measured_voltage_calib_k = value;
+		break;
+	case VC_CAL_FIELD_MEASURED_V_B:
+		ch->cal_config.measured_voltage_calib_b = (int16_t)value;
+		break;
+	case VC_CAL_FIELD_MEASURED_I_K:
+		ch->cal_config.measured_current_calib_k = value;
+		break;
+	case VC_CAL_FIELD_MEASURED_I_B:
+		ch->cal_config.measured_current_calib_b = (int16_t)value;
+		break;
+	default:
+		return VC_ERR_INVALID_VALUE;
+	}
+	apply_hw(ch);
+	return VC_OK;
+}
+
+void vc_channel_load_cal(struct vc_channel *ch,
+			  const struct vc_channel_cal_config *cal)
+{
+	ch->cal_config = *cal;
+	apply_hw(ch);
 }

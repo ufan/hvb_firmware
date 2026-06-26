@@ -38,6 +38,7 @@ struct vc_channel {
 	uint16_t capabilities;
 
 	struct vc_channel_config config;
+	struct vc_channel_cal_config cal_config;  /* separate from operational config */
 
 	bool output_enabled;
 	bool ramping;
@@ -77,19 +78,23 @@ void vc_channel_run(struct vc_channel *ch, uint32_t dt_ms,
 		    const struct vc_system_config *sys_cfg);
 
 enum vc_status vc_channel_set_config(struct vc_channel *ch,
-				     const struct vc_channel_config *cfg,
-				     bool calibration_mode);
+				     const struct vc_channel_config *cfg);
 enum vc_status vc_channel_get_config(const struct vc_channel *ch,
 				     struct vc_channel_config *cfg);
 enum vc_status vc_channel_output_action(struct vc_channel *ch,
-					enum vc_output_action action,
-					bool calibration_mode);
+					enum vc_output_action action);
 enum vc_status vc_channel_fault_command(struct vc_channel *ch,
-					enum vc_channel_fault_command cmd,
-					const struct vc_system_config *sys_cfg);
+					enum vc_channel_fault_command cmd);
 enum vc_status vc_channel_set_field(struct vc_channel *ch,
-				    enum vc_config_field field, uint16_t value,
-				    bool calibration_mode);
+				    enum vc_config_field field, uint16_t value);
+
+/* Calibration config API */
+enum vc_status vc_channel_get_cal_config(const struct vc_channel *ch,
+					  struct vc_channel_cal_config *cal);
+enum vc_status vc_channel_set_cal_field(struct vc_channel *ch,
+					 enum vc_cal_field field, uint16_t value);
+void vc_channel_load_cal(struct vc_channel *ch,
+			  const struct vc_channel_cal_config *cal);
 
 void vc_channel_consume_voltage(struct vc_channel *ch, int32_t raw_voltage);
 void vc_channel_consume_current(struct vc_channel *ch, int32_t raw_current);
