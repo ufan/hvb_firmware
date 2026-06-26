@@ -207,16 +207,15 @@ TEST_CASE("readChannelCalConfig reads cal coefficients", "[calibration]") {
     client.detachTestArrays();
 }
 
-TEST_CASE("exitCalibrationMode rejects Calibration target", "[calibration]") {
+TEST_CASE("exitCalibrationMode writes EXT_CAL_EXIT", "[calibration]") {
     uint16_t input[MAX_ADDR], holding[MAX_ADDR];
     initBoard(input, holding);
 
     HvbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
-    REQUIRE_FALSE(client.exitCalibrationMode(OpMode::Calibration));
-    REQUIRE(client.exitCalibrationMode(OpMode::Normal));
-    REQUIRE(holding[reg::sysAddr(SYS_OPERATING_MODE)] == 0);
+    REQUIRE(client.exitCalibrationMode());
+    REQUIRE(holding[reg::extAddr(EXT_CAL_EXIT)] == 1);
 
     client.detachTestArrays();
 }

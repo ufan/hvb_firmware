@@ -375,12 +375,9 @@ bool HvbModbusClient::enterCalibrationMode() {
     return writeOperatingMode(OpMode::Calibration);
 }
 
-bool HvbModbusClient::exitCalibrationMode(OpMode targetMode) {
-    if (targetMode == OpMode::Calibration) {
-        m_impl->errorText = "target mode cannot be Calibration";
-        return false;
-    }
-    return writeOperatingMode(targetMode);
+bool HvbModbusClient::exitCalibrationMode() {
+    uint16_t v = 1;
+    return writeRegsInternal(reg::extAddr(EXT_CAL_EXIT), 1, &v);
 }
 
 bool HvbModbusClient::writeCalibrationOutputEnable(int ch, bool enable) {

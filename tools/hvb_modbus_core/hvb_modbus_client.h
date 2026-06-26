@@ -57,7 +57,7 @@ public:
     // Calibration Mode operations (v2.1)
     bool unlockCalibrationStep(uint16_t value);
     bool enterCalibrationMode();
-    bool exitCalibrationMode(OpMode targetMode);
+    bool exitCalibrationMode();
     bool writeCalibrationOutputEnable(int ch, bool enable);
     bool writeRawDacCode(int ch, uint16_t code);
     bool sendCalibrationSampleCommand(int ch);

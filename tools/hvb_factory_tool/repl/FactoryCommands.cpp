@@ -104,18 +104,16 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
         "Enter Calibration Mode");
 
     calMenu->Insert("exit",
-        [&session](std::ostream& out, const std::string& mode) {
+        [&session](std::ostream& out) {
             requireConnected(session, out, [&] {
-                OpMode target = OpMode::Normal;
-                if (mode == "auto" || mode == "automatic") target = OpMode::Automatic;
                 session.stopWatch();
-                if (session.client().exitCalibrationMode(target))
-                    out << "Exited to " << opModeName(target) << "\n";
+                if (session.client().exitCalibrationMode())
+                    out << "Exited calibration mode\n";
                 else
                     out << "Error: " << session.lastError() << "\n";
             });
         },
-        "Exit Calibration Mode", {"normal|auto"});
+        "Exit Calibration Mode");
 
     calMenu->Insert("status",
         [&session](std::ostream& out) {
