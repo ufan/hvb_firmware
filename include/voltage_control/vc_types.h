@@ -80,32 +80,48 @@ enum vc_param_action {
 	VC_PARAM_ACTION_SOFTWARE_RESET = 255,
 };
 
+/* System config — operating mode + startup policy only; recovery moved to channel */
+struct vc_system_config {
+	enum vc_operating_mode operating_mode;
+	uint16_t startup_channel_policy;  /* 0=load NVS op-config, 1=factory reset op-config */
+};
+
+/* Channel operational config — no cal coefficients (moved to vc_channel_cal_config) */
 struct vc_channel_config {
 	int16_t configured_target_voltage;
 	uint16_t ramp_up_step;
 	uint16_t ramp_up_interval;
 	uint16_t ramp_down_step;
 	uint16_t ramp_down_interval;
-	enum vc_protection_mode current_protection_mode;
-	enum vc_output_action current_protection_output_action;
-	int16_t current_limit_threshold;
-	uint16_t auto_derate_step;
-	uint16_t save_target_policy;
-	uint16_t output_calib_k;
-	int16_t output_calib_b;
-	uint16_t measured_voltage_calib_k;
-	int16_t measured_voltage_calib_b;
-	uint16_t measured_current_calib_k;
-	int16_t measured_current_calib_b;
-};
-
-struct vc_system_config {
-	enum vc_operating_mode operating_mode;
 	enum vc_recovery_policy_mode recovery_policy_mode;
 	uint16_t auto_retry_delay;
 	uint16_t auto_retry_max_count;
 	uint16_t auto_retry_window;
 	uint16_t current_safe_band_pct;
+	enum vc_protection_mode current_protection_mode;
+	enum vc_output_action current_protection_output_action;
+	int16_t current_limit_threshold;
+	uint16_t auto_derate_step;
+};
+
+/* Calibration coefficients — separate from operational config */
+struct vc_channel_cal_config {
+	uint16_t output_calib_k;
+	int16_t  output_calib_b;
+	uint16_t measured_voltage_calib_k;
+	int16_t  measured_voltage_calib_b;
+	uint16_t measured_current_calib_k;
+	int16_t  measured_current_calib_b;
+};
+
+/* Cal field selector for SET_CHANNEL_CAL_FIELD command */
+enum vc_cal_field {
+	VC_CAL_FIELD_OUTPUT_K,
+	VC_CAL_FIELD_OUTPUT_B,
+	VC_CAL_FIELD_MEASURED_V_K,
+	VC_CAL_FIELD_MEASURED_V_B,
+	VC_CAL_FIELD_MEASURED_I_K,
+	VC_CAL_FIELD_MEASURED_I_B,
 };
 
 struct vc_channel_snapshot {
@@ -122,10 +138,11 @@ struct vc_channel_snapshot {
 	uint16_t channel_capability_flags;
 	int32_t raw_adc_voltage;
 	int32_t raw_adc_current;
-	enum vc_cal_sample_status cal_sample_status;
+	/* cal session state — for FC03 holding readback, not FC04 input */
 	uint16_t raw_dac_readback;
 	uint16_t cal_output_enabled;
 	uint16_t cal_max_raw_dac_limit;
+	/* cal_sample_status removed — CH_CAL_SAMPLE_STATUS deleted in v3 */
 };
 
 struct vc_system_snapshot {
@@ -141,29 +158,27 @@ struct vc_system_snapshot {
 };
 
 enum vc_config_field {
+	/* System fields */
 	VC_FIELD_OPERATING_MODE,
-	VC_FIELD_RECOVERY_POLICY_MODE,
-	VC_FIELD_AUTO_RETRY_DELAY,
-	VC_FIELD_AUTO_RETRY_MAX_COUNT,
-	VC_FIELD_AUTO_RETRY_WINDOW,
-	VC_FIELD_CURRENT_SAFE_BAND_PCT,
+	VC_FIELD_STARTUP_CHANNEL_POLICY,
 
+	/* Channel fields (including recovery, moved from system) */
 	VC_FIELD_CONFIGURED_TARGET_VOLTAGE,
 	VC_FIELD_RAMP_UP_STEP,
 	VC_FIELD_RAMP_UP_INTERVAL,
 	VC_FIELD_RAMP_DOWN_STEP,
 	VC_FIELD_RAMP_DOWN_INTERVAL,
+	VC_FIELD_RECOVERY_POLICY_MODE,
+	VC_FIELD_AUTO_RETRY_DELAY,
+	VC_FIELD_AUTO_RETRY_MAX_COUNT,
+	VC_FIELD_AUTO_RETRY_WINDOW,
+	VC_FIELD_CURRENT_SAFE_BAND_PCT,
 	VC_FIELD_CURRENT_PROTECTION_MODE,
 	VC_FIELD_CURRENT_PROT_OUT_ACTION,
 	VC_FIELD_CURRENT_LIMIT_THRESHOLD,
 	VC_FIELD_AUTO_DERATE_STEP,
-	VC_FIELD_SAVE_TARGET_POLICY,
-	VC_FIELD_OUTPUT_CAL_K,
-	VC_FIELD_OUTPUT_CAL_B,
-	VC_FIELD_MEASURED_V_CAL_K,
-	VC_FIELD_MEASURED_V_CAL_B,
-	VC_FIELD_MEASURED_I_CAL_K,
-	VC_FIELD_MEASURED_I_CAL_B,
+	/* VC_FIELD_SAVE_TARGET_POLICY removed */
+	/* VC_FIELD_OUTPUT_CAL_K/B etc removed — use vc_cal_field via SET_CHANNEL_CAL_FIELD */
 };
 
 struct vc_field_write {

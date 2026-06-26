@@ -14,8 +14,8 @@ struct vc_storage_backend {
 	int (*load_system_config)(struct vc_system_config *cfg);
 	int (*save_channel_config)(uint8_t ch, const struct vc_channel_config *cfg);
 	int (*load_channel_config)(uint8_t ch, struct vc_channel_config *cfg);
-	int (*save_channel_cal)(uint8_t ch, const struct vc_channel_config *cfg);
-	int (*load_channel_cal)(uint8_t ch, struct vc_channel_config *cfg);
+	int (*save_channel_cal)(uint8_t ch, const struct vc_channel_cal_config *cal);
+	int (*load_channel_cal)(uint8_t ch, struct vc_channel_cal_config *cal);
 	int (*erase_all)(void);
 };
 
