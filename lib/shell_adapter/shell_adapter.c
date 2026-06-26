@@ -404,6 +404,20 @@ static int cmd_param(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+static int cmd_software_reset(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	CTX_CHECK(sh);
+
+	int ret = dispatch(sh, vc_cmd_sys_param(VC_PARAM_ACTION_SOFTWARE_RESET));
+
+	if (ret == 0) {
+		shell_print(sh, "software reset requested");
+	}
+	return ret;
+}
+
 /* ------------------------------------------------------------------ */
 /* System subcommands                                                  */
 /* ------------------------------------------------------------------ */
@@ -883,6 +897,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_cal,
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_sys,
 	SHELL_CMD(status, NULL, "Detailed system snapshot", cmd_sys_status),
 	SHELL_CMD(config, NULL, "System configuration", cmd_sys_config),
+	SHELL_CMD(reset, NULL, "Software reset firmware", cmd_software_reset),
 	SHELL_CMD_ARG(param, NULL, "System param <save|load|reset>", cmd_sys_param, 2, 0),
 	SHELL_CMD_ARG(set, NULL, "Set system field <field> <value>", cmd_sys_set, 3, 0),
 	SHELL_SUBCMD_SET_END
@@ -892,6 +907,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc,
 	SHELL_CMD(status, NULL, "System + channel snapshot", cmd_status),
 	SHELL_CMD_ARG(mode, NULL, "Set mode <normal|auto|cal>", cmd_mode, 2, 0),
 	SHELL_CMD_ARG(param, NULL, "All param <save|load|reset>", cmd_param, 2, 0),
+	SHELL_CMD(reset, NULL, "Software reset firmware", cmd_software_reset),
 	SHELL_CMD(sys, &sub_vc_sys, "System commands", NULL),
 	SHELL_CMD_ARG(ch, NULL, "Channel <n> <subcmd> [args]", cmd_ch, 3, 2),
 	SHELL_CMD(cal, &sub_vc_cal, "Calibration commands", NULL),
