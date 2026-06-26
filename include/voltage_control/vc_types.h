@@ -88,30 +88,30 @@ struct vc_system_config {
 
 /* Channel operational config — no cal coefficients (moved to vc_channel_cal_config) */
 struct vc_channel_config {
-	int16_t configured_target_voltage;
-	uint16_t ramp_up_step;
-	uint16_t ramp_up_interval;
-	uint16_t ramp_down_step;
-	uint16_t ramp_down_interval;
+	int16_t configured_target_voltage;                    /* mV */
+	uint16_t ramp_up_step;                                 /* mV per interval */
+	uint16_t ramp_up_interval;                             /* ×100 ms */
+	uint16_t ramp_down_step;                               /* mV per interval */
+	uint16_t ramp_down_interval;                           /* ×100 ms */
 	enum vc_recovery_policy_mode recovery_policy_mode;
-	uint16_t auto_retry_delay;
+	uint16_t auto_retry_delay;                             /* seconds */
 	uint16_t auto_retry_max_count;
-	uint16_t auto_retry_window;
-	uint16_t current_safe_band_pct;
+	uint16_t auto_retry_window;                            /* seconds */
+	uint16_t current_safe_band_pct;                        /* percent (0–100) */
 	enum vc_protection_mode current_protection_mode;
 	enum vc_output_action current_protection_output_action;
-	int16_t current_limit_threshold;
-	uint16_t auto_derate_step;
+	int16_t current_limit_threshold;                       /* raw ADC counts */
+	uint16_t auto_derate_step;                             /* mV per derate */
 };
 
 /* Calibration coefficients — separate from operational config */
 struct vc_channel_cal_config {
-	uint16_t output_calib_k;
-	int16_t  output_calib_b;
-	uint16_t measured_voltage_calib_k;
-	int16_t  measured_voltage_calib_b;
-	uint16_t measured_current_calib_k;
-	int16_t  measured_current_calib_b;
+	uint16_t output_calib_k;                               /* ×10⁻⁴ gain (10000 = 1.0×) */
+	int16_t  output_calib_b;                               /* DAC counts offset */
+	uint16_t measured_voltage_calib_k;                     /* ×10⁻⁴ gain (10000 = 1.0×) */
+	int16_t  measured_voltage_calib_b;                     /* mV offset */
+	uint16_t measured_current_calib_k;                     /* ×10⁻⁴ gain (10000 = 1.0×) */
+	int16_t  measured_current_calib_b;                     /* raw ADC counts offset */
 };
 
 /* Cal field selector for SET_CHANNEL_CAL_FIELD command */

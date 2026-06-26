@@ -24,6 +24,10 @@ static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT] = {
 static struct vc_channel_config default_channel_config(void)
 {
 	return (struct vc_channel_config){
+		.ramp_up_step = 50000,
+		.ramp_up_interval = 10,
+		.ramp_down_step = 50000,
+		.ramp_down_interval = 10,
 		.current_limit_threshold = VC_DEFAULT_MAX_CURRENT_RAW,
 		.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
 		.current_safe_band_pct = 10,
