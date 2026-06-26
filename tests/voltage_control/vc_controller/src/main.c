@@ -177,6 +177,29 @@ ZTEST(vc_controller, test_channel_param_action_no_storage)
 		      VC_ERR_STORAGE);
 }
 
+ZTEST(vc_controller, test_channel_param_reset_restores_operational_defaults)
+{
+	struct vc_channel_config cfg;
+
+	zassert_equal(vc_controller_channel_set_field(ctrl, 0,
+		VC_FIELD_RAMP_UP_STEP, 123), VC_OK);
+	zassert_equal(vc_controller_channel_set_field(ctrl, 0,
+		VC_FIELD_RAMP_UP_INTERVAL, 4), VC_OK);
+	zassert_equal(vc_controller_channel_set_field(ctrl, 0,
+		VC_FIELD_RAMP_DOWN_STEP, 456), VC_OK);
+	zassert_equal(vc_controller_channel_set_field(ctrl, 0,
+		VC_FIELD_RAMP_DOWN_INTERVAL, 7), VC_OK);
+
+	zassert_equal(vc_controller_channel_param_action(ctrl, 0,
+		VC_PARAM_ACTION_FACTORY_RESET), VC_OK);
+
+	zassert_equal(vc_controller_get_channel_config(ctrl, 0, &cfg), VC_OK);
+	zassert_equal(cfg.ramp_up_step, 50000);
+	zassert_equal(cfg.ramp_up_interval, 10);
+	zassert_equal(cfg.ramp_down_step, 50000);
+	zassert_equal(cfg.ramp_down_interval, 10);
+}
+
 ZTEST(vc_controller, test_start_sampling)
 {
 	zassert_equal(vc_controller_start_sampling(ctrl), VC_OK);

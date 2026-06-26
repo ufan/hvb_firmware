@@ -21,7 +21,7 @@ static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT] = {
 	[VC_CHANNEL_SMF_CALIBRATION_OUTPUT] = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
 };
 
-static struct vc_channel_config default_channel_config(void)
+struct vc_channel_config vc_channel_default_config(void)
 {
 	return (struct vc_channel_config){
 		.ramp_up_step = 50000,
@@ -318,7 +318,7 @@ void vc_channel_init(struct vc_channel *ch,
 	ch->meas = meas;
 	ch->wake_fn = wake_fn;
 	ch->wake_user_data = wake_user_data;
-	ch->config = default_channel_config();
+	ch->config = vc_channel_default_config();
 	ch->cal_config = default_cal_config();
 	ch->cal_max_raw_dac_limit = VC_DEFAULT_MAX_RAW_DAC;
 	smf_set_initial(SMF_CTX(ch), &vc_channel_states[VC_CHANNEL_SMF_DISABLED_SAFE]);

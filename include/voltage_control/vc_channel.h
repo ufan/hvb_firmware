@@ -74,6 +74,8 @@ void vc_channel_init(struct vc_channel *ch,
 		     struct vc_channel_buffer *meas,
 		     vc_wake_fn_t wake_fn, void *wake_user_data);
 
+struct vc_channel_config vc_channel_default_config(void);
+
 void vc_channel_run(struct vc_channel *ch, uint32_t dt_ms,
 		    const struct vc_system_config *sys_cfg);
 

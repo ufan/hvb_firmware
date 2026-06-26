@@ -463,10 +463,7 @@ enum vc_status vc_controller_channel_param_action(
 		return VC_OK;
 	}
 	case VC_PARAM_ACTION_FACTORY_RESET: {
-		struct vc_channel_config defaults = {
-			.current_limit_threshold = 32767,
-			.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
-		};
+		struct vc_channel_config defaults = vc_channel_default_config();
 		enum vc_status st = vc_channel_set_config(&ctrl->channels[ch], &defaults);
 
 		if (st != VC_OK) {
