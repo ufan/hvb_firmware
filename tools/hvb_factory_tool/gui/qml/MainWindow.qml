@@ -64,8 +64,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             RowLayout {
                 Button { text: "Enter Cal Mode"; onClicked: backend.enterCalibrationMode(); enabled: backend.connected && backend.calUnlocked }
-                Button { text: "Exit → Normal"; onClicked: backend.exitCalibrationMode("normal"); enabled: backend.connected && backend.calActive }
-                Button { text: "Exit → Auto"; onClicked: backend.exitCalibrationMode("auto"); enabled: backend.connected && backend.calActive }
+                Button { text: "Exit Cal Mode"; onClicked: backend.exitCalibrationMode(); enabled: backend.connected && backend.calActive }
                 Label { text: backend.calActive ? "CALIBRATION ACTIVE" : "inactive"; color: backend.calActive ? "orange" : "gray"; font.bold: true }
             }
         }

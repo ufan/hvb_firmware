@@ -36,7 +36,7 @@ public slots:
     void unlockStep1();
     void unlockStep2();
     void enterCalibrationMode();
-    void exitCalibrationMode(const QString& targetMode);
+    void exitCalibrationMode();
     void enableOutput(bool enable);
     void writeRawDac(int code);
     void triggerSample();

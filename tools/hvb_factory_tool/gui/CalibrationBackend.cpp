@@ -73,12 +73,11 @@ void CalibrationBackend::enterCalibrationMode() {
     emit statusMessageChanged();
 }
 
-void CalibrationBackend::exitCalibrationMode(const QString& targetMode) {
-    OpMode mode = (targetMode == "auto") ? OpMode::Automatic : OpMode::Normal;
-    if (m_client.exitCalibrationMode(mode)) {
+void CalibrationBackend::exitCalibrationMode() {
+    if (m_client.exitCalibrationMode()) {
         m_calActive = false;
         m_calUnlocked = false;
-        m_statusMessage = "Exited to " + targetMode;
+        m_statusMessage = "Exited calibration mode";
         emit calStateChanged();
     } else {
         m_statusMessage = QString::fromStdString(m_client.lastError());
