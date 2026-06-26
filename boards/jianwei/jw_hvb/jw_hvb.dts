@@ -299,9 +299,9 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
-		storage_partition: partition@1e0000 {
+		storage_partition: partition@1c0000 {
 			label = "storage";
-			reg = <0x1e0000 0x20000>;
+			reg = <0x1c0000 0x40000>;
 		};
 	};
 };
