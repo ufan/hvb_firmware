@@ -33,8 +33,7 @@ static struct vc_system_config default_system_config(void)
 {
 	return (struct vc_system_config){
 		.operating_mode = VC_OPERATING_MODE_NORMAL,
-		.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
-		.current_safe_band_pct = 10,
+		.startup_channel_policy = 0,
 	};
 }
 
@@ -90,9 +89,7 @@ enum vc_status vc_controller_channel_output_action(
 	if (!channel_valid(ctrl, ch)) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
-	bool cal = ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION;
-
-	return vc_channel_output_action(&ctrl->channels[ch], action, cal);
+	return vc_channel_output_action(&ctrl->channels[ch], action);
 }
 
 enum vc_status vc_controller_channel_fault_command(
@@ -101,7 +98,7 @@ enum vc_status vc_controller_channel_fault_command(
 	if (!channel_valid(ctrl, ch)) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
-	return vc_channel_fault_command(&ctrl->channels[ch], cmd, &ctrl->sys_cfg);
+	return vc_channel_fault_command(&ctrl->channels[ch], cmd);
 }
 
 enum vc_status vc_controller_channel_set_field(
@@ -111,9 +108,19 @@ enum vc_status vc_controller_channel_set_field(
 	if (!channel_valid(ctrl, ch)) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
-	bool cal = ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION;
 
-	return vc_channel_set_field(&ctrl->channels[ch], field, value, cal);
+	enum vc_status st = vc_channel_set_field(&ctrl->channels[ch], field, value);
+
+	/* AUTO mode: setting a non-zero target auto-enables the channel */
+	if (st == VC_OK &&
+	    field == VC_FIELD_CONFIGURED_TARGET_VOLTAGE &&
+	    ctrl->operating_mode == VC_OPERATING_MODE_AUTOMATIC &&
+	    (int16_t)value != 0 &&
+	    ctrl->channels[ch].active_fault_cause == 0) {
+		(void)vc_channel_output_action(&ctrl->channels[ch],
+					       VC_OUTPUT_ACTION_ENABLE);
+	}
+	return st;
 }
 
 void vc_controller_tick(struct vc_controller *ctrl, uint32_t dt_ms)
@@ -141,18 +148,33 @@ enum vc_status vc_controller_set_operating_mode(
 		return VC_ERR_INVALID_COMMAND;
 	}
 
-	if (ctrl->operating_mode == VC_OPERATING_MODE_AUTOMATIC &&
-	    mode == VC_OPERATING_MODE_NORMAL) {
+	/* AUTO → NORMAL: gracefully disable all outputs */
+	if (mode == VC_OPERATING_MODE_NORMAL &&
+	    ctrl->operating_mode == VC_OPERATING_MODE_AUTOMATIC) {
 		for (size_t i = 0; i < ctrl->channel_count; i++) {
-			ctrl->channels[i].cooldown_remaining_ms = 0;
+			(void)vc_channel_output_action(&ctrl->channels[i],
+						       VC_OUTPUT_ACTION_DISABLE_GRACEFUL);
 		}
 	}
 
+	/* → AUTOMATIC: enable all non-faulted channels with non-zero configured target */
+	if (mode == VC_OPERATING_MODE_AUTOMATIC) {
+		for (size_t i = 0; i < ctrl->channel_count; i++) {
+			if (ctrl->channels[i].config.configured_target_voltage != 0 &&
+			    ctrl->channels[i].active_fault_cause == 0) {
+				(void)vc_channel_output_action(&ctrl->channels[i],
+							       VC_OUTPUT_ACTION_ENABLE);
+			}
+		}
+	}
+
+	/* → CAL: reset all channels into calibration state */
 	if (mode == VC_OPERATING_MODE_CALIBRATION) {
 		for (size_t i = 0; i < ctrl->channel_count; i++) {
 			vc_channel_reset_calibration(&ctrl->channels[i], true);
 		}
 	} else if (ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
+		/* CAL → anything: reset channels back to normal state */
 		for (size_t i = 0; i < ctrl->channel_count; i++) {
 			vc_channel_reset_calibration(&ctrl->channels[i], false);
 		}
@@ -206,10 +228,6 @@ enum vc_status vc_controller_get_system_config(
 enum vc_status vc_controller_set_system_config(
 	struct vc_controller *ctrl, const struct vc_system_config *cfg)
 {
-	if (cfg->current_safe_band_pct > 50) {
-		return VC_ERR_INVALID_VALUE;
-	}
-
 	enum vc_operating_mode old_cfg_mode = ctrl->sys_cfg.operating_mode;
 
 	ctrl->sys_cfg = *cfg;
@@ -234,20 +252,8 @@ enum vc_status vc_controller_set_system_field(
 	case VC_FIELD_OPERATING_MODE:
 		return vc_controller_set_operating_mode(ctrl,
 						       (enum vc_operating_mode)value);
-	case VC_FIELD_RECOVERY_POLICY_MODE:
-		cfg.recovery_policy_mode = (enum vc_recovery_policy_mode)value;
-		break;
-	case VC_FIELD_AUTO_RETRY_DELAY:
-		cfg.auto_retry_delay = value;
-		break;
-	case VC_FIELD_AUTO_RETRY_MAX_COUNT:
-		cfg.auto_retry_max_count = value;
-		break;
-	case VC_FIELD_AUTO_RETRY_WINDOW:
-		cfg.auto_retry_window = value;
-		break;
-	case VC_FIELD_CURRENT_SAFE_BAND_PCT:
-		cfg.current_safe_band_pct = value;
+	case VC_FIELD_STARTUP_CHANNEL_POLICY:
+		cfg.startup_channel_policy = value;
 		break;
 	default:
 		return VC_ERR_INVALID_VALUE;
@@ -290,6 +296,29 @@ enum vc_status vc_controller_get_channel_config(
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
 	return vc_channel_get_config(&ctrl->channels[ch], cfg);
+}
+
+enum vc_status vc_controller_get_channel_cal_config(
+	const struct vc_controller *ctrl, uint8_t ch,
+	struct vc_channel_cal_config *cal)
+{
+	if (!channel_valid(ctrl, ch)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	return vc_channel_get_cal_config(&ctrl->channels[ch], cal);
+}
+
+enum vc_status vc_controller_channel_set_cal_field(
+	struct vc_controller *ctrl, uint8_t ch,
+	enum vc_cal_field field, uint16_t value)
+{
+	if (!channel_valid(ctrl, ch)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
+		return VC_ERR_INVALID_COMMAND;
+	}
+	return vc_channel_set_cal_field(&ctrl->channels[ch], field, value);
 }
 
 /* ---- Storage ---- */
@@ -371,46 +400,52 @@ enum vc_status vc_controller_channel_param_action(
 			? VC_ERR_STORAGE : VC_OK;
 	}
 	case VC_PARAM_ACTION_LOAD: {
-		struct vc_channel_config cfg, loaded;
+		struct vc_channel_config cfg;
 
 		if (ctrl->storage == NULL ||
 		    ctrl->storage->load_channel_config == NULL) {
 			return VC_ERR_STORAGE;
 		}
 		vc_channel_get_config(&ctrl->channels[ch], &cfg);
-		loaded = cfg;
-		if (ctrl->storage->load_channel_config(ch, &loaded) < 0) {
+		if (ctrl->storage->load_channel_config(ch, &cfg) < 0) {
 			return VC_ERR_STORAGE;
 		}
-		loaded.output_calib_k = cfg.output_calib_k;
-		loaded.output_calib_b = cfg.output_calib_b;
-		loaded.measured_voltage_calib_k = cfg.measured_voltage_calib_k;
-		loaded.measured_voltage_calib_b = cfg.measured_voltage_calib_b;
-		loaded.measured_current_calib_k = cfg.measured_current_calib_k;
-		loaded.measured_current_calib_b = cfg.measured_current_calib_b;
-		bool cal = ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION;
+		enum vc_status st = vc_channel_set_config(&ctrl->channels[ch], &cfg);
 
-		return vc_channel_set_config(&ctrl->channels[ch], &loaded, cal);
+		if (st != VC_OK) {
+			return st;
+		}
+		/* Load cal from NVS; -ENOENT is OK — channel keeps cal defaults */
+		if (ctrl->storage->load_channel_cal != NULL) {
+			struct vc_channel_cal_config cal;
+
+			vc_channel_get_cal_config(&ctrl->channels[ch], &cal);
+			if (ctrl->storage->load_channel_cal(ch, &cal) == 0) {
+				vc_channel_load_cal(&ctrl->channels[ch], &cal);
+			}
+		}
+		return VC_OK;
 	}
 	case VC_PARAM_ACTION_FACTORY_RESET: {
-		struct vc_channel_config cfg;
 		struct vc_channel_config defaults = {
 			.current_limit_threshold = 32767,
-			.output_calib_k = 10000,
-			.measured_voltage_calib_k = 10000,
-			.measured_current_calib_k = 10000,
+			.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
 		};
+		enum vc_status st = vc_channel_set_config(&ctrl->channels[ch], &defaults);
 
-		vc_channel_get_config(&ctrl->channels[ch], &cfg);
-		defaults.output_calib_k = cfg.output_calib_k;
-		defaults.output_calib_b = cfg.output_calib_b;
-		defaults.measured_voltage_calib_k = cfg.measured_voltage_calib_k;
-		defaults.measured_voltage_calib_b = cfg.measured_voltage_calib_b;
-		defaults.measured_current_calib_k = cfg.measured_current_calib_k;
-		defaults.measured_current_calib_b = cfg.measured_current_calib_b;
-		bool cal = ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION;
+		if (st != VC_OK) {
+			return st;
+		}
+		/* Load cal from NVS; -ENOENT keeps default k=10000/b=0 */
+		if (ctrl->storage != NULL && ctrl->storage->load_channel_cal != NULL) {
+			struct vc_channel_cal_config cal;
 
-		return vc_channel_set_config(&ctrl->channels[ch], &defaults, cal);
+			vc_channel_get_cal_config(&ctrl->channels[ch], &cal);
+			if (ctrl->storage->load_channel_cal(ch, &cal) == 0) {
+				vc_channel_load_cal(&ctrl->channels[ch], &cal);
+			}
+		}
+		return VC_OK;
 	}
 	case VC_PARAM_ACTION_SOFTWARE_RESET:
 #ifdef CONFIG_REBOOT
@@ -480,7 +515,20 @@ enum vc_status vc_controller_channel_cal_commit(
 	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
 		return VC_ERR_INVALID_COMMAND;
 	}
-	return vc_channel_cal_commit(&ctrl->channels[ch]);
+	enum vc_status ret = vc_channel_cal_commit(&ctrl->channels[ch]);
+
+	if (ret != VC_OK) {
+		return ret;
+	}
+	if (ctrl->storage != NULL && ctrl->storage->save_channel_cal != NULL) {
+		struct vc_channel_cal_config cal;
+
+		vc_channel_get_cal_config(&ctrl->channels[ch], &cal);
+		if (ctrl->storage->save_channel_cal(ch, &cal) < 0) {
+			return VC_ERR_STORAGE;
+		}
+	}
+	return VC_OK;
 }
 
 enum vc_status vc_controller_channel_cal_max_raw_dac(

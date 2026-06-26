@@ -57,6 +57,13 @@ enum vc_status vc_controller_get_channel_snapshot(
 enum vc_status vc_controller_get_channel_config(
 	const struct vc_controller *ctrl, uint8_t ch,
 	struct vc_channel_config *cfg);
+enum vc_status vc_controller_get_channel_cal_config(
+	const struct vc_controller *ctrl, uint8_t ch,
+	struct vc_channel_cal_config *cal);
+
+enum vc_status vc_controller_channel_set_cal_field(
+	struct vc_controller *ctrl, uint8_t ch,
+	enum vc_cal_field field, uint16_t value);
 
 enum vc_status vc_controller_set_system_field(
 	struct vc_controller *ctrl, enum vc_config_field field, uint16_t value);

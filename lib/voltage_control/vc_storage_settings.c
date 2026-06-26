@@ -11,84 +11,6 @@
 
 #include "voltage_control/vc_storage.h"
 
-struct vc_channel_config_no_cal {
-	int16_t configured_target_voltage;
-	uint16_t ramp_up_step;
-	uint16_t ramp_up_interval;
-	uint16_t ramp_down_step;
-	uint16_t ramp_down_interval;
-	enum vc_protection_mode current_protection_mode;
-	enum vc_output_action current_protection_output_action;
-	int16_t current_limit_threshold;
-	uint16_t auto_derate_step;
-	uint16_t save_target_policy;
-};
-
-struct vc_channel_cal {
-	uint16_t output_calib_k;
-	int16_t output_calib_b;
-	uint16_t measured_voltage_calib_k;
-	int16_t measured_voltage_calib_b;
-	uint16_t measured_current_calib_k;
-	int16_t measured_current_calib_b;
-};
-
-/* Pack operational fields (no calibration coefficients) for NVS storage. */
-static void pack_no_cal(struct vc_channel_config_no_cal *dst,
-			const struct vc_channel_config *src)
-{
-	dst->configured_target_voltage = src->configured_target_voltage;
-	dst->ramp_up_step = src->ramp_up_step;
-	dst->ramp_up_interval = src->ramp_up_interval;
-	dst->ramp_down_step = src->ramp_down_step;
-	dst->ramp_down_interval = src->ramp_down_interval;
-	dst->current_protection_mode = src->current_protection_mode;
-	dst->current_protection_output_action = src->current_protection_output_action;
-	dst->current_limit_threshold = src->current_limit_threshold;
-	dst->auto_derate_step = src->auto_derate_step;
-	dst->save_target_policy = src->save_target_policy;
-}
-
-/* Unpack operational fields from NVS into a full channel config struct. */
-static void unpack_no_cal(struct vc_channel_config *dst,
-			  const struct vc_channel_config_no_cal *src)
-{
-	dst->configured_target_voltage = src->configured_target_voltage;
-	dst->ramp_up_step = src->ramp_up_step;
-	dst->ramp_up_interval = src->ramp_up_interval;
-	dst->ramp_down_step = src->ramp_down_step;
-	dst->ramp_down_interval = src->ramp_down_interval;
-	dst->current_protection_mode = src->current_protection_mode;
-	dst->current_protection_output_action = src->current_protection_output_action;
-	dst->current_limit_threshold = src->current_limit_threshold;
-	dst->auto_derate_step = src->auto_derate_step;
-	dst->save_target_policy = src->save_target_policy;
-}
-
-/* Pack calibration coefficients (K/B for output, voltage, current) for NVS storage. */
-static void pack_cal(struct vc_channel_cal *dst,
-		     const struct vc_channel_config *src)
-{
-	dst->output_calib_k = src->output_calib_k;
-	dst->output_calib_b = src->output_calib_b;
-	dst->measured_voltage_calib_k = src->measured_voltage_calib_k;
-	dst->measured_voltage_calib_b = src->measured_voltage_calib_b;
-	dst->measured_current_calib_k = src->measured_current_calib_k;
-	dst->measured_current_calib_b = src->measured_current_calib_b;
-}
-
-/* Unpack calibration coefficients from NVS into a full channel config struct. */
-static void unpack_cal(struct vc_channel_config *dst,
-		       const struct vc_channel_cal *src)
-{
-	dst->output_calib_k = src->output_calib_k;
-	dst->output_calib_b = src->output_calib_b;
-	dst->measured_voltage_calib_k = src->measured_voltage_calib_k;
-	dst->measured_voltage_calib_b = src->measured_voltage_calib_b;
-	dst->measured_current_calib_k = src->measured_current_calib_k;
-	dst->measured_current_calib_b = src->measured_current_calib_b;
-}
-
 struct settings_read_ctx {
 	void *dst;
 	size_t len;
@@ -142,58 +64,40 @@ static int settings_load_sys(struct vc_system_config *cfg)
 	return settings_load_key("vc/sys", cfg, sizeof(*cfg));
 }
 
-/* Persist channel operational config (excluding cal coefficients) to "vc/chN/cfg". */
+/* Persist channel operational config to "vc/chN/cfg" (direct struct, no cal). */
 static int settings_save_ch_cfg(uint8_t ch, const struct vc_channel_config *cfg)
 {
 	char key[16];
-	struct vc_channel_config_no_cal packed;
 
 	snprintk(key, sizeof(key), "vc/ch%u/cfg", ch);
-	pack_no_cal(&packed, cfg);
-	return settings_save_one(key, &packed, sizeof(packed));
+	return settings_save_one(key, cfg, sizeof(*cfg));
 }
 
-/* Load channel operational config (excluding cal coefficients) from "vc/chN/cfg". */
+/* Load channel operational config from "vc/chN/cfg". */
 static int settings_load_ch_cfg(uint8_t ch, struct vc_channel_config *cfg)
 {
 	char key[16];
-	struct vc_channel_config_no_cal packed;
-	int rc;
 
 	snprintk(key, sizeof(key), "vc/ch%u/cfg", ch);
-	rc = settings_load_key(key, &packed, sizeof(packed));
-	if (rc < 0) {
-		return rc;
-	}
-	unpack_no_cal(cfg, &packed);
-	return 0;
+	return settings_load_key(key, cfg, sizeof(*cfg));
 }
 
-/* Persist channel calibration coefficients to "vc/chN/cal". */
-static int settings_save_ch_cal(uint8_t ch, const struct vc_channel_config *cfg)
+/* Persist channel calibration config to "vc/chN/cal". */
+static int settings_save_ch_cal(uint8_t ch, const struct vc_channel_cal_config *cal)
 {
 	char key[16];
-	struct vc_channel_cal packed;
 
 	snprintk(key, sizeof(key), "vc/ch%u/cal", ch);
-	pack_cal(&packed, cfg);
-	return settings_save_one(key, &packed, sizeof(packed));
+	return settings_save_one(key, cal, sizeof(*cal));
 }
 
-/* Load channel calibration coefficients from "vc/chN/cal". */
-static int settings_load_ch_cal(uint8_t ch, struct vc_channel_config *cfg)
+/* Load channel calibration config from "vc/chN/cal". */
+static int settings_load_ch_cal(uint8_t ch, struct vc_channel_cal_config *cal)
 {
 	char key[16];
-	struct vc_channel_cal packed;
-	int rc;
 
 	snprintk(key, sizeof(key), "vc/ch%u/cal", ch);
-	rc = settings_load_key(key, &packed, sizeof(packed));
-	if (rc < 0) {
-		return rc;
-	}
-	unpack_cal(cfg, &packed);
-	return 0;
+	return settings_load_key(key, cal, sizeof(*cal));
 }
 
 /* Delete all vc settings keys (system config + all channel config/cal). */
