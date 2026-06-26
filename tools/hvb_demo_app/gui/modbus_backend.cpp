@@ -118,6 +118,7 @@ void ModbusBackend::writeDerateStep(int ch, int s)   { INVOKE("doWriteDerateStep
 void ModbusBackend::writeCalOutput(int ch, int k, int b){ INVOKE("doWriteCalOutput", Q_ARG(int,ch), Q_ARG(int,k), Q_ARG(int,b)); }
 void ModbusBackend::writeCalMeasV(int ch, int k, int b) { INVOKE("doWriteCalMeasV", Q_ARG(int,ch), Q_ARG(int,k), Q_ARG(int,b)); }
 void ModbusBackend::writeCalMeasI(int ch, int k, int b) { INVOKE("doWriteCalMeasI", Q_ARG(int,ch), Q_ARG(int,k), Q_ARG(int,b)); }
+void ModbusBackend::exitCalibrationMode() { INVOKE("doExitCalibrationMode"); }
 void ModbusBackend::saveChannel(int ch)      { INVOKE("doSendParamAction", Q_ARG(int,ch), Q_ARG(int,1)); }
 void ModbusBackend::loadChannel(int ch)      { INVOKE("doSendParamAction", Q_ARG(int,ch), Q_ARG(int,2)); }
 void ModbusBackend::factoryResetChannel(int ch) { INVOKE("doSendParamAction", Q_ARG(int,ch), Q_ARG(int,3)); }

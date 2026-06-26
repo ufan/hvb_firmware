@@ -330,6 +330,13 @@ int main(int argc, char** argv) {
     sysCmd->add_subcommand("load", "Load system params")->callback([&]() { std::cout << (g_client->sendParamAction(-1,hvb::ParamAction::Load)?"OK\n":g_client->lastError()+"\n"); });
     sysCmd->add_subcommand("factory", "Factory reset system")->callback([&]() { std::cout << (g_client->sendParamAction(-1,hvb::ParamAction::FactoryReset)?"OK\n":g_client->lastError()+"\n"); });
 
+    // Calibration session commands
+    auto* calCmd = app.add_subcommand("cal", "Calibration session commands")->require_subcommand(1);
+    calCmd->add_subcommand("exit", "Exit calibration mode and restore the pre-calibration operating mode")
+        ->callback([&]() {
+            std::cout << (g_client->exitCalibrationMode() ? "OK\n" : g_client->lastError() + "\n");
+        });
+
     // Channel subcommands
     auto* chCmd = app.add_subcommand("channel", "Channel operations");
     int ch = 0;

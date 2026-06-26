@@ -94,6 +94,11 @@ ScrollView {
                 Button { text: "Clear Fault History"; onClicked: backend.sendFaultCmd(channelIndex, 2) }
             }
 
+            Row {
+                spacing: 8
+                Button { text: "Exit Cal Mode"; onClicked: backend.exitCalibrationMode() }
+            }
+
             Rectangle { Layout.preferredHeight: 1; Layout.fillWidth: true; color: "#ddd" }
 
             Label { text: "Ramping (raw)"; font.bold: true }

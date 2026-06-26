@@ -41,6 +41,7 @@ public slots:
     void doWriteCalOutput(int ch, int k, int b);
     void doWriteCalMeasV(int ch, int k, int b);
     void doWriteCalMeasI(int ch, int k, int b);
+    void doExitCalibrationMode();
     void doSendParamAction(int chScope, int action);
     void doScanPorts();
     void doRawReadFc04(int addr, int count);

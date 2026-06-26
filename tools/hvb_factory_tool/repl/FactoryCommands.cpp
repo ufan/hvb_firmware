@@ -103,7 +103,7 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
         },
         "Enter Calibration Mode");
 
-    calMenu->Insert("exit",
+    calMenu->Insert("exit-cal",
         [&session](std::ostream& out) {
             requireConnected(session, out, [&] {
                 session.stopWatch();

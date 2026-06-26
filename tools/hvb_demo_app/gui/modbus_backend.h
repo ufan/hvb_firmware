@@ -95,6 +95,7 @@ public slots:
     void writeCalOutput(int ch, int k, int b);
     void writeCalMeasV(int ch, int k, int b);
     void writeCalMeasI(int ch, int k, int b);
+    void exitCalibrationMode();
     void saveChannel(int ch);
     void loadChannel(int ch);
     void factoryResetChannel(int ch);

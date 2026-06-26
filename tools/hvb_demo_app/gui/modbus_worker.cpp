@@ -280,6 +280,11 @@ void ModbusWorker::doWriteCalMeasI(int ch, int k, int b) {
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
+void ModbusWorker::doExitCalibrationMode() {
+    bool ok = m_client.exitCalibrationMode();
+    emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
+}
+
 void ModbusWorker::doSendParamAction(int chScope, int action) {
     bool ok = m_client.sendParamAction(chScope, static_cast<hvb::ParamAction>(action));
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
