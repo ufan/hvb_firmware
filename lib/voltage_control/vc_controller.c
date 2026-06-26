@@ -25,6 +25,13 @@ DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, MEAS_ENTRY)
 #endif
 
 #define VC_VARIANT_ID 1
+#define VC_CAL_WATCHDOG_MS 30000U
+
+static void cal_watchdog_reset(struct vc_controller *ctrl)
+{
+	ctrl->cal_watchdog_ms = VC_CAL_WATCHDOG_MS;
+}
+
 #define VC_DEFAULT_SYSTEM_CAPS \
 	(SYS_CAP_AUTOMATIC_MODE | SYS_CAP_CALIBRATION_MODE)
 #define VC_CHANNEL_MASK(c) ((1U << (c)) - 1)
@@ -129,6 +136,11 @@ enum vc_status vc_controller_channel_set_field(
 void vc_controller_tick(struct vc_controller *ctrl, uint32_t dt_ms)
 {
 	if (ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
+		if (dt_ms >= ctrl->cal_watchdog_ms) {
+			(void)vc_controller_cal_exit(ctrl);
+		} else {
+			ctrl->cal_watchdog_ms -= dt_ms;
+		}
 		return;
 	}
 	for (size_t i = 0; i < ctrl->channel_count; i++) {
@@ -149,6 +161,12 @@ enum vc_status vc_controller_set_operating_mode(
 	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION &&
 	    mode == VC_OPERATING_MODE_CALIBRATION && !ctrl->cal_unlocked) {
 		return VC_ERR_INVALID_COMMAND;
+	}
+	if (mode == ctrl->operating_mode) {
+		if (mode == VC_OPERATING_MODE_CALIBRATION) {
+			cal_watchdog_reset(ctrl);
+		}
+		return VC_OK;
 	}
 
 	/* AUTO → NORMAL: gracefully disable all outputs */
@@ -174,6 +192,7 @@ enum vc_status vc_controller_set_operating_mode(
 	/* → CAL: reset all channels into calibration state */
 	if (mode == VC_OPERATING_MODE_CALIBRATION) {
 		ctrl->pre_cal_mode = ctrl->operating_mode;
+		cal_watchdog_reset(ctrl);
 		for (size_t i = 0; i < ctrl->channel_count; i++) {
 			vc_channel_reset_calibration(&ctrl->channels[i], true);
 		}
@@ -330,7 +349,12 @@ enum vc_status vc_controller_channel_set_cal_field(
 	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
 		return VC_ERR_INVALID_COMMAND;
 	}
-	return vc_channel_set_cal_field(&ctrl->channels[ch], field, value);
+	enum vc_status st = vc_channel_set_cal_field(&ctrl->channels[ch], field, value);
+
+	if (st == VC_OK) {
+		cal_watchdog_reset(ctrl);
+	}
+	return st;
 }
 
 /* ---- Storage ---- */
@@ -491,7 +515,12 @@ enum vc_status vc_controller_channel_cal_output_enable(
 			}
 		}
 	}
-	return vc_channel_cal_set_output_enable(&ctrl->channels[ch], enable);
+	enum vc_status st = vc_channel_cal_set_output_enable(&ctrl->channels[ch], enable);
+
+	if (st == VC_OK) {
+		cal_watchdog_reset(ctrl);
+	}
+	return st;
 }
 
 enum vc_status vc_controller_channel_cal_raw_dac(
@@ -503,7 +532,12 @@ enum vc_status vc_controller_channel_cal_raw_dac(
 	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
 		return VC_ERR_INVALID_COMMAND;
 	}
-	return vc_channel_cal_set_raw_dac(&ctrl->channels[ch], code);
+	enum vc_status st = vc_channel_cal_set_raw_dac(&ctrl->channels[ch], code);
+
+	if (st == VC_OK) {
+		cal_watchdog_reset(ctrl);
+	}
+	return st;
 }
 
 enum vc_status vc_controller_channel_cal_sample(
@@ -515,7 +549,12 @@ enum vc_status vc_controller_channel_cal_sample(
 	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
 		return VC_ERR_INVALID_COMMAND;
 	}
-	return vc_channel_cal_sample(&ctrl->channels[ch]);
+	enum vc_status st = vc_channel_cal_sample(&ctrl->channels[ch]);
+
+	if (st == VC_OK) {
+		cal_watchdog_reset(ctrl);
+	}
+	return st;
 }
 
 enum vc_status vc_controller_channel_cal_commit(
@@ -532,6 +571,7 @@ enum vc_status vc_controller_channel_cal_commit(
 	if (ret != VC_OK) {
 		return ret;
 	}
+	cal_watchdog_reset(ctrl);
 	if (ctrl->storage != NULL && ctrl->storage->save_channel_cal != NULL) {
 		struct vc_channel_cal_config cal;
 
@@ -552,7 +592,12 @@ enum vc_status vc_controller_channel_cal_max_raw_dac(
 	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
 		return VC_ERR_INVALID_COMMAND;
 	}
-	return vc_channel_cal_set_max_raw_dac(&ctrl->channels[ch], limit);
+	enum vc_status st = vc_channel_cal_set_max_raw_dac(&ctrl->channels[ch], limit);
+
+	if (st == VC_OK) {
+		cal_watchdog_reset(ctrl);
+	}
+	return st;
 }
 
 /* ---- Start sampling ---- */

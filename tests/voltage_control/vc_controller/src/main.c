@@ -217,6 +217,18 @@ ZTEST(vc_controller, test_cal_exit_from_auto_restores_auto)
 		      VC_OPERATING_MODE_AUTOMATIC);
 }
 
+ZTEST(vc_controller, test_reentering_cal_keeps_pre_cal_mode)
+{
+	vc_controller_set_operating_mode(ctrl, VC_OPERATING_MODE_AUTOMATIC);
+	enter_cal(ctrl);
+
+	zassert_equal(vc_controller_set_operating_mode(ctrl,
+		VC_OPERATING_MODE_CALIBRATION), VC_OK);
+	zassert_equal(vc_controller_cal_exit(ctrl), VC_OK);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_AUTOMATIC);
+}
+
 ZTEST(vc_controller, test_cal_exit_resets_channels_to_disabled_safe)
 {
 	enter_cal(ctrl);
@@ -227,4 +239,34 @@ ZTEST(vc_controller, test_cal_exit_resets_channels_to_disabled_safe)
 	vc_controller_get_channel_snapshot(ctrl, 0, &snap);
 	zassert_equal(snap.cal_output_enabled, 0);
 	zassert_equal(snap.raw_dac_readback, 0);
+}
+
+ZTEST(vc_controller, test_cal_watchdog_exits_after_inactivity)
+{
+	enter_cal(ctrl);
+
+	vc_controller_tick(ctrl, 29999);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_CALIBRATION);
+
+	vc_controller_tick(ctrl, 1);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_NORMAL);
+}
+
+ZTEST(vc_controller, test_cal_watchdog_resets_on_cal_activity)
+{
+	enter_cal(ctrl);
+
+	vc_controller_tick(ctrl, 25000);
+	zassert_equal(vc_controller_channel_cal_output_enable(ctrl, 0, true),
+		      VC_OK);
+	zassert_equal(vc_controller_channel_cal_raw_dac(ctrl, 0, 1234), VC_OK);
+	vc_controller_tick(ctrl, 5000);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_CALIBRATION);
+
+	vc_controller_tick(ctrl, 25000);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_NORMAL);
 }
