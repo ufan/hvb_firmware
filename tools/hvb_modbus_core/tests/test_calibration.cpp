@@ -85,7 +85,7 @@ TEST_CASE("Calibration output enable and raw DAC code", "[calibration]") {
     REQUIRE(holding[reg::chAddr(0, CH_CAL_OUTPUT_ENABLE)] == 1);
 
     REQUIRE(client.writeRawDacCode(0, 2048));
-    REQUIRE(holding[reg::chAddr(0, CH_RAW_DAC_CODE)] == 2048);
+    REQUIRE(holding[reg::chAddr(0, CH_CAL_DAC_CODE)] == 2048);
 
     REQUIRE(client.writeCalibrationOutputEnable(0, false));
     REQUIRE(holding[reg::chAddr(0, CH_CAL_OUTPUT_ENABLE)] == 0);
@@ -119,10 +119,9 @@ TEST_CASE("CalibrationSnapshot round-trip", "[calibration]") {
     input[base_in + CH_RAW_ADC_VOLTAGE_LO] = 0x2345;
     input[base_in + CH_RAW_ADC_CURRENT_HI] = 0xFFFF;
     input[base_in + CH_RAW_ADC_CURRENT_LO] = 0xFE00;
-    input[base_in + CH_CAL_SAMPLE_STATUS] = 1;
-    input[base_in + CH_RAW_DAC_READBACK] = 2048;
+    /* v3: CH_CAL_SAMPLE_STATUS and CH_RAW_DAC_READBACK removed from FC04 input regs */
     holding[base_hold + CH_CAL_OUTPUT_ENABLE] = 1;
-    holding[base_hold + CH_RAW_DAC_CODE] = 2048;
+    holding[base_hold + CH_CAL_DAC_CODE] = 2048;
     holding[base_hold + CH_CAL_MAX_RAW_DAC_LIMIT] = 3000;
 
     HvbModbusClient client;
@@ -131,10 +130,10 @@ TEST_CASE("CalibrationSnapshot round-trip", "[calibration]") {
     auto snap = client.readCalibrationSnapshot(0);
     REQUIRE(snap.rawAdcVoltage == 0x00012345);
     REQUIRE(snap.rawAdcCurrent == -512);
-    REQUIRE(snap.sampleStatus == CalibrationSampleStatus::Valid);
-    REQUIRE(snap.rawDacReadback == 2048);
+    /* v3: sampleStatus removed from FC04 input regs; not available via Modbus */
     REQUIRE(snap.outputEnabled == true);
     REQUIRE(snap.rawDacCode == 2048);
+    REQUIRE(snap.rawDacReadback == 2048); /* v3: rawDacReadback == rawDacCode (FC03) */
     REQUIRE(snap.maxRawDacLimit == 3000);
 
     client.detachTestArrays();
@@ -149,8 +148,7 @@ TEST_CASE("readChannelInfo includes v2.1 calibration fields", "[calibration]") {
     input[base + CH_RAW_ADC_VOLTAGE_LO] = 0x1234;
     input[base + CH_RAW_ADC_CURRENT_HI] = 0x0000;
     input[base + CH_RAW_ADC_CURRENT_LO] = 0x5678;
-    input[base + CH_CAL_SAMPLE_STATUS] = 2;
-    input[base + CH_RAW_DAC_READBACK] = 1024;
+    /* v3: CH_CAL_SAMPLE_STATUS and CH_RAW_DAC_READBACK removed from FC04 input regs */
 
     HvbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
@@ -158,8 +156,7 @@ TEST_CASE("readChannelInfo includes v2.1 calibration fields", "[calibration]") {
     auto info = client.readChannelInfo(0);
     REQUIRE(info.rawAdcVoltage == 0x1234);
     REQUIRE(info.rawAdcCurrent == 0x5678);
-    REQUIRE(info.sampleStatus == CalibrationSampleStatus::Busy);
-    REQUIRE(info.rawDacReadback == 1024);
+    /* v3: sampleStatus and rawDacReadback not available from FC04 input regs */
 
     client.detachTestArrays();
 }
@@ -170,7 +167,7 @@ TEST_CASE("readChannelConfig includes v2.1 calibration fields", "[calibration]")
 
     uint16_t base = reg::chAddr(0, 0);
     holding[base + CH_CAL_OUTPUT_ENABLE] = 1;
-    holding[base + CH_RAW_DAC_CODE] = 3000;
+    holding[base + CH_CAL_DAC_CODE] = 3000;
     holding[base + CH_CAL_MAX_RAW_DAC_LIMIT] = 3500;
 
     HvbModbusClient client;

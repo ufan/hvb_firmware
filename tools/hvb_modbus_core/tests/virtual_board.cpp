@@ -38,10 +38,9 @@ void VirtualBoard::setVariantDefaults() {
 
     // System holding
     holdingRegs[reg::sysAddr(SYS_OPERATING_MODE)] = 0;
+    holdingRegs[reg::sysAddr(SYS_STARTUP_CHANNEL_POLICY)] = 0;
     holdingRegs[reg::sysAddr(SYS_SLAVE_ADDRESS)] = 1;
-    holdingRegs[reg::sysAddr(SYS_RECOVERY_POLICY_MODE)] = 0;
-    holdingRegs[reg::sysAddr(SYS_VOLTAGE_SAFE_BAND_PCT)] = 10;
-    holdingRegs[reg::sysAddr(SYS_CURRENT_SAFE_BAND_PCT)] = 10;
+    /* v3: recovery policy / safe-band fields moved to per-channel holding registers */
 
     // Channel defaults (CH0 and CH1)
     for (int ch = 0; ch < 2; ++ch) {

@@ -118,6 +118,12 @@ enum vc_status vc_dispatch(struct vc_ctx *ctx, struct vc_cmd cmd,
 						    cmd.field_write.field,
 						    cmd.field_write.value,
 						    timeout);
+	case VC_CMD_SET_CHANNEL_CAL_FIELD:
+		return vc_runtime_set_channel_cal_field(ctx->runtime,
+							cmd.channel,
+							cmd.cal_field_write.field,
+							cmd.cal_field_write.value,
+							timeout);
 	case VC_CMD_CALIBRATION:
 		return dispatch_calibration(ctx->runtime, &cmd.cal, timeout);
 
@@ -159,6 +165,10 @@ enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query_msg q)
 	case VC_QUERY_CHANNEL_CONFIG:
 		return vc_runtime_get_published_channel_config(
 			ctx->runtime, q.channel, q.out.channel_config);
+
+	case VC_QUERY_CHANNEL_CAL_CONFIG:
+		return vc_runtime_get_published_channel_cal_config(
+			ctx->runtime, q.channel, q.out.channel_cal_config);
 
 	default:
 		return VC_ERR_INVALID_COMMAND;

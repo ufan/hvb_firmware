@@ -27,6 +27,7 @@ struct vc_published_snapshot {
 	struct vc_system_snapshot system;
 	struct vc_channel_snapshot channels[VC_MAX_CHANNELS];
 	struct vc_channel_config configs[VC_MAX_CHANNELS];
+	struct vc_channel_cal_config cal_configs[VC_MAX_CHANNELS];
 	struct vc_system_config sys_config;
 };
 
@@ -88,6 +89,10 @@ static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 		return vc_controller_channel_set_field(ctrl, cmd->channel,
 						      cmd->payload.field_write.field,
 						      cmd->payload.field_write.value);
+	case VC_RUNTIME_CMD_SET_CHANNEL_CAL_FIELD:
+		return vc_controller_channel_set_cal_field(ctrl, cmd->channel,
+							   cmd->payload.cal_field_write.field,
+							   cmd->payload.cal_field_write.value);
 	default:
 		return VC_ERR_INVALID_COMMAND;
 	}
@@ -106,6 +111,8 @@ static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 						   &runtime->published.channels[ch]);
 		vc_controller_get_channel_config(ctrl, ch,
 						 &runtime->published.configs[ch]);
+		vc_controller_get_channel_cal_config(ctrl, ch,
+						     &runtime->published.cal_configs[ch]);
 	}
 	k_mutex_unlock(&runtime->snapshot_lock);
 }
@@ -162,14 +169,28 @@ static void vc_runtime_auto_load(struct vc_runtime *runtime)
 	vc_controller_set_storage_backend(ctrl, &vc_settings_storage);
 	settings_subsys_init();
 
-	(void)vc_controller_system_param_action(ctrl, VC_PARAM_ACTION_LOAD);
+	/* Phase 1: read system config for startup_channel_policy; do not apply yet
+	 * (operating mode side effects — output enable — must fire after channel
+	 * configs are populated with correct targets). */
+	struct vc_system_config sys_cfg;
 
+	vc_controller_get_system_config(ctrl, &sys_cfg);
+	(void)ctrl->storage->load_system_config(&sys_cfg);
+
+	/* Phase 2: load channel op-config per startup policy; cal always from NVS.
+	 * FACTORY_RESET op-action already loads cal from NVS internally. */
 	size_t count = vc_controller_channel_count(ctrl);
+	enum vc_param_action op_action = sys_cfg.startup_channel_policy
+					     ? VC_PARAM_ACTION_FACTORY_RESET
+					     : VC_PARAM_ACTION_LOAD;
 
 	for (uint8_t ch = 0; ch < count; ch++) {
-		(void)vc_controller_channel_param_action(ctrl, ch,
-							 VC_PARAM_ACTION_LOAD);
+		(void)vc_controller_channel_param_action(ctrl, ch, op_action);
 	}
+
+	/* Phase 3: apply system config — AUTO mode now auto-enables channels
+	 * whose targets were populated in phase 2. */
+	(void)vc_controller_set_system_config(ctrl, &sys_cfg);
 #else
 	ARG_UNUSED(runtime);
 #endif
@@ -353,4 +374,36 @@ enum vc_status vc_runtime_get_published_channel_config(
 	*cfg = runtime->published.configs[channel];
 	k_mutex_unlock(&runtime->snapshot_lock);
 	return VC_OK;
+}
+
+enum vc_status vc_runtime_get_published_channel_cal_config(
+	struct vc_runtime *runtime,
+	uint8_t channel,
+	struct vc_channel_cal_config *cal)
+{
+	if (runtime == NULL || cal == NULL) {
+		return VC_ERR_INVALID_VALUE;
+	}
+	if (channel >= vc_controller_channel_count(runtime->ctrl)) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	k_mutex_lock(&runtime->snapshot_lock, K_FOREVER);
+	*cal = runtime->published.cal_configs[channel];
+	k_mutex_unlock(&runtime->snapshot_lock);
+	return VC_OK;
+}
+
+enum vc_status vc_runtime_set_channel_cal_field(struct vc_runtime *runtime,
+						uint8_t channel,
+						enum vc_cal_field field,
+						uint16_t value,
+						k_timeout_t timeout)
+{
+	struct vc_runtime_command cmd = {
+		.type = VC_RUNTIME_CMD_SET_CHANNEL_CAL_FIELD,
+		.channel = channel,
+		.payload.cal_field_write = { .field = field, .value = value },
+	};
+
+	return vc_runtime_submit_command(runtime, &cmd, timeout);
 }

@@ -62,7 +62,7 @@ Add the protocol and register constants below near the existing block definition
 #define CH_RAW_DAC_READBACK            17
 
 #define CH_CAL_OUTPUT_ENABLE           22
-#define CH_RAW_DAC_CODE                23
+#define CH_CAL_DAC_CODE                23
 #define CH_CAL_SAMPLE_CMD              24
 #define CH_CAL_COMMIT_CMD              25
 #define CH_CAL_MAX_RAW_DAC_LIMIT       26
@@ -551,7 +551,7 @@ In `read_ch_holding`, return calibration output enable, raw DAC readback, comman
 ```c
 case CH_CAL_OUTPUT_ENABLE:
 	return domain_calibration_set_output_enable(d, ch, val != 0) == VC_OK ? 0 : -1;
-case CH_RAW_DAC_CODE:
+case CH_CAL_DAC_CODE:
 	return domain_calibration_set_raw_dac(d, ch, val) == VC_OK ? 0 : -1;
 case CH_CAL_SAMPLE_CMD:
 	if (val == CAL_COMMAND_NONE) return 0;

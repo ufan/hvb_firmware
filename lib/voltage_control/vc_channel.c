@@ -26,6 +26,8 @@ static struct vc_channel_config default_channel_config(void)
 	return (struct vc_channel_config){
 		.current_limit_threshold = VC_DEFAULT_MAX_CURRENT_RAW,
 		.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
+		.current_safe_band_pct = 10,
+		.current_protection_output_action = VC_OUTPUT_ACTION_DISABLE_IMMEDIATE,
 	};
 }
 

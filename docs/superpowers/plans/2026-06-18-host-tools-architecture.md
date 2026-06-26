@@ -320,7 +320,7 @@ ChannelConfig HvbModbusClient::readChannelConfig(int ch) {
     cfg.measICalK            = buf2[CH_MEASURED_I_CAL_K - 12];
     cfg.measICalB            = static_cast<int16_t>(buf2[CH_MEASURED_I_CAL_B - 12]);
     cfg.calOutputEnabled     = buf2[CH_CAL_OUTPUT_ENABLE - 12] != 0;
-    cfg.rawDacCode           = buf2[CH_RAW_DAC_CODE - 12];
+    cfg.rawDacCode           = buf2[CH_CAL_DAC_CODE - 12];
     // buf2[11] = offset 23 (sample cmd, reads as 0)
 
     // Batch 3: offsets 24..25
@@ -361,7 +361,7 @@ bool HvbModbusClient::writeCalibrationOutputEnable(int ch, bool enable) {
     return writeRegsInternal(reg::chAddr(ch, CH_CAL_OUTPUT_ENABLE), 1, &v);
 }
 bool HvbModbusClient::writeRawDacCode(int ch, uint16_t code) {
-    return writeRegsInternal(reg::chAddr(ch, CH_RAW_DAC_CODE), 1, &code);
+    return writeRegsInternal(reg::chAddr(ch, CH_CAL_DAC_CODE), 1, &code);
 }
 bool HvbModbusClient::sendCalibrationSampleCommand(int ch) {
     uint16_t v = CAL_COMMAND_EXECUTE;
@@ -546,7 +546,7 @@ TEST_CASE("Calibration output enable and raw DAC code", "[calibration]") {
     REQUIRE(holding[reg::chAddr(0, CH_CAL_OUTPUT_ENABLE)] == 1);
 
     REQUIRE(client.writeRawDacCode(0, 2048));
-    REQUIRE(holding[reg::chAddr(0, CH_RAW_DAC_CODE)] == 2048);
+    REQUIRE(holding[reg::chAddr(0, CH_CAL_DAC_CODE)] == 2048);
 
     REQUIRE(client.writeCalibrationOutputEnable(0, false));
     REQUIRE(holding[reg::chAddr(0, CH_CAL_OUTPUT_ENABLE)] == 0);
@@ -585,7 +585,7 @@ TEST_CASE("CalibrationSnapshot round-trip", "[calibration]") {
     input[base_in + CH_RAW_DAC_READBACK] = 2048;
     // Set up holding registers
     holding[base_hold + CH_CAL_OUTPUT_ENABLE] = 1;
-    holding[base_hold + CH_RAW_DAC_CODE] = 2048;
+    holding[base_hold + CH_CAL_DAC_CODE] = 2048;
     holding[base_hold + CH_CAL_MAX_RAW_DAC_LIMIT] = 3000;
 
     HvbModbusClient client;
@@ -633,7 +633,7 @@ TEST_CASE("readChannelConfig includes v2.1 calibration fields", "[calibration]")
 
     uint16_t base = reg::chAddr(0, 0);
     holding[base + CH_CAL_OUTPUT_ENABLE] = 1;
-    holding[base + CH_RAW_DAC_CODE] = 3000;
+    holding[base + CH_CAL_DAC_CODE] = 3000;
     holding[base + CH_CAL_MAX_RAW_DAC_LIMIT] = 3500;
 
     HvbModbusClient client;

@@ -202,8 +202,7 @@ ChannelInfo HvbModbusClient::readChannelInfo(int ch) {
                                                            buf[CH_RAW_ADC_VOLTAGE_LO]);
     info.rawAdcCurrent               = reg::int32FromRegs(buf[CH_RAW_ADC_CURRENT_HI],
                                                            buf[CH_RAW_ADC_CURRENT_LO]);
-    info.sampleStatus                = static_cast<CalibrationSampleStatus>(buf[CH_CAL_SAMPLE_STATUS]);
-    info.rawDacReadback              = buf[CH_RAW_DAC_READBACK];
+    /* v3: CH_CAL_SAMPLE_STATUS and CH_RAW_DAC_READBACK removed from FC04 input regs */
     return info;
 }
 
@@ -211,18 +210,14 @@ SystemConfig HvbModbusClient::readSystemConfig() {
     SystemConfig cfg;
     if (!checkConnected()) return cfg;
 
-    uint16_t buf[9] = {};
-    if (!readRegsInternal(true, reg::sysAddr(0), 9, buf)) return cfg;
+    /* v3: sys holding has only 4 registers (operating mode, startup policy, slave addr, baud) */
+    uint16_t buf[4] = {};
+    if (!readRegsInternal(true, reg::sysAddr(0), 4, buf)) return cfg;
 
-    cfg.operatingMode      = static_cast<OpMode>(buf[SYS_OPERATING_MODE]);
-    cfg.slaveAddr          = buf[SYS_SLAVE_ADDRESS];
-    cfg.baudRateCode       = buf[SYS_BAUD_RATE_CODE];
-    cfg.recoveryPolicy     = static_cast<RecoveryPolicy>(buf[SYS_RECOVERY_POLICY_MODE]);
-    cfg.retryDelay         = static_cast<int>(buf[SYS_AUTO_RETRY_DELAY]);
-    cfg.retryMax           = static_cast<int>(buf[SYS_AUTO_RETRY_MAX_COUNT]);
-    cfg.retryWindow        = static_cast<int>(buf[SYS_AUTO_RETRY_WINDOW]);
-    cfg.voltageSafeBandPct = buf[SYS_VOLTAGE_SAFE_BAND_PCT];
-    cfg.currentSafeBandPct = buf[SYS_CURRENT_SAFE_BAND_PCT];
+    cfg.operatingMode = static_cast<OpMode>(buf[SYS_OPERATING_MODE]);
+    cfg.slaveAddr     = buf[SYS_SLAVE_ADDRESS];
+    cfg.baudRateCode  = buf[SYS_BAUD_RATE_CODE];
+    /* v3: recoveryPolicy/retryDelay/retryMax/retryWindow/safeBandPct moved to channel level */
     return cfg;
 }
 
@@ -254,7 +249,7 @@ ChannelConfig HvbModbusClient::readChannelConfig(int ch) {
 
     cfg.iLimitThresholdRaw   = static_cast<int16_t>(buf2[CH_CURRENT_LIMIT_THRESHOLD - 12]);
     cfg.derateStepRaw        = buf2[CH_AUTO_DERATE_STEP - 12];
-    cfg.saveTargetPolicy     = buf2[CH_SAVE_TARGET_POLICY - 12] != 0;
+    /* v3: CH_SAVE_TARGET_POLICY removed */
     cfg.outCalK              = buf2[CH_OUTPUT_CAL_K - 12];
     cfg.outCalB              = static_cast<int16_t>(buf2[CH_OUTPUT_CAL_B - 12]);
     cfg.measVCalK            = buf2[CH_MEASURED_V_CAL_K - 12];
@@ -262,7 +257,7 @@ ChannelConfig HvbModbusClient::readChannelConfig(int ch) {
     cfg.measICalK            = buf2[CH_MEASURED_I_CAL_K - 12];
     cfg.measICalB            = static_cast<int16_t>(buf2[CH_MEASURED_I_CAL_B - 12]);
     cfg.calOutputEnabled     = buf2[CH_CAL_OUTPUT_ENABLE - 12] != 0;
-    cfg.rawDacCode           = buf2[CH_RAW_DAC_CODE - 12];
+    cfg.rawDacCode           = buf2[CH_CAL_DAC_CODE - 12];
 
     // Batch 3: offsets 24..25
     uint16_t buf3[2] = {};
@@ -286,13 +281,15 @@ bool HvbModbusClient::writeOperatingMode(OpMode m) {
 bool HvbModbusClient::writeSlaveAddress(uint16_t a)     { return WR1(SYS_SLAVE_ADDRESS, &a); }
 bool HvbModbusClient::writeBaudRateCode(uint16_t c)      { return WR1(SYS_BAUD_RATE_CODE, &c); }
 bool HvbModbusClient::writeSystemRecoveryPolicy(RecoveryPolicy p, int delay, int max, int window) {
+    /* v3: recovery policy moved to per-channel; writes to channel 0 as a best-effort */
     uint16_t buf[4] = { static_cast<uint16_t>(p), static_cast<uint16_t>(delay),
                         static_cast<uint16_t>(max), static_cast<uint16_t>(window) };
-    return WR(SYS_RECOVERY_POLICY_MODE, 4, buf);
+    return writeRegsInternal(reg::chAddr(0, CH_RECOVERY_POLICY_MODE), 4, buf);
 }
 bool HvbModbusClient::writeSafeBands(uint16_t vPct, uint16_t iPct) {
-    uint16_t buf[2] = { vPct, iPct };
-    return WR(SYS_VOLTAGE_SAFE_BAND_PCT, 2, buf);
+    /* v3: voltage safe band removed; writes current safe band to channel 0 */
+    (void)vPct;
+    return writeRegsInternal(reg::chAddr(0, CH_CURRENT_SAFE_BAND_PCT), 1, &iPct);
 }
 bool HvbModbusClient::sendParamAction(int chScope, ParamAction action) {
     uint16_t v = static_cast<uint16_t>(action);
@@ -354,8 +351,8 @@ bool HvbModbusClient::writeDerateStep(int ch, uint16_t stepRaw) {
     return CHW(CH_AUTO_DERATE_STEP, &stepRaw);
 }
 bool HvbModbusClient::writeSaveTargetPolicy(int ch, bool saveTarget) {
-    uint16_t v = saveTarget ? 1 : 0;
-    return CHW(CH_SAVE_TARGET_POLICY, &v);
+    (void)ch; (void)saveTarget;
+    return false; /* v3: CH_SAVE_TARGET_POLICY removed */
 }
 bool HvbModbusClient::writeCalibrationOutput(int ch, uint16_t k, int16_t b) {
     uint16_t buf[2] = { k, static_cast<uint16_t>(b) };
@@ -399,7 +396,7 @@ bool HvbModbusClient::writeCalibrationOutputEnable(int ch, bool enable) {
 }
 
 bool HvbModbusClient::writeRawDacCode(int ch, uint16_t code) {
-    return writeRegsInternal(reg::chAddr(ch, CH_RAW_DAC_CODE), 1, &code);
+    return writeRegsInternal(reg::chAddr(ch, CH_CAL_DAC_CODE), 1, &code);
 }
 
 bool HvbModbusClient::sendCalibrationSampleCommand(int ch) {
@@ -420,19 +417,19 @@ CalibrationSnapshot HvbModbusClient::readCalibrationSnapshot(int ch) {
     CalibrationSnapshot snap;
     if (!checkConnected()) return snap;
 
-    uint16_t ibuf[6] = {};
-    if (!readRegsInternal(false, reg::chAddr(ch, CH_RAW_ADC_VOLTAGE_HI), 6, ibuf)) return snap;
+    /* v3: 4 input regs for raw ADC; CH_CAL_SAMPLE_STATUS and CH_RAW_DAC_READBACK removed */
+    uint16_t ibuf[4] = {};
+    if (!readRegsInternal(false, reg::chAddr(ch, CH_RAW_ADC_VOLTAGE_HI), 4, ibuf)) return snap;
 
     snap.rawAdcVoltage  = reg::int32FromRegs(ibuf[0], ibuf[1]);
     snap.rawAdcCurrent  = reg::int32FromRegs(ibuf[2], ibuf[3]);
-    snap.sampleStatus   = static_cast<CalibrationSampleStatus>(ibuf[4]);
-    snap.rawDacReadback = ibuf[5];
 
     uint16_t hbuf[5] = {};
     if (!readRegsInternal(true, reg::chAddr(ch, CH_CAL_OUTPUT_ENABLE), 5, hbuf)) return snap;
 
     snap.outputEnabled  = hbuf[0] != 0;
     snap.rawDacCode     = hbuf[1];
+    snap.rawDacReadback = hbuf[1]; /* v3: rawDacReadback is now the same as rawDacCode (FC03) */
     snap.maxRawDacLimit = hbuf[4];
     return snap;
 }

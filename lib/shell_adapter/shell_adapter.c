@@ -170,12 +170,8 @@ struct field_entry {
 };
 
 static const struct field_entry sys_fields[] = {
-	{"mode",         VC_FIELD_OPERATING_MODE},
-	{"recovery",     VC_FIELD_RECOVERY_POLICY_MODE},
-	{"retry_delay",  VC_FIELD_AUTO_RETRY_DELAY},
-	{"retry_max",    VC_FIELD_AUTO_RETRY_MAX_COUNT},
-	{"retry_window", VC_FIELD_AUTO_RETRY_WINDOW},
-	{"safe_band",    VC_FIELD_CURRENT_SAFE_BAND_PCT},
+	{"mode",           VC_FIELD_OPERATING_MODE},
+	{"startup_policy", VC_FIELD_STARTUP_CHANNEL_POLICY},
 };
 
 static const struct field_entry ch_fields[] = {
@@ -184,18 +180,48 @@ static const struct field_entry ch_fields[] = {
 	{"ramp_up_int",  VC_FIELD_RAMP_UP_INTERVAL},
 	{"ramp_dn_step", VC_FIELD_RAMP_DOWN_STEP},
 	{"ramp_dn_int",  VC_FIELD_RAMP_DOWN_INTERVAL},
+	{"recovery",     VC_FIELD_RECOVERY_POLICY_MODE},
+	{"retry_delay",  VC_FIELD_AUTO_RETRY_DELAY},
+	{"retry_max",    VC_FIELD_AUTO_RETRY_MAX_COUNT},
+	{"retry_window", VC_FIELD_AUTO_RETRY_WINDOW},
+	{"safe_band",    VC_FIELD_CURRENT_SAFE_BAND_PCT},
 	{"prot_mode",    VC_FIELD_CURRENT_PROTECTION_MODE},
 	{"prot_action",  VC_FIELD_CURRENT_PROT_OUT_ACTION},
 	{"i_limit",      VC_FIELD_CURRENT_LIMIT_THRESHOLD},
 	{"derate_step",  VC_FIELD_AUTO_DERATE_STEP},
-	{"save_policy",  VC_FIELD_SAVE_TARGET_POLICY},
-	{"out_cal_k",    VC_FIELD_OUTPUT_CAL_K},
-	{"out_cal_b",    VC_FIELD_OUTPUT_CAL_B},
-	{"v_cal_k",      VC_FIELD_MEASURED_V_CAL_K},
-	{"v_cal_b",      VC_FIELD_MEASURED_V_CAL_B},
-	{"i_cal_k",      VC_FIELD_MEASURED_I_CAL_K},
-	{"i_cal_b",      VC_FIELD_MEASURED_I_CAL_B},
 };
+
+struct cal_field_entry {
+	const char *name;
+	enum vc_cal_field field;
+};
+
+static const struct cal_field_entry cal_fields[] = {
+	{"out_cal_k", VC_CAL_FIELD_OUTPUT_K},
+	{"out_cal_b", VC_CAL_FIELD_OUTPUT_B},
+	{"v_cal_k",   VC_CAL_FIELD_MEASURED_V_K},
+	{"v_cal_b",   VC_CAL_FIELD_MEASURED_V_B},
+	{"i_cal_k",   VC_CAL_FIELD_MEASURED_I_K},
+	{"i_cal_b",   VC_CAL_FIELD_MEASURED_I_B},
+};
+
+static int lookup_cal_field(const struct shell *sh, const char *name,
+			     enum vc_cal_field *out)
+{
+	for (size_t i = 0; i < ARRAY_SIZE(cal_fields); i++) {
+		if (strcmp(name, cal_fields[i].name) == 0) {
+			*out = cal_fields[i].field;
+			return 0;
+		}
+	}
+	shell_error(sh, "unknown cal field: %s", name);
+	shell_fprintf(sh, SHELL_NORMAL, "available:");
+	for (size_t i = 0; i < ARRAY_SIZE(cal_fields); i++) {
+		shell_fprintf(sh, SHELL_NORMAL, " %s", cal_fields[i].name);
+	}
+	shell_fprintf(sh, SHELL_NORMAL, "\n");
+	return -EINVAL;
+}
 
 static int lookup_field(const struct shell *sh, const char *name,
 			const struct field_entry *table, size_t count,
@@ -277,30 +303,35 @@ static void print_ch_config(const struct shell *sh, uint8_t ch,
 		    c->ramp_up_step, c->ramp_up_interval);
 	shell_print(sh, "  ramp_down:    step=%d interval=%d",
 		    c->ramp_down_step, c->ramp_down_interval);
+	shell_print(sh, "  recovery:     %s", recovery_str(c->recovery_policy_mode));
+	shell_print(sh, "  retry:        delay=%d max=%d window=%d",
+		    c->auto_retry_delay, c->auto_retry_max_count,
+		    c->auto_retry_window);
+	shell_print(sh, "  safe_band:    %d%%", c->current_safe_band_pct);
 	shell_print(sh, "  protection:   mode=%s action=%s limit=%d",
 		    prot_str(c->current_protection_mode),
 		    action_str(c->current_protection_output_action),
 		    c->current_limit_threshold);
 	shell_print(sh, "  derate_step:  %d", c->auto_derate_step);
-	shell_print(sh, "  save_policy:  %d", c->save_target_policy);
-	shell_print(sh, "  out_cal:      k=%d b=%d",
-		    c->output_calib_k, c->output_calib_b);
-	shell_print(sh, "  v_cal:        k=%d b=%d",
-		    c->measured_voltage_calib_k, c->measured_voltage_calib_b);
-	shell_print(sh, "  i_cal:        k=%d b=%d",
-		    c->measured_current_calib_k, c->measured_current_calib_b);
 }
 
 static void print_sys_config(const struct shell *sh,
 			     const struct vc_system_config *c)
 {
 	shell_print(sh, "System Configuration");
-	shell_print(sh, "  mode:         %s", mode_str(c->operating_mode));
-	shell_print(sh, "  recovery:     %s", recovery_str(c->recovery_policy_mode));
-	shell_print(sh, "  retry:        delay=%d max=%d window=%d",
-		    c->auto_retry_delay, c->auto_retry_max_count,
-		    c->auto_retry_window);
-	shell_print(sh, "  safe_band:    %d%%", c->current_safe_band_pct);
+	shell_print(sh, "  mode:           %s", mode_str(c->operating_mode));
+	shell_print(sh, "  startup_policy: %d", c->startup_channel_policy);
+}
+
+static void print_cal_config(const struct shell *sh, uint8_t ch,
+			     const struct vc_channel_cal_config *c)
+{
+	shell_print(sh, "Channel %d Calibration Config", ch);
+	shell_print(sh, "  out_cal:  k=%d b=%d", c->output_calib_k, c->output_calib_b);
+	shell_print(sh, "  v_cal:    k=%d b=%d",
+		    c->measured_voltage_calib_k, c->measured_voltage_calib_b);
+	shell_print(sh, "  i_cal:    k=%d b=%d",
+		    c->measured_current_calib_k, c->measured_current_calib_b);
 }
 
 /* ------------------------------------------------------------------ */
@@ -698,6 +729,52 @@ static int cmd_cal_max_dac(const struct shell *sh, size_t argc, char **argv)
 	return dispatch(sh, vc_cmd_cal_max_dac(ch, limit));
 }
 
+static int cmd_cal_config(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	CTX_CHECK(sh);
+
+	uint8_t ch;
+
+	if (parse_channel(sh, argv[1], &ch) != 0) {
+		return -EINVAL;
+	}
+
+	struct vc_channel_cal_config cal;
+
+	vc_query(ctx, vc_q_channel_cal_config(ch, &cal));
+	print_cal_config(sh, ch, &cal);
+	return 0;
+}
+
+static int cmd_cal_set(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	CTX_CHECK(sh);
+
+	uint8_t ch;
+
+	if (parse_channel(sh, argv[1], &ch) != 0) {
+		return -EINVAL;
+	}
+
+	enum vc_cal_field field;
+
+	if (lookup_cal_field(sh, argv[2], &field) != 0) {
+		return -EINVAL;
+	}
+
+	char *end;
+	long val = strtol(argv[3], &end, 10);
+
+	if (*end != '\0') {
+		shell_error(sh, "invalid value: %s", argv[3]);
+		return -EINVAL;
+	}
+
+	return dispatch(sh, vc_cmd_cal_set_field(ch, field, (uint16_t)(int16_t)val));
+}
+
 /* ------------------------------------------------------------------ */
 /* Watch mode                                                          */
 /* ------------------------------------------------------------------ */
@@ -783,6 +860,8 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_cal,
 	SHELL_CMD_ARG(sample, NULL, "Trigger ADC sample <ch>", cmd_cal_sample, 2, 0),
 	SHELL_CMD_ARG(commit, NULL, "Commit calibration <ch>", cmd_cal_commit, 2, 0),
 	SHELL_CMD_ARG(max_dac, NULL, "Set max DAC limit <ch> <limit>", cmd_cal_max_dac, 3, 0),
+	SHELL_CMD_ARG(config, NULL, "Show cal config <ch>", cmd_cal_config, 2, 0),
+	SHELL_CMD_ARG(set, NULL, "Set cal field <ch> <field> <value>", cmd_cal_set, 4, 0),
 	SHELL_SUBCMD_SET_END
 );
 

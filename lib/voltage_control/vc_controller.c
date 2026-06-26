@@ -89,6 +89,9 @@ enum vc_status vc_controller_channel_output_action(
 	if (!channel_valid(ctrl, ch)) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
+	if (ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
+		return VC_ERR_INVALID_COMMAND;
+	}
 	return vc_channel_output_action(&ctrl->channels[ch], action);
 }
 

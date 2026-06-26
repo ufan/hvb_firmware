@@ -58,6 +58,7 @@ enum vc_cmd_type {
 	VC_CMD_FAULT_COMMAND,
 	VC_CMD_SET_SYSTEM_FIELD,
 	VC_CMD_SET_CHANNEL_FIELD,
+	VC_CMD_SET_CHANNEL_CAL_FIELD,
 	VC_CMD_CALIBRATION,
 	VC_CMD_SYSTEM_PARAM_ACTION,
 	VC_CMD_CHANNEL_PARAM_ACTION,
@@ -71,6 +72,7 @@ struct vc_cmd {
 		enum vc_output_action output_action;
 		enum vc_channel_fault_command fault_command;
 		struct vc_field_write field_write;
+		struct { enum vc_cal_field field; uint16_t value; } cal_field_write;
 		struct vc_cal_command cal;
 		enum vc_param_action param_action;
 	};
@@ -89,6 +91,7 @@ enum vc_query_type {
 	VC_QUERY_CHANNEL_SNAPSHOT,
 	VC_QUERY_SYSTEM_CONFIG,
 	VC_QUERY_CHANNEL_CONFIG,
+	VC_QUERY_CHANNEL_CAL_CONFIG,
 };
 
 struct vc_query_msg {
@@ -99,6 +102,7 @@ struct vc_query_msg {
 		struct vc_channel_snapshot *channel_snapshot;
 		struct vc_system_config *system_config;
 		struct vc_channel_config *channel_config;
+		struct vc_channel_cal_config *channel_cal_config;
 	} out;
 };
 
@@ -159,6 +163,18 @@ static inline struct vc_cmd vc_cmd_ch_field(uint8_t ch,
 		.type = VC_CMD_SET_CHANNEL_FIELD,
 		.channel = ch,
 		.field_write = { .field = field, .value = value },
+	};
+}
+
+/* Build a command to write a single channel calibration coefficient field. */
+static inline struct vc_cmd vc_cmd_cal_set_field(uint8_t ch,
+						 enum vc_cal_field field,
+						 uint16_t value)
+{
+	return (struct vc_cmd){
+		.type = VC_CMD_SET_CHANNEL_CAL_FIELD,
+		.channel = ch,
+		.cal_field_write = { .field = field, .value = value },
 	};
 }
 
@@ -287,6 +303,17 @@ static inline struct vc_query_msg vc_q_channel_config(
 		.type = VC_QUERY_CHANNEL_CONFIG,
 		.channel = ch,
 		.out.channel_config = out,
+	};
+}
+
+/* Build a query for a channel calibration config (6 k/b coefficients). */
+static inline struct vc_query_msg vc_q_channel_cal_config(
+	uint8_t ch, struct vc_channel_cal_config *out)
+{
+	return (struct vc_query_msg){
+		.type = VC_QUERY_CHANNEL_CAL_CONFIG,
+		.channel = ch,
+		.out.channel_cal_config = out,
 	};
 }
 

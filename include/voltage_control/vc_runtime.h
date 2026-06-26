@@ -28,6 +28,7 @@ enum vc_runtime_command_type {
 	VC_RUNTIME_CMD_CHANNEL_PARAM_ACTION,
 	VC_RUNTIME_CMD_SET_SYSTEM_FIELD,
 	VC_RUNTIME_CMD_SET_CHANNEL_FIELD,
+	VC_RUNTIME_CMD_SET_CHANNEL_CAL_FIELD,
 };
 
 struct vc_runtime_command {
@@ -43,6 +44,7 @@ struct vc_runtime_command {
 		uint16_t calibration_max_raw_dac;
 		enum vc_param_action param_action;
 		struct vc_field_write field_write;
+		struct { enum vc_cal_field field; uint16_t value; } cal_field_write;
 	} payload;
 	struct k_sem *result_sem;
 	enum vc_status *result;
@@ -97,5 +99,16 @@ enum vc_status vc_runtime_get_published_channel_config(
 	struct vc_runtime *runtime,
 	uint8_t channel,
 	struct vc_channel_config *cfg);
+/* Read the last published channel calibration config for the given channel. */
+enum vc_status vc_runtime_get_published_channel_cal_config(
+	struct vc_runtime *runtime,
+	uint8_t channel,
+	struct vc_channel_cal_config *cal);
+/* Convenience: submit a set-channel-cal-field command. */
+enum vc_status vc_runtime_set_channel_cal_field(struct vc_runtime *runtime,
+						uint8_t channel,
+						enum vc_cal_field field,
+						uint16_t value,
+						k_timeout_t timeout);
 
 #endif

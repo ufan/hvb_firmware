@@ -39,7 +39,8 @@ static bool caps_all(uint16_t caps, uint16_t mask)
 
 static bool is_ch_cal_input_reg(uint16_t off)
 {
-	return off >= CH_RAW_ADC_VOLTAGE_HI && off <= CH_RAW_DAC_READBACK;
+	/* CH_CAL_SAMPLE_STATUS and CH_RAW_DAC_READBACK removed in v3 */
+	return off >= CH_RAW_ADC_VOLTAGE_HI && off <= CH_RAW_ADC_CURRENT_LO;
 }
 
 static bool is_ch_cal_holding_reg(uint16_t off)
@@ -74,11 +75,6 @@ static bool ch_input_supported(uint16_t caps, uint16_t off)
 	case CH_RAW_ADC_CURRENT_HI:
 	case CH_RAW_ADC_CURRENT_LO:
 		return caps_all(caps, CH_CAP_CURRENT_MEASUREMENT);
-	case CH_CAL_SAMPLE_STATUS:
-		return caps_any(caps, CH_CAP_VOLTAGE_MEASUREMENT |
-					     CH_CAP_CURRENT_MEASUREMENT);
-	case CH_RAW_DAC_READBACK:
-		return caps_all(caps, CH_CAP_RAW_OUTPUT_DRIVE);
 	default:
 		return off < CH_BLOCK_SIZE;
 	}
@@ -96,25 +92,32 @@ static bool ch_holding_supported(uint16_t caps, uint16_t off)
 	case CH_RAMP_UP_INTERVAL:
 	case CH_RAMP_DOWN_STEP:
 	case CH_RAMP_DOWN_INTERVAL:
-	case CH_SAVE_TARGET_POLICY:
+		return caps_all(caps, CH_CAP_RAW_OUTPUT_DRIVE);
+	case CH_RECOVERY_POLICY_MODE:
+	case CH_AUTO_RETRY_DELAY:
+	case CH_AUTO_RETRY_MAX_COUNT:
+	case CH_AUTO_RETRY_WINDOW:
+	case CH_CURRENT_SAFE_BAND_PCT:
+		return true;
+	case CH_CURRENT_PROTECTION_MODE:
+	case CH_CURRENT_PROT_OUT_ACTION:
+	case CH_CURRENT_LIMIT_THRESHOLD:
+		return caps_all(caps, CH_CAP_CURRENT_MEASUREMENT);
+	case CH_AUTO_DERATE_STEP:
+		return caps_all(caps, CH_CAP_RAW_OUTPUT_DRIVE |
+					     CH_CAP_VOLTAGE_MEASUREMENT);
 	case CH_OUTPUT_CAL_K:
 	case CH_OUTPUT_CAL_B:
 	case CH_CAL_OUTPUT_ENABLE:
-	case CH_RAW_DAC_CODE:
+	case CH_CAL_DAC_CODE:
 	case CH_CAL_MAX_RAW_DAC_LIMIT:
 		return caps_all(caps, CH_CAP_RAW_OUTPUT_DRIVE);
 	case CH_MEASURED_V_CAL_K:
 	case CH_MEASURED_V_CAL_B:
 		return caps_all(caps, CH_CAP_VOLTAGE_MEASUREMENT);
-	case CH_CURRENT_PROTECTION_MODE:
-	case CH_CURRENT_PROT_OUT_ACTION:
-	case CH_CURRENT_LIMIT_THRESHOLD:
 	case CH_MEASURED_I_CAL_K:
 	case CH_MEASURED_I_CAL_B:
 		return caps_all(caps, CH_CAP_CURRENT_MEASUREMENT);
-	case CH_AUTO_DERATE_STEP:
-		return caps_all(caps, CH_CAP_RAW_OUTPUT_DRIVE |
-					     CH_CAP_VOLTAGE_MEASUREMENT);
 	case CH_CAL_SAMPLE_CMD:
 		return caps_any(caps, CH_CAP_VOLTAGE_MEASUREMENT |
 					     CH_CAP_CURRENT_MEASUREMENT);
@@ -133,11 +136,7 @@ static bool ch_holding_supported(uint16_t caps, uint16_t off)
 
 static const enum vc_config_field sys_reg_to_field[] = {
 	[SYS_OPERATING_MODE]         = VC_FIELD_OPERATING_MODE,
-	[SYS_RECOVERY_POLICY_MODE]   = VC_FIELD_RECOVERY_POLICY_MODE,
-	[SYS_AUTO_RETRY_DELAY]       = VC_FIELD_AUTO_RETRY_DELAY,
-	[SYS_AUTO_RETRY_MAX_COUNT]   = VC_FIELD_AUTO_RETRY_MAX_COUNT,
-	[SYS_AUTO_RETRY_WINDOW]      = VC_FIELD_AUTO_RETRY_WINDOW,
-	[SYS_CURRENT_SAFE_BAND_PCT]  = VC_FIELD_CURRENT_SAFE_BAND_PCT,
+	[SYS_STARTUP_CHANNEL_POLICY] = VC_FIELD_STARTUP_CHANNEL_POLICY,
 };
 
 static const enum vc_config_field ch_reg_to_field[] = {
@@ -146,17 +145,24 @@ static const enum vc_config_field ch_reg_to_field[] = {
 	[CH_RAMP_UP_INTERVAL]        = VC_FIELD_RAMP_UP_INTERVAL,
 	[CH_RAMP_DOWN_STEP]          = VC_FIELD_RAMP_DOWN_STEP,
 	[CH_RAMP_DOWN_INTERVAL]      = VC_FIELD_RAMP_DOWN_INTERVAL,
+	[CH_RECOVERY_POLICY_MODE]    = VC_FIELD_RECOVERY_POLICY_MODE,
+	[CH_AUTO_RETRY_DELAY]        = VC_FIELD_AUTO_RETRY_DELAY,
+	[CH_AUTO_RETRY_MAX_COUNT]    = VC_FIELD_AUTO_RETRY_MAX_COUNT,
+	[CH_AUTO_RETRY_WINDOW]       = VC_FIELD_AUTO_RETRY_WINDOW,
+	[CH_CURRENT_SAFE_BAND_PCT]   = VC_FIELD_CURRENT_SAFE_BAND_PCT,
 	[CH_CURRENT_PROTECTION_MODE] = VC_FIELD_CURRENT_PROTECTION_MODE,
 	[CH_CURRENT_PROT_OUT_ACTION] = VC_FIELD_CURRENT_PROT_OUT_ACTION,
 	[CH_CURRENT_LIMIT_THRESHOLD] = VC_FIELD_CURRENT_LIMIT_THRESHOLD,
 	[CH_AUTO_DERATE_STEP]        = VC_FIELD_AUTO_DERATE_STEP,
-	[CH_SAVE_TARGET_POLICY]      = VC_FIELD_SAVE_TARGET_POLICY,
-	[CH_OUTPUT_CAL_K]            = VC_FIELD_OUTPUT_CAL_K,
-	[CH_OUTPUT_CAL_B]            = VC_FIELD_OUTPUT_CAL_B,
-	[CH_MEASURED_V_CAL_K]        = VC_FIELD_MEASURED_V_CAL_K,
-	[CH_MEASURED_V_CAL_B]        = VC_FIELD_MEASURED_V_CAL_B,
-	[CH_MEASURED_I_CAL_K]        = VC_FIELD_MEASURED_I_CAL_K,
-	[CH_MEASURED_I_CAL_B]        = VC_FIELD_MEASURED_I_CAL_B,
+};
+
+static const enum vc_cal_field ch_reg_to_cal_field[] = {
+	[CH_OUTPUT_CAL_K]     = VC_CAL_FIELD_OUTPUT_K,
+	[CH_OUTPUT_CAL_B]     = VC_CAL_FIELD_OUTPUT_B,
+	[CH_MEASURED_V_CAL_K] = VC_CAL_FIELD_MEASURED_V_K,
+	[CH_MEASURED_V_CAL_B] = VC_CAL_FIELD_MEASURED_V_B,
+	[CH_MEASURED_I_CAL_K] = VC_CAL_FIELD_MEASURED_I_K,
+	[CH_MEASURED_I_CAL_B] = VC_CAL_FIELD_MEASURED_I_B,
 };
 
 /* ------------------------------------------------------------------ */
@@ -200,11 +206,7 @@ enum vc_status vc_reg_read_sys_holding(struct vc_ctx *ctx, uint16_t off,
 
 	switch (off) {
 	case SYS_OPERATING_MODE:         *reg = cfg.operating_mode; break;
-	case SYS_RECOVERY_POLICY_MODE:   *reg = cfg.recovery_policy_mode; break;
-	case SYS_AUTO_RETRY_DELAY:       *reg = cfg.auto_retry_delay; break;
-	case SYS_AUTO_RETRY_MAX_COUNT:   *reg = cfg.auto_retry_max_count; break;
-	case SYS_AUTO_RETRY_WINDOW:      *reg = cfg.auto_retry_window; break;
-	case SYS_CURRENT_SAFE_BAND_PCT:  *reg = cfg.current_safe_band_pct; break;
+	case SYS_STARTUP_CHANNEL_POLICY: *reg = cfg.startup_channel_policy; break;
 	case SYS_PARAM_ACTION:           *reg = 0; break;
 	default:
 		if (off < CH_BLOCK_SIZE) {
@@ -224,7 +226,7 @@ enum vc_status vc_reg_write_sys_holding(struct vc_ctx *ctx, uint16_t off,
 		return vc_dispatch(ctx, vc_cmd_sys_param((enum vc_param_action)val),
 				   timeout);
 	}
-	if (off > SYS_CURRENT_SAFE_BAND_PCT) {
+	if (off > SYS_STARTUP_CHANNEL_POLICY) {
 		return VC_ERR_INVALID_VALUE;
 	}
 	return vc_dispatch(ctx, vc_cmd_sys_field(sys_reg_to_field[off], val),
@@ -272,8 +274,6 @@ enum vc_status vc_reg_read_ch_input(struct vc_ctx *ctx, uint8_t ch,
 	case CH_RAW_ADC_VOLTAGE_LO:         *reg = int32_lo(snap.raw_adc_voltage); break;
 	case CH_RAW_ADC_CURRENT_HI:         *reg = int32_hi(snap.raw_adc_current); break;
 	case CH_RAW_ADC_CURRENT_LO:         *reg = int32_lo(snap.raw_adc_current); break;
-	case CH_CAL_SAMPLE_STATUS:          *reg = (uint16_t)snap.cal_sample_status; break;
-	case CH_RAW_DAC_READBACK:           *reg = snap.raw_dac_readback; break;
 	default:
 		if (off < CH_BLOCK_SIZE) {
 			*reg = 0;
@@ -285,62 +285,69 @@ enum vc_status vc_reg_read_ch_input(struct vc_ctx *ctx, uint8_t ch,
 	return VC_OK;
 }
 
-enum vc_status vc_reg_read_ch_holding(struct vc_ctx *ctx, uint8_t ch,
+enum vc_status vc_reg_read_ch_holding(struct vc_ctx *ctx, uint8_t ch_idx,
 				      uint16_t off, uint16_t *reg)
 {
 	struct vc_channel_config cfg;
 	struct vc_channel_snapshot snap;
-	struct vc_system_snapshot sys;
+	struct vc_channel_cal_config cal;
 
-	if (vc_query(ctx, vc_q_channel_snapshot(ch, &snap)) != VC_OK) {
+	if (vc_query(ctx, vc_q_channel_snapshot(ch_idx, &snap)) != VC_OK) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
 	if (!ch_holding_supported(snap.channel_capability_flags, off)) {
 		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
 
-	vc_query(ctx, vc_q_system_snapshot(&sys));
-
-	if (is_ch_cal_holding_reg(off)) {
-		if (sys.active_operating_mode != VC_OPERATING_MODE_CALIBRATION) {
-			return VC_ERR_UNSUPPORTED_CAPABILITY;
-		}
-		switch (off) {
-		case CH_CAL_OUTPUT_ENABLE:     *reg = snap.cal_output_enabled; break;
-		case CH_RAW_DAC_CODE:          *reg = snap.raw_dac_readback; break;
-		case CH_CAL_SAMPLE_CMD:        *reg = 0; break;
-		case CH_CAL_COMMIT_CMD:        *reg = 0; break;
-		case CH_CAL_MAX_RAW_DAC_LIMIT: *reg = snap.cal_max_raw_dac_limit; break;
-		default:
-			return VC_ERR_UNSUPPORTED_CAPABILITY;
-		}
-		return VC_OK;
-	}
-
-	if (vc_query(ctx, vc_q_channel_config(ch, &cfg)) != VC_OK) {
-		return VC_ERR_UNSUPPORTED_CHANNEL;
-	}
+	vc_query(ctx, vc_q_channel_config(ch_idx, &cfg));
 
 	switch (off) {
-	case CH_CFG_TARGET_VOLTAGE:        *reg = (uint16_t)cfg.configured_target_voltage; break;
-	case CH_OUTPUT_ACTION:             *reg = 0; break;
-	case CH_FAULT_CMD:                 *reg = 0; break;
-	case CH_RAMP_UP_STEP:              *reg = cfg.ramp_up_step; break;
-	case CH_RAMP_UP_INTERVAL:          *reg = cfg.ramp_up_interval; break;
-	case CH_RAMP_DOWN_STEP:            *reg = cfg.ramp_down_step; break;
-	case CH_RAMP_DOWN_INTERVAL:        *reg = cfg.ramp_down_interval; break;
-	case CH_CURRENT_PROTECTION_MODE:   *reg = cfg.current_protection_mode; break;
-	case CH_CURRENT_PROT_OUT_ACTION:   *reg = cfg.current_protection_output_action; break;
-	case CH_CURRENT_LIMIT_THRESHOLD:   *reg = (uint16_t)cfg.current_limit_threshold; break;
-	case CH_AUTO_DERATE_STEP:          *reg = cfg.auto_derate_step; break;
-	case CH_SAVE_TARGET_POLICY:        *reg = cfg.save_target_policy; break;
-	case CH_OUTPUT_CAL_K:             *reg = cfg.output_calib_k; break;
-	case CH_OUTPUT_CAL_B:             *reg = (uint16_t)cfg.output_calib_b; break;
-	case CH_MEASURED_V_CAL_K:         *reg = cfg.measured_voltage_calib_k; break;
-	case CH_MEASURED_V_CAL_B:         *reg = (uint16_t)cfg.measured_voltage_calib_b; break;
-	case CH_MEASURED_I_CAL_K:         *reg = cfg.measured_current_calib_k; break;
-	case CH_MEASURED_I_CAL_B:         *reg = (uint16_t)cfg.measured_current_calib_b; break;
-	case CH_PARAM_ACTION:              *reg = 0; break;
+	/* Commands — always read as 0 */
+	case CH_OUTPUT_ACTION:
+	case CH_FAULT_CMD:
+	case CH_PARAM_ACTION:
+	case CH_CAL_SAMPLE_CMD:
+	case CH_CAL_COMMIT_CMD:
+		*reg = 0;
+		break;
+	/* Operational config */
+	case CH_CFG_TARGET_VOLTAGE:      *reg = (uint16_t)cfg.configured_target_voltage; break;
+	case CH_RAMP_UP_STEP:            *reg = cfg.ramp_up_step; break;
+	case CH_RAMP_UP_INTERVAL:        *reg = cfg.ramp_up_interval; break;
+	case CH_RAMP_DOWN_STEP:          *reg = cfg.ramp_down_step; break;
+	case CH_RAMP_DOWN_INTERVAL:      *reg = cfg.ramp_down_interval; break;
+	/* Recovery (moved from system block in v3) */
+	case CH_RECOVERY_POLICY_MODE:    *reg = cfg.recovery_policy_mode; break;
+	case CH_AUTO_RETRY_DELAY:        *reg = cfg.auto_retry_delay; break;
+	case CH_AUTO_RETRY_MAX_COUNT:    *reg = cfg.auto_retry_max_count; break;
+	case CH_AUTO_RETRY_WINDOW:       *reg = cfg.auto_retry_window; break;
+	case CH_CURRENT_SAFE_BAND_PCT:   *reg = cfg.current_safe_band_pct; break;
+	/* Protection */
+	case CH_CURRENT_PROTECTION_MODE: *reg = cfg.current_protection_mode; break;
+	case CH_CURRENT_PROT_OUT_ACTION: *reg = cfg.current_protection_output_action; break;
+	case CH_CURRENT_LIMIT_THRESHOLD: *reg = (uint16_t)cfg.current_limit_threshold; break;
+	case CH_AUTO_DERATE_STEP:        *reg = cfg.auto_derate_step; break;
+	/* Cal config (readable in any mode) */
+	case CH_OUTPUT_CAL_K:
+	case CH_OUTPUT_CAL_B:
+	case CH_MEASURED_V_CAL_K:
+	case CH_MEASURED_V_CAL_B:
+	case CH_MEASURED_I_CAL_K:
+	case CH_MEASURED_I_CAL_B:
+		vc_query(ctx, vc_q_channel_cal_config(ch_idx, &cal));
+		switch (off) {
+		case CH_OUTPUT_CAL_K:     *reg = cal.output_calib_k; break;
+		case CH_OUTPUT_CAL_B:     *reg = (uint16_t)cal.output_calib_b; break;
+		case CH_MEASURED_V_CAL_K: *reg = cal.measured_voltage_calib_k; break;
+		case CH_MEASURED_V_CAL_B: *reg = (uint16_t)cal.measured_voltage_calib_b; break;
+		case CH_MEASURED_I_CAL_K: *reg = cal.measured_current_calib_k; break;
+		case CH_MEASURED_I_CAL_B: *reg = (uint16_t)cal.measured_current_calib_b; break;
+		}
+		break;
+	/* Cal session state (FC03 readback) */
+	case CH_CAL_OUTPUT_ENABLE:     *reg = snap.cal_output_enabled; break;
+	case CH_CAL_DAC_CODE:          *reg = snap.raw_dac_readback; break;
+	case CH_CAL_MAX_RAW_DAC_LIMIT: *reg = snap.cal_max_raw_dac_limit; break;
 	default:
 		if (off < CH_BLOCK_SIZE) {
 			*reg = 0;
@@ -384,10 +391,13 @@ enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 
 	vc_query(ctx, vc_q_system_snapshot(&sys));
 
-	if (is_ch_calibration_coefficient_reg(off) &&
-	    sys.active_operating_mode != VC_OPERATING_MODE_CALIBRATION) {
-		return VC_ERR_UNSUPPORTED_CAPABILITY;
+	/* Cal coefficient writes — route via SET_CHANNEL_CAL_FIELD (cal mode gated in controller) */
+	if (is_ch_calibration_coefficient_reg(off)) {
+		return vc_dispatch(ctx,
+				   vc_cmd_cal_set_field(ch, ch_reg_to_cal_field[off], val),
+				   timeout);
 	}
+
 	if (is_ch_cal_holding_reg(off)) {
 		if (sys.active_operating_mode != VC_OPERATING_MODE_CALIBRATION) {
 			return VC_ERR_UNSUPPORTED_CAPABILITY;
@@ -399,7 +409,7 @@ enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 			}
 			return vc_dispatch(ctx, vc_cmd_cal_output(ch, val != 0),
 					   timeout);
-		case CH_RAW_DAC_CODE:
+		case CH_CAL_DAC_CODE:
 			return vc_dispatch(ctx, vc_cmd_cal_dac(ch, val), timeout);
 		case CH_CAL_SAMPLE_CMD:
 			if (val == CAL_COMMAND_NONE) {
@@ -425,7 +435,7 @@ enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 		}
 	}
 
-	if (off > CH_MEASURED_I_CAL_B) {
+	if (off >= ARRAY_SIZE(ch_reg_to_field)) {
 		return VC_ERR_INVALID_VALUE;
 	}
 

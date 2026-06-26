@@ -931,7 +931,7 @@ Replace calibration writes in `write_ch_holding` — from manual `vc_runtime_com
 case CH_CAL_OUTPUT_ENABLE:
 	if (val > 1) return VC_MB_ILLEGAL_VALUE;
 	return dispatch(ctx, &vc_cmd_cal_output(ch, val != 0));
-case CH_RAW_DAC_CODE:
+case CH_CAL_DAC_CODE:
 	return dispatch(ctx, &vc_cmd_cal_dac(ch, val));
 case CH_CAL_SAMPLE_CMD:
 	if (val == CAL_COMMAND_NONE) return VC_MB_OK;

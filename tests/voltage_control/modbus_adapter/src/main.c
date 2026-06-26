@@ -154,18 +154,28 @@ ZTEST(modbus_adapter, test_sys_holding_write_baud_rate_code)
 	destroy_ctx(ctx);
 }
 
-ZTEST(modbus_adapter, test_sys_holding_write_recovery_policy)
+ZTEST(modbus_adapter, test_sys_holding_write_startup_policy)
 {
 	struct vc_ctx *ctx = make_ctx();
 	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
 	uint16_t reg;
 
 	zassert_not_null(ctx);
-	zassert_equal(vc_mb_holding_wr(mb, SYS_RECOVERY_POLICY_MODE,
-				       VC_RECOVERY_AUTO_RETRY), VC_MB_OK);
+	/* Default is 0 (load NVS op-config) */
+	zassert_equal(vc_mb_holding_rd(mb, SYS_STARTUP_CHANNEL_POLICY, &reg), VC_MB_OK);
+	zassert_equal(reg, 0);
+
+	/* Write 1 (factory reset op-config on startup) */
+	zassert_equal(vc_mb_holding_wr(mb, SYS_STARTUP_CHANNEL_POLICY, 1), VC_MB_OK);
 	k_msleep(50);
-	zassert_equal(vc_mb_holding_rd(mb, SYS_RECOVERY_POLICY_MODE, &reg), VC_MB_OK);
-	zassert_equal(reg, VC_RECOVERY_AUTO_RETRY);
+	zassert_equal(vc_mb_holding_rd(mb, SYS_STARTUP_CHANNEL_POLICY, &reg), VC_MB_OK);
+	zassert_equal(reg, 1);
+
+	/* Write back to 0 */
+	zassert_equal(vc_mb_holding_wr(mb, SYS_STARTUP_CHANNEL_POLICY, 0), VC_MB_OK);
+	k_msleep(50);
+	zassert_equal(vc_mb_holding_rd(mb, SYS_STARTUP_CHANNEL_POLICY, &reg), VC_MB_OK);
+	zassert_equal(reg, 0);
 
 	destroy_ctx(ctx);
 }
@@ -224,9 +234,14 @@ ZTEST(modbus_adapter, test_cal_registers_rejected_outside_calibration)
 	uint16_t reg;
 
 	zassert_not_null(ctx);
+	/* Cal input registers (raw ADC) are gated behind calibration mode */
 	zassert_equal(vc_mb_input_rd(mb, CH_BLOCK_BASE(0) + CH_RAW_ADC_VOLTAGE_HI,
 				     &reg), VC_MB_ILLEGAL_ADDRESS);
-	zassert_equal(vc_mb_holding_rd(mb, CH_BLOCK_BASE(0) + CH_RAW_DAC_CODE, &reg),
+	/* Cal session holding regs are readable in any mode (FC03 readback) */
+	zassert_equal(vc_mb_holding_rd(mb, CH_BLOCK_BASE(0) + CH_CAL_DAC_CODE, &reg),
+		      VC_MB_OK);
+	/* But writes to cal session holding regs are gated behind calibration mode */
+	zassert_equal(vc_mb_holding_wr(mb, CH_BLOCK_BASE(0) + CH_CAL_DAC_CODE, 100),
 		      VC_MB_ILLEGAL_ADDRESS);
 
 	destroy_ctx(ctx);
@@ -250,7 +265,7 @@ ZTEST(modbus_adapter, test_cal_unlock_and_mode_entry)
 	zassert_equal(vc_mb_input_rd(mb, SYS_ACTIVE_OPERATING_MODE, &reg), VC_MB_OK);
 	zassert_equal(reg, VC_OPERATING_MODE_CALIBRATION);
 
-	zassert_equal(vc_mb_holding_rd(mb, CH_BLOCK_BASE(0) + CH_RAW_DAC_CODE, &reg),
+	zassert_equal(vc_mb_holding_rd(mb, CH_BLOCK_BASE(0) + CH_CAL_DAC_CODE, &reg),
 		      VC_MB_OK);
 
 	destroy_ctx(ctx);
