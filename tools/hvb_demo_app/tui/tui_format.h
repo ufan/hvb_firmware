@@ -8,10 +8,11 @@
 namespace hvb::tui {
 
 struct ScannedData {
-    hvb::SystemInfo   sysInfo{};
-    hvb::ChannelInfo  chInfo[2]{};
-    hvb::SystemConfig sysCfg{};
-    hvb::ChannelConfig chCfg[2]{};
+    hvb::SystemInfo      sysInfo{};
+    hvb::ChannelInfo     chInfo[2]{};
+    hvb::SystemConfig    sysCfg{};
+    hvb::ChannelConfig   chCfg[2]{};
+    hvb::ChannelCalConfig chCalCfg[2]{};
     bool valid = false;
 };
 

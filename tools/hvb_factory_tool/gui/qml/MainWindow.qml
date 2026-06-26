@@ -104,7 +104,6 @@ ApplicationWindow {
                             + "  DAC=" + snapshot.rawDacCode + "  readback=" + snapshot.rawDacReadback
                             + "  limit=" + snapshot.maxRawDacLimit
                             + "\nADC V=" + snapshot.rawAdcVoltage + "  I=" + snapshot.rawAdcCurrent
-                            + "  status=" + snapshot.sampleStatus
                     }
                 }
             }

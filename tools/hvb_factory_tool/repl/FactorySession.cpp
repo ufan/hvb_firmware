@@ -54,7 +54,6 @@ void FactorySession::watchLoop(WatchMode mode, int intervalMs, std::ostream& out
             auto snap = m_client.readCalibrationSnapshot(ch);
             ss << "  ADC V=" << snap.rawAdcVoltage
                << " I=" << snap.rawAdcCurrent
-               << " status=" << calSampleStatusName(snap.sampleStatus)
                << " DAC=" << snap.rawDacReadback
                << " out=" << (snap.outputEnabled ? "ON" : "OFF");
         }

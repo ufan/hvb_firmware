@@ -17,19 +17,16 @@ static void fillDefaultInputRegs(uint16_t* regs) {
 
 static void fillDefaultHoldingRegs(uint16_t* regs) {
     regs[0] = 0;    // OpMode = Normal
-    regs[1] = 1;    // Slave address
-    regs[3] = 0;    // Recovery = ManualLatch
-    regs[7] = 10;   // V safe band
-    regs[8] = 10;   // I safe band
+    regs[1] = 0;    // StartupChannelPolicy = 0
+    regs[2] = 1;    // Slave address
+    regs[3] = 0;    // BaudRateCode = 0
 
     for (int ch = 0; ch < 2; ++ch) {
         uint16_t base = 40 + ch * 40;
-        regs[base + 9] = 20000;  // V limit threshold
-        regs[base + 12] = 32767; // I limit threshold
-        regs[base + 15] = 10000; // Out cal K
-        regs[base + 16] = 0;     // Out cal B
-        regs[base + 17] = 10000; // Meas V cal K
-        regs[base + 19] = 10000; // Meas I cal K
+        regs[base + 15] = 32767; // I limit threshold (CH_CURRENT_LIMIT_THRESHOLD)
+        regs[base + 20] = 10000; // Out cal K (CH_OUTPUT_CAL_K)
+        regs[base + 22] = 10000; // Meas V cal K (CH_MEASURED_V_CAL_K)
+        regs[base + 24] = 10000; // Meas I cal K (CH_MEASURED_I_CAL_K)
     }
 }
 
@@ -64,11 +61,9 @@ TEST_CASE("SystemConfig — defaults", "[system-reads]") {
 
     auto cfg = client.readSystemConfig();
     CHECK(cfg.operatingMode == hvb::OpMode::Normal);
+    CHECK(cfg.startupChannelPolicy == 0);
     CHECK(cfg.slaveAddr == 1);
     CHECK(cfg.baudRateCode == 0);
-    CHECK(cfg.recoveryPolicy == hvb::RecoveryPolicy::ManualLatch);
-    CHECK(cfg.voltageSafeBandPct == 10);
-    CHECK(cfg.currentSafeBandPct == 10);
 }
 
 TEST_CASE("SystemInfo — capability flags decoded", "[system-reads]") {

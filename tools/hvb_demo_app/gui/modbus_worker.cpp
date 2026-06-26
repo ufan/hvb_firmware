@@ -121,46 +121,35 @@ QVariantMap ModbusWorker::channelInfoToMap(int /*ch*/, const hvb::ChannelInfo& i
 QVariantMap ModbusWorker::systemConfigToMap(const hvb::SystemConfig& cfg)
 {
     QVariantMap m;
-    m["operatingMode"] = static_cast<int>(cfg.operatingMode);
-    m["slaveAddr"] = cfg.slaveAddr;
-    m["baudRateCode"] = cfg.baudRateCode;
-    m["recoveryPolicy"] = static_cast<int>(cfg.recoveryPolicy);
-    m["retryDelay"] = cfg.retryDelay;
-    m["retryMax"] = cfg.retryMax;
-    m["retryWindow"] = cfg.retryWindow;
-    m["voltageSafeBandPct"] = cfg.voltageSafeBandPct;
-    m["currentSafeBandPct"] = cfg.currentSafeBandPct;
+    m["operatingMode"]        = static_cast<int>(cfg.operatingMode);
+    m["startupChannelPolicy"] = cfg.startupChannelPolicy;
+    m["slaveAddr"]            = cfg.slaveAddr;
+    m["baudRateCode"]         = cfg.baudRateCode;
     return m;
 }
 
 QVariantMap ModbusWorker::channelConfigToMap(int /*ch*/, const hvb::ChannelConfig& cfg)
 {
     QVariantMap m;
-    m["configuredTargetVRaw"] = cfg.configuredTargetVRaw;
-    m["configuredTargetV"] = hvb::reg::voltageToV(cfg.configuredTargetVRaw);
-    m["outputAction"] = static_cast<int>(cfg.outputAction);
-    m["faultCommand"] = static_cast<int>(cfg.faultCommand);
-    m["rampUpStepRaw"] = cfg.rampUpStepRaw;
-    m["rampUpInterval"] = cfg.rampUpInterval;
-    m["rampDownStepRaw"] = cfg.rampDownStepRaw;
-    m["rampDownInterval"] = cfg.rampDownInterval;
-    m["vProtMode"] = static_cast<int>(cfg.vProtMode);
-    m["vProtOutputAction"] = static_cast<int>(cfg.vProtOutputAction);
-    m["vLimitThresholdRaw"] = cfg.vLimitThresholdRaw;
-    m["vLimitThresholdV"] = hvb::reg::voltageToV(cfg.vLimitThresholdRaw);
-    m["iProtMode"] = static_cast<int>(cfg.iProtMode);
-    m["iProtOutputAction"] = static_cast<int>(cfg.iProtOutputAction);
-    m["iLimitThresholdRaw"] = cfg.iLimitThresholdRaw;
-    m["iLimitThresholdA"] = hvb::reg::currentToA(cfg.iLimitThresholdRaw);
-    m["derateStepRaw"] = cfg.derateStepRaw;
-    m["derateStepV"] = hvb::reg::voltageToV(cfg.derateStepRaw);
-    m["saveTargetPolicy"] = cfg.saveTargetPolicy;
-    m["outCalK"] = cfg.outCalK;
-    m["outCalB"] = cfg.outCalB;
-    m["measVCalK"] = cfg.measVCalK;
-    m["measVCalB"] = cfg.measVCalB;
-    m["measICalK"] = cfg.measICalK;
-    m["measICalB"] = cfg.measICalB;
+    m["configuredTargetVRaw"]  = cfg.configuredTargetVRaw;
+    m["configuredTargetV"]     = hvb::reg::voltageToV(cfg.configuredTargetVRaw);
+    m["outputAction"]          = static_cast<int>(cfg.outputAction);
+    m["faultCommand"]          = static_cast<int>(cfg.faultCommand);
+    m["rampUpStepRaw"]         = cfg.rampUpStepRaw;
+    m["rampUpInterval"]        = cfg.rampUpInterval;
+    m["rampDownStepRaw"]       = cfg.rampDownStepRaw;
+    m["rampDownInterval"]      = cfg.rampDownInterval;
+    m["recoveryPolicyMode"]    = static_cast<int>(cfg.recoveryPolicyMode);
+    m["autoRetryDelay"]        = cfg.autoRetryDelay;
+    m["autoRetryMaxCount"]     = cfg.autoRetryMaxCount;
+    m["autoRetryWindow"]       = cfg.autoRetryWindow;
+    m["currentSafeBandPct"]    = cfg.currentSafeBandPct;
+    m["iProtMode"]             = static_cast<int>(cfg.iProtMode);
+    m["iProtOutputAction"]     = static_cast<int>(cfg.iProtOutputAction);
+    m["iLimitThresholdRaw"]    = cfg.iLimitThresholdRaw;
+    m["iLimitThresholdA"]      = hvb::reg::currentToA(cfg.iLimitThresholdRaw);
+    m["derateStepRaw"]         = cfg.derateStepRaw;
+    m["derateStepV"]           = hvb::reg::voltageToV(cfg.derateStepRaw);
     return m;
 }
 
@@ -188,17 +177,30 @@ void ModbusWorker::doReadSystemConfig()
 void ModbusWorker::doReadChannelConfig(int ch)
 {
     auto cfg = m_client.readChannelConfig(ch);
+    auto cal = m_client.readChannelCalConfig(ch);
     if (!m_client.isConnected()) { emit operationComplete(false, "Read failed"); return; }
-    emit channelConfigReady(ch, channelConfigToMap(ch, cfg));
+    auto map = channelConfigToMap(ch, cfg);
+    // Merge cal coefficients so QML channel tab can display them from the same config map
+    map["outCalK"]  = cal.outCalK;
+    map["outCalB"]  = cal.outCalB;
+    map["measVCalK"] = cal.measVCalK;
+    map["measVCalB"] = cal.measVCalB;
+    map["measICalK"] = cal.measICalK;
+    map["measICalB"] = cal.measICalB;
+    emit channelConfigReady(ch, map);
 }
 
 // ---------------------------------------------------------------------------
 //  Writes — System
 // ---------------------------------------------------------------------------
 
-void ModbusWorker::doWriteOperatingMode(int mode)
-{
+void ModbusWorker::doWriteOperatingMode(int mode) {
     bool ok = m_client.writeOperatingMode(static_cast<hvb::OpMode>(mode));
+    emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
+}
+
+void ModbusWorker::doWriteStartupChannelPolicy(int policy) {
+    bool ok = m_client.writeStartupChannelPolicy(static_cast<uint16_t>(policy));
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
@@ -209,17 +211,6 @@ void ModbusWorker::doWriteSlaveAddress(int addr) {
 
 void ModbusWorker::doWriteBaudRate(int code) {
     bool ok = m_client.writeBaudRateCode(static_cast<uint16_t>(code));
-    emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
-}
-
-void ModbusWorker::doWriteRecoveryPolicy(int policy, int delay, int max, int window) {
-    bool ok = m_client.writeSystemRecoveryPolicy(
-        static_cast<hvb::RecoveryPolicy>(policy), delay, max, window);
-    emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
-}
-
-void ModbusWorker::doWriteSafeBands(int vPct, int iPct) {
-    bool ok = m_client.writeSafeBands(static_cast<uint16_t>(vPct), static_cast<uint16_t>(iPct));
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
@@ -252,9 +243,14 @@ void ModbusWorker::doWriteRampDown(int ch, int stepRaw, int interval) {
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
-void ModbusWorker::doWriteVoltageProtection(int ch, int mode, int action, int thresholdRaw) {
-    bool ok = m_client.writeVoltageProtection(ch,
-        static_cast<hvb::ProtectionMode>(mode), static_cast<hvb::OutputAction>(action), static_cast<int16_t>(thresholdRaw));
+void ModbusWorker::doWriteChannelRecovery(int ch, int policy, int delay, int max, int window) {
+    bool ok = m_client.writeChannelRecovery(ch,
+        static_cast<hvb::RecoveryPolicy>(policy), delay, max, window);
+    emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
+}
+
+void ModbusWorker::doWriteChannelSafeBand(int ch, int pct) {
+    bool ok = m_client.writeChannelSafeBand(ch, static_cast<uint16_t>(pct));
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 

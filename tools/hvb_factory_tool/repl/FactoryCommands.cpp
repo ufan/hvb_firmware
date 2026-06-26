@@ -128,7 +128,6 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                         << " out=" << (snap.outputEnabled ? "ON" : "OFF")
                         << " dac=" << snap.rawDacCode
                         << " readback=" << snap.rawDacReadback
-                        << " sample=" << calSampleStatusName(snap.sampleStatus)
                         << " adc_v=" << snap.rawAdcVoltage
                         << " adc_i=" << snap.rawAdcCurrent
                         << " limit=" << snap.maxRawDacLimit << "\n";
@@ -212,7 +211,6 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                     << "  Output:    " << (snap.outputEnabled ? "ON" : "OFF") << "\n"
                     << "  DAC code:  " << snap.rawDacCode << "  readback: " << snap.rawDacReadback << "\n"
                     << "  Max limit: " << snap.maxRawDacLimit << "\n"
-                    << "  Sample:    " << calSampleStatusName(snap.sampleStatus) << "\n"
                     << "  ADC V:     " << snap.rawAdcVoltage << "\n"
                     << "  ADC I:     " << snap.rawAdcCurrent << "\n";
             });
@@ -266,11 +264,11 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
             if (subcmd != "show") { out << "Usage: coeff show | coeff <type> <k> <b>\n"; return; }
             requireCalChannel(session, out, [&] {
                 int ch = session.activeChannel();
-                auto cfg = session.client().readChannelConfig(ch);
+                auto cal = session.client().readChannelCalConfig(ch);
                 out << "CH" << ch << " coefficients:\n"
-                    << "  Output:  K=" << cfg.outCalK << " B=" << cfg.outCalB << "\n"
-                    << "  Meas V:  K=" << cfg.measVCalK << " B=" << cfg.measVCalB << "\n"
-                    << "  Meas I:  K=" << cfg.measICalK << " B=" << cfg.measICalB << "\n";
+                    << "  Output:  K=" << cal.outCalK << " B=" << cal.outCalB << "\n"
+                    << "  Meas V:  K=" << cal.measVCalK << " B=" << cal.measVCalB << "\n"
+                    << "  Meas I:  K=" << cal.measICalK << " B=" << cal.measICalB << "\n";
             });
         },
         "Show current coefficients", {"show"});

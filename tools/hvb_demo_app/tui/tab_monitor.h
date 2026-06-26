@@ -10,11 +10,6 @@ namespace hvb::tui {
 inline Component makeMonitorTab(AppState& s) {
     // ---- Dropdown tables ----
     static const std::vector<std::string> kProtModes  = {"Disabled","FlagOnly","Apply-Action"};
-    static const std::vector<std::string> kVActNames  = {"None","Dis-Graceful","Dis-Immed","ForceZero","Clamp"};
-    static const std::vector<OutputAction> kVActVals  = {
-        OutputAction::None, OutputAction::DisableGraceful, OutputAction::DisableImmediate,
-        OutputAction::ForceOutputZero, OutputAction::Clamp
-    };
     static const std::vector<std::string> kIActNames  = {"None","Dis-Graceful","Dis-Immed","ForceZero"};
     static const std::vector<OutputAction> kIActVals  = {
         OutputAction::None, OutputAction::DisableGraceful,
@@ -28,8 +23,7 @@ inline Component makeMonitorTab(AppState& s) {
         std::string targetV[2];
         std::string ruStep[2], ruInt[2];
         std::string rdStep[2], rdInt[2];
-        std::string vThr[2],   iThr[2];
-        int vModeIdx[2]{}, vActIdx[2]{};
+        std::string iThr[2];
         int iModeIdx[2]{}, iActIdx[2]{};
     };
     auto st = std::make_shared<St>();
@@ -83,8 +77,7 @@ inline Component makeMonitorTab(AppState& s) {
     };
 
     // ---- Action panel factory (one per channel, both built at startup) ----
-    auto makePanel = [&s, st, &kProtModes, &kVActNames, &kVActVals,
-                                           &kIActNames, &kIActVals](int ch) -> Component {
+    auto makePanel = [&s, st, &kProtModes, &kIActNames, &kIActVals](int ch) -> Component {
         auto onTarget = [&s, st, ch] {
             try {
                 auto raw = hvb::reg::voltageFromV(std::stod(st->targetV[ch]));
@@ -111,16 +104,6 @@ inline Component makeMonitorTab(AppState& s) {
                 });
             } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-down value"; }
         };
-        auto onVProt = [&s, st, ch, &kVActVals] {
-            try {
-                auto mode   = static_cast<ProtectionMode>(st->vModeIdx[ch]);
-                auto action = kVActVals.at(st->vActIdx[ch]);
-                auto raw    = hvb::reg::voltageFromV(std::stod(st->vThr[ch]));
-                writeAsync(s, "V Limit", [&s, ch, mode, action, raw] {
-                    return s.client.writeVoltageProtection(ch, mode, action, raw);
-                });
-            } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid V-limit value"; }
-        };
         auto onIProt = [&s, st, ch, &kIActVals] {
             try {
                 auto mode   = static_cast<ProtectionMode>(st->iModeIdx[ch]);
@@ -138,9 +121,6 @@ inline Component makeMonitorTab(AppState& s) {
         auto ruIntInp  = CommitInput(&st->ruInt[ch],  "0",     onRampUp);
         auto rdStepInp = CommitInput(&st->rdStep[ch], "0",     onRampDown);
         auto rdIntInp  = CommitInput(&st->rdInt[ch],  "0",     onRampDown);
-        auto vModeC = InlineCycler(kProtModes, &st->vModeIdx[ch], onVProt);
-        auto vActC  = InlineCycler(kVActNames, &st->vActIdx[ch],  onVProt);
-        auto vThrInp = CommitInput(&st->vThr[ch],    "+0.0",   onVProt);
         auto iModeC = InlineCycler(kProtModes, &st->iModeIdx[ch], onIProt);
         auto iActC  = InlineCycler(kIActNames, &st->iActIdx[ch],  onIProt);
         auto iThrInp = CommitInput(&st->iThr[ch],    "0.000",  onIProt);
@@ -156,7 +136,6 @@ inline Component makeMonitorTab(AppState& s) {
             tgtInp,
             ruStepInp, ruIntInp,
             rdStepInp, rdIntInp,
-            vModeC, vActC, vThrInp,
             iModeC, iActC, iThrInp,
             bEnable, bDisImm, bDisGra, bClrAct, bClrHist,
         });
@@ -170,8 +149,6 @@ inline Component makeMonitorTab(AppState& s) {
                        text(" LSB  interval "), ruIntInp->Render(), text(" \xc3\x970.1 s") }),
                 hbox({ text("  Ramp Down : step "), rdStepInp->Render(),
                        text(" LSB  interval "), rdIntInp->Render(), text(" \xc3\x970.1 s") }),
-                hbox({ text("  V Limit   : "), vModeC->Render(), text("  "), vActC->Render(),
-                       text("  threshold "), vThrInp->Render(), text(" V") }),
                 hbox({ text("  I Limit   : "), iModeC->Render(), text("  "), iActC->Render(),
                        text("  threshold "), iThrInp->Render(), text(" \xc2\xb5\x41") }), // µA
                 separator(),

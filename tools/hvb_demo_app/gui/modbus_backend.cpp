@@ -95,11 +95,9 @@ void ModbusBackend::pollTick()
     QMetaObject::invokeMethod(m_worker, method, Qt::QueuedConnection, ##__VA_ARGS__)
 
 void ModbusBackend::writeOperatingMode(int mode)       { INVOKE("doWriteOperatingMode", Q_ARG(int, mode)); }
+void ModbusBackend::writeStartupChannelPolicy(int p)   { INVOKE("doWriteStartupChannelPolicy", Q_ARG(int, p)); }
 void ModbusBackend::writeSlaveAddress(int addr)         { INVOKE("doWriteSlaveAddress", Q_ARG(int, addr)); }
 void ModbusBackend::writeBaudRate(int code)             { INVOKE("doWriteBaudRate", Q_ARG(int, code)); }
-void ModbusBackend::writeRecoveryPolicy(int p, int d, int m, int w)
-    { INVOKE("doWriteRecoveryPolicy", Q_ARG(int,p), Q_ARG(int,d), Q_ARG(int,m), Q_ARG(int,w)); }
-void ModbusBackend::writeSafeBands(int v, int i)        { INVOKE("doWriteSafeBands", Q_ARG(int,v), Q_ARG(int,i)); }
 void ModbusBackend::saveSystem()          { INVOKE("doSendParamAction", Q_ARG(int,-1), Q_ARG(int,1)); }
 void ModbusBackend::loadSystem()          { INVOKE("doSendParamAction", Q_ARG(int,-1), Q_ARG(int,2)); }
 void ModbusBackend::factoryResetSystem()  { INVOKE("doSendParamAction", Q_ARG(int,-1), Q_ARG(int,3)); }
@@ -110,8 +108,10 @@ void ModbusBackend::sendFaultCmd(int ch, int c)         { INVOKE("doSendFaultCmd
 void ModbusBackend::writeTargetVoltage(int ch, int raw){ INVOKE("doWriteTargetVoltage", Q_ARG(int,ch), Q_ARG(int,raw)); }
 void ModbusBackend::writeRampUp(int ch, int s, int i)  { INVOKE("doWriteRampUp", Q_ARG(int,ch), Q_ARG(int,s), Q_ARG(int,i)); }
 void ModbusBackend::writeRampDown(int ch, int s, int i){ INVOKE("doWriteRampDown", Q_ARG(int,ch), Q_ARG(int,s), Q_ARG(int,i)); }
-void ModbusBackend::writeVoltageProtection(int ch, int m, int a, int t)
-    { INVOKE("doWriteVoltageProtection", Q_ARG(int,ch), Q_ARG(int,m), Q_ARG(int,a), Q_ARG(int,t)); }
+void ModbusBackend::writeChannelRecovery(int ch, int p, int d, int m, int w)
+    { INVOKE("doWriteChannelRecovery", Q_ARG(int,ch), Q_ARG(int,p), Q_ARG(int,d), Q_ARG(int,m), Q_ARG(int,w)); }
+void ModbusBackend::writeChannelSafeBand(int ch, int pct)
+    { INVOKE("doWriteChannelSafeBand", Q_ARG(int,ch), Q_ARG(int,pct)); }
 void ModbusBackend::writeCurrentProtection(int ch, int m, int a, int t)
     { INVOKE("doWriteCurrentProtection", Q_ARG(int,ch), Q_ARG(int,m), Q_ARG(int,a), Q_ARG(int,t)); }
 void ModbusBackend::writeDerateStep(int ch, int s)   { INVOKE("doWriteDerateStep", Q_ARG(int,ch), Q_ARG(int,s)); }

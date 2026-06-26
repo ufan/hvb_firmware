@@ -29,13 +29,13 @@ public slots:
     void doSendFaultCmd(int ch, int cmd);
     void doWriteTargetVoltage(int ch, int raw);
     void doWriteOperatingMode(int mode);
+    void doWriteStartupChannelPolicy(int policy);
     void doWriteSlaveAddress(int addr);
     void doWriteBaudRate(int code);
-    void doWriteRecoveryPolicy(int policy, int delay, int max, int window);
-    void doWriteSafeBands(int vPct, int iPct);
     void doWriteRampUp(int ch, int stepRaw, int interval);
     void doWriteRampDown(int ch, int stepRaw, int interval);
-    void doWriteVoltageProtection(int ch, int mode, int action, int thresholdRaw);
+    void doWriteChannelRecovery(int ch, int policy, int delay, int max, int window);
+    void doWriteChannelSafeBand(int ch, int pct);
     void doWriteCurrentProtection(int ch, int mode, int action, int thresholdRaw);
     void doWriteDerateStep(int ch, int stepRaw);
     void doWriteCalOutput(int ch, int k, int b);

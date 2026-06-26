@@ -183,8 +183,8 @@ ChannelInfo HvbModbusClient::readChannelInfo(int ch) {
     if (!checkConnected()) return info;
 
     uint16_t base = reg::chAddr(ch, 0);
-    uint16_t buf[18] = {};  // offsets 0..17
-    if (!readRegsInternal(false, base, 18, buf)) return info;
+    uint16_t buf[16] = {};  // offsets 0..15 (16/17 reserved in v3)
+    if (!readRegsInternal(false, base, 16, buf)) return info;
 
     info.voltageRaw                   = static_cast<int16_t>(buf[CH_MEASURED_VOLTAGE]);
     info.currentRaw                   = static_cast<int16_t>(buf[CH_MEASURED_CURRENT]);
@@ -210,14 +210,14 @@ SystemConfig HvbModbusClient::readSystemConfig() {
     SystemConfig cfg;
     if (!checkConnected()) return cfg;
 
-    /* v3: sys holding has only 4 registers (operating mode, startup policy, slave addr, baud) */
+    /* v3: sys holding 0-3: operating mode, startup policy, slave addr, baud */
     uint16_t buf[4] = {};
     if (!readRegsInternal(true, reg::sysAddr(0), 4, buf)) return cfg;
 
-    cfg.operatingMode = static_cast<OpMode>(buf[SYS_OPERATING_MODE]);
-    cfg.slaveAddr     = buf[SYS_SLAVE_ADDRESS];
-    cfg.baudRateCode  = buf[SYS_BAUD_RATE_CODE];
-    /* v3: recoveryPolicy/retryDelay/retryMax/retryWindow/safeBandPct moved to channel level */
+    cfg.operatingMode        = static_cast<OpMode>(buf[SYS_OPERATING_MODE]);
+    cfg.startupChannelPolicy = buf[SYS_STARTUP_CHANNEL_POLICY];
+    cfg.slaveAddr            = buf[SYS_SLAVE_ADDRESS];
+    cfg.baudRateCode         = buf[SYS_BAUD_RATE_CODE];
     return cfg;
 }
 
@@ -226,44 +226,49 @@ ChannelConfig HvbModbusClient::readChannelConfig(int ch) {
     if (!checkConnected()) return cfg;
 
     uint16_t base = reg::chAddr(ch, 0);
-    // Board limits single-read count; split into two batches
+    // Batch 1: offsets 0-11 — commands + operational + recovery (board limit: 12 regs max)
     uint16_t buf[12] = {};
     if (!readRegsInternal(true, base, 12, buf)) return cfg;
 
-    cfg.configuredTargetVRaw = static_cast<int16_t>(buf[CH_CFG_TARGET_VOLTAGE]);
     cfg.outputAction         = static_cast<OutputAction>(buf[CH_OUTPUT_ACTION]);
     cfg.faultCommand         = static_cast<ChannelFaultCommand>(buf[CH_FAULT_CMD]);
+    // buf[2] = CH_PARAM_ACTION (command, skip)
+    cfg.configuredTargetVRaw = static_cast<int16_t>(buf[CH_CFG_TARGET_VOLTAGE]);
     cfg.rampUpStepRaw        = buf[CH_RAMP_UP_STEP];
     cfg.rampUpInterval       = buf[CH_RAMP_UP_INTERVAL];
     cfg.rampDownStepRaw      = buf[CH_RAMP_DOWN_STEP];
     cfg.rampDownInterval     = buf[CH_RAMP_DOWN_INTERVAL];
-    cfg.vProtMode            = static_cast<ProtectionMode>(buf[CH_VOLTAGE_PROTECTION_MODE]);
-    cfg.vProtOutputAction    = static_cast<OutputAction>(buf[CH_VOLTAGE_PROT_OUT_ACTION]);
-    cfg.vLimitThresholdRaw   = static_cast<int16_t>(buf[CH_VOLTAGE_LIMIT_THRESHOLD]);
-    cfg.iProtMode            = static_cast<ProtectionMode>(buf[CH_CURRENT_PROTECTION_MODE]);
-    cfg.iProtOutputAction    = static_cast<OutputAction>(buf[CH_CURRENT_PROT_OUT_ACTION]);
+    cfg.recoveryPolicyMode   = static_cast<RecoveryPolicy>(buf[CH_RECOVERY_POLICY_MODE]);
+    cfg.autoRetryDelay       = buf[CH_AUTO_RETRY_DELAY];
+    cfg.autoRetryMaxCount    = buf[CH_AUTO_RETRY_MAX_COUNT];
+    cfg.autoRetryWindow      = buf[CH_AUTO_RETRY_WINDOW];
 
-    // Batch 2: offsets 12..23
-    uint16_t buf2[12] = {};
-    if (!readRegsInternal(true, base + 12, 12, buf2)) return cfg;
+    // Batch 2: offsets 12-16 — safe-band + current protection + derate
+    uint16_t buf2[5] = {};
+    if (!readRegsInternal(true, base + 12, 5, buf2)) return cfg;
 
+    cfg.currentSafeBandPct   = buf2[CH_CURRENT_SAFE_BAND_PCT - 12];
+    cfg.iProtMode            = static_cast<ProtectionMode>(buf2[CH_CURRENT_PROTECTION_MODE - 12]);
+    cfg.iProtOutputAction    = static_cast<OutputAction>(buf2[CH_CURRENT_PROT_OUT_ACTION - 12]);
     cfg.iLimitThresholdRaw   = static_cast<int16_t>(buf2[CH_CURRENT_LIMIT_THRESHOLD - 12]);
     cfg.derateStepRaw        = buf2[CH_AUTO_DERATE_STEP - 12];
-    /* v3: CH_SAVE_TARGET_POLICY removed */
-    cfg.outCalK              = buf2[CH_OUTPUT_CAL_K - 12];
-    cfg.outCalB              = static_cast<int16_t>(buf2[CH_OUTPUT_CAL_B - 12]);
-    cfg.measVCalK            = buf2[CH_MEASURED_V_CAL_K - 12];
-    cfg.measVCalB            = static_cast<int16_t>(buf2[CH_MEASURED_V_CAL_B - 12]);
-    cfg.measICalK            = buf2[CH_MEASURED_I_CAL_K - 12];
-    cfg.measICalB            = static_cast<int16_t>(buf2[CH_MEASURED_I_CAL_B - 12]);
-    cfg.calOutputEnabled     = buf2[CH_CAL_OUTPUT_ENABLE - 12] != 0;
-    cfg.rawDacCode           = buf2[CH_CAL_DAC_CODE - 12];
+    return cfg;
+}
 
-    // Batch 3: offsets 24..25
-    uint16_t buf3[2] = {};
-    if (!readRegsInternal(true, base + 24, 2, buf3)) return cfg;
+ChannelCalConfig HvbModbusClient::readChannelCalConfig(int ch) {
+    ChannelCalConfig cfg;
+    if (!checkConnected()) return cfg;
 
-    cfg.maxRawDacLimit       = buf3[CH_CAL_MAX_RAW_DAC_LIMIT - 24];
+    // Cal coefficients: offsets 20-25 (6 regs), readable in any mode
+    uint16_t buf[6] = {};
+    if (!readRegsInternal(true, reg::chAddr(ch, CH_OUTPUT_CAL_K), 6, buf)) return cfg;
+
+    cfg.outCalK   = buf[0];
+    cfg.outCalB   = static_cast<int16_t>(buf[1]);
+    cfg.measVCalK = buf[2];
+    cfg.measVCalB = static_cast<int16_t>(buf[3]);
+    cfg.measICalK = buf[4];
+    cfg.measICalB = static_cast<int16_t>(buf[5]);
     return cfg;
 }
 
@@ -278,19 +283,11 @@ bool HvbModbusClient::writeOperatingMode(OpMode m) {
     uint16_t v = static_cast<uint16_t>(m);
     return WR1(SYS_OPERATING_MODE, &v);
 }
-bool HvbModbusClient::writeSlaveAddress(uint16_t a)     { return WR1(SYS_SLAVE_ADDRESS, &a); }
-bool HvbModbusClient::writeBaudRateCode(uint16_t c)      { return WR1(SYS_BAUD_RATE_CODE, &c); }
-bool HvbModbusClient::writeSystemRecoveryPolicy(RecoveryPolicy p, int delay, int max, int window) {
-    /* v3: recovery policy moved to per-channel; writes to channel 0 as a best-effort */
-    uint16_t buf[4] = { static_cast<uint16_t>(p), static_cast<uint16_t>(delay),
-                        static_cast<uint16_t>(max), static_cast<uint16_t>(window) };
-    return writeRegsInternal(reg::chAddr(0, CH_RECOVERY_POLICY_MODE), 4, buf);
+bool HvbModbusClient::writeStartupChannelPolicy(uint16_t policy) {
+    return WR1(SYS_STARTUP_CHANNEL_POLICY, &policy);
 }
-bool HvbModbusClient::writeSafeBands(uint16_t vPct, uint16_t iPct) {
-    /* v3: voltage safe band removed; writes current safe band to channel 0 */
-    (void)vPct;
-    return writeRegsInternal(reg::chAddr(0, CH_CURRENT_SAFE_BAND_PCT), 1, &iPct);
-}
+bool HvbModbusClient::writeSlaveAddress(uint16_t a)  { return WR1(SYS_SLAVE_ADDRESS, &a); }
+bool HvbModbusClient::writeBaudRateCode(uint16_t c)   { return WR1(SYS_BAUD_RATE_CODE, &c); }
 bool HvbModbusClient::sendParamAction(int chScope, ParamAction action) {
     uint16_t v = static_cast<uint16_t>(action);
     uint16_t addr = chScope < 0 ? reg::sysAddr(SYS_PARAM_ACTION)
@@ -331,13 +328,13 @@ bool HvbModbusClient::writeRampDown(int ch, uint16_t stepRaw, uint16_t interval)
     uint16_t buf[2] = { stepRaw, interval };
     return CHWN(CH_RAMP_DOWN_STEP, 2, buf);
 }
-bool HvbModbusClient::writeVoltageProtection(int ch, ProtectionMode mode, OutputAction action, int16_t thresholdRaw) {
-    if (!isValidOutputAction(action, ActionContext::VoltageProtection)) {
-        m_impl->errorText = "invalid output action for voltage protection";
-        return false;
-    }
-    uint16_t buf[3] = { static_cast<uint16_t>(mode), static_cast<uint16_t>(action), static_cast<uint16_t>(thresholdRaw) };
-    return CHWN(CH_VOLTAGE_PROTECTION_MODE, 3, buf);
+bool HvbModbusClient::writeChannelRecovery(int ch, RecoveryPolicy policy, int delay, int max, int window) {
+    uint16_t buf[4] = { static_cast<uint16_t>(policy), static_cast<uint16_t>(delay),
+                        static_cast<uint16_t>(max),    static_cast<uint16_t>(window) };
+    return CHWN(CH_RECOVERY_POLICY_MODE, 4, buf);
+}
+bool HvbModbusClient::writeChannelSafeBand(int ch, uint16_t pct) {
+    return CHW(CH_CURRENT_SAFE_BAND_PCT, &pct);
 }
 bool HvbModbusClient::writeCurrentProtection(int ch, ProtectionMode mode, OutputAction action, int16_t thresholdRaw) {
     if (!isValidOutputAction(action, ActionContext::CurrentProtection)) {
@@ -349,10 +346,6 @@ bool HvbModbusClient::writeCurrentProtection(int ch, ProtectionMode mode, Output
 }
 bool HvbModbusClient::writeDerateStep(int ch, uint16_t stepRaw) {
     return CHW(CH_AUTO_DERATE_STEP, &stepRaw);
-}
-bool HvbModbusClient::writeSaveTargetPolicy(int ch, bool saveTarget) {
-    (void)ch; (void)saveTarget;
-    return false; /* v3: CH_SAVE_TARGET_POLICY removed */
 }
 bool HvbModbusClient::writeCalibrationOutput(int ch, uint16_t k, int16_t b) {
     uint16_t buf[2] = { k, static_cast<uint16_t>(b) };

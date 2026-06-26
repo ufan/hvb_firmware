@@ -116,15 +116,22 @@ ScrollView {
 
             Rectangle { Layout.preferredHeight: 1; Layout.fillWidth: true; color: "#ddd" }
 
-            Label { text: "V Protection (raw)"; font.bold: true }
+            Label { text: "Recovery Policy"; font.bold: true }
             RowLayout {
-                ComboBox { id: vProtMode; model: ["Disabled", "Flag Only", "Apply Action"]
-                    currentIndex: cfg().vProtMode || 0; Layout.preferredWidth: 120 }
-                ComboBox { id: vProtAct; model: ["None", "Disable Graceful", "Disable Immediate", "Force Zero", "Clamp"]
-                    currentIndex: (cfg().vProtOutputAction || 0); Layout.preferredWidth: 150 }
-                TextField { id: vLimitRaw; Layout.preferredWidth: 80; text: (cfg().vLimitThresholdRaw || 0).toString() }
-                Label { text: "≈ " + ((cfg().vLimitThresholdV || 0).toFixed(1)) + " V" }
-                Button { text: "Set"; onClicked: backend.writeVoltageProtection(channelIndex, vProtMode.currentIndex, vProtAct.currentIndex, parseInt(vLimitRaw.text)||0) }
+                ComboBox { id: recovPolicyCb; model: ["ManualLatch", "AutoRetry", "AutoDerate", "NeverRetry"]
+                    currentIndex: cfg().recoveryPolicyMode || 0; Layout.preferredWidth: 130 }
+                Label { text: "Delay (s):" }
+                SpinBox { id: recovDelay; from: 0; to: 3600; value: cfg().autoRetryDelay || 0 }
+                Label { text: "Max:" }
+                SpinBox { id: recovMax; from: 0; to: 100; value: cfg().autoRetryMaxCount || 0 }
+                Label { text: "Window (s):" }
+                SpinBox { id: recovWin; from: 0; to: 86400; value: cfg().autoRetryWindow || 0 }
+                Button { text: "Set"; onClicked: backend.writeChannelRecovery(channelIndex, recovPolicyCb.currentIndex, recovDelay.value, recovMax.value, recovWin.value) }
+            }
+            RowLayout {
+                Label { text: "I Safe Band (%):" }
+                SpinBox { id: iSafeBand; from: 0; to: 50; value: cfg().currentSafeBandPct || 10 }
+                Button { text: "Set"; onClicked: backend.writeChannelSafeBand(channelIndex, iSafeBand.value) }
             }
 
             Label { text: "I Protection (raw)"; font.bold: true }

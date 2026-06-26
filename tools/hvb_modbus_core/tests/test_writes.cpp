@@ -50,42 +50,41 @@ TEST_CASE("Write — calibration", "[writes]") {
     REQUIRE(client.writeCalibrationOutput(0, 10123, -5));
     REQUIRE(client.writeCalibrationMeasV(1, 9999, 2));
 
-    auto cfg0 = client.readChannelConfig(0);
-    CHECK(cfg0.outCalK == 10123);
-    CHECK(cfg0.outCalB == -5);
+    auto cal0 = client.readChannelCalConfig(0);
+    CHECK(cal0.outCalK == 10123);
+    CHECK(cal0.outCalB == -5);
 
-    auto cfg1 = client.readChannelConfig(1);
-    CHECK(cfg1.measVCalK == 9999);
-    CHECK(cfg1.measVCalB == 2);
+    auto cal1 = client.readChannelCalConfig(1);
+    CHECK(cal1.measVCalK == 9999);
+    CHECK(cal1.measVCalB == 2);
 }
 
-TEST_CASE("Write — system recovery", "[writes]") {
+TEST_CASE("Write — channel recovery", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
 
     hvb::HvbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
-    REQUIRE(client.writeSystemRecoveryPolicy(hvb::RecoveryPolicy::AutoRetry, 30, 5, 600));
+    REQUIRE(client.writeChannelRecovery(0, hvb::RecoveryPolicy::AutoRetry, 30, 5, 600));
 
-    auto cfg = client.readSystemConfig();
-    CHECK(cfg.recoveryPolicy == hvb::RecoveryPolicy::AutoRetry);
-    CHECK(cfg.retryDelay == 30);
-    CHECK(cfg.retryMax == 5);
-    CHECK(cfg.retryWindow == 600);
+    auto cfg = client.readChannelConfig(0);
+    CHECK(cfg.recoveryPolicyMode == hvb::RecoveryPolicy::AutoRetry);
+    CHECK(cfg.autoRetryDelay == 30);
+    CHECK(cfg.autoRetryMaxCount == 5);
+    CHECK(cfg.autoRetryWindow == 600);
 }
 
-TEST_CASE("Write — safe bands", "[writes]") {
+TEST_CASE("Write — channel safe band", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
 
     hvb::HvbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
-    REQUIRE(client.writeSafeBands(25, 15));
-    auto cfg = client.readSystemConfig();
-    CHECK(cfg.voltageSafeBandPct == 25);
-    CHECK(cfg.currentSafeBandPct == 15);
+    REQUIRE(client.writeChannelSafeBand(0, 25));
+    auto cfg = client.readChannelConfig(0);
+    CHECK(cfg.currentSafeBandPct == 25);
 }
 
 TEST_CASE("Write — read-back consistency", "[writes]") {
@@ -100,7 +99,6 @@ TEST_CASE("Write — read-back consistency", "[writes]") {
     REQUIRE(client.writeRampUp(0, 10, 5));
     REQUIRE(client.writeRampDown(0, 20, 3));
     REQUIRE(client.writeDerateStep(0, 50));
-    REQUIRE(client.writeSaveTargetPolicy(0, true));
 
     auto cfg = client.readChannelConfig(0);
     CHECK(cfg.configuredTargetVRaw == 3000);
@@ -109,5 +107,4 @@ TEST_CASE("Write — read-back consistency", "[writes]") {
     CHECK(cfg.rampDownStepRaw == 20);
     CHECK(cfg.rampDownInterval == 3);
     CHECK(cfg.derateStepRaw == 50);
-    CHECK(cfg.saveTargetPolicy == true);
 }

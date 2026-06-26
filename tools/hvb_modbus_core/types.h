@@ -135,20 +135,15 @@ struct ChannelInfo {
     uint16_t chCapFlags = 0;
     int32_t rawAdcVoltage = 0;
     int32_t rawAdcCurrent = 0;
-    CalibrationSampleStatus sampleStatus = CalibrationSampleStatus::NoSample;
-    uint16_t rawDacReadback = 0;
+    /* v3: sampleStatus and rawDacReadback removed from FC04 input regs */
 };
 
 struct SystemConfig {
     OpMode operatingMode = OpMode::Normal;
+    uint16_t startupChannelPolicy = 0;  /* 0=load NVS op-config, 1=factory reset op-config */
     uint16_t slaveAddr = 1;
     uint16_t baudRateCode = 0;
-    RecoveryPolicy recoveryPolicy = RecoveryPolicy::ManualLatch;
-    int retryDelay = 0;
-    int retryMax = 0;
-    int retryWindow = 0;
-    uint16_t voltageSafeBandPct = 10;
-    uint16_t currentSafeBandPct = 10;
+    /* v3: recoveryPolicy/retryDelay/retryMax/retryWindow/safeBandPct moved to per-channel */
 };
 
 struct ChannelConfig {
@@ -159,33 +154,38 @@ struct ChannelConfig {
     uint16_t rampUpInterval = 0;      // UINT16, seconds x10
     uint16_t rampDownStepRaw = 0;     // UINT16, raw LSB
     uint16_t rampDownInterval = 0;    // UINT16, seconds x10
-    ProtectionMode vProtMode = ProtectionMode::Disabled;
-    OutputAction vProtOutputAction = OutputAction::None;
-    int16_t vLimitThresholdRaw = 0;   // INT16, raw LSB
+    /* v3: recovery fields moved from system to per-channel */
+    RecoveryPolicy recoveryPolicyMode = RecoveryPolicy::ManualLatch;
+    uint16_t autoRetryDelay = 0;      // seconds
+    uint16_t autoRetryMaxCount = 0;
+    uint16_t autoRetryWindow = 0;     // seconds
+    uint16_t currentSafeBandPct = 10;
     ProtectionMode iProtMode = ProtectionMode::Disabled;
     OutputAction iProtOutputAction = OutputAction::None;
     int16_t iLimitThresholdRaw = 0;   // INT16, raw LSB
     uint16_t derateStepRaw = 0;       // UINT16, raw LSB
-    bool saveTargetPolicy = false;
-    uint16_t outCalK = 10000;          // UINT16, x10000
-    int16_t outCalB = 0;               // INT16, x1000
-    uint16_t measVCalK = 10000;
-    int16_t measVCalB = 0;
-    uint16_t measICalK = 10000;
-    int16_t measICalB = 0;
-    bool calOutputEnabled = false;
-    uint16_t rawDacCode = 0;
-    uint16_t maxRawDacLimit = 4095;
+    /* v3: vProtMode/vLimitThreshold removed; saveTargetPolicy removed */
+    /* v3: cal coefficients moved to ChannelCalConfig; cal session fields in CalibrationSnapshot */
+};
+
+/* Calibration coefficients — separate read via readChannelCalConfig() */
+struct ChannelCalConfig {
+    uint16_t outCalK = 10000;    // UINT16, x10000
+    int16_t outCalB = 0;         // INT16, DAC counts offset
+    uint16_t measVCalK = 10000;  // UINT16, x10000
+    int16_t measVCalB = 0;       // INT16, mV offset
+    uint16_t measICalK = 10000;  // UINT16, x10000
+    int16_t measICalB = 0;       // INT16, raw ADC offset
 };
 
 struct CalibrationSnapshot {
     bool outputEnabled = false;
     uint16_t rawDacCode = 0;
     uint16_t maxRawDacLimit = 0;
-    uint16_t rawDacReadback = 0;
-    CalibrationSampleStatus sampleStatus = CalibrationSampleStatus::NoSample;
+    uint16_t rawDacReadback = 0;  /* v3: same as rawDacCode (readback is FC03 holding, not FC04) */
     int32_t rawAdcVoltage = 0;
     int32_t rawAdcCurrent = 0;
+    /* v3: sampleStatus removed (CH_CAL_SAMPLE_STATUS deleted from FC04 input regs) */
 };
 
 // ============================================================================

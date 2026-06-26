@@ -161,7 +161,7 @@ TEST_CASE("readChannelInfo includes v2.1 calibration fields", "[calibration]") {
     client.detachTestArrays();
 }
 
-TEST_CASE("readChannelConfig includes v2.1 calibration fields", "[calibration]") {
+TEST_CASE("readCalibrationSnapshot includes cal session fields", "[calibration]") {
     uint16_t input[MAX_ADDR], holding[MAX_ADDR];
     initBoard(input, holding);
 
@@ -173,10 +173,36 @@ TEST_CASE("readChannelConfig includes v2.1 calibration fields", "[calibration]")
     HvbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
-    auto cfg = client.readChannelConfig(0);
-    REQUIRE(cfg.calOutputEnabled == true);
-    REQUIRE(cfg.rawDacCode == 3000);
-    REQUIRE(cfg.maxRawDacLimit == 3500);
+    auto snap = client.readCalibrationSnapshot(0);
+    REQUIRE(snap.outputEnabled == true);
+    REQUIRE(snap.rawDacCode == 3000);
+    REQUIRE(snap.maxRawDacLimit == 3500);
+
+    client.detachTestArrays();
+}
+
+TEST_CASE("readChannelCalConfig reads cal coefficients", "[calibration]") {
+    uint16_t input[MAX_ADDR], holding[MAX_ADDR];
+    initBoard(input, holding);
+
+    uint16_t base = reg::chAddr(0, 0);
+    holding[base + CH_OUTPUT_CAL_K] = 9900;
+    holding[base + CH_OUTPUT_CAL_B] = static_cast<uint16_t>(static_cast<int16_t>(-5));
+    holding[base + CH_MEASURED_V_CAL_K] = 10050;
+    holding[base + CH_MEASURED_V_CAL_B] = 3;
+    holding[base + CH_MEASURED_I_CAL_K] = 9980;
+    holding[base + CH_MEASURED_I_CAL_B] = static_cast<uint16_t>(static_cast<int16_t>(-2));
+
+    HvbModbusClient client;
+    client.attachTestArrays(input, holding, MAX_ADDR);
+
+    auto cal = client.readChannelCalConfig(0);
+    REQUIRE(cal.outCalK == 9900);
+    REQUIRE(cal.outCalB == -5);
+    REQUIRE(cal.measVCalK == 10050);
+    REQUIRE(cal.measVCalB == 3);
+    REQUIRE(cal.measICalK == 9980);
+    REQUIRE(cal.measICalB == -2);
 
     client.detachTestArrays();
 }

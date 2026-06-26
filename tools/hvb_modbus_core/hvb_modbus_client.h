@@ -27,28 +27,29 @@ public:
     void detachTestArrays();
 
     // High-level reads (raw LSB values)
-    SystemInfo     readSystemInfo();
-    ChannelInfo    readChannelInfo(int ch);
-    SystemConfig   readSystemConfig();
-    ChannelConfig  readChannelConfig(int ch);
+    SystemInfo        readSystemInfo();
+    ChannelInfo       readChannelInfo(int ch);
+    SystemConfig      readSystemConfig();
+    ChannelConfig     readChannelConfig(int ch);
+    ChannelCalConfig  readChannelCalConfig(int ch);
 
-    // High-level writes
+    // High-level writes — system
     bool writeOperatingMode(OpMode mode);
+    bool writeStartupChannelPolicy(uint16_t policy);
     bool writeSlaveAddress(uint16_t addr);
     bool writeBaudRateCode(uint16_t code);
-    bool writeSystemRecoveryPolicy(RecoveryPolicy policy, int delay, int max, int window);
-    bool writeSafeBands(uint16_t voltagePct, uint16_t currentPct);
     bool sendParamAction(int chScope, ParamAction action);
 
+    // High-level writes — channel
     bool writeConfiguredTargetVoltage(int ch, int16_t raw);
     bool sendOutputAction(int ch, OutputAction action);
     bool sendChannelFaultCommand(int ch, ChannelFaultCommand cmd);
     bool writeRampUp(int ch, uint16_t stepRaw, uint16_t interval);
     bool writeRampDown(int ch, uint16_t stepRaw, uint16_t interval);
-    bool writeVoltageProtection(int ch, ProtectionMode mode, OutputAction action, int16_t thresholdRaw);
+    bool writeChannelRecovery(int ch, RecoveryPolicy policy, int delay, int max, int window);
+    bool writeChannelSafeBand(int ch, uint16_t pct);
     bool writeCurrentProtection(int ch, ProtectionMode mode, OutputAction action, int16_t thresholdRaw);
     bool writeDerateStep(int ch, uint16_t stepRaw);
-    bool writeSaveTargetPolicy(int ch, bool saveTarget);
     bool writeCalibrationOutput(int ch, uint16_t k, int16_t b);
     bool writeCalibrationMeasV(int ch, uint16_t k, int16_t b);
     bool writeCalibrationMeasI(int ch, uint16_t k, int16_t b);

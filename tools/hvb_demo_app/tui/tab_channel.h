@@ -6,25 +6,20 @@
 namespace hvb::tui {
 
 inline Component makeChannelTab(AppState& s, int ch) {
-    static const std::vector<std::string> kProtModes = {"Disabled","FlagOnly","Apply-Action"};
-    static const std::vector<std::string> kVActNames = {"None","Dis-Graceful","Dis-Immed","ForceZero","Clamp"};
-    static const std::vector<OutputAction> kVActVals = {
-        OutputAction::None, OutputAction::DisableGraceful, OutputAction::DisableImmediate,
-        OutputAction::ForceOutputZero, OutputAction::Clamp
-    };
-    static const std::vector<std::string> kIActNames = {"None","Dis-Graceful","Dis-Immed","ForceZero"};
-    static const std::vector<OutputAction> kIActVals = {
+    static const std::vector<std::string> kProtModes  = {"Disabled","FlagOnly","Apply-Action"};
+    static const std::vector<std::string> kIActNames  = {"None","Dis-Graceful","Dis-Immed","ForceZero"};
+    static const std::vector<OutputAction> kIActVals  = {
         OutputAction::None, OutputAction::DisableGraceful,
         OutputAction::DisableImmediate, OutputAction::ForceOutputZero
     };
-    static const std::vector<std::string> kSaveTarget = {"No","Yes"};
+    static const std::vector<std::string> kRecovNames = {"ManualLatch","AutoRetry","AutoDerate","NeverRetry"};
 
     struct St {
-        std::string targetV, vThr, iThr;
+        std::string targetV, iThr;
         std::string ruStep, ruInt, rdStep, rdInt, derateStep;
-        int vModeIdx = 0, vActIdx = 0;
+        std::string retryDelay, retryMax, retryWindow, iBand;
         int iModeIdx = 0, iActIdx = 0;
-        int saveTargetIdx = 0;
+        int recovIdx = 0;
     };
     auto st = std::make_shared<St>();
 
@@ -56,16 +51,6 @@ inline Component makeChannelTab(AppState& s, int ch) {
             writeAsync(s, "Derate", [&s, ch, step] { return s.client.writeDerateStep(ch, step); });
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid derate step"; }
     };
-    auto onVProt = [&s, st, ch, &kVActVals] {
-        try {
-            auto mode   = static_cast<ProtectionMode>(st->vModeIdx);
-            auto action = kVActVals.at(st->vActIdx);
-            auto raw    = hvb::reg::voltageFromV(std::stod(st->vThr));
-            writeAsync(s, "V Limit", [&s, ch, mode, action, raw] {
-                return s.client.writeVoltageProtection(ch, mode, action, raw);
-            });
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid V-limit value"; }
-    };
     auto onIProt = [&s, st, ch, &kIActVals] {
         try {
             auto mode   = static_cast<ProtectionMode>(st->iModeIdx);
@@ -76,24 +61,37 @@ inline Component makeChannelTab(AppState& s, int ch) {
             });
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
     };
-    auto onSaveTarget = [&s, st, ch] {
-        bool save = st->saveTargetIdx != 0;
-        writeAsync(s, "SaveTarget", [&s, ch, save] { return s.client.writeSaveTargetPolicy(ch, save); });
+    auto onRecov = [&s, st, ch] {
+        try {
+            auto pol = static_cast<RecoveryPolicy>(st->recovIdx);
+            int d = std::stoi(st->retryDelay), m = std::stoi(st->retryMax),
+                w = std::stoi(st->retryWindow);
+            writeAsync(s, "Recovery", [&s, ch, pol, d, m, w] {
+                return s.client.writeChannelRecovery(ch, pol, d, m, w);
+            });
+        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid recovery value"; }
+    };
+    auto onBand = [&s, st, ch] {
+        try {
+            uint16_t pct = (uint16_t)std::stoul(st->iBand);
+            writeAsync(s, "SafeBand", [&s, ch, pct] { return s.client.writeChannelSafeBand(ch, pct); });
+        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid safe-band value"; }
     };
 
-    auto tgtInp    = CommitInput(&st->targetV,  "+0.0",  onTarget);
-    auto ruStepInp = CommitInput(&st->ruStep,   "0",     onRampUp);
-    auto ruIntInp  = CommitInput(&st->ruInt,    "0",     onRampUp);
-    auto rdStepInp = CommitInput(&st->rdStep,   "0",     onRampDown);
-    auto rdIntInp  = CommitInput(&st->rdInt,    "0",     onRampDown);
-    auto derInp    = CommitInput(&st->derateStep,"0",    onDerate);
-    auto vModeC    = InlineCycler(kProtModes, &st->vModeIdx, onVProt);
-    auto vActC     = InlineCycler(kVActNames, &st->vActIdx,  onVProt);
-    auto vThrInp   = CommitInput(&st->vThr,    "+0.0",  onVProt);
-    auto iModeC    = InlineCycler(kProtModes, &st->iModeIdx, onIProt);
-    auto iActC     = InlineCycler(kIActNames, &st->iActIdx,  onIProt);
+    auto tgtInp    = CommitInput(&st->targetV,   "+0.0",  onTarget);
+    auto ruStepInp = CommitInput(&st->ruStep,    "0",     onRampUp);
+    auto ruIntInp  = CommitInput(&st->ruInt,     "0",     onRampUp);
+    auto rdStepInp = CommitInput(&st->rdStep,    "0",     onRampDown);
+    auto rdIntInp  = CommitInput(&st->rdInt,     "0",     onRampDown);
+    auto derInp    = CommitInput(&st->derateStep,"0",     onDerate);
+    auto iModeC    = InlineCycler(kProtModes,  &st->iModeIdx, onIProt);
+    auto iActC     = InlineCycler(kIActNames,  &st->iActIdx,  onIProt);
     auto iThrInp   = CommitInput(&st->iThr,    "0.000", onIProt);
-    auto saveTgtC  = InlineCycler(kSaveTarget, &st->saveTargetIdx, onSaveTarget);
+    auto recovC    = InlineCycler(kRecovNames, &st->recovIdx, onRecov);
+    auto delayInp  = CommitInput(&st->retryDelay,  "0",  onRecov);
+    auto maxInp    = CommitInput(&st->retryMax,    "3",   onRecov);
+    auto winInp    = CommitInput(&st->retryWindow, "60",  onRecov);
+    auto iBandInp  = CommitInput(&st->iBand,       "10",  onBand);
 
     auto bEnable  = ActionButton("Enable",    [&s,ch]{ writeAsync(s,"Enable",    [&s,ch]{ return s.client.sendOutputAction(ch, OutputAction::Enable); }); });
     auto bDisImm  = ActionButton("Dis-Immed", [&s,ch]{ writeAsync(s,"Dis-Immed", [&s,ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableImmediate); }); });
@@ -107,13 +105,12 @@ inline Component makeChannelTab(AppState& s, int ch) {
     auto container = Container::Vertical({
         tgtInp, bEnable, bDisImm, bDisGra,
         ruStepInp, ruIntInp, rdStepInp, rdIntInp, derInp,
-        vModeC, vActC, vThrInp,
         iModeC, iActC, iThrInp,
-        saveTgtC, bSave, bLoad, bFactory, bClrAct, bClrHist,
+        recovC, delayInp, maxInp, winInp, iBandInp,
+        bSave, bLoad, bFactory, bClrAct, bClrHist,
     });
 
     return Renderer(container, [=, &s, ch]() {
-        // Live readings bar
         Element liveBar = text(" Not connected ") | dim;
         if (s.data.valid) {
             const auto& ci = s.data.chInfo[ch];
@@ -146,23 +143,25 @@ inline Component makeChannelTab(AppState& s, int ch) {
             hbox({ text("Derate Step:      "), derInp->Render(),   text(" LSB") }),
         }));
 
-        auto vProtPanel = window(text(" Voltage Protection "), hbox({
-            text("Mode : "), vModeC->Render(),
-            text("   Action : "), vActC->Render(),
-            text("   Threshold: "), vThrInp->Render(), text(" V"),
-        }));
-
         auto iProtPanel = window(text(" Current Protection "), hbox({
             text("Mode : "), iModeC->Render(),
             text("   Action : "), iActC->Render(),
             text("   Threshold: "), iThrInp->Render(), text(" \xc2\xb5\x41"), // µA
         }));
 
+        auto recovPanel = window(text(" Recovery "), vbox({
+            hbox({ text("Policy    : "), recovC->Render() }),
+            hbox({ text("Delay     : "), delayInp->Render(), text(" s"),
+                   text("  Max: "), maxInp->Render(),
+                   text("  Window: "), winInp->Render(), text(" s") }),
+            hbox({ text("I Safe Band: "), iBandInp->Render(), text(" % (0-50)") }),
+        }));
+
         Element calInfo = text(" No data ") | dim;
         if (s.data.valid) {
-            const auto& cc = s.data.chCfg[ch];
+            const auto& cc = s.data.chCalCfg[ch];
             calInfo = vbox({
-                hbox({ text("Output  K: "), text(std::to_string(cc.outCalK)) | bold, text("  B: "), text(std::to_string(cc.outCalB)) | bold }),
+                hbox({ text("Output  K: "), text(std::to_string(cc.outCalK))  | bold, text("  B: "), text(std::to_string(cc.outCalB))  | bold }),
                 hbox({ text("Meas V  K: "), text(std::to_string(cc.measVCalK)) | bold, text("  B: "), text(std::to_string(cc.measVCalB)) | bold }),
                 hbox({ text("Meas I  K: "), text(std::to_string(cc.measICalK)) | bold, text("  B: "), text(std::to_string(cc.measICalB)) | bold }),
             });
@@ -170,8 +169,6 @@ inline Component makeChannelTab(AppState& s, int ch) {
         auto calPanel = window(text(" Calibration (read-only) "), calInfo);
 
         auto persistPanel = window(text(" Persistence "), vbox({
-            hbox({ text("Save Target: "), saveTgtC->Render() }),
-            separator(),
             hbox({ bSave->Render(), text("  "), bLoad->Render(), text("  "), bFactory->Render() }),
             hbox({ bClrAct->Render(), text("  "), bClrHist->Render() }),
         }));
@@ -179,8 +176,8 @@ inline Component makeChannelTab(AppState& s, int ch) {
         return vbox({
             window(text(" CH" + std::to_string(ch) + " Live "), liveBar),
             hbox({ outputPanel, rampPanel }),
-            vProtPanel,
             iProtPanel,
+            recovPanel,
             hbox({ calPanel, persistPanel }),
         });
     });

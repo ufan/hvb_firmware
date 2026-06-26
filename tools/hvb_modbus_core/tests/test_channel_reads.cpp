@@ -6,12 +6,12 @@
 static void fillChannelDefaults(uint16_t* inputRegs, uint16_t* holdingRegs) {
     for (int ch = 0; ch < 2; ++ch) {
         uint16_t base = 40 + ch * 40;
-        inputRegs[base + 11] = 0x0007;  // CapFlags: OutEn + CurrMeas + AutoRec
-        holdingRegs[base + 9] = 20000;  // V limit threshold
-        holdingRegs[base + 12] = 32767; // I limit threshold
-        holdingRegs[base + 15] = 10000; // Out cal K
-        holdingRegs[base + 17] = 10000; // Meas V cal K
-        holdingRegs[base + 19] = 10000; // Meas I cal K
+        inputRegs[base + 9]  = 0x0007;  // CapFlags: OutEn + CurrMeas + AutoRec (CH_CAPABILITY_FLAGS)
+        holdingRegs[base + 12] = 10;    // Current safe band pct (CH_CURRENT_SAFE_BAND_PCT)
+        holdingRegs[base + 15] = 32767; // I limit threshold (CH_CURRENT_LIMIT_THRESHOLD)
+        holdingRegs[base + 20] = 10000; // Out cal K (CH_OUTPUT_CAL_K)
+        holdingRegs[base + 22] = 10000; // Meas V cal K (CH_MEASURED_V_CAL_K)
+        holdingRegs[base + 24] = 10000; // Meas I cal K (CH_MEASURED_I_CAL_K)
     }
 }
 
@@ -40,10 +40,10 @@ TEST_CASE("ChannelInfo — enabled channel has measurements", "[channel-reads]")
     fillChannelDefaults(inputRegs, holdingRegs);
 
     // CH0 enabled: Vmeas=5000, Imeas=1234, target=5000, status=0x0003
-    inputRegs[40 + 0] = 5000;
-    inputRegs[40 + 1] = 1234;
-    inputRegs[40 + 2] = 5000;
-    inputRegs[40 + 3] = 0x0003;
+    inputRegs[40 + 10] = 5000;    // CH_MEASURED_VOLTAGE
+    inputRegs[40 + 11] = 1234;    // CH_MEASURED_CURRENT
+    inputRegs[40 + 8]  = 5000;    // CH_OPER_TARGET_VOLTAGE
+    inputRegs[40 + 0]  = 0x0003;  // CH_STATUS_BITS
 
     hvb::HvbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
@@ -66,7 +66,10 @@ TEST_CASE("ChannelConfig — defaults", "[channel-reads]") {
     auto cfg = client.readChannelConfig(0);
     CHECK(cfg.configuredTargetVRaw == 0);
     CHECK(cfg.outputAction == hvb::OutputAction::None);
-    CHECK(cfg.vProtMode == hvb::ProtectionMode::Disabled);
-    CHECK(cfg.outCalK == 10000);
-    CHECK(cfg.outCalB == 0);
+    CHECK(cfg.recoveryPolicyMode == hvb::RecoveryPolicy::ManualLatch);
+    CHECK(cfg.currentSafeBandPct == 10);
+
+    auto cal = client.readChannelCalConfig(0);
+    CHECK(cal.outCalK == 10000);
+    CHECK(cal.outCalB == 0);
 }

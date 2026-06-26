@@ -74,10 +74,9 @@ public slots:
 
     // System writes
     void writeOperatingMode(int mode);
+    void writeStartupChannelPolicy(int policy);
     void writeSlaveAddress(int addr);
     void writeBaudRate(int code);
-    void writeRecoveryPolicy(int policy, int delay, int max, int window);
-    void writeSafeBands(int vPct, int iPct);
     void saveSystem();
     void loadSystem();
     void factoryResetSystem();
@@ -89,7 +88,8 @@ public slots:
     void writeTargetVoltage(int ch, int raw);
     void writeRampUp(int ch, int stepRaw, int interval);
     void writeRampDown(int ch, int stepRaw, int interval);
-    void writeVoltageProtection(int ch, int mode, int action, int thresholdRaw);
+    void writeChannelRecovery(int ch, int policy, int delay, int max, int window);
+    void writeChannelSafeBand(int ch, int pct);
     void writeCurrentProtection(int ch, int mode, int action, int thresholdRaw);
     void writeDerateStep(int ch, int stepRaw);
     void writeCalOutput(int ch, int k, int b);

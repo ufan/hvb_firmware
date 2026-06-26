@@ -174,13 +174,9 @@ int cmdSystemConfig() {
     if (!g_client->isConnected()) return 1;
     std::cout << "=== System Configuration ===\n";
     printSep("Operating Mode:", hvb::opModeName(cfg.operatingMode));
+    printSep("Startup Ch Policy:", std::to_string(cfg.startupChannelPolicy));
     printSep("Slave Address:", std::to_string(cfg.slaveAddr));
     printSep("Baud Rate:", cfg.baudRateCode == 0 ? "115200" : "9600");
-    printSep("Recovery Policy:", hvb::recoveryPolicyName(cfg.recoveryPolicy));
-    printSep("Retry:", "delay=" + std::to_string(cfg.retryDelay) + "s  max="
-             + std::to_string(cfg.retryMax) + "  window=" + std::to_string(cfg.retryWindow) + "s");
-    printSep("Safe Bands:", "V=" + std::to_string(cfg.voltageSafeBandPct) + "%  I="
-             + std::to_string(cfg.currentSafeBandPct) + "%");
     return 0;
 }
 
@@ -193,26 +189,23 @@ int cmdChannelConfig(int ch) {
     printSep("Fault Command:", hvb::faultCommandName(cfg.faultCommand));
     printSep("Ramp Up:", std::to_string(cfg.rampUpStepRaw) + " raw / " + std::to_string(cfg.rampUpInterval) + " x10s");
     printSep("Ramp Down:", std::to_string(cfg.rampDownStepRaw) + " raw / " + std::to_string(cfg.rampDownInterval) + " x10s");
-    printSep("V Protection:", std::string(hvb::protectionModeName(cfg.vProtMode)) + " / "
-             + hvb::outputActionName(cfg.vProtOutputAction) + " / " + formatVRaw(cfg.vLimitThresholdRaw));
+    printSep("Recovery Policy:", hvb::recoveryPolicyName(cfg.recoveryPolicyMode));
+    printSep("Auto Retry:", "delay=" + std::to_string(cfg.autoRetryDelay) + "s  max="
+             + std::to_string(cfg.autoRetryMaxCount) + "  window=" + std::to_string(cfg.autoRetryWindow) + "s");
+    printSep("I Safe Band:", std::to_string(cfg.currentSafeBandPct) + "%");
     printSep("I Protection:", std::string(hvb::protectionModeName(cfg.iProtMode)) + " / "
              + hvb::outputActionName(cfg.iProtOutputAction) + " / " + formatIRaw(cfg.iLimitThresholdRaw));
     printSep("Derate Step:", formatVRaw(cfg.derateStepRaw));
-    printSep("Save Target:", cfg.saveTargetPolicy ? "Yes" : "No");
-    printSep("Calibration:", "");
-    printSep("  Output:", "K=" + std::to_string(cfg.outCalK) + "  B=" + std::to_string(cfg.outCalB));
-    printSep("  Meas V:", "K=" + std::to_string(cfg.measVCalK) + "  B=" + std::to_string(cfg.measVCalB));
-    printSep("  Meas I:", "K=" + std::to_string(cfg.measICalK) + "  B=" + std::to_string(cfg.measICalB));
     return 0;
 }
 
 int cmdChannelCal(int ch) {
-    auto cfg = g_client->readChannelConfig(ch);
+    auto cal = g_client->readChannelCalConfig(ch);
     if (!g_client->isConnected()) return 1;
     std::cout << "=== Channel " << ch << " Calibration ===\n";
-    printSep("Output:", "K=" + std::to_string(cfg.outCalK) + " (x10000)  B=" + std::to_string(cfg.outCalB) + " (x1000)");
-    printSep("Meas V:", "K=" + std::to_string(cfg.measVCalK) + " (x10000)  B=" + std::to_string(cfg.measVCalB) + " (x1000)");
-    printSep("Meas I:", "K=" + std::to_string(cfg.measICalK) + " (x10000)  B=" + std::to_string(cfg.measICalB) + " (x1000)");
+    printSep("Output:", "K=" + std::to_string(cal.outCalK) + " (x10000)  B=" + std::to_string(cal.outCalB) + " (x1000)");
+    printSep("Meas V:", "K=" + std::to_string(cal.measVCalK) + " (x10000)  B=" + std::to_string(cal.measVCalB) + " (x1000)");
+    printSep("Meas I:", "K=" + std::to_string(cal.measICalK) + " (x10000)  B=" + std::to_string(cal.measICalB) + " (x1000)");
     return 0;
 }
 
@@ -280,8 +273,6 @@ int main(int argc, char** argv) {
 
     // System subcommand option variables
     std::string sys_mode;
-    std::string sys_recovery_policy; int sys_recovery_d=0, sys_recovery_mx=0, sys_recovery_w=0;
-    uint16_t sys_safe_band_v=10, sys_safe_band_i=10;
     uint16_t sys_addr_val=1;
     uint16_t sys_baud_code=0;
 
@@ -291,7 +282,8 @@ int main(int argc, char** argv) {
     uint16_t ch_voltage_raw = 0;
     uint16_t ch_ramp_up_step=0, ch_ramp_up_interval=0;
     uint16_t ch_ramp_dn_step=0, ch_ramp_dn_interval=0;
-    std::string ch_prot_v_mode, ch_prot_v_action; uint16_t ch_prot_v_thresh=0;
+    std::string ch_recovery_policy; int ch_recovery_d=0, ch_recovery_mx=0, ch_recovery_w=0;
+    uint16_t ch_safe_band_pct=10;
     std::string ch_prot_i_mode, ch_prot_i_action; uint16_t ch_prot_i_thresh=0;
     uint16_t ch_derate_step=0;
 
@@ -321,23 +313,10 @@ int main(int argc, char** argv) {
     sysMode->add_option("mode", sys_mode, "NORMAL|AUTO")->required();
     sysMode->callback([&]() { std::cout << (g_client->writeOperatingMode(sys_mode=="AUTO"?hvb::OpMode::Automatic:hvb::OpMode::Normal)?"OK\n":g_client->lastError()+"\n"); });
 
-    auto* sysRecovery = sysCmd->add_subcommand("recovery", "Set recovery policy");
-    sysRecovery->add_option("policy", sys_recovery_policy, "MANUAL-LATCH|AUTO-RETRY|AUTO-DERATE|NEVER-RETRY")->required();
-    sysRecovery->add_option("delay", sys_recovery_d, "Cooldown seconds")->required();
-    sysRecovery->add_option("max", sys_recovery_mx, "Max retries")->required();
-    sysRecovery->add_option("window", sys_recovery_w, "Retry window seconds")->required();
-    sysRecovery->callback([&]() {
-        hvb::RecoveryPolicy rp = hvb::RecoveryPolicy::ManualLatch;
-        if (sys_recovery_policy=="AUTO-RETRY") rp=hvb::RecoveryPolicy::AutoRetry;
-        else if (sys_recovery_policy=="AUTO-DERATE") rp=hvb::RecoveryPolicy::AutoDerateRetry;
-        else if (sys_recovery_policy=="NEVER-RETRY") rp=hvb::RecoveryPolicy::NeverRetry;
-        std::cout << (g_client->writeSystemRecoveryPolicy(rp,sys_recovery_d,sys_recovery_mx,sys_recovery_w)?"OK\n":g_client->lastError()+"\n");
-    });
-
-    auto* sysSafeBands = sysCmd->add_subcommand("safe-bands", "Set safe bands");
-    sysSafeBands->add_option("v-pct", sys_safe_band_v, "0-50")->required()->check(CLI::Range(0u,50u));
-    sysSafeBands->add_option("i-pct", sys_safe_band_i, "0-50")->required()->check(CLI::Range(0u,50u));
-    sysSafeBands->callback([&]() { std::cout << (g_client->writeSafeBands(sys_safe_band_v,sys_safe_band_i)?"OK\n":g_client->lastError()+"\n"); });
+    auto* sysStartupPol = sysCmd->add_subcommand("startup-policy", "Set startup channel policy");
+    uint16_t sys_startup_policy = 0;
+    sysStartupPol->add_option("policy", sys_startup_policy, "0=load-nvs, 1=factory-default")->required()->check(CLI::Range(0u,1u));
+    sysStartupPol->callback([&]() { std::cout << (g_client->writeStartupChannelPolicy(sys_startup_policy)?"OK\n":g_client->lastError()+"\n"); });
 
     auto* sysAddr = sysCmd->add_subcommand("addr", "Set slave address");
     sysAddr->add_option("addr", sys_addr_val, "0-247")->required()->check(CLI::Range(0u,247u));
@@ -405,20 +384,22 @@ int main(int argc, char** argv) {
     chRampDn->add_option("interval", ch_ramp_dn_interval, "Interval x10s")->required();
     chRampDn->callback([&]() { std::cout << (g_client->writeRampDown(ch,ch_ramp_dn_step,ch_ramp_dn_interval)?"OK\n":g_client->lastError()+"\n"); });
 
-    auto* chProtV = chCmd->add_subcommand("prot-v", "Set voltage protection");
-    chProtV->add_option("mode", ch_prot_v_mode, "DISABLED|FLAG-ONLY|APPLY-ACTION")->required();
-    chProtV->add_option("action", ch_prot_v_action, "NONE|DISABLE-GRACEFUL|DISABLE-IMMEDIATE|FORCE-ZERO|CLAMP")->required();
-    chProtV->add_option("threshold", ch_prot_v_thresh, "Raw LSB")->required();
-    chProtV->callback([&]() {
-        hvb::ProtectionMode pm = hvb::ProtectionMode::Disabled;
-        if (ch_prot_v_mode=="FLAG-ONLY") pm=hvb::ProtectionMode::FlagOnly;
-        else if (ch_prot_v_mode=="APPLY-ACTION") pm=hvb::ProtectionMode::ApplyOutputAction;
-        hvb::OutputAction oa = hvb::OutputAction::None;
-        if (ch_prot_v_action=="DISABLE-GRACEFUL") oa=hvb::OutputAction::DisableGraceful;
-        else if (ch_prot_v_action=="DISABLE-IMMEDIATE") oa=hvb::OutputAction::DisableImmediate;
-        else if (ch_prot_v_action=="FORCE-ZERO") oa=hvb::OutputAction::ForceOutputZero;
-        else if (ch_prot_v_action=="CLAMP") oa=hvb::OutputAction::Clamp;
-        std::cout << (g_client->writeVoltageProtection(ch,pm,oa,ch_prot_v_thresh)?"OK\n":g_client->lastError()+"\n"); });
+    auto* chRecovery = chCmd->add_subcommand("recovery", "Set channel recovery policy");
+    chRecovery->add_option("policy", ch_recovery_policy, "MANUAL-LATCH|AUTO-RETRY|AUTO-DERATE|NEVER-RETRY")->required();
+    chRecovery->add_option("delay", ch_recovery_d, "Cooldown seconds")->required();
+    chRecovery->add_option("max", ch_recovery_mx, "Max retries")->required();
+    chRecovery->add_option("window", ch_recovery_w, "Retry window seconds")->required();
+    chRecovery->callback([&]() {
+        hvb::RecoveryPolicy rp = hvb::RecoveryPolicy::ManualLatch;
+        if (ch_recovery_policy=="AUTO-RETRY") rp=hvb::RecoveryPolicy::AutoRetry;
+        else if (ch_recovery_policy=="AUTO-DERATE") rp=hvb::RecoveryPolicy::AutoDerateRetry;
+        else if (ch_recovery_policy=="NEVER-RETRY") rp=hvb::RecoveryPolicy::NeverRetry;
+        std::cout << (g_client->writeChannelRecovery(ch,rp,ch_recovery_d,ch_recovery_mx,ch_recovery_w)?"OK\n":g_client->lastError()+"\n");
+    });
+
+    auto* chSafeBand = chCmd->add_subcommand("safe-band", "Set I safe band %");
+    chSafeBand->add_option("pct", ch_safe_band_pct, "0-50")->required()->check(CLI::Range(0u,50u));
+    chSafeBand->callback([&]() { std::cout << (g_client->writeChannelSafeBand(ch,ch_safe_band_pct)?"OK\n":g_client->lastError()+"\n"); });
 
     auto* chProtI = chCmd->add_subcommand("prot-i", "Set current protection");
     chProtI->add_option("mode", ch_prot_i_mode, "DISABLED|FLAG-ONLY|APPLY-ACTION")->required();

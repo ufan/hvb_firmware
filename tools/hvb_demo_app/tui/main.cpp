@@ -56,7 +56,8 @@ int main(int argc, char** argv) {
                 data.sysInfo = g_client.readSystemInfo();
                 for (int ch = 0; ch < 2; ++ch) data.chInfo[ch] = g_client.readChannelInfo(ch);
                 data.sysCfg  = g_client.readSystemConfig();
-                for (int ch = 0; ch < 2; ++ch) data.chCfg[ch]  = g_client.readChannelConfig(ch);
+                for (int ch = 0; ch < 2; ++ch) data.chCfg[ch]    = g_client.readChannelConfig(ch);
+                for (int ch = 0; ch < 2; ++ch) data.chCalCfg[ch] = g_client.readChannelCalConfig(ch);
                 data.valid = g_client.isConnected();
                 if (running) screen.PostEvent(Event::Custom);
             }
@@ -85,7 +86,8 @@ int main(int argc, char** argv) {
                 data.sysInfo = g_client.readSystemInfo();
                 for (int ch = 0; ch < 2; ++ch) data.chInfo[ch] = g_client.readChannelInfo(ch);
                 data.sysCfg  = g_client.readSystemConfig();
-                for (int ch = 0; ch < 2; ++ch) data.chCfg[ch]  = g_client.readChannelConfig(ch);
+                for (int ch = 0; ch < 2; ++ch) data.chCfg[ch]    = g_client.readChannelConfig(ch);
+                for (int ch = 0; ch < 2; ++ch) data.chCalCfg[ch] = g_client.readChannelCalConfig(ch);
                 data.valid = true;
             }
             { std::lock_guard<std::mutex> lk(statusMutex);
@@ -159,7 +161,8 @@ int main(int argc, char** argv) {
                     data.sysInfo = g_client.readSystemInfo();
                     for (int i = 0; i < 2; ++i) data.chInfo[i] = g_client.readChannelInfo(i);
                     data.sysCfg  = g_client.readSystemConfig();
-                    for (int i = 0; i < 2; ++i) data.chCfg[i]  = g_client.readChannelConfig(i);
+                    for (int i = 0; i < 2; ++i) data.chCfg[i]    = g_client.readChannelConfig(i);
+                    for (int i = 0; i < 2; ++i) data.chCalCfg[i] = g_client.readChannelCalConfig(i);
                     data.valid = true;
                 }
                 return true;
@@ -186,7 +189,8 @@ int main(int argc, char** argv) {
                 data.sysInfo = g_client.readSystemInfo();
                 for (int i = 0; i < 2; ++i) data.chInfo[i] = g_client.readChannelInfo(i);
                 data.sysCfg  = g_client.readSystemConfig();
-                for (int i = 0; i < 2; ++i) data.chCfg[i]  = g_client.readChannelConfig(i);
+                for (int i = 0; i < 2; ++i) data.chCfg[i]    = g_client.readChannelConfig(i);
+                for (int i = 0; i < 2; ++i) data.chCalCfg[i] = g_client.readChannelCalConfig(i);
                 data.valid = true;
             }
             { std::lock_guard<std::mutex> lk(statusMutex);

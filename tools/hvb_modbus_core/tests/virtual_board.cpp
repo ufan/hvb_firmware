@@ -48,7 +48,6 @@ void VirtualBoard::setVariantDefaults() {
         holdingRegs[base + CH_CFG_TARGET_VOLTAGE] = 0;
         holdingRegs[base + CH_OUTPUT_ACTION] = 0;
         holdingRegs[base + CH_FAULT_CMD] = 0;
-        holdingRegs[base + CH_VOLTAGE_LIMIT_THRESHOLD] = 20000;
         holdingRegs[base + CH_CURRENT_LIMIT_THRESHOLD] = 32767;
         holdingRegs[base + CH_OUTPUT_CAL_K] = 10000;
         holdingRegs[base + CH_OUTPUT_CAL_B] = 0;

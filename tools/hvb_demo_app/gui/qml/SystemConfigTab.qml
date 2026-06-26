@@ -36,44 +36,17 @@ ScrollView {
             Layout.preferredWidth: 100
         }
 
-        // Recovery group header
-        Label { text: "Recovery Policy:"; font.bold: true }
-        Item { Layout.columnSpan: 3 }
-
-        Label { text: "Policy:" }
+        // Startup Channel Policy (v3: recovery/safe-band moved to per-channel)
+        Label { text: "Startup Policy:" }
         ComboBox {
-            id: recoveryCb
-            model: ["ManualLatch", "AutoRetry", "AutoDerate", "NeverRetry"]
-            currentIndex: backend.sysConfig.recoveryPolicy || 0
-            Layout.preferredWidth: 130
-        }
-        Label { text: "Retry Delay (s):" }
-        SpinBox { id: retryD; from: 0; to: 3600; value: backend.sysConfig.retryDelay || 0 }
-
-        Label { text: "Retry Max:" }
-        SpinBox { id: retryM; from: 0; to: 100; value: backend.sysConfig.retryMax || 0 }
-        Label { text: "Retry Window (s):" }
-        SpinBox { id: retryW; from: 0; to: 86400; value: backend.sysConfig.retryWindow || 0 }
-
-        Button {
-            text: "Apply Recovery"
-            onClicked: backend.writeRecoveryPolicy(recoveryCb.currentIndex, retryD.value, retryM.value, retryW.value)
+            model: ["Load NVS Config", "Factory Default"]
+            currentIndex: backend.sysConfig.startupChannelPolicy || 0
+            onCurrentIndexChanged: backend.writeStartupChannelPolicy(currentIndex)
+            Layout.preferredWidth: 150
         }
 
-        // Safe bands
-        Label { text: "" }
-        Label { text: "" }
-        Label { text: "" }
-
-        Label { text: "V Safe Band (%):" }
-        SpinBox { id: vBand; from: 0; to: 50; value: backend.sysConfig.voltageSafeBandPct || 10 }
-        Label { text: "I Safe Band (%):" }
-        SpinBox { id: iBand; from: 0; to: 50; value: backend.sysConfig.currentSafeBandPct || 10 }
-
-        Button {
-            text: "Apply Safe Bands"
-            onClicked: backend.writeSafeBands(vBand.value, iBand.value)
-        }
+        // Spacer
+        Item { Layout.columnSpan: 2; Layout.preferredHeight: 4 }
 
         // Actions
         Item { Layout.columnSpan: 4; Layout.preferredHeight: 8 }
