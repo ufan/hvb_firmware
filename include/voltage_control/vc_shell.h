@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef SHELL_ADAPTER_SHELL_ADAPTER_H
-#define SHELL_ADAPTER_SHELL_ADAPTER_H
+#ifndef VOLTAGE_CONTROL_VC_SHELL_H
+#define VOLTAGE_CONTROL_VC_SHELL_H
 
 struct vc_ctx;
 

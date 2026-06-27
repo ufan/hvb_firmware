@@ -63,3 +63,25 @@ config VC_SETTINGS_PERSISTENCE
 	help
 	  Enable save/load/factory-reset of system and channel configs
 	  using Zephyr Settings backed by NVS on internal flash.
+
+config VC_SHELL
+	bool "Zephyr shell adapter for voltage-control"
+	default n
+	depends on VC_RUNTIME
+	select SHELL
+	select SHELL_BACKEND_SERIAL
+	help
+	  Enable interactive shell commands under the "vc" top-level
+	  command for controlling and monitoring the voltage-control
+	  system.
+
+if VC_SHELL
+
+config VC_SHELL_WATCH_DEFAULT_INTERVAL_MS
+	int "Default watch interval (ms)"
+	default 500
+	range 100 10000
+	help
+	  Default polling interval in milliseconds for the vc watch command.
+
+endif # VC_SHELL

@@ -25,8 +25,22 @@ enum vc_baud_rate_code {
 	VC_BAUD_RATE_9600 = 1,
 };
 
+struct mb_adapter_config {
+	uint16_t slave_address;
+	uint16_t baud_rate_code;
+};
+
 int modbus_adapter_init(struct vc_ctx *ctx);
 void modbus_adapter_apply_config(void);
+
+void modbus_adapter_get_config(struct mb_adapter_config *cfg);
+int  modbus_adapter_set_slave_address(uint16_t addr);
+int  modbus_adapter_set_baud_rate_code(uint16_t code);
+int  modbus_adapter_config_save(void);
+int  modbus_adapter_config_load(void);
+void modbus_adapter_config_factory(void);
+
+void modbus_adapter_shell_init(void);
 
 struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx);
 enum vc_mb_result vc_mb_input_rd(struct vc_mb_adapter *a, uint16_t addr,

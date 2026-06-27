@@ -19,4 +19,6 @@ struct sys_status_snapshot {
 
 struct sys_status_snapshot sys_status_get(void);
 
+void sys_status_shell_init(void);
+
 #endif

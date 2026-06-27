@@ -3,4 +3,3 @@
 add_subdirectory(voltage_control)
 add_subdirectory(sys_status)
 add_subdirectory(modbus_adapter)
-add_subdirectory(shell_adapter)

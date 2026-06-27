@@ -23,4 +23,12 @@ config VC_MODBUS_BAUD_RATE
 	help
 	  Baud rate for the Modbus RTU serial interface.
 
+config MODBUS_ADAPTER_SHELL
+	bool "Shell commands for Modbus adapter"
+	default n
+	select SHELL
+	help
+	  Enable "mb" shell command tree for Modbus slave address
+	  and baud rate configuration.
+
 endif # UI_MODBUS_RTU

@@ -37,4 +37,12 @@ config SYS_STATUS_THREAD_PRIORITY
 	help
 	  Zephyr thread priority for the sys_status worker.
 
+config SYS_STATUS_SHELL
+	bool "Shell commands for system status"
+	default n
+	select SHELL
+	help
+	  Enable "ss" shell command to display uptime, board
+	  temperature, humidity, and firmware version.
+
 endif # SYS_STATUS

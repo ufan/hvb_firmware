@@ -3,4 +3,3 @@
 rsource "voltage_control/Kconfig"
 rsource "sys_status/Kconfig"
 rsource "modbus_adapter/Kconfig"
-rsource "shell_adapter/Kconfig"

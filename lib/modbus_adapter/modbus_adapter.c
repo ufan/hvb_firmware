@@ -33,11 +33,6 @@
 #define EXT_BLOCK_END 279
 #define MB_CMD_TIMEOUT K_SECONDS(1)
 
-struct mb_adapter_config {
-	uint16_t slave_address;
-	uint16_t baud_rate_code;
-};
-
 struct vc_mb_adapter {
 	struct vc_ctx *ctx;
 	struct mb_adapter_config cfg;
@@ -466,9 +461,114 @@ int modbus_adapter_init(struct vc_ctx *ctx)
 	return 0;
 }
 
+void modbus_adapter_get_config(struct mb_adapter_config *cfg)
+{
+	if (mb == NULL || cfg == NULL) {
+		return;
+	}
+	*cfg = mb->cfg;
+}
+
+int modbus_adapter_set_slave_address(uint16_t addr)
+{
+	if (mb == NULL) {
+		return -ENODEV;
+	}
+	if (addr < 1 || addr > 247) {
+		return -EINVAL;
+	}
+	if (mb->cfg.slave_address != addr) {
+		mb->cfg.slave_address = addr;
+		mb->needs_reconfig = true;
+		modbus_adapter_apply_config();
+	}
+	return 0;
+}
+
+int modbus_adapter_set_baud_rate_code(uint16_t code)
+{
+	if (mb == NULL) {
+		return -ENODEV;
+	}
+	if (code > VC_BAUD_RATE_9600) {
+		return -EINVAL;
+	}
+	if (mb->cfg.baud_rate_code != code) {
+		mb->cfg.baud_rate_code = code;
+		mb->needs_reconfig = true;
+		modbus_adapter_apply_config();
+	}
+	return 0;
+}
+
+int modbus_adapter_config_save(void)
+{
+	if (mb == NULL) {
+		return -ENODEV;
+	}
+	return adapter_save_config(&mb->cfg);
+}
+
+int modbus_adapter_config_load(void)
+{
+	if (mb == NULL) {
+		return -ENODEV;
+	}
+	if (adapter_load_config(&mb->cfg) < 0) {
+		mb->cfg.slave_address = CONFIG_VC_MODBUS_UNIT_ID;
+		mb->cfg.baud_rate_code = VC_BAUD_RATE_115200;
+	}
+	mb->needs_reconfig = true;
+	modbus_adapter_apply_config();
+	return 0;
+}
+
+void modbus_adapter_config_factory(void)
+{
+	if (mb == NULL) {
+		return;
+	}
+	adapter_erase_config();
+	mb->cfg.slave_address = CONFIG_VC_MODBUS_UNIT_ID;
+	mb->cfg.baud_rate_code = VC_BAUD_RATE_115200;
+	mb->needs_reconfig = true;
+	modbus_adapter_apply_config();
+}
+
 #else /* !CONFIG_MODBUS */
 
 void modbus_adapter_apply_config(void)
+{
+}
+
+void modbus_adapter_get_config(struct mb_adapter_config *cfg)
+{
+	ARG_UNUSED(cfg);
+}
+
+int modbus_adapter_set_slave_address(uint16_t addr)
+{
+	ARG_UNUSED(addr);
+	return -ENODEV;
+}
+
+int modbus_adapter_set_baud_rate_code(uint16_t code)
+{
+	ARG_UNUSED(code);
+	return -ENODEV;
+}
+
+int modbus_adapter_config_save(void)
+{
+	return -ENODEV;
+}
+
+int modbus_adapter_config_load(void)
+{
+	return -ENODEV;
+}
+
+void modbus_adapter_config_factory(void)
 {
 }
 

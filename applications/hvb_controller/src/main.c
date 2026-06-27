@@ -14,7 +14,11 @@
 #endif
 
 #if IS_ENABLED(CONFIG_VC_SHELL)
-#include "shell_adapter/shell_adapter.h"
+#include "voltage_control/vc_shell.h"
+#endif
+
+#if IS_ENABLED(CONFIG_SYS_STATUS_SHELL)
+#include "sys_status/sys_status.h"
 #endif
 
 int main(void)
@@ -42,6 +46,14 @@ int main(void)
 
 #if IS_ENABLED(CONFIG_VC_SHELL)
 	vc_shell_init(ctx);
+#endif
+
+#if IS_ENABLED(CONFIG_MODBUS_ADAPTER_SHELL)
+	modbus_adapter_shell_init();
+#endif
+
+#if IS_ENABLED(CONFIG_SYS_STATUS_SHELL)
+	sys_status_shell_init();
 #endif
 
 	printk("hvb_controller ready\n");
