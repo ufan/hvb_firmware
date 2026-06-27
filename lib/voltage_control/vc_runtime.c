@@ -13,10 +13,7 @@
 #include "voltage_control/vc_controller.h"
 #include "voltage_control/vc_storage.h"
 
-#if IS_ENABLED(CONFIG_REG_STORE)
 #include "reg_store/reg_store.h"
-#include "regmap/vc_regs.h"
-#endif
 
 #ifdef CONFIG_VC_SETTINGS_PERSISTENCE
 #include <zephyr/settings/settings.h>
@@ -104,8 +101,6 @@ static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 		return VC_ERR_INVALID_COMMAND;
 	}
 }
-
-#if IS_ENABLED(CONFIG_REG_STORE)
 
 static uint16_t u32_hi(uint32_t v) { return (uint16_t)(v >> 16); }
 static uint16_t u32_lo(uint32_t v) { return (uint16_t)(v & 0xFFFFu); }
@@ -234,8 +229,6 @@ static void vc_runtime_publish_to_reg_store(const struct vc_published_snapshot *
 	}
 }
 
-#endif /* IS_ENABLED(CONFIG_REG_STORE) */
-
 static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 {
 	struct vc_controller *ctrl = runtime->ctrl;
@@ -252,9 +245,7 @@ static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 		vc_controller_get_channel_cal_config(ctrl, ch,
 						     &runtime->published.cal_configs[ch]);
 	}
-#if IS_ENABLED(CONFIG_REG_STORE)
 	vc_runtime_publish_to_reg_store(&runtime->published, count);
-#endif
 	k_mutex_unlock(&runtime->snapshot_lock);
 }
 

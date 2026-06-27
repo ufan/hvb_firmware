@@ -4,7 +4,7 @@
  */
 
 #include "voltage_control/vc_channel.h"
-#include "regmap/vc_regs.h"
+#include "reg_store/reg_map.h"
 #include <string.h>
 
 #define VC_DEFAULT_MAX_RAW_DAC      0xFFFF

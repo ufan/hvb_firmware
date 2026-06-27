@@ -11,8 +11,7 @@
 
 #include "voltage_control/vc_shell.h"
 #include "voltage_control/vc.h"
-#include <dt-bindings/voltage_control/capabilities.h>
-#include "regmap/vc_regs.h"
+#include "reg_store/reg_map.h"
 
 #define SHELL_CMD_TIMEOUT   K_SECONDS(1)
 #define SHELL_PARAM_TIMEOUT K_SECONDS(5)

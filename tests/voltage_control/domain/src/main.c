@@ -11,7 +11,7 @@
 
 #include "voltage_control/vc_controller.h"
 #include "voltage_control/vc_runtime.h"
-#include "regmap/vc_regs.h"
+#include "reg_store/reg_map.h"
 #include <dt-bindings/voltage_control/capabilities.h>
 
 #define FULL_CAPS (CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE | \

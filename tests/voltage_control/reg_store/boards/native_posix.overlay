@@ -1,9 +1,26 @@
-/* Minimal vc-controller node — reg_store tests do not use channels */
+#include <dt-bindings/voltage_control/capabilities.h>
+
 / {
 	vc_controller: vc-controller {
 		compatible = "jianwei,vc-controller";
 		#address-cells = <1>;
 		#size-cells = <0>;
 		status = "okay";
+
+		vc_ch0: channel@0 {
+			compatible = "jianwei,vc-channel-stub";
+			reg = <0>;
+			label = "CH0";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+					 CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)>;
+		};
+
+		vc_ch1: channel@1 {
+			compatible = "jianwei,vc-channel-stub";
+			reg = <1>;
+			label = "CH1";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+					 CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)>;
+		};
 	};
 };

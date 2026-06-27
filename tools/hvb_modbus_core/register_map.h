@@ -3,7 +3,7 @@
 #include <cstdint>
 
 // Shared register map from firmware — single UINT16 registers, raw LSB values
-#include "regmap/vc_regs.h"
+#include "reg_store/reg_map.h"
 
 namespace hvb::reg {
 

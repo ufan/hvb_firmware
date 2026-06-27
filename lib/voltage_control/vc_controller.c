@@ -4,7 +4,7 @@
  */
 
 #include "voltage_control/vc_controller.h"
-#include "regmap/vc_regs.h"
+#include "reg_store/reg_map.h"
 #include <string.h>
 #include <errno.h>
 #include <zephyr/sys/reboot.h>

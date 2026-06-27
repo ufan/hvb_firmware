@@ -7,7 +7,6 @@
 #include "modbus_register.h"
 #include "voltage_control/vc.h"
 #include "reg_store/reg_store.h"
-#include "regmap/vc_regs.h"
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */

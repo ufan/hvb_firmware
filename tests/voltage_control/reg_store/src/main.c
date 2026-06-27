@@ -6,7 +6,6 @@
 #include <zephyr/ztest.h>
 
 #include "reg_store/reg_store.h"
-#include "regmap/vc_regs.h"
 
 ZTEST_SUITE(reg_store, NULL, NULL, NULL, NULL, NULL);
 
@@ -28,45 +27,68 @@ ZTEST(reg_store, test_write_read_holding)
 	zassert_equal(val, 0x1234);
 }
 
+/*
+ * Wire addresses for unconfigured channel slots (ch2..15) must be rejected.
+ * Wire addresses past the extension block must also be rejected.
+ */
 ZTEST(reg_store, test_out_of_range_read_returns_false)
 {
 	uint16_t val = 0xFFFF;
 
-	zassert_false(reg_store_read_input(REG_STORE_SIZE, &val));
-	zassert_false(reg_store_read_holding(REG_STORE_SIZE, &val));
+	/* ch2 wire addr — only 2 channels configured in this test build */
+	zassert_false(reg_store_read_input(CH_BLOCK_BASE(2), &val));
+	zassert_false(reg_store_read_holding(CH_BLOCK_BASE(2), &val));
+	/* past end of extension block */
+	zassert_false(reg_store_read_input(EXT_BLOCK_BASE + 80U, &val));
+	zassert_false(reg_store_read_holding(EXT_BLOCK_BASE + 80U, &val));
 	zassert_equal(val, 0xFFFF, "out must not be modified on false return");
 }
 
 ZTEST(reg_store, test_out_of_range_write_is_noop)
 {
 	uint16_t val = 0;
+	uint16_t last_ext = EXT_BLOCK_BASE + 79U;
 
-	/* Write to valid address, then attempt to corrupt via out-of-range write */
-	reg_store_write_input(REG_STORE_SIZE - 1, 0x5555);
-	reg_store_write_input(REG_STORE_SIZE, 0xDEAD);  /* noop */
-	zassert_true(reg_store_read_input(REG_STORE_SIZE - 1, &val));
+	reg_store_write_input(last_ext, 0x5555);
+	reg_store_write_input(EXT_BLOCK_BASE + 80U, 0xDEAD);  /* noop */
+	zassert_true(reg_store_read_input(last_ext, &val));
 	zassert_equal(val, 0x5555);
 }
 
-ZTEST(reg_store, test_ch_block_mapping)
+/*
+ * Verify compact channel mapping: configured channel slots are accessible at
+ * their protocol wire addresses; unconfigured slots are rejected; the extension
+ * block is accessible at its fixed protocol wire address (680) regardless of
+ * how many channels are configured; channel and extension blocks are independent.
+ */
+ZTEST(reg_store, test_compact_ch_mapping)
 {
 	uint16_t val = 0;
 
-	/* Last register of ch15 block */
-	uint16_t last_ch_addr = CH_BLOCK_BASE(15) + CH_BLOCK_SIZE - 1;
+	/* ch0 and ch1 wire addresses are accessible */
+	reg_store_write_input(CH_BLOCK_BASE(0), 0xAAAA);
+	reg_store_write_input(CH_BLOCK_BASE(1) + CH_BLOCK_SIZE - 1, 0xBBBB);
+	zassert_true(reg_store_read_input(CH_BLOCK_BASE(0), &val));
+	zassert_equal(val, 0xAAAA);
+	zassert_true(reg_store_read_input(CH_BLOCK_BASE(1) + CH_BLOCK_SIZE - 1, &val));
+	zassert_equal(val, 0xBBBB);
 
-	zassert_equal(last_ch_addr, 679,
-		      "ch15 last register should be 679");
-	reg_store_write_input(last_ch_addr, 0x9999);
-	zassert_true(reg_store_read_input(last_ch_addr, &val));
-	zassert_equal(val, 0x9999);
+	/* ch2 wire address is rejected (only 2 channels in this test build) */
+	zassert_false(reg_store_read_input(CH_BLOCK_BASE(2), &val));
 
-	/* Extension block starts at 680 */
-	zassert_equal(EXT_BLOCK_BASE, 680,
-		      "extension block should start at 680");
+	/* Extension block is accessible at its protocol wire address (always 680) */
+	zassert_equal(EXT_BLOCK_BASE, 680U);
 	reg_store_write_input(EXT_BLOCK_BASE, 0x1111);
 	zassert_true(reg_store_read_input(EXT_BLOCK_BASE, &val));
 	zassert_equal(val, 0x1111);
+
+	reg_store_write_input(EXT_BLOCK_BASE + 79U, 0x2222);
+	zassert_true(reg_store_read_input(EXT_BLOCK_BASE + 79U, &val));
+	zassert_equal(val, 0x2222);
+
+	/* ch0 and ext block are independent — no aliasing */
+	zassert_true(reg_store_read_input(CH_BLOCK_BASE(0), &val));
+	zassert_equal(val, 0xAAAA);
 }
 
 ZTEST(reg_store, test_null_out_returns_false)

@@ -6,7 +6,7 @@
 
 #include <zephyr/ztest.h>
 
-#include "regmap/vc_regs.h"
+#include "reg_store/reg_map.h"
 #include "voltage_control/vc.h"
 
 static struct vc_ctx *ctx;

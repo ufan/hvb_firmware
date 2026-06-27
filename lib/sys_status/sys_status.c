@@ -16,7 +16,6 @@
 
 #include "sys_status/sys_status.h"
 #include "reg_store/reg_store.h"
-#include "regmap/vc_regs.h"
 
 LOG_MODULE_REGISTER(sys_status, LOG_LEVEL_INF);
 

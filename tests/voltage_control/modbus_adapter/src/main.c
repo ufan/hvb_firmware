@@ -8,7 +8,7 @@
 
 #include <zephyr/ztest.h>
 
-#include "regmap/vc_regs.h"
+#include "reg_store/reg_map.h"
 #include "modbus_adapter/modbus_adapter.h"
 #include "voltage_control/vc.h"
 

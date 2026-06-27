@@ -16,7 +16,7 @@
 
 #include "modbus_adapter/modbus_adapter.h"
 #include "modbus_register.h"
-#include "regmap/vc_regs.h"
+#include "reg_store/reg_map.h"
 
 #ifdef CONFIG_SETTINGS
 #include <zephyr/settings/settings.h>
