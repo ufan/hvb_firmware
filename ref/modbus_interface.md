@@ -164,9 +164,9 @@ The adapter maps domain rejection of an unsafe clear to exception `0x03`.
 | 1 | Save persistent parameters for this block's scope |
 | 2 | Load persistent parameters for this block's scope |
 | 3 | Restore factory defaults for this block's scope |
-| 255 | Software reset |
+| 255 | System reset (system block only) |
 
-Parameter action scope and persistence behavior are defined in the domain behavior spec. The adapter maps storage failure to exception `0x04`.
+Value 255 is a system-level delayed cold reset. It is valid only at the System Param Action register; channel parameter action 255 is rejected with exception `0x03`. The adapter acknowledges the system request before reboot so the response can be transmitted. Other parameter-action scope and persistence behavior are defined in the domain behavior spec. The adapter maps storage failure to exception `0x04`.
 
 ### 8.5 Protection Mode
 
@@ -313,16 +313,15 @@ Holding registers expose writable configuration and self-clearing commands. Comm
 | Offset | Abs | Name | Access | Type | Range | Description |
 |---:|---:|---|---|---|---|---|
 | 0 | 0 | Operating Mode | RW | UINT16 | 0-2 | Normal, Automatic, or Calibration |
-| 1 | 1 | Slave Address | RW | UINT16 | 0-247 | Effective after save and restart |
-| 2 | 2 | Baud Rate Code | RW | UINT16 | 0-1 | 0 = 115200, 1 = 9600; effective after save and restart |
-| 3 | 3 | Recovery Policy Mode | RW | UINT16 | 0-3 | System-wide recovery policy |
-| 4 | 4 | Auto Retry Delay | RW | UINT16 | seconds | Cooldown before retry |
-| 5 | 5 | Auto Retry Max Count | RW | UINT16 | count | Maximum retries in sliding retry window |
-| 6 | 6 | Auto Retry Window | RW | UINT16 | seconds | Sliding window used to count retries |
-| 7 | 7 | Voltage Safe Band % | RW | UINT16 | 0-50 | Voltage retry band around target, default 10 |
-| 8 | 8 | Current Safe Band % | RW | UINT16 | 0-50 | Current retry below limit, default 10 |
-| 9-38 | 9 | Reserved | R | UINT16 | - | Read as 0, reject writes |
-| 39 | 39 | System Param Action | RW | UINT16 | enum | Save/load/factory reset/software reset for system parameters |
+| 1 | 1 | Startup Channel Policy | RW | UINT16 | 0-1 | 0 loads stored channel config; 1 restores operational defaults at startup |
+| 2 | 2 | Next-Boot Slave Address | RW* | UINT16 | 1-247 | FC03 reports the persisted next-boot value |
+| 3 | 3 | Next-Boot Baud Rate Code | RW* | UINT16 | 0-1 | 0 = 115200, 1 = 9600; FC03 reports the persisted next-boot value |
+| 4-38 | 4 | Reserved | R | UINT16 | - | Read as 0, reject writes |
+| 39 | 39 | System Param Action | RW | UINT16 | enum | Save/load/factory reset for system parameters; 255 requests delayed system reset |
+
+`RW*` depends on settings support. With settings enabled, each valid FC06 write to offset 2 or 3 saves the complete Modbus configuration before returning success. The live interface is unchanged until system reset or power cycle. With settings disabled, these registers expose compiled Kconfig defaults and reject FC06 writes with exception `0x02`.
+
+Factory reset stores the compiled Kconfig defaults as a concrete settings value. It does not change the live Modbus interface; the defaults become active after system reset or power cycle. A separate save action is not required after Modbus writes.
 
 ### 10.2 Channel Holding Block - base 40 + channel * 40
 
@@ -330,7 +329,7 @@ Holding registers expose writable configuration and self-clearing commands. Comm
 |---:|---|---|---|---|---|
 | 0 | Channel Output Action | RW | UINT16 | context-valid | Self-clearing host output action |
 | 1 | Channel Fault Command | RW | UINT16 | 0-2 | Self-clearing fault command |
-| 2 | Channel Param Action | RW | UINT16 | enum | Save/load/factory reset/software reset for this channel |
+| 2 | Channel Param Action | RW | UINT16 | 0-3 | Save/load/factory reset for this channel; system reset value 255 is invalid |
 | 3 | Configured Target Voltage | RW | INT16 | variant-defined | Host/configured target voltage, raw LSBs |
 | 4 | Ramp Up Step | RW | UINT16 | variant-defined | Step size per ramp-up step, raw LSBs |
 | 5 | Ramp Up Interval | RW | UINT16 | seconds x10 | Delay per ramp-up step |
