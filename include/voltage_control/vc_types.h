@@ -77,7 +77,6 @@ enum vc_param_action {
 	VC_PARAM_ACTION_SAVE = 1,
 	VC_PARAM_ACTION_LOAD = 2,
 	VC_PARAM_ACTION_FACTORY_RESET = 3,
-	VC_PARAM_ACTION_SOFTWARE_RESET = 255,
 };
 
 /* System config — operating mode + startup policy only; recovery moved to channel */

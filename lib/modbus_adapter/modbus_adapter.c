@@ -17,6 +17,7 @@
 #include "modbus_adapter/modbus_adapter.h"
 #include "modbus_register.h"
 #include "reg_store/reg_map.h"
+#include "sys_status/sys_status.h"
 
 #ifdef CONFIG_SETTINGS
 #include <zephyr/settings/settings.h>
@@ -230,6 +231,15 @@ static void adapter_erase_config(void)
 static enum vc_mb_result handle_sys_param_action(struct vc_mb_adapter *a,
 						 uint16_t val)
 {
+	if (val == SYS_PARAM_ACTION_SOFTWARE_RESET) {
+#if defined(CONFIG_SYS_RESET)
+		return sys_status_request_reset() == 0
+			? VC_MB_OK : VC_MB_DEVICE_FAILURE;
+#else
+		return VC_MB_DEVICE_FAILURE;
+#endif
+	}
+
 	enum vc_param_action action = (enum vc_param_action)val;
 
 	switch (action) {

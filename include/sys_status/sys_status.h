@@ -19,4 +19,7 @@ struct sys_status_snapshot {
 
 struct sys_status_snapshot sys_status_get(void);
 
+int sys_status_request_reset(void);
+void sys_status_platform_reset(void);
+
 #endif

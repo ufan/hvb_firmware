@@ -1,5 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
+config SYS_RESET
+	bool "System reset service"
+	depends on REBOOT
+	default n
+	help
+	  Provide a delayed system-level cold-reset request service.
+
+config SYS_RESET_DELAY_MS
+	int "System reset response-drain delay (ms)"
+	depends on SYS_RESET
+	default 250
+	range 1 5000
+	help
+	  Delay before rebooting so the requesting frontend can finish its
+	  response.
+
 config SYS_STATUS
 	bool "System status module (heartbeat, environment sensor, uptime)"
 	default n

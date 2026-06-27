@@ -3,9 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <errno.h>
+
+#include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/shell/shell_dummy.h>
 #include <zephyr/ztest.h>
+
+static struct k_sem reset_called;
+
+void sys_status_platform_reset(void)
+{
+	k_sem_give(&reset_called);
+}
 
 static void expect_command_result(const char *command, int expected)
 {
@@ -19,6 +29,14 @@ static void expect_command_result(const char *command, int expected)
 ZTEST(ss_shell, test_ss_is_registered)
 {
 	expect_command_result("ss", 0);
+}
+
+ZTEST(ss_shell, test_reset_is_acknowledged_before_execution)
+{
+	k_sem_init(&reset_called, 0, 1);
+	expect_command_result("ss reset", 0);
+	zassert_equal(k_sem_take(&reset_called, K_NO_WAIT), -EBUSY);
+	zassert_equal(k_sem_take(&reset_called, K_MSEC(100)), 0);
 }
 
 ZTEST_SUITE(ss_shell, NULL, NULL, NULL, NULL, NULL);

@@ -90,6 +90,7 @@
 #define SYS_BAUD_RATE_CODE            3
 /* 4..38 reserved */
 #define SYS_PARAM_ACTION              39
+#define SYS_PARAM_ACTION_SOFTWARE_RESET 255U
 
 /* ------------------------------------------------------------------ */
 /* Channel input block  (FC04, per-channel offsets 0..39)              */

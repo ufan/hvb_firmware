@@ -23,14 +23,14 @@ ZTEST(vc_shell, test_cal_exit_is_registered)
 	expect_command_result("vc cal exit", -ENODEV);
 }
 
-ZTEST(vc_shell, test_reset_is_registered)
+ZTEST(vc_shell, test_reset_is_not_registered)
 {
-	expect_command_result("vc reset", -ENODEV);
+	expect_command_result("vc reset", SHELL_CMD_HELP_PRINTED);
 }
 
-ZTEST(vc_shell, test_sys_reset_is_registered)
+ZTEST(vc_shell, test_sys_reset_is_not_registered)
 {
-	expect_command_result("vc sys reset", -ENODEV);
+	expect_command_result("vc sys reset", SHELL_CMD_HELP_PRINTED);
 }
 
 ZTEST_SUITE(vc_shell, NULL, NULL, NULL, NULL, NULL);

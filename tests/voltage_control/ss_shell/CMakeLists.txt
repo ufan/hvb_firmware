@@ -6,5 +6,8 @@ set(ZEPHYR_EXTRA_MODULES ${HVB_FIRMWARE_ROOT})
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(voltage_control_ss_shell)
 
-target_sources(app PRIVATE src/main.c)
+target_sources(app PRIVATE
+	src/main.c
+	../vc_controller/src/vc_channel_stub.c
+)
 target_include_directories(app PRIVATE ${HVB_FIRMWARE_ROOT}/include)

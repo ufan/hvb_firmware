@@ -27,4 +27,28 @@ static int cmd_ss(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
-SHELL_CMD_REGISTER(ss, NULL, "System status (uptime, temp, humidity, fw)", cmd_ss);
+#if defined(CONFIG_SYS_RESET)
+static int cmd_ss_reset(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
+	int ret = sys_status_request_reset();
+
+	if (ret == 0) {
+		shell_print(sh, "system reset requested");
+	}
+	return ret;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_ss,
+	SHELL_CMD(reset, NULL, "Reset system", cmd_ss_reset),
+	SHELL_SUBCMD_SET_END
+);
+#define SS_SUBCOMMANDS (&sub_ss)
+#else
+#define SS_SUBCOMMANDS NULL
+#endif
+
+SHELL_CMD_REGISTER(ss, SS_SUBCOMMANDS,
+		   "System status (uptime, temp, humidity, fw)", cmd_ss);

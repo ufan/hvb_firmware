@@ -340,3 +340,15 @@ ZTEST(modbus_adapter, test_param_action_storage_returns_device_failure)
 
 	destroy_ctx(ctx);
 }
+
+ZTEST(modbus_adapter, test_system_reset_requires_system_reset_service)
+{
+	struct vc_ctx *ctx = make_ctx();
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_mb_holding_wr(mb, SYS_PARAM_ACTION, 255),
+		      VC_MB_DEVICE_FAILURE);
+
+	destroy_ctx(ctx);
+}

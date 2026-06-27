@@ -7,7 +7,6 @@
 #include "reg_store/reg_map.h"
 #include <string.h>
 #include <errno.h>
-#include <zephyr/sys/reboot.h>
 
 #ifdef CONFIG_VC_CHANNEL_CONTROLLER
 #include <zephyr/sys/iterable_sections.h>
@@ -404,11 +403,6 @@ enum vc_status vc_controller_system_param_action(
 		ctrl->sys_cfg = default_system_config();
 		ctrl->operating_mode = VC_OPERATING_MODE_NORMAL;
 		return VC_OK;
-	case VC_PARAM_ACTION_SOFTWARE_RESET:
-#ifdef CONFIG_REBOOT
-		sys_reboot(SYS_REBOOT_COLD);
-#endif
-		return VC_OK;
 	default:
 		return VC_ERR_INVALID_VALUE;
 	}
@@ -480,11 +474,6 @@ enum vc_status vc_controller_channel_param_action(
 		}
 		return VC_OK;
 	}
-	case VC_PARAM_ACTION_SOFTWARE_RESET:
-#ifdef CONFIG_REBOOT
-		sys_reboot(SYS_REBOOT_COLD);
-#endif
-		return VC_OK;
 	default:
 		return VC_ERR_INVALID_VALUE;
 	}
