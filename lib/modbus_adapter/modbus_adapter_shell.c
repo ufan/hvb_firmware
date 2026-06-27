@@ -29,14 +29,28 @@ static int cmd_mb_status(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	struct mb_adapter_config cfg = {};
+	struct mb_adapter_config active = {};
+	struct mb_adapter_config next_boot = {};
+	int ret = modbus_adapter_get_active_config(&active);
 
-	modbus_adapter_get_config(&cfg);
+	if (ret < 0) {
+		return ret;
+	}
 	shell_print(sh, "Modbus Adapter");
-	shell_print(sh, "  slave address: %d", cfg.slave_address);
-	shell_print(sh, "  baud rate:     %d (%d Hz)",
-		    cfg.baud_rate_code,
-		    baud_code_to_hz(cfg.baud_rate_code));
+	shell_print(sh, "  active:    slave=%d baud=%d (%d Hz)",
+		    active.slave_address, active.baud_rate_code,
+		    baud_code_to_hz(active.baud_rate_code));
+	if (modbus_adapter_config_is_persistent() &&
+	    modbus_adapter_get_next_boot_config(&next_boot) == 0) {
+		bool differs = memcmp(&active, &next_boot, sizeof(active)) != 0;
+
+		shell_print(sh, "  next boot: slave=%d baud=%d (%d Hz)%s",
+			    next_boot.slave_address, next_boot.baud_rate_code,
+			    baud_code_to_hz(next_boot.baud_rate_code),
+			    differs ? " — restart required" : "");
+	} else {
+		shell_print(sh, "  next boot: volatile defaults");
+	}
 	return 0;
 }
 
@@ -129,9 +143,9 @@ static int cmd_mb_load(const struct shell *sh, size_t argc, char **argv)
 		return -EIO;
 	}
 
-	struct mb_adapter_config cfg;
+	struct mb_adapter_config cfg = {};
 
-	modbus_adapter_get_config(&cfg);
+	modbus_adapter_get_active_config(&cfg);
 	shell_print(sh, "config loaded: slave=%d baud=%d Hz",
 		    cfg.slave_address, baud_code_to_hz(cfg.baud_rate_code));
 	return 0;
@@ -146,11 +160,16 @@ static int cmd_mb_factory(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	modbus_adapter_config_factory();
+	int ret = modbus_adapter_config_factory();
+
+	if (ret < 0) {
+		shell_error(sh, "factory reset failed: %d", ret);
+		return -EIO;
+	}
 
 	struct mb_adapter_config cfg = {};
 
-	modbus_adapter_get_config(&cfg);
+	modbus_adapter_get_active_config(&cfg);
 	shell_print(sh, "factory reset: slave=%d baud=%d Hz",
 		    cfg.slave_address, baud_code_to_hz(cfg.baud_rate_code));
 	return 0;

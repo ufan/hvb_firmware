@@ -6,6 +6,8 @@
 
 #include <errno.h>
 
+#include <zephyr/sys/util.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 
@@ -36,16 +38,41 @@
 
 struct vc_mb_adapter {
 	struct vc_ctx *ctx;
-	struct mb_adapter_config cfg;
-	bool needs_reconfig;
+	struct mb_adapter_config active_cfg;
+	struct mb_adapter_config boot_cfg;
 };
 
+static struct vc_mb_adapter adapter;
+static struct vc_mb_adapter *mb;
+
+#if defined(CONFIG_MODBUS)
 static uint32_t baud_code_to_rate(uint16_t code)
 {
 	switch (code) {
 	case VC_BAUD_RATE_9600:   return 9600;
 	default:                  return 115200;
 	}
+}
+#endif
+
+BUILD_ASSERT(CONFIG_VC_MODBUS_BAUD_RATE == 9600 ||
+	     CONFIG_VC_MODBUS_BAUD_RATE == 115200,
+	     "CONFIG_VC_MODBUS_BAUD_RATE must be 9600 or 115200");
+
+static struct mb_adapter_config adapter_default_config(void)
+{
+	return (struct mb_adapter_config){
+		.slave_address = CONFIG_VC_MODBUS_UNIT_ID,
+		.baud_rate_code = CONFIG_VC_MODBUS_BAUD_RATE == 9600
+			? VC_BAUD_RATE_9600 : VC_BAUD_RATE_115200,
+	};
+}
+
+static bool adapter_config_valid(const struct mb_adapter_config *cfg)
+{
+	return cfg->slave_address >= 1 && cfg->slave_address <= 247 &&
+		(cfg->baud_rate_code == VC_BAUD_RATE_115200 ||
+		 cfg->baud_rate_code == VC_BAUD_RATE_9600);
 }
 
 /* ------------------------------------------------------------------ */
@@ -113,11 +140,11 @@ static enum vc_mb_result read_sys_holding(struct vc_mb_adapter *a,
 					  uint16_t off, uint16_t *reg)
 {
 	if (off == SYS_SLAVE_ADDRESS) {
-		*reg = a->cfg.slave_address;
+		*reg = a->boot_cfg.slave_address;
 		return VC_MB_OK;
 	}
 	if (off == SYS_BAUD_RATE_CODE) {
-		*reg = a->cfg.baud_rate_code;
+		*reg = a->boot_cfg.baud_rate_code;
 		return VC_MB_OK;
 	}
 	return domain_st_to_mb_result(vc_reg_read_sys_holding(off, reg));
@@ -127,24 +154,26 @@ static enum vc_mb_result write_sys_holding(struct vc_mb_adapter *a,
 					   uint16_t off, uint16_t val)
 {
 	if (off == SYS_SLAVE_ADDRESS) {
+#if !defined(CONFIG_SETTINGS)
+		return VC_MB_ILLEGAL_ADDRESS;
+#else
 		if (val < 1 || val > 247) {
 			return VC_MB_ILLEGAL_VALUE;
 		}
-		if (a->cfg.slave_address != val) {
-			a->cfg.slave_address = val;
-			a->needs_reconfig = true;
-		}
+		a->boot_cfg.slave_address = val;
 		return VC_MB_OK;
+#endif
 	}
 	if (off == SYS_BAUD_RATE_CODE) {
+#if !defined(CONFIG_SETTINGS)
+		return VC_MB_ILLEGAL_ADDRESS;
+#else
 		if (val > VC_BAUD_RATE_9600) {
 			return VC_MB_ILLEGAL_VALUE;
 		}
-		if (a->cfg.baud_rate_code != val) {
-			a->cfg.baud_rate_code = val;
-			a->needs_reconfig = true;
-		}
+		a->boot_cfg.baud_rate_code = val;
 		return VC_MB_OK;
+#endif
 	}
 	return domain_st_to_mb_result(
 		vc_reg_write_sys_holding(a->ctx, off, val, MB_CMD_TIMEOUT));
@@ -199,18 +228,12 @@ static int adapter_load_config(struct mb_adapter_config *cfg)
 	return ctx.found ? 0 : -ENOENT;
 }
 
-static void adapter_erase_config(void)
+static int adapter_erase_config(void)
 {
-	(void)settings_delete("mb/cfg");
+	return settings_delete("mb/cfg");
 }
 
 #else /* !CONFIG_SETTINGS */
-
-static int adapter_save_config(const struct mb_adapter_config *cfg)
-{
-	ARG_UNUSED(cfg);
-	return 0;
-}
 
 static int adapter_load_config(struct mb_adapter_config *cfg)
 {
@@ -218,8 +241,9 @@ static int adapter_load_config(struct mb_adapter_config *cfg)
 	return -ENOENT;
 }
 
-static void adapter_erase_config(void)
+static int adapter_erase_config(void)
 {
+	return -ENOTSUP;
 }
 
 #endif /* CONFIG_SETTINGS */
@@ -244,20 +268,16 @@ static enum vc_mb_result handle_sys_param_action(struct vc_mb_adapter *a,
 
 	switch (action) {
 	case VC_PARAM_ACTION_SAVE:
-		adapter_save_config(&a->cfg);
 		break;
 	case VC_PARAM_ACTION_LOAD:
-		if (adapter_load_config(&a->cfg) < 0) {
-			a->cfg.slave_address = CONFIG_VC_MODBUS_UNIT_ID;
-			a->cfg.baud_rate_code = VC_BAUD_RATE_115200;
+		if (adapter_load_config(&a->boot_cfg) < 0 ||
+		    !adapter_config_valid(&a->boot_cfg)) {
+			a->boot_cfg = adapter_default_config();
 		}
-		a->needs_reconfig = true;
 		break;
 	case VC_PARAM_ACTION_FACTORY_RESET:
-		adapter_erase_config();
-		a->cfg.slave_address = CONFIG_VC_MODBUS_UNIT_ID;
-		a->cfg.baud_rate_code = VC_BAUD_RATE_115200;
-		a->needs_reconfig = true;
+		(void)adapter_erase_config();
+		a->boot_cfg = adapter_default_config();
 		break;
 	default:
 		break;
@@ -266,10 +286,6 @@ static enum vc_mb_result handle_sys_param_action(struct vc_mb_adapter *a,
 	enum vc_mb_result res = domain_st_to_mb_result(
 		vc_reg_write_sys_holding(a->ctx, SYS_PARAM_ACTION, val,
 					 MB_CMD_TIMEOUT));
-
-	if (a->needs_reconfig) {
-		modbus_adapter_apply_config();
-	}
 
 	return res;
 }
@@ -351,15 +367,18 @@ enum vc_mb_result vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr,
 
 struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx)
 {
-	static struct vc_mb_adapter adapter;
+	struct mb_adapter_config defaults = adapter_default_config();
 
-	adapter.ctx = ctx;
-	adapter.cfg.slave_address = CONFIG_VC_MODBUS_UNIT_ID;
-	adapter.cfg.baud_rate_code = VC_BAUD_RATE_115200;
+	mb = &adapter;
+	mb->ctx = ctx;
+	mb->boot_cfg = defaults;
+	if (adapter_load_config(&mb->boot_cfg) < 0 ||
+	    !adapter_config_valid(&mb->boot_cfg)) {
+		mb->boot_cfg = defaults;
+	}
+	mb->active_cfg = mb->boot_cfg;
 
-	adapter_load_config(&adapter.cfg);
-
-	return &adapter;
+	return mb;
 }
 
 /* ------------------------------------------------------------------ */
@@ -370,7 +389,6 @@ struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx)
 
 #define MODBUS_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_modbus_serial)
 
-static struct vc_mb_adapter *mb;
 static int mb_iface = -1;
 
 static int input_reg_rd(uint16_t addr, uint16_t *reg)
@@ -411,25 +429,32 @@ static int modbus_server_start(uint8_t unit_id, uint32_t baud)
 	return modbus_init_server(mb_iface, param);
 }
 
-void modbus_adapter_apply_config(void)
+static int modbus_adapter_apply_config(const struct mb_adapter_config *cfg)
 {
-	if (mb == NULL || mb_iface < 0) {
-		return;
+	if (mb == NULL) {
+		return -ENODEV;
+	}
+	if (mb_iface < 0) {
+		mb->active_cfg = *cfg;
+		return 0;
 	}
 
-	mb->needs_reconfig = false;
-	modbus_disable(mb_iface);
+	struct mb_adapter_config previous = mb->active_cfg;
+	(void)modbus_disable(mb_iface);
 
-	int ret = modbus_server_start(mb->cfg.slave_address,
-				      baud_code_to_rate(mb->cfg.baud_rate_code));
+	int ret = modbus_server_start(cfg->slave_address,
+				      baud_code_to_rate(cfg->baud_rate_code));
 	if (ret < 0) {
+		(void)modbus_server_start(previous.slave_address,
+					  baud_code_to_rate(previous.baud_rate_code));
 		printk("modbus reconfig failed: %d\n", ret);
-		return;
+		return ret;
 	}
+	mb->active_cfg = *cfg;
 
 	printk("modbus_adapter: reconfig slave=%d baud=%d\n",
-	       mb->cfg.slave_address,
-	       baud_code_to_rate(mb->cfg.baud_rate_code));
+	       cfg->slave_address, baud_code_to_rate(cfg->baud_rate_code));
+	return 0;
 }
 
 int modbus_adapter_init(struct vc_ctx *ctx)
@@ -449,8 +474,8 @@ int modbus_adapter_init(struct vc_ctx *ctx)
 		return mb_iface;
 	}
 
-	uint8_t unit_id = mb->cfg.slave_address;
-	uint32_t baud = baud_code_to_rate(mb->cfg.baud_rate_code);
+	uint8_t unit_id = mb->active_cfg.slave_address;
+	uint32_t baud = baud_code_to_rate(mb->active_cfg.baud_rate_code);
 	int ret = modbus_server_start(unit_id, baud);
 
 	if (ret < 0) {
@@ -462,12 +487,27 @@ int modbus_adapter_init(struct vc_ctx *ctx)
 	return 0;
 }
 
-void modbus_adapter_get_config(struct mb_adapter_config *cfg)
+int modbus_adapter_get_active_config(struct mb_adapter_config *cfg)
 {
 	if (mb == NULL || cfg == NULL) {
-		return;
+		return -ENODEV;
 	}
-	*cfg = mb->cfg;
+	*cfg = mb->active_cfg;
+	return 0;
+}
+
+int modbus_adapter_get_next_boot_config(struct mb_adapter_config *cfg)
+{
+	if (mb == NULL || cfg == NULL) {
+		return -ENODEV;
+	}
+	*cfg = mb->boot_cfg;
+	return 0;
+}
+
+bool modbus_adapter_config_is_persistent(void)
+{
+	return IS_ENABLED(CONFIG_SETTINGS);
 }
 
 int modbus_adapter_set_slave_address(uint16_t addr)
@@ -478,12 +518,10 @@ int modbus_adapter_set_slave_address(uint16_t addr)
 	if (addr < 1 || addr > 247) {
 		return -EINVAL;
 	}
-	if (mb->cfg.slave_address != addr) {
-		mb->cfg.slave_address = addr;
-		mb->needs_reconfig = true;
-		modbus_adapter_apply_config();
-	}
-	return 0;
+	struct mb_adapter_config candidate = mb->active_cfg;
+
+	candidate.slave_address = addr;
+	return modbus_adapter_apply_config(&candidate);
 }
 
 int modbus_adapter_set_baud_rate_code(uint16_t code)
@@ -494,12 +532,10 @@ int modbus_adapter_set_baud_rate_code(uint16_t code)
 	if (code > VC_BAUD_RATE_9600) {
 		return -EINVAL;
 	}
-	if (mb->cfg.baud_rate_code != code) {
-		mb->cfg.baud_rate_code = code;
-		mb->needs_reconfig = true;
-		modbus_adapter_apply_config();
-	}
-	return 0;
+	struct mb_adapter_config candidate = mb->active_cfg;
+
+	candidate.baud_rate_code = code;
+	return modbus_adapter_apply_config(&candidate);
 }
 
 int modbus_adapter_config_save(void)
@@ -507,7 +543,16 @@ int modbus_adapter_config_save(void)
 	if (mb == NULL) {
 		return -ENODEV;
 	}
-	return adapter_save_config(&mb->cfg);
+#if !defined(CONFIG_SETTINGS)
+	return -ENOTSUP;
+#else
+	int ret = adapter_save_config(&mb->active_cfg);
+
+	if (ret == 0) {
+		mb->boot_cfg = mb->active_cfg;
+	}
+	return ret;
+#endif
 }
 
 int modbus_adapter_config_load(void)
@@ -515,36 +560,57 @@ int modbus_adapter_config_load(void)
 	if (mb == NULL) {
 		return -ENODEV;
 	}
-	if (adapter_load_config(&mb->cfg) < 0) {
-		mb->cfg.slave_address = CONFIG_VC_MODBUS_UNIT_ID;
-		mb->cfg.baud_rate_code = VC_BAUD_RATE_115200;
+	struct mb_adapter_config candidate;
+	int ret = adapter_load_config(&candidate);
+
+	if (ret < 0) {
+		return ret;
 	}
-	mb->needs_reconfig = true;
-	modbus_adapter_apply_config();
-	return 0;
+	if (!adapter_config_valid(&candidate)) {
+		return -EINVAL;
+	}
+	ret = modbus_adapter_apply_config(&candidate);
+	if (ret == 0) {
+		mb->boot_cfg = candidate;
+	}
+	return ret;
 }
 
-void modbus_adapter_config_factory(void)
+int modbus_adapter_config_factory(void)
 {
 	if (mb == NULL) {
-		return;
+		return -ENODEV;
 	}
-	adapter_erase_config();
-	mb->cfg.slave_address = CONFIG_VC_MODBUS_UNIT_ID;
-	mb->cfg.baud_rate_code = VC_BAUD_RATE_115200;
-	mb->needs_reconfig = true;
-	modbus_adapter_apply_config();
+	struct mb_adapter_config defaults = adapter_default_config();
+	int ret = adapter_erase_config();
+
+	if (ret != 0 && ret != -ENOTSUP) {
+		return ret;
+	}
+	ret = modbus_adapter_apply_config(&defaults);
+	if (ret == 0 && IS_ENABLED(CONFIG_SETTINGS)) {
+		mb->boot_cfg = defaults;
+	}
+	return ret;
 }
 
 #else /* !CONFIG_MODBUS */
 
-void modbus_adapter_apply_config(void)
-{
-}
-
-void modbus_adapter_get_config(struct mb_adapter_config *cfg)
+int modbus_adapter_get_active_config(struct mb_adapter_config *cfg)
 {
 	ARG_UNUSED(cfg);
+	return -ENODEV;
+}
+
+int modbus_adapter_get_next_boot_config(struct mb_adapter_config *cfg)
+{
+	ARG_UNUSED(cfg);
+	return -ENODEV;
+}
+
+bool modbus_adapter_config_is_persistent(void)
+{
+	return IS_ENABLED(CONFIG_SETTINGS);
 }
 
 int modbus_adapter_set_slave_address(uint16_t addr)
@@ -569,8 +635,9 @@ int modbus_adapter_config_load(void)
 	return -ENODEV;
 }
 
-void modbus_adapter_config_factory(void)
+int modbus_adapter_config_factory(void)
 {
+	return -ENODEV;
 }
 
 #endif /* CONFIG_MODBUS */

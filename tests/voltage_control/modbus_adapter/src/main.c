@@ -98,28 +98,22 @@ ZTEST(modbus_adapter, test_invalid_address_returns_illegal_address)
 
 /* ---- System holding read/write round-trip ---- */
 
-ZTEST(modbus_adapter, test_sys_holding_write_slave_address)
+ZTEST(modbus_adapter, test_sys_holding_slave_address_is_read_only_without_settings)
 {
 	struct vc_ctx *ctx = make_ctx();
 	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
 	uint16_t reg;
 
 	zassert_not_null(ctx);
-	zassert_equal(vc_mb_holding_wr(mb, SYS_SLAVE_ADDRESS, 42), VC_MB_OK);
+	zassert_equal(vc_mb_holding_wr(mb, SYS_SLAVE_ADDRESS, 42),
+		      VC_MB_ILLEGAL_ADDRESS);
 	zassert_equal(vc_mb_holding_rd(mb, SYS_SLAVE_ADDRESS, &reg), VC_MB_OK);
-	zassert_equal(reg, 42);
-
-	zassert_equal(vc_mb_holding_wr(mb, SYS_SLAVE_ADDRESS, 0),
-		      VC_MB_ILLEGAL_VALUE);
-	zassert_equal(vc_mb_holding_wr(mb, SYS_SLAVE_ADDRESS, 248),
-		      VC_MB_ILLEGAL_VALUE);
-	zassert_equal(vc_mb_holding_rd(mb, SYS_SLAVE_ADDRESS, &reg), VC_MB_OK);
-	zassert_equal(reg, 42);
+	zassert_equal(reg, 1);
 
 	destroy_ctx(ctx);
 }
 
-ZTEST(modbus_adapter, test_sys_holding_write_baud_rate_code)
+ZTEST(modbus_adapter, test_sys_holding_baud_is_read_only_without_settings)
 {
 	struct vc_ctx *ctx = make_ctx();
 	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
@@ -130,14 +124,22 @@ ZTEST(modbus_adapter, test_sys_holding_write_baud_rate_code)
 	zassert_equal(reg, VC_BAUD_RATE_115200);
 
 	zassert_equal(vc_mb_holding_wr(mb, SYS_BAUD_RATE_CODE, VC_BAUD_RATE_9600),
-		      VC_MB_OK);
+		      VC_MB_ILLEGAL_ADDRESS);
 	zassert_equal(vc_mb_holding_rd(mb, SYS_BAUD_RATE_CODE, &reg), VC_MB_OK);
-	zassert_equal(reg, VC_BAUD_RATE_9600);
+	zassert_equal(reg, VC_BAUD_RATE_115200);
 
-	zassert_equal(vc_mb_holding_wr(mb, SYS_BAUD_RATE_CODE, 99),
+	destroy_ctx(ctx);
+}
+
+ZTEST(modbus_adapter, test_channel_param_action_rejects_system_reset)
+{
+	struct vc_ctx *ctx = make_ctx();
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+
+	zassert_not_null(ctx);
+	zassert_equal(vc_mb_holding_wr(mb, CH_BLOCK_BASE(0) + CH_PARAM_ACTION,
+				       SYS_PARAM_ACTION_SOFTWARE_RESET),
 		      VC_MB_ILLEGAL_VALUE);
-	zassert_equal(vc_mb_holding_rd(mb, SYS_BAUD_RATE_CODE, &reg), VC_MB_OK);
-	zassert_equal(reg, VC_BAUD_RATE_9600);
 
 	destroy_ctx(ctx);
 }

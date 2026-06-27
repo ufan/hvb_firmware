@@ -9,6 +9,11 @@
 #include <zephyr/shell/shell_dummy.h>
 #include <zephyr/ztest.h>
 
+#include "modbus_adapter/modbus_adapter.h"
+#include "voltage_control/vc.h"
+
+static struct vc_ctx *ctx;
+
 static void expect_command_result(const char *command, int expected)
 {
 	const struct shell *shell = shell_backend_dummy_get_ptr();
@@ -18,7 +23,6 @@ static void expect_command_result(const char *command, int expected)
 		      command, ret, expected);
 }
 
-/* mb status — returns 0 even without adapter init (cfg zeroed). */
 ZTEST(mb_shell, test_mb_status_is_registered)
 {
 	expect_command_result("mb status", 0);
@@ -31,10 +35,16 @@ ZTEST(mb_shell, test_mb_set_slave_validates_range)
 	expect_command_result("mb set slave 248", -EINVAL);
 }
 
-/* mb set slave with a valid address returns -EIO (no adapter initialized). */
-ZTEST(mb_shell, test_mb_set_slave_needs_init)
+ZTEST(mb_shell, test_mb_set_slave_changes_active_config_only)
 {
-	expect_command_result("mb set slave 10", -EIO);
+	struct mb_adapter_config active;
+	struct mb_adapter_config next_boot;
+
+	expect_command_result("mb set slave 10", 0);
+	zassert_equal(modbus_adapter_get_active_config(&active), 0);
+	zassert_equal(modbus_adapter_get_next_boot_config(&next_boot), 0);
+	zassert_equal(active.slave_address, 10);
+	zassert_equal(next_boot.slave_address, 1);
 }
 
 /* mb set baud: unknown code must be rejected before adapter init. */
@@ -50,10 +60,23 @@ ZTEST(mb_shell, test_mb_save_load_need_init)
 	expect_command_result("mb load", -EIO);
 }
 
-/* mb factory — returns 0 even without adapter init (no-op path). */
 ZTEST(mb_shell, test_mb_factory_is_registered)
 {
 	expect_command_result("mb factory", 0);
 }
 
-ZTEST_SUITE(mb_shell, NULL, NULL, NULL, NULL, NULL);
+static void *mb_shell_setup(void)
+{
+	ctx = vc_init();
+	zassert_not_null(ctx);
+	zassert_not_null(vc_mb_adapter_create(ctx));
+	return NULL;
+}
+
+static void mb_shell_teardown(void *fixture)
+{
+	ARG_UNUSED(fixture);
+	vc_destroy(ctx);
+}
+
+ZTEST_SUITE(mb_shell, NULL, mb_shell_setup, NULL, NULL, mb_shell_teardown);
