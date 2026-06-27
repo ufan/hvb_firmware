@@ -14,9 +14,10 @@
  *   0      System block           input + holding, 40 registers
  *   40     Channel 0 block        input + holding, 40 registers
  *   80     Channel 1 block        input + holding, 40 registers
- *   120    Channel 2 block        reserved for future variants
- *   160    Channel 3 block        reserved for future variants
- *   200    Reserved extension     holding only, 80 registers
+ *   120    Channel 2 block        input + holding, 40 registers (future variants)
+ *   ...
+ *   640    Channel 15 block       input + holding, 40 registers (future variants)
+ *   680    Extension block        holding only, 80 registers
  *
  * Breaking changes from v2:
  *   - SYS_STARTUP_CHANNEL_POLICY added at holding offset 1
@@ -46,7 +47,7 @@
 #define SYS_BLOCK_BASE    0
 #define CH_BLOCK_BASE(c)  (40 + (c) * 40)
 #define CH_BLOCK_SIZE     40
-#define EXT_BLOCK_BASE    200
+#define EXT_BLOCK_BASE    680  /* 40 + 16 * 40 */
 
 #define VC_PROTOCOL_MAJOR             3
 #define VC_PROTOCOL_MINOR             0

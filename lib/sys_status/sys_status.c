@@ -15,6 +15,8 @@
 #include <zephyr/sys/atomic.h>
 
 #include "sys_status/sys_status.h"
+#include "reg_store/reg_store.h"
+#include "regmap/vc_regs.h"
 
 LOG_MODULE_REGISTER(sys_status, LOG_LEVEL_INF);
 
@@ -72,6 +74,24 @@ static void read_environment(void)
 	atomic_set(&env_humidity, (atomic_val_t)h);
 }
 
+static void publish_uptime_to_reg_store(void)
+{
+	uint32_t up = (uint32_t)(k_uptime_get() / 1000);
+
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_UPTIME_HI,
+			      (uint16_t)(up >> 16));
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_UPTIME_LO,
+			      (uint16_t)(up & 0xFFFFu));
+}
+
+static void publish_env_to_reg_store(void)
+{
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_BOARD_TEMPERATURE,
+			      (uint16_t)(int16_t)atomic_get(&env_temperature));
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_BOARD_HUMIDITY,
+			      (uint16_t)atomic_get(&env_humidity));
+}
+
 static void sys_status_worker(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -87,6 +107,7 @@ static void sys_status_worker(void *p1, void *p2, void *p3)
 	}
 
 	read_environment();
+	publish_env_to_reg_store();
 
 	while (true) {
 		k_sem_take(&wake_sem, K_FOREVER);
@@ -94,8 +115,11 @@ static void sys_status_worker(void *p1, void *p2, void *p3)
 		gpio_pin_toggle_dt(&sys_run);
 		tick_count++;
 
+		publish_uptime_to_reg_store();
+
 		if (tick_count % sensor_ticks == 0) {
 			read_environment();
+			publish_env_to_reg_store();
 		}
 	}
 }
@@ -154,6 +178,11 @@ static int sys_status_init(void)
 			K_KERNEL_STACK_SIZEOF(sys_status_stack),
 			sys_status_worker, NULL, NULL, NULL,
 			CONFIG_SYS_STATUS_THREAD_PRIORITY, 0, K_NO_WAIT);
+
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_FW_VERSION_HI,
+			      SYS_STATUS_FW_VERSION_HIGH);
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_FW_VERSION_LO,
+			      SYS_STATUS_FW_VERSION_LOW);
 
 	LOG_INF("initialized (heartbeat=%dms sensor=%dms)",
 		CONFIG_SYS_STATUS_HEARTBEAT_INTERVAL_MS,

@@ -3,6 +3,7 @@
 config SYS_STATUS
 	bool "System status module (heartbeat, environment sensor, uptime)"
 	default n
+	select REG_STORE
 	help
 	  Self-contained module: SYS_RUN heartbeat LED, SHT3x temp/humidity,
 	  uptime. Initialized via SYS_INIT, runs its own thread.

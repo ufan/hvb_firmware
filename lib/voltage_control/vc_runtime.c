@@ -13,6 +13,11 @@
 #include "voltage_control/vc_controller.h"
 #include "voltage_control/vc_storage.h"
 
+#if IS_ENABLED(CONFIG_REG_STORE)
+#include "reg_store/reg_store.h"
+#include "regmap/vc_regs.h"
+#endif
+
 #ifdef CONFIG_VC_SETTINGS_PERSISTENCE
 #include <zephyr/settings/settings.h>
 #endif
@@ -100,6 +105,137 @@ static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 	}
 }
 
+#if IS_ENABLED(CONFIG_REG_STORE)
+
+static uint16_t u32_hi(uint32_t v) { return (uint16_t)(v >> 16); }
+static uint16_t u32_lo(uint32_t v) { return (uint16_t)(v & 0xFFFFu); }
+
+static void publish_sys_input(const struct vc_system_snapshot *s)
+{
+	uint16_t caps = s->system_capability_flags;
+
+	if (IS_ENABLED(CONFIG_SYS_STATUS)) {
+		caps |= SYS_CAP_ENV_SENSOR;
+	}
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_PROTOCOL_MAJOR, s->protocol_major);
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_PROTOCOL_MINOR, s->protocol_minor);
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_VARIANT_ID, s->variant_id);
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_CAPABILITY_FLAGS, caps);
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_SUPPORTED_CHANNELS,
+			      s->supported_channel_count);
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_ACTIVE_CHANNEL_MASK,
+			      s->active_channel_mask);
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_ACTIVE_OPERATING_MODE,
+			      (uint16_t)s->active_operating_mode);
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_STATUS, s->system_status);
+	reg_store_write_input(SYS_BLOCK_BASE + SYS_FAULT_CAUSE, s->system_fault_cause);
+}
+
+static void publish_sys_holding(const struct vc_system_config *c)
+{
+	reg_store_write_holding(SYS_BLOCK_BASE + SYS_OPERATING_MODE,
+				(uint16_t)c->operating_mode);
+	reg_store_write_holding(SYS_BLOCK_BASE + SYS_STARTUP_CHANNEL_POLICY,
+				c->startup_channel_policy);
+}
+
+static void publish_ch_input(uint8_t ch, const struct vc_channel_snapshot *s)
+{
+	uint16_t base = CH_BLOCK_BASE(ch);
+
+	reg_store_write_input(base + CH_STATUS_BITS, s->status_bits);
+	reg_store_write_input(base + CH_ACTIVE_FAULT_CAUSE, s->active_fault_cause);
+	reg_store_write_input(base + CH_FAULT_HISTORY_CAUSE, s->fault_history_cause);
+	reg_store_write_input(base + CH_LAST_PROT_OUT_ACTION,
+			      (uint16_t)s->last_protection_output_action);
+	reg_store_write_input(base + CH_AUTO_RETRY_COUNT, s->auto_retry_count);
+	reg_store_write_input(base + CH_AUTO_COOLDOWN_REMAINING,
+			      s->auto_cooldown_remaining);
+	reg_store_write_input(base + CH_LAST_FAULT_TIMESTAMP_HI,
+			      u32_hi(s->last_fault_timestamp));
+	reg_store_write_input(base + CH_LAST_FAULT_TIMESTAMP_LO,
+			      u32_lo(s->last_fault_timestamp));
+	reg_store_write_input(base + CH_OPER_TARGET_VOLTAGE,
+			      (uint16_t)s->operational_target_voltage);
+	reg_store_write_input(base + CH_CAPABILITY_FLAGS,
+			      s->channel_capability_flags);
+	reg_store_write_input(base + CH_MEASURED_VOLTAGE,
+			      (uint16_t)s->measured_voltage);
+	reg_store_write_input(base + CH_MEASURED_CURRENT,
+			      (uint16_t)s->measured_current);
+	reg_store_write_input(base + CH_RAW_ADC_VOLTAGE_HI,
+			      u32_hi((uint32_t)s->raw_adc_voltage));
+	reg_store_write_input(base + CH_RAW_ADC_VOLTAGE_LO,
+			      u32_lo((uint32_t)s->raw_adc_voltage));
+	reg_store_write_input(base + CH_RAW_ADC_CURRENT_HI,
+			      u32_hi((uint32_t)s->raw_adc_current));
+	reg_store_write_input(base + CH_RAW_ADC_CURRENT_LO,
+			      u32_lo((uint32_t)s->raw_adc_current));
+}
+
+static void publish_ch_holding(uint8_t ch, const struct vc_channel_snapshot *s,
+			       const struct vc_channel_config *c,
+			       const struct vc_channel_cal_config *cal)
+{
+	uint16_t base = CH_BLOCK_BASE(ch);
+
+	/* Operational config */
+	reg_store_write_holding(base + CH_CFG_TARGET_VOLTAGE,
+				(uint16_t)c->configured_target_voltage);
+	reg_store_write_holding(base + CH_RAMP_UP_STEP, c->ramp_up_step);
+	reg_store_write_holding(base + CH_RAMP_UP_INTERVAL, c->ramp_up_interval);
+	reg_store_write_holding(base + CH_RAMP_DOWN_STEP, c->ramp_down_step);
+	reg_store_write_holding(base + CH_RAMP_DOWN_INTERVAL, c->ramp_down_interval);
+	reg_store_write_holding(base + CH_RECOVERY_POLICY_MODE,
+				(uint16_t)c->recovery_policy_mode);
+	reg_store_write_holding(base + CH_AUTO_RETRY_DELAY, c->auto_retry_delay);
+	reg_store_write_holding(base + CH_AUTO_RETRY_MAX_COUNT,
+				c->auto_retry_max_count);
+	reg_store_write_holding(base + CH_AUTO_RETRY_WINDOW, c->auto_retry_window);
+	reg_store_write_holding(base + CH_CURRENT_SAFE_BAND_PCT,
+				c->current_safe_band_pct);
+	reg_store_write_holding(base + CH_CURRENT_PROTECTION_MODE,
+				(uint16_t)c->current_protection_mode);
+	reg_store_write_holding(base + CH_CURRENT_PROT_OUT_ACTION,
+				(uint16_t)c->current_protection_output_action);
+	reg_store_write_holding(base + CH_CURRENT_LIMIT_THRESHOLD,
+				(uint16_t)c->current_limit_threshold);
+	reg_store_write_holding(base + CH_AUTO_DERATE_STEP, c->auto_derate_step);
+
+	/* Cal coefficients */
+	reg_store_write_holding(base + CH_OUTPUT_CAL_K, cal->output_calib_k);
+	reg_store_write_holding(base + CH_OUTPUT_CAL_B,
+				(uint16_t)cal->output_calib_b);
+	reg_store_write_holding(base + CH_MEASURED_V_CAL_K,
+				cal->measured_voltage_calib_k);
+	reg_store_write_holding(base + CH_MEASURED_V_CAL_B,
+				(uint16_t)cal->measured_voltage_calib_b);
+	reg_store_write_holding(base + CH_MEASURED_I_CAL_K,
+				cal->measured_current_calib_k);
+	reg_store_write_holding(base + CH_MEASURED_I_CAL_B,
+				(uint16_t)cal->measured_current_calib_b);
+
+	/* Cal session state readback */
+	reg_store_write_holding(base + CH_CAL_OUTPUT_ENABLE, s->cal_output_enabled);
+	reg_store_write_holding(base + CH_CAL_DAC_CODE, s->raw_dac_readback);
+	reg_store_write_holding(base + CH_CAL_MAX_RAW_DAC_LIMIT,
+				s->cal_max_raw_dac_limit);
+}
+
+static void vc_runtime_publish_to_reg_store(const struct vc_published_snapshot *pub,
+					    size_t count)
+{
+	publish_sys_input(&pub->system);
+	publish_sys_holding(&pub->sys_config);
+	for (uint8_t ch = 0; ch < count; ch++) {
+		publish_ch_input(ch, &pub->channels[ch]);
+		publish_ch_holding(ch, &pub->channels[ch], &pub->configs[ch],
+				   &pub->cal_configs[ch]);
+	}
+}
+
+#endif /* IS_ENABLED(CONFIG_REG_STORE) */
+
 static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 {
 	struct vc_controller *ctrl = runtime->ctrl;
@@ -116,6 +252,9 @@ static void vc_runtime_publish_snapshot(struct vc_runtime *runtime)
 		vc_controller_get_channel_cal_config(ctrl, ch,
 						     &runtime->published.cal_configs[ch]);
 	}
+#if IS_ENABLED(CONFIG_REG_STORE)
+	vc_runtime_publish_to_reg_store(&runtime->published, count);
+#endif
 	k_mutex_unlock(&runtime->snapshot_lock);
 }
 

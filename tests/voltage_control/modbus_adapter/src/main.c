@@ -11,18 +11,6 @@
 #include "regmap/vc_regs.h"
 #include "modbus_adapter/modbus_adapter.h"
 #include "voltage_control/vc.h"
-#include "sys_status/sys_status.h"
-
-struct sys_status_snapshot sys_status_get(void)
-{
-	return (struct sys_status_snapshot){
-		.board_temperature = 250,
-		.board_humidity = 500,
-		.uptime = 0,
-		.fw_version_high = 0,
-		.fw_version_low = 1,
-	};
-}
 
 static struct vc_ctx *make_ctx(void)
 {

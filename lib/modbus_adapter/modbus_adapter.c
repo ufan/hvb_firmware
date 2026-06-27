@@ -30,7 +30,7 @@
 #define CONFIG_VC_MODBUS_BAUD_RATE 115200
 #endif
 
-#define EXT_BLOCK_END 279
+#define EXT_BLOCK_END (EXT_BLOCK_BASE + 79)  /* = 759 */
 #define MB_CMD_TIMEOUT K_SECONDS(1)
 
 struct vc_mb_adapter {
@@ -59,7 +59,7 @@ static bool addr_decode(uint16_t addr, bool *is_sys, uint8_t *ch, uint16_t *off)
 		return true;
 	}
 
-	if (addr >= CH_BLOCK_BASE(0) && addr < CH_BLOCK_BASE(4)) {
+	if (addr >= CH_BLOCK_BASE(0) && addr < CH_BLOCK_BASE(16)) {
 		uint16_t rel = addr - CH_BLOCK_BASE(0);
 		*is_sys = false;
 		*ch = (uint8_t)(rel / CH_BLOCK_SIZE);
@@ -104,17 +104,8 @@ static enum vc_mb_result domain_st_to_mb_result(enum vc_status st)
 static enum vc_mb_result read_sys_input(struct vc_mb_adapter *a, uint16_t off,
 					uint16_t *reg)
 {
-	if (off >= SYS_BOARD_TEMPERATURE && off <= SYS_FW_VERSION_LO) {
-		return sys_status_reg_read_input(off, reg) == 0
-			? VC_MB_OK : VC_MB_ILLEGAL_ADDRESS;
-	}
-
-	enum vc_status st = vc_reg_read_sys_input(a->ctx, off, reg);
-
-	if (st == VC_OK && off == SYS_CAPABILITY_FLAGS) {
-		*reg |= SYS_CAP_ENV_SENSOR;
-	}
-	return domain_st_to_mb_result(st);
+	ARG_UNUSED(a);
+	return domain_st_to_mb_result(vc_reg_read_sys_input(off, reg));
 }
 
 static enum vc_mb_result read_sys_holding(struct vc_mb_adapter *a,
@@ -128,7 +119,7 @@ static enum vc_mb_result read_sys_holding(struct vc_mb_adapter *a,
 		*reg = a->cfg.baud_rate_code;
 		return VC_MB_OK;
 	}
-	return domain_st_to_mb_result(vc_reg_read_sys_holding(a->ctx, off, reg));
+	return domain_st_to_mb_result(vc_reg_read_sys_holding(off, reg));
 }
 
 static enum vc_mb_result write_sys_holding(struct vc_mb_adapter *a,
@@ -293,7 +284,7 @@ enum vc_mb_result vc_mb_input_rd(struct vc_mb_adapter *a, uint16_t addr,
 	}
 
 	return domain_st_to_mb_result(
-		vc_reg_read_ch_input(a->ctx, ch, off, reg));
+		vc_reg_read_ch_input(ch, off, reg));
 }
 
 enum vc_mb_result vc_mb_holding_rd(struct vc_mb_adapter *a, uint16_t addr,
@@ -317,7 +308,7 @@ enum vc_mb_result vc_mb_holding_rd(struct vc_mb_adapter *a, uint16_t addr,
 	}
 
 	return domain_st_to_mb_result(
-		vc_reg_read_ch_holding(a->ctx, ch, off, reg));
+		vc_reg_read_ch_holding(ch, off, reg));
 }
 
 enum vc_mb_result vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr,

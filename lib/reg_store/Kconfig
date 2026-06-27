@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config REG_STORE
+	bool "Central register store"
+	help
+	  Provides a flat, ISR-safe backing store for all protocol register
+	  values (input and holding banks).  Modules publish into the store;
+	  Modbus and other adapters read from it.  Selected automatically by
+	  VC_RUNTIME and SYS_STATUS.

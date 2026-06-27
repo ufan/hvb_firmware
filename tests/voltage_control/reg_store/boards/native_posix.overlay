@@ -1,0 +1,9 @@
+/* Minimal vc-controller node — reg_store tests do not use channels */
+/ {
+	vc_controller: vc-controller {
+		compatible = "jianwei,vc-controller";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "okay";
+	};
+};
