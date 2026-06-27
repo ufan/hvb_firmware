@@ -30,7 +30,7 @@
 #define CONFIG_VC_MODBUS_BAUD_RATE 115200
 #endif
 
-#define EXT_BLOCK_END (EXT_BLOCK_BASE + 79)  /* = 759 */
+#define EXT_BLOCK_END (EXT_BLOCK_BASE + EXT_BLOCK_SIZE - 1)
 #define MB_CMD_TIMEOUT K_SECONDS(1)
 
 struct vc_mb_adapter {

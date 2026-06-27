@@ -21,7 +21,7 @@
  */
 #define N_CHANNELS  DT_CHILD_NUM_STATUS_OKAY(DT_NODELABEL(vc_controller))
 #define CH_END      (40U + (uint16_t)(N_CHANNELS) * 40U)
-#define STORE_SIZE  (CH_END + 80U)
+#define STORE_SIZE  (CH_END + EXT_BLOCK_SIZE)
 
 static uint16_t _input[STORE_SIZE];
 static uint16_t _holding[STORE_SIZE];
@@ -33,7 +33,7 @@ static bool addr_to_idx(uint16_t addr, uint16_t *idx)
 		*idx = addr;
 		return true;
 	}
-	if (addr >= EXT_BLOCK_BASE && addr < EXT_BLOCK_BASE + 80U) {
+	if (addr >= EXT_BLOCK_BASE && addr < EXT_BLOCK_BASE + EXT_BLOCK_SIZE) {
 		*idx = CH_END + (addr - EXT_BLOCK_BASE);
 		return true;
 	}

@@ -39,18 +39,18 @@ ZTEST(reg_store, test_out_of_range_read_returns_false)
 	zassert_false(reg_store_read_input(CH_BLOCK_BASE(2), &val));
 	zassert_false(reg_store_read_holding(CH_BLOCK_BASE(2), &val));
 	/* past end of extension block */
-	zassert_false(reg_store_read_input(EXT_BLOCK_BASE + 80U, &val));
-	zassert_false(reg_store_read_holding(EXT_BLOCK_BASE + 80U, &val));
+	zassert_false(reg_store_read_input(EXT_BLOCK_BASE + EXT_BLOCK_SIZE, &val));
+	zassert_false(reg_store_read_holding(EXT_BLOCK_BASE + EXT_BLOCK_SIZE, &val));
 	zassert_equal(val, 0xFFFF, "out must not be modified on false return");
 }
 
 ZTEST(reg_store, test_out_of_range_write_is_noop)
 {
 	uint16_t val = 0;
-	uint16_t last_ext = EXT_BLOCK_BASE + 79U;
+	uint16_t last_ext = EXT_BLOCK_BASE + EXT_BLOCK_SIZE - 1U;
 
 	reg_store_write_input(last_ext, 0x5555);
-	reg_store_write_input(EXT_BLOCK_BASE + 80U, 0xDEAD);  /* noop */
+	reg_store_write_input(EXT_BLOCK_BASE + EXT_BLOCK_SIZE, 0xDEAD);  /* noop */
 	zassert_true(reg_store_read_input(last_ext, &val));
 	zassert_equal(val, 0x5555);
 }
@@ -82,8 +82,8 @@ ZTEST(reg_store, test_compact_ch_mapping)
 	zassert_true(reg_store_read_input(EXT_BLOCK_BASE, &val));
 	zassert_equal(val, 0x1111);
 
-	reg_store_write_input(EXT_BLOCK_BASE + 79U, 0x2222);
-	zassert_true(reg_store_read_input(EXT_BLOCK_BASE + 79U, &val));
+	reg_store_write_input(EXT_BLOCK_BASE + EXT_BLOCK_SIZE - 1U, 0x2222);
+	zassert_true(reg_store_read_input(EXT_BLOCK_BASE + EXT_BLOCK_SIZE - 1U, &val));
 	zassert_equal(val, 0x2222);
 
 	/* ch0 and ext block are independent — no aliasing */

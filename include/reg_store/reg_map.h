@@ -57,6 +57,7 @@
 #define CH_BLOCK_BASE(c)  (40 + (c) * 40)
 #define CH_BLOCK_SIZE     40
 #define EXT_BLOCK_BASE    680  /* 40 + 16 * 40; fixed by protocol regardless of channel count */
+#define EXT_BLOCK_SIZE    80
 
 /* ------------------------------------------------------------------ */
 /* System input block  (FC04, offsets 0..39)                           */
