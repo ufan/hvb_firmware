@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdlib.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 
@@ -26,7 +28,3 @@ static int cmd_ss(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_CMD_REGISTER(ss, NULL, "System status (uptime, temp, humidity, fw)", cmd_ss);
-
-void sys_status_shell_init(void)
-{
-}

@@ -1,0 +1,26 @@
+/*
+ * native_posix overlay for ss_shell test.
+ *
+ * The board already provides gpio0 (gpio_emul) and the led0 alias, so
+ * sys_status's heartbeat LED compiles and initialises without errors.
+ *
+ * sys_status also needs DT_NODELABEL(i2c1) with a sht3xd@44 child for
+ * the temperature/humidity sensor.  We add an emulated I2C controller
+ * here; the sensor read will return an error at runtime, leaving the
+ * atomics at 0, but sys_status_get() is unaffected.
+ */
+
+/ {
+	i2c1: i2c@200 {
+		compatible = "zephyr,i2c-emul-controller";
+		clock-frequency = <100000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "okay";
+
+		sht3xd_44: sht3xd@44 {
+			compatible = "sensirion,sht3xd";
+			reg = <0x44>;
+		};
+	};
+};

@@ -40,8 +40,6 @@ int  modbus_adapter_config_save(void);
 int  modbus_adapter_config_load(void);
 void modbus_adapter_config_factory(void);
 
-void modbus_adapter_shell_init(void);
-
 struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx);
 enum vc_mb_result vc_mb_input_rd(struct vc_mb_adapter *a, uint16_t addr,
 				 uint16_t *reg);

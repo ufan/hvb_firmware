@@ -14,7 +14,8 @@
 #include <dt-bindings/voltage_control/capabilities.h>
 #include "regmap/vc_regs.h"
 
-#define SHELL_CMD_TIMEOUT K_SECONDS(1)
+#define SHELL_CMD_TIMEOUT   K_SECONDS(1)
+#define SHELL_PARAM_TIMEOUT K_SECONDS(5)
 
 static struct vc_ctx *ctx;
 
@@ -257,6 +258,17 @@ static int dispatch(const struct shell *sh, struct vc_cmd cmd)
 	return 0;
 }
 
+static int dispatch_param(const struct shell *sh, struct vc_cmd cmd)
+{
+	enum vc_status st = vc_dispatch(ctx, cmd, SHELL_PARAM_TIMEOUT);
+
+	if (st != VC_OK) {
+		shell_error(sh, "error: %d", st);
+		return -EIO;
+	}
+	return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* Output formatting                                                   */
 /* ------------------------------------------------------------------ */
@@ -384,7 +396,7 @@ static int cmd_param(const struct shell *sh, size_t argc, char **argv)
 		return -EINVAL;
 	}
 
-	int ret = dispatch(sh, vc_cmd_sys_param(action));
+	int ret = dispatch_param(sh, vc_cmd_sys_param(action));
 
 	if (ret) {
 		return ret;
@@ -394,7 +406,7 @@ static int cmd_param(const struct shell *sh, size_t argc, char **argv)
 
 	vc_query(ctx, vc_q_system_snapshot(&sys));
 	for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
-		ret = dispatch(sh, vc_cmd_ch_param(i, action));
+		ret = dispatch_param(sh, vc_cmd_ch_param(i, action));
 		if (ret) {
 			return ret;
 		}
@@ -470,7 +482,7 @@ static int cmd_sys_param(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "usage: vc sys param <save|load|reset>");
 		return -EINVAL;
 	}
-	int ret = dispatch(sh, vc_cmd_sys_param(action));
+	int ret = dispatch_param(sh, vc_cmd_sys_param(action));
 
 	if (ret == 0) {
 		shell_print(sh, "OK");
@@ -628,7 +640,7 @@ static int cmd_ch(const struct shell *sh, size_t argc, char **argv)
 			shell_error(sh, "expected: save, load, reset");
 			return -EINVAL;
 		}
-		int ret = dispatch(sh, vc_cmd_ch_param(ch, action));
+		int ret = dispatch_param(sh, vc_cmd_ch_param(ch, action));
 
 		if (ret == 0) {
 			shell_print(sh, "OK");

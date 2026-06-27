@@ -29,7 +29,7 @@ static int cmd_mb_status(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	struct mb_adapter_config cfg;
+	struct mb_adapter_config cfg = {};
 
 	modbus_adapter_get_config(&cfg);
 	shell_print(sh, "Modbus Adapter");
@@ -75,7 +75,11 @@ static int cmd_mb_set_baud(const struct shell *sh, size_t argc, char **argv)
 
 	unsigned long val = strtoul(argv[1], NULL, 10);
 
-	if (val > VC_BAUD_RATE_9600) {
+	switch ((uint16_t)val) {
+	case VC_BAUD_RATE_115200:
+	case VC_BAUD_RATE_9600:
+		break;
+	default:
 		shell_error(sh, "baud rate code must be 0 (115200) or 1 (9600)");
 		return -EINVAL;
 	}
@@ -144,7 +148,7 @@ static int cmd_mb_factory(const struct shell *sh, size_t argc, char **argv)
 
 	modbus_adapter_config_factory();
 
-	struct mb_adapter_config cfg;
+	struct mb_adapter_config cfg = {};
 
 	modbus_adapter_get_config(&cfg);
 	shell_print(sh, "factory reset: slave=%d baud=%d Hz",
@@ -172,7 +176,3 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_mb,
 );
 
 SHELL_CMD_REGISTER(mb, &sub_mb, "Modbus adapter config", NULL);
-
-void modbus_adapter_shell_init(void)
-{
-}
