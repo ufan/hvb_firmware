@@ -56,6 +56,10 @@
 | **Calibration Commit** | The per-channel action that persists approved calibration coefficients after factory or service tooling has calculated them externally. It saves calibration coefficients only, not raw debug state or temporary output values. | Channel save when the intent is specifically to persist calibration coefficients |
 | **Protocol Adapter** | A frontend-specific translation layer that maps protocol requests to protocol-neutral domain commands and snapshots. | UI when discussing firmware module boundaries |
 | **Modbus Adapter** | The Protocol Adapter that maps Modbus registers and exceptions to voltage-control domain operations. | Modbus domain, Modbus business logic |
+| **Active Modbus Configuration** | The slave address and baud rate currently used by the live Modbus server. Technician shell changes may alter it immediately. | Current config when it is unclear whether current means live or stored |
+| **Next-Boot Modbus Configuration** | The validated, persisted slave address and baud rate that Modbus FC03 exposes and the firmware activates only after software reset or power cycle. | Pending config, saved config |
+| **Compiled Modbus Defaults** | The product-default Modbus slave address and baud rate derived from Kconfig. | Hardcoded defaults when values are build-configurable |
+| **System Reset** | A delayed system-level cold reboot requested through the system module. It is not a voltage-control domain parameter action and has no channel scope. | VC reset, channel reset, parameter reset when reboot is intended |
 
 ## Relationships
 
