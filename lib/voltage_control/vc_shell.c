@@ -404,6 +404,20 @@ static int cmd_param(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+static int cmd_software_reset(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	CTX_CHECK(sh);
+
+	int ret = dispatch(sh, vc_cmd_sys_param(VC_PARAM_ACTION_SOFTWARE_RESET));
+
+	if (ret == 0) {
+		shell_print(sh, "software reset requested");
+	}
+	return ret;
+}
+
 /* ------------------------------------------------------------------ */
 /* System subcommands                                                  */
 /* ------------------------------------------------------------------ */
@@ -649,6 +663,20 @@ static int cmd_cal_unlock(const struct shell *sh, size_t argc, char **argv)
 	return ret;
 }
 
+static int cmd_cal_exit(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	CTX_CHECK(sh);
+
+	int ret = dispatch(sh, vc_cmd_cal_exit());
+
+	if (ret == 0) {
+		shell_print(sh, "exited calibration mode");
+	}
+	return ret;
+}
+
 static int cmd_cal_output(const struct shell *sh, size_t argc, char **argv)
 {
 	ARG_UNUSED(argc);
@@ -855,6 +883,7 @@ static int cmd_watch(const struct shell *sh, size_t argc, char **argv)
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_cal,
 	SHELL_CMD(unlock, NULL, "2-step calibration unlock", cmd_cal_unlock),
+	SHELL_CMD(exit, NULL, "Exit calibration mode", cmd_cal_exit),
 	SHELL_CMD_ARG(output, NULL, "Cal output <ch> <on|off>", cmd_cal_output, 3, 0),
 	SHELL_CMD_ARG(dac, NULL, "Raw DAC write <ch> <code>", cmd_cal_dac, 3, 0),
 	SHELL_CMD_ARG(sample, NULL, "Trigger ADC sample <ch>", cmd_cal_sample, 2, 0),
@@ -868,6 +897,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_cal,
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_sys,
 	SHELL_CMD(status, NULL, "Detailed system snapshot", cmd_sys_status),
 	SHELL_CMD(config, NULL, "System configuration", cmd_sys_config),
+	SHELL_CMD(reset, NULL, "Software reset firmware", cmd_software_reset),
 	SHELL_CMD_ARG(param, NULL, "System param <save|load|reset>", cmd_sys_param, 2, 0),
 	SHELL_CMD_ARG(set, NULL, "Set system field <field> <value>", cmd_sys_set, 3, 0),
 	SHELL_SUBCMD_SET_END
@@ -877,6 +907,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc,
 	SHELL_CMD(status, NULL, "System + channel snapshot", cmd_status),
 	SHELL_CMD_ARG(mode, NULL, "Set mode <normal|auto|cal>", cmd_mode, 2, 0),
 	SHELL_CMD_ARG(param, NULL, "All param <save|load|reset>", cmd_param, 2, 0),
+	SHELL_CMD(reset, NULL, "Software reset firmware", cmd_software_reset),
 	SHELL_CMD(sys, &sub_vc_sys, "System commands", NULL),
 	SHELL_CMD_ARG(ch, NULL, "Channel <n> <subcmd> [args]", cmd_ch, 3, 2),
 	SHELL_CMD(cal, &sub_vc_cal, "Calibration commands", NULL),
