@@ -8,6 +8,10 @@
 
 #include <zephyr/ztest.h>
 
+#if defined(CONFIG_SETTINGS)
+#include <zephyr/settings/settings.h>
+#endif
+
 #include "reg_store/reg_map.h"
 #include "modbus_adapter/modbus_adapter.h"
 #include "voltage_control/vc.h"
@@ -16,6 +20,15 @@ static struct vc_ctx *make_ctx(void)
 {
 	return vc_init();
 }
+
+#if defined(CONFIG_SYS_RESET)
+static struct k_sem reset_called;
+
+void sys_status_platform_reset(void)
+{
+	k_sem_give(&reset_called);
+}
+#endif
 
 static void destroy_ctx(struct vc_ctx *ctx)
 {
@@ -98,6 +111,7 @@ ZTEST(modbus_adapter, test_invalid_address_returns_illegal_address)
 
 /* ---- System holding read/write round-trip ---- */
 
+#if !defined(CONFIG_SETTINGS)
 ZTEST(modbus_adapter, test_sys_holding_slave_address_is_read_only_without_settings)
 {
 	struct vc_ctx *ctx = make_ctx();
@@ -130,6 +144,7 @@ ZTEST(modbus_adapter, test_sys_holding_baud_is_read_only_without_settings)
 
 	destroy_ctx(ctx);
 }
+#endif
 
 ZTEST(modbus_adapter, test_channel_param_action_rejects_system_reset)
 {
@@ -338,10 +353,76 @@ ZTEST(modbus_adapter, test_param_action_storage_returns_device_failure)
 
 	zassert_not_null(ctx);
 	zassert_equal(vc_mb_holding_wr(mb, SYS_PARAM_ACTION, VC_PARAM_ACTION_SAVE),
-		      VC_MB_DEVICE_FAILURE);
+		      IS_ENABLED(CONFIG_SETTINGS) ? VC_MB_OK : VC_MB_DEVICE_FAILURE);
 
 	destroy_ctx(ctx);
 }
+
+#if defined(CONFIG_SETTINGS)
+struct settings_read_ctx {
+	struct mb_adapter_config cfg;
+	bool found;
+};
+
+static int read_mb_config(const char *name, size_t len,
+			  settings_read_cb read_cb, void *cb_arg, void *param)
+{
+	struct settings_read_ctx *read = param;
+
+	if (len != sizeof(read->cfg) ||
+	    read_cb(cb_arg, &read->cfg, sizeof(read->cfg)) < 0) {
+		return -EIO;
+	}
+	read->found = true;
+	return 0;
+}
+
+ZTEST(modbus_adapter, test_modbus_config_is_persisted_for_next_boot)
+{
+	struct vc_ctx *ctx = make_ctx();
+	struct vc_mb_adapter *mb;
+	struct mb_adapter_config active;
+	struct mb_adapter_config next_boot;
+	struct settings_read_ctx stored = {};
+
+	zassert_equal(settings_delete("mb/cfg"), 0);
+	mb = vc_mb_adapter_create(ctx);
+	zassert_not_null(mb);
+
+	zassert_equal(vc_mb_holding_wr(mb, SYS_SLAVE_ADDRESS, 42), VC_MB_OK);
+	zassert_equal(modbus_adapter_get_active_config(&active), 0);
+	zassert_equal(modbus_adapter_get_next_boot_config(&next_boot), 0);
+	zassert_equal(active.slave_address, 1);
+	zassert_equal(next_boot.slave_address, 42);
+
+	mb = vc_mb_adapter_create(ctx);
+	zassert_not_null(mb);
+	zassert_equal(modbus_adapter_get_active_config(&active), 0);
+	zassert_equal(active.slave_address, 42);
+
+	zassert_equal(modbus_adapter_set_slave_address(77), 0);
+	zassert_equal(modbus_adapter_get_active_config(&active), 0);
+	zassert_equal(modbus_adapter_get_next_boot_config(&next_boot), 0);
+	zassert_equal(active.slave_address, 77);
+	zassert_equal(next_boot.slave_address, 42);
+	zassert_equal(modbus_adapter_config_save(), 0);
+	zassert_equal(modbus_adapter_get_next_boot_config(&next_boot), 0);
+	zassert_equal(next_boot.slave_address, 77);
+
+	zassert_equal(vc_mb_holding_wr(mb, SYS_PARAM_ACTION,
+				       VC_PARAM_ACTION_FACTORY_RESET), VC_MB_OK);
+	zassert_equal(modbus_adapter_get_active_config(&active), 0);
+	zassert_equal(modbus_adapter_get_next_boot_config(&next_boot), 0);
+	zassert_equal(active.slave_address, 77);
+	zassert_equal(next_boot.slave_address, 1);
+	zassert_equal(settings_load_subtree_direct("mb/cfg", read_mb_config,
+						   &stored), 0);
+	zassert_true(stored.found);
+	zassert_equal(stored.cfg.slave_address, 1);
+
+	destroy_ctx(ctx);
+}
+#endif
 
 ZTEST(modbus_adapter, test_system_reset_requires_system_reset_service)
 {
@@ -349,8 +430,15 @@ ZTEST(modbus_adapter, test_system_reset_requires_system_reset_service)
 	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
 
 	zassert_not_null(ctx);
+#if defined(CONFIG_SYS_RESET)
+	k_sem_init(&reset_called, 0, 1);
+	zassert_equal(vc_mb_holding_wr(mb, SYS_PARAM_ACTION, 255), VC_MB_OK);
+	zassert_equal(k_sem_take(&reset_called, K_NO_WAIT), -EBUSY);
+	zassert_equal(k_sem_take(&reset_called, K_MSEC(100)), 0);
+#else
 	zassert_equal(vc_mb_holding_wr(mb, SYS_PARAM_ACTION, 255),
 		      VC_MB_DEVICE_FAILURE);
+#endif
 
 	destroy_ctx(ctx);
 }

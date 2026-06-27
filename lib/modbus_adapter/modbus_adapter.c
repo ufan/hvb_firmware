@@ -75,6 +75,10 @@ static bool adapter_config_valid(const struct mb_adapter_config *cfg)
 		 cfg->baud_rate_code == VC_BAUD_RATE_9600);
 }
 
+#if defined(CONFIG_SETTINGS)
+static int adapter_save_config(const struct mb_adapter_config *cfg);
+#endif
+
 /* ------------------------------------------------------------------ */
 /* Address decode                                                      */
 /* ------------------------------------------------------------------ */
@@ -157,10 +161,16 @@ static enum vc_mb_result write_sys_holding(struct vc_mb_adapter *a,
 #if !defined(CONFIG_SETTINGS)
 		return VC_MB_ILLEGAL_ADDRESS;
 #else
+		struct mb_adapter_config candidate = a->boot_cfg;
+
 		if (val < 1 || val > 247) {
 			return VC_MB_ILLEGAL_VALUE;
 		}
-		a->boot_cfg.slave_address = val;
+		candidate.slave_address = val;
+		if (adapter_save_config(&candidate) < 0) {
+			return VC_MB_DEVICE_FAILURE;
+		}
+		a->boot_cfg = candidate;
 		return VC_MB_OK;
 #endif
 	}
@@ -168,10 +178,16 @@ static enum vc_mb_result write_sys_holding(struct vc_mb_adapter *a,
 #if !defined(CONFIG_SETTINGS)
 		return VC_MB_ILLEGAL_ADDRESS;
 #else
+		struct mb_adapter_config candidate = a->boot_cfg;
+
 		if (val > VC_BAUD_RATE_9600) {
 			return VC_MB_ILLEGAL_VALUE;
 		}
-		a->boot_cfg.baud_rate_code = val;
+		candidate.baud_rate_code = val;
+		if (adapter_save_config(&candidate) < 0) {
+			return VC_MB_DEVICE_FAILURE;
+		}
+		a->boot_cfg = candidate;
 		return VC_MB_OK;
 #endif
 	}
@@ -228,22 +244,12 @@ static int adapter_load_config(struct mb_adapter_config *cfg)
 	return ctx.found ? 0 : -ENOENT;
 }
 
-static int adapter_erase_config(void)
-{
-	return settings_delete("mb/cfg");
-}
-
 #else /* !CONFIG_SETTINGS */
 
 static int adapter_load_config(struct mb_adapter_config *cfg)
 {
 	ARG_UNUSED(cfg);
 	return -ENOENT;
-}
-
-static int adapter_erase_config(void)
-{
-	return -ENOTSUP;
 }
 
 #endif /* CONFIG_SETTINGS */
@@ -270,15 +276,28 @@ static enum vc_mb_result handle_sys_param_action(struct vc_mb_adapter *a,
 	case VC_PARAM_ACTION_SAVE:
 		break;
 	case VC_PARAM_ACTION_LOAD:
-		if (adapter_load_config(&a->boot_cfg) < 0 ||
-		    !adapter_config_valid(&a->boot_cfg)) {
-			a->boot_cfg = adapter_default_config();
+	{
+		struct mb_adapter_config candidate;
+
+		if (adapter_load_config(&candidate) < 0 ||
+		    !adapter_config_valid(&candidate)) {
+			return VC_MB_DEVICE_FAILURE;
 		}
+		a->boot_cfg = candidate;
 		break;
+	}
 	case VC_PARAM_ACTION_FACTORY_RESET:
-		(void)adapter_erase_config();
-		a->boot_cfg = adapter_default_config();
+	{
+#if defined(CONFIG_SETTINGS)
+		struct mb_adapter_config defaults = adapter_default_config();
+
+		if (adapter_save_config(&defaults) < 0) {
+			return VC_MB_DEVICE_FAILURE;
+		}
+		a->boot_cfg = defaults;
+#endif
 		break;
+	}
 	default:
 		break;
 	}
@@ -375,6 +394,11 @@ struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx)
 	if (adapter_load_config(&mb->boot_cfg) < 0 ||
 	    !adapter_config_valid(&mb->boot_cfg)) {
 		mb->boot_cfg = defaults;
+#if defined(CONFIG_SETTINGS)
+		if (adapter_save_config(&mb->boot_cfg) < 0) {
+			return NULL;
+		}
+#endif
 	}
 	mb->active_cfg = mb->boot_cfg;
 
@@ -582,15 +606,16 @@ int modbus_adapter_config_factory(void)
 		return -ENODEV;
 	}
 	struct mb_adapter_config defaults = adapter_default_config();
-	int ret = adapter_erase_config();
+	int ret;
 
-	if (ret != 0 && ret != -ENOTSUP) {
+#if defined(CONFIG_SETTINGS)
+	ret = adapter_save_config(&defaults);
+	if (ret < 0) {
 		return ret;
 	}
+	mb->boot_cfg = defaults;
+#endif
 	ret = modbus_adapter_apply_config(&defaults);
-	if (ret == 0 && IS_ENABLED(CONFIG_SETTINGS)) {
-		mb->boot_cfg = defaults;
-	}
 	return ret;
 }
 

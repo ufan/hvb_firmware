@@ -4,6 +4,8 @@ config UI_MODBUS_RTU
 	bool "Modbus RTU UI adapter"
 	default n
 	depends on MODBUS
+	select REBOOT
+	select SYS_RESET
 	help
 	  Enable Modbus RTU as the user interface adapter for the
 	  voltage-control system.

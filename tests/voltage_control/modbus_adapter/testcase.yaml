@@ -1,3 +1,6 @@
 tests:
   voltage_control.modbus_adapter:
     platform_allow: native_posix
+  voltage_control.modbus_adapter.settings:
+    extra_args: OVERLAY_CONFIG=prj_settings.conf
+    platform_allow: native_posix
