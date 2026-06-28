@@ -47,7 +47,7 @@ inline Component makeSystemTab(AppState& s) {
 
     return Renderer(cfgContainer, [=, &s]() {
         if (!s.data.valid)
-            return text(" Not connected ") | center | border;
+            return text(" Not connected \xe2\x80\x94 click [ Connect ] in the toolbar ") | center | border;
 
         const auto& si = s.data.sysInfo;
         const auto& sc = s.data.sysCfg;
