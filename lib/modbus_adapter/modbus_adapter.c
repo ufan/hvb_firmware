@@ -18,7 +18,9 @@
 
 #include "modbus_adapter/modbus_adapter.h"
 #include "modbus_register.h"
+#include "reg_store/reg_catalog.h"
 #include "reg_store/reg_map.h"
+#include "reg_store/reg_schema.h"
 #include "sys_status/sys_status.h"
 
 #ifdef CONFIG_SETTINGS
@@ -38,12 +40,123 @@
 
 struct vc_mb_adapter {
 	struct vc_ctx *ctx;
+	struct k_mutex lock;
 	struct mb_adapter_config active_cfg;
 	struct mb_adapter_config boot_cfg;
 };
 
 static struct vc_mb_adapter adapter;
 static struct vc_mb_adapter *mb;
+static const uint16_t protocol_major = VC_PROTOCOL_MAJOR;
+static const uint16_t protocol_minor = VC_PROTOCOL_MINOR;
+static int adapter_write_next_boot_field(uint16_t field, uint16_t value);
+static int modbus_adapter_set_slave_address(uint16_t addr);
+static int modbus_adapter_set_baud_rate_code(uint16_t code);
+static int modbus_adapter_config_save(void);
+static int modbus_adapter_config_load(void);
+static int modbus_adapter_config_factory(void);
+
+static enum reg_status errno_to_reg_status(int ret)
+{
+	if (ret == 0) {
+		return REG_OK;
+	}
+	if (ret == -EINVAL) {
+		return REG_INVALID_VALUE;
+	}
+	if (ret == -ENOTSUP || ret == -ENODEV) {
+		return REG_UNSUPPORTED;
+	}
+	return REG_IO_ERROR;
+}
+
+static enum reg_status modbus_reg_read(const struct reg_descriptor *desc,
+				       union reg_value *value)
+{
+	if (mb == NULL) {
+		return REG_BUSY;
+	}
+
+	k_mutex_lock(&mb->lock, K_FOREVER);
+	switch (REG_ID_FIELD(desc->id)) {
+	case REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS:
+		value->u16 = mb->active_cfg.slave_address;
+		break;
+	case REG_MODBUS_FIELD_ACTIVE_BAUD_RATE_CODE:
+		value->u16 = mb->active_cfg.baud_rate_code;
+		break;
+	case REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS:
+		value->u16 = mb->boot_cfg.slave_address;
+		break;
+	case REG_MODBUS_FIELD_NEXT_BOOT_BAUD_RATE_CODE:
+		value->u16 = mb->boot_cfg.baud_rate_code;
+		break;
+	default:
+		k_mutex_unlock(&mb->lock);
+		return REG_NOT_FOUND;
+	}
+	k_mutex_unlock(&mb->lock);
+	return REG_OK;
+}
+
+static enum reg_status modbus_reg_write(const struct reg_descriptor *desc,
+					union reg_value value,
+					k_timeout_t timeout)
+{
+	ARG_UNUSED(timeout);
+
+	switch (REG_ID_FIELD(desc->id)) {
+	case REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS:
+		return errno_to_reg_status(
+			modbus_adapter_set_slave_address(value.u16));
+	case REG_MODBUS_FIELD_ACTIVE_BAUD_RATE_CODE:
+		return errno_to_reg_status(
+			modbus_adapter_set_baud_rate_code(value.u16));
+	case REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS:
+	case REG_MODBUS_FIELD_NEXT_BOOT_BAUD_RATE_CODE:
+		return errno_to_reg_status(adapter_write_next_boot_field(
+			(uint16_t)REG_ID_FIELD(desc->id), value.u16));
+	case REG_MODBUS_FIELD_CONFIG_SAVE:
+		return value.u16 == 1U
+			? errno_to_reg_status(modbus_adapter_config_save())
+			: REG_INVALID_VALUE;
+	case REG_MODBUS_FIELD_CONFIG_LOAD:
+		return value.u16 == 1U
+			? errno_to_reg_status(modbus_adapter_config_load())
+			: REG_INVALID_VALUE;
+	case REG_MODBUS_FIELD_CONFIG_FACTORY:
+		return value.u16 == 1U
+			? errno_to_reg_status(modbus_adapter_config_factory())
+			: REG_INVALID_VALUE;
+	default:
+		return REG_UNSUPPORTED;
+	}
+}
+
+static const struct reg_owner modbus_reg_owner = {
+	.read = modbus_reg_read,
+	.write = modbus_reg_write,
+};
+
+REG_DESCRIPTOR_DEFINE(modbus_protocol_major_reg,
+	REG_MODBUS_ID(REG_MODBUS_FIELD_PROTOCOL_MAJOR),
+	REG_U16, REG_RO, REG_FIXED, &protocol_major, NULL);
+REG_DESCRIPTOR_DEFINE(modbus_protocol_minor_reg,
+	REG_MODBUS_ID(REG_MODBUS_FIELD_PROTOCOL_MINOR),
+	REG_U16, REG_RO, REG_FIXED, &protocol_minor, NULL);
+
+#define MODBUS_CONFIG_DESCRIPTOR(name, type_, access_, category_) \
+	REG_DESCRIPTOR_DEFINE(modbus_##name##_reg, \
+		REG_MODBUS_ID(REG_MODBUS_FIELD_##name), REG_##type_, \
+		REG_##access_, REG_##category_, NULL, &modbus_reg_owner)
+
+MODBUS_CONFIG_DESCRIPTOR(ACTIVE_SLAVE_ADDRESS, U16, RW, CONFIG);
+MODBUS_CONFIG_DESCRIPTOR(ACTIVE_BAUD_RATE_CODE, U16, RW, CONFIG);
+MODBUS_CONFIG_DESCRIPTOR(NEXT_BOOT_SLAVE_ADDRESS, U16, RW, CONFIG);
+MODBUS_CONFIG_DESCRIPTOR(NEXT_BOOT_BAUD_RATE_CODE, U16, RW, CONFIG);
+MODBUS_CONFIG_DESCRIPTOR(CONFIG_SAVE, U16, WO, COMMAND);
+MODBUS_CONFIG_DESCRIPTOR(CONFIG_LOAD, U16, WO, COMMAND);
+MODBUS_CONFIG_DESCRIPTOR(CONFIG_FACTORY, U16, WO, COMMAND);
 
 #if defined(CONFIG_MODBUS)
 static uint32_t baud_code_to_rate(uint16_t code)
@@ -129,6 +242,24 @@ static enum vc_mb_result domain_st_to_mb_result(enum vc_status st)
 	}
 }
 
+static enum vc_mb_result reg_st_to_mb_result(enum reg_status st)
+{
+	switch (st) {
+	case REG_OK:
+		return VC_MB_OK;
+	case REG_NOT_FOUND:
+	case REG_READ_ONLY:
+	case REG_WRITE_ONLY:
+	case REG_UNSUPPORTED:
+		return VC_MB_ILLEGAL_ADDRESS;
+	case REG_INVALID_ARGUMENT:
+	case REG_INVALID_VALUE:
+		return VC_MB_ILLEGAL_VALUE;
+	default:
+		return VC_MB_DEVICE_FAILURE;
+	}
+}
+
 /* ------------------------------------------------------------------ */
 /* System register multiplexing                                        */
 /* ------------------------------------------------------------------ */
@@ -137,62 +268,96 @@ static enum vc_mb_result read_sys_input(struct vc_mb_adapter *a, uint16_t off,
 					uint16_t *reg)
 {
 	ARG_UNUSED(a);
-	return domain_st_to_mb_result(vc_reg_read_sys_input(off, reg));
+	reg_id_t id;
+	union reg_value value = {};
+
+	switch (off) {
+	case SYS_PROTOCOL_MAJOR:
+		id = REG_MODBUS_ID(REG_MODBUS_FIELD_PROTOCOL_MAJOR);
+		break;
+	case SYS_PROTOCOL_MINOR:
+		id = REG_MODBUS_ID(REG_MODBUS_FIELD_PROTOCOL_MINOR);
+		break;
+	case SYS_BOARD_TEMPERATURE:
+		id = REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_TEMPERATURE);
+		break;
+	case SYS_BOARD_HUMIDITY:
+		id = REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_HUMIDITY);
+		break;
+	case SYS_UPTIME_HI:
+	case SYS_UPTIME_LO:
+		id = REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_UPTIME);
+		break;
+	case SYS_FW_VERSION_HI:
+	case SYS_FW_VERSION_LO:
+		id = REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_FW_VERSION);
+		break;
+	default:
+		return domain_st_to_mb_result(vc_reg_read_sys_input(off, reg));
+	}
+
+	enum reg_status status = reg_read(id, &value);
+
+	if (status != REG_OK) {
+		return reg_st_to_mb_result(status);
+	}
+	if (off == SYS_UPTIME_HI || off == SYS_FW_VERSION_HI) {
+		*reg = (uint16_t)(value.u32 >> 16);
+	} else if (off == SYS_UPTIME_LO || off == SYS_FW_VERSION_LO) {
+		*reg = (uint16_t)value.u32;
+	} else if (off == SYS_BOARD_TEMPERATURE) {
+		*reg = (uint16_t)value.s16;
+	} else {
+		*reg = value.u16;
+	}
+	return VC_MB_OK;
 }
 
 static enum vc_mb_result read_sys_holding(struct vc_mb_adapter *a,
 					  uint16_t off, uint16_t *reg)
 {
+	union reg_value value = {};
+	reg_id_t id;
+
 	if (off == SYS_SLAVE_ADDRESS) {
-		*reg = a->boot_cfg.slave_address;
-		return VC_MB_OK;
+		id = REG_MODBUS_ID(REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS);
+		goto read_config;
 	}
 	if (off == SYS_BAUD_RATE_CODE) {
-		*reg = a->boot_cfg.baud_rate_code;
-		return VC_MB_OK;
+		id = REG_MODBUS_ID(REG_MODBUS_FIELD_NEXT_BOOT_BAUD_RATE_CODE);
+		goto read_config;
 	}
 	return domain_st_to_mb_result(vc_reg_read_sys_holding(off, reg));
+
+read_config:
+	ARG_UNUSED(a);
+	enum reg_status status = reg_read(id, &value);
+
+	if (status == REG_OK) {
+		*reg = value.u16;
+	}
+	return reg_st_to_mb_result(status);
 }
 
 static enum vc_mb_result write_sys_holding(struct vc_mb_adapter *a,
 					   uint16_t off, uint16_t val)
 {
-	if (off == SYS_SLAVE_ADDRESS) {
-#if !defined(CONFIG_SETTINGS)
-		return VC_MB_ILLEGAL_ADDRESS;
-#else
-		struct mb_adapter_config candidate = a->boot_cfg;
+	union reg_value value = { .u16 = val };
+	reg_id_t id;
 
-		if (val < 1 || val > 247) {
-			return VC_MB_ILLEGAL_VALUE;
-		}
-		candidate.slave_address = val;
-		if (adapter_save_config(&candidate) < 0) {
-			return VC_MB_DEVICE_FAILURE;
-		}
-		a->boot_cfg = candidate;
-		return VC_MB_OK;
-#endif
+	if (off == SYS_SLAVE_ADDRESS) {
+		id = REG_MODBUS_ID(REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS);
+		goto write_config;
 	}
 	if (off == SYS_BAUD_RATE_CODE) {
-#if !defined(CONFIG_SETTINGS)
-		return VC_MB_ILLEGAL_ADDRESS;
-#else
-		struct mb_adapter_config candidate = a->boot_cfg;
-
-		if (val > VC_BAUD_RATE_9600) {
-			return VC_MB_ILLEGAL_VALUE;
-		}
-		candidate.baud_rate_code = val;
-		if (adapter_save_config(&candidate) < 0) {
-			return VC_MB_DEVICE_FAILURE;
-		}
-		a->boot_cfg = candidate;
-		return VC_MB_OK;
-#endif
+		id = REG_MODBUS_ID(REG_MODBUS_FIELD_NEXT_BOOT_BAUD_RATE_CODE);
+		goto write_config;
 	}
 	return domain_st_to_mb_result(
 		vc_reg_write_sys_holding(a->ctx, off, val, MB_CMD_TIMEOUT));
+
+write_config:
+	return reg_st_to_mb_result(reg_write(id, value, MB_CMD_TIMEOUT));
 }
 
 /* ------------------------------------------------------------------ */
@@ -254,6 +419,43 @@ static int adapter_load_config(struct mb_adapter_config *cfg)
 
 #endif /* CONFIG_SETTINGS */
 
+static int adapter_write_next_boot_field(uint16_t field, uint16_t value)
+{
+#if !defined(CONFIG_SETTINGS)
+	ARG_UNUSED(field);
+	ARG_UNUSED(value);
+	return -ENOTSUP;
+#else
+	if (mb == NULL) {
+		return -ENODEV;
+	}
+
+	struct mb_adapter_config candidate;
+
+	k_mutex_lock(&mb->lock, K_FOREVER);
+	candidate = mb->boot_cfg;
+	if (field == REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS) {
+		candidate.slave_address = value;
+	} else if (field == REG_MODBUS_FIELD_NEXT_BOOT_BAUD_RATE_CODE) {
+		candidate.baud_rate_code = value;
+	} else {
+		k_mutex_unlock(&mb->lock);
+		return -EINVAL;
+	}
+	if (!adapter_config_valid(&candidate)) {
+		k_mutex_unlock(&mb->lock);
+		return -EINVAL;
+	}
+	int ret = adapter_save_config(&candidate);
+
+	if (ret == 0) {
+		mb->boot_cfg = candidate;
+	}
+	k_mutex_unlock(&mb->lock);
+	return ret;
+#endif
+}
+
 /* ------------------------------------------------------------------ */
 /* Param action: adapter saves its own config, then delegates to VC    */
 /* ------------------------------------------------------------------ */
@@ -283,7 +485,9 @@ static enum vc_mb_result handle_sys_param_action(struct vc_mb_adapter *a,
 		    !adapter_config_valid(&candidate)) {
 			return VC_MB_DEVICE_FAILURE;
 		}
+		k_mutex_lock(&a->lock, K_FOREVER);
 		a->boot_cfg = candidate;
+		k_mutex_unlock(&a->lock);
 		break;
 	}
 	case VC_PARAM_ACTION_FACTORY_RESET:
@@ -294,7 +498,9 @@ static enum vc_mb_result handle_sys_param_action(struct vc_mb_adapter *a,
 		if (adapter_save_config(&defaults) < 0) {
 			return VC_MB_DEVICE_FAILURE;
 		}
+		k_mutex_lock(&a->lock, K_FOREVER);
 		a->boot_cfg = defaults;
+		k_mutex_unlock(&a->lock);
 #endif
 		break;
 	}
@@ -389,6 +595,7 @@ struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx)
 	struct mb_adapter_config defaults = adapter_default_config();
 
 	mb = &adapter;
+	k_mutex_init(&mb->lock);
 	mb->ctx = ctx;
 	mb->boot_cfg = defaults;
 	if (adapter_load_config(&mb->boot_cfg) < 0 ||
@@ -511,30 +718,7 @@ int modbus_adapter_init(struct vc_ctx *ctx)
 	return 0;
 }
 
-int modbus_adapter_get_active_config(struct mb_adapter_config *cfg)
-{
-	if (mb == NULL || cfg == NULL) {
-		return -ENODEV;
-	}
-	*cfg = mb->active_cfg;
-	return 0;
-}
-
-int modbus_adapter_get_next_boot_config(struct mb_adapter_config *cfg)
-{
-	if (mb == NULL || cfg == NULL) {
-		return -ENODEV;
-	}
-	*cfg = mb->boot_cfg;
-	return 0;
-}
-
-bool modbus_adapter_config_is_persistent(void)
-{
-	return IS_ENABLED(CONFIG_SETTINGS);
-}
-
-int modbus_adapter_set_slave_address(uint16_t addr)
+static int modbus_adapter_set_slave_address(uint16_t addr)
 {
 	if (mb == NULL) {
 		return -ENODEV;
@@ -542,13 +726,16 @@ int modbus_adapter_set_slave_address(uint16_t addr)
 	if (addr < 1 || addr > 247) {
 		return -EINVAL;
 	}
+	k_mutex_lock(&mb->lock, K_FOREVER);
 	struct mb_adapter_config candidate = mb->active_cfg;
 
 	candidate.slave_address = addr;
-	return modbus_adapter_apply_config(&candidate);
+	int ret = modbus_adapter_apply_config(&candidate);
+	k_mutex_unlock(&mb->lock);
+	return ret;
 }
 
-int modbus_adapter_set_baud_rate_code(uint16_t code)
+static int modbus_adapter_set_baud_rate_code(uint16_t code)
 {
 	if (mb == NULL) {
 		return -ENODEV;
@@ -556,13 +743,17 @@ int modbus_adapter_set_baud_rate_code(uint16_t code)
 	if (code > VC_BAUD_RATE_9600) {
 		return -EINVAL;
 	}
-	struct mb_adapter_config candidate = mb->active_cfg;
+	struct mb_adapter_config candidate;
 
+	k_mutex_lock(&mb->lock, K_FOREVER);
+	candidate = mb->active_cfg;
 	candidate.baud_rate_code = code;
-	return modbus_adapter_apply_config(&candidate);
+	int ret = modbus_adapter_apply_config(&candidate);
+	k_mutex_unlock(&mb->lock);
+	return ret;
 }
 
-int modbus_adapter_config_save(void)
+static int modbus_adapter_config_save(void)
 {
 	if (mb == NULL) {
 		return -ENODEV;
@@ -570,16 +761,18 @@ int modbus_adapter_config_save(void)
 #if !defined(CONFIG_SETTINGS)
 	return -ENOTSUP;
 #else
+	k_mutex_lock(&mb->lock, K_FOREVER);
 	int ret = adapter_save_config(&mb->active_cfg);
 
 	if (ret == 0) {
 		mb->boot_cfg = mb->active_cfg;
 	}
+	k_mutex_unlock(&mb->lock);
 	return ret;
 #endif
 }
 
-int modbus_adapter_config_load(void)
+static int modbus_adapter_config_load(void)
 {
 	if (mb == NULL) {
 		return -ENODEV;
@@ -593,14 +786,16 @@ int modbus_adapter_config_load(void)
 	if (!adapter_config_valid(&candidate)) {
 		return -EINVAL;
 	}
+	k_mutex_lock(&mb->lock, K_FOREVER);
 	ret = modbus_adapter_apply_config(&candidate);
 	if (ret == 0) {
 		mb->boot_cfg = candidate;
 	}
+	k_mutex_unlock(&mb->lock);
 	return ret;
 }
 
-int modbus_adapter_config_factory(void)
+static int modbus_adapter_config_factory(void)
 {
 	if (mb == NULL) {
 		return -ENODEV;
@@ -608,61 +803,69 @@ int modbus_adapter_config_factory(void)
 	struct mb_adapter_config defaults = adapter_default_config();
 	int ret;
 
+	k_mutex_lock(&mb->lock, K_FOREVER);
 #if defined(CONFIG_SETTINGS)
 	ret = adapter_save_config(&defaults);
 	if (ret < 0) {
+		k_mutex_unlock(&mb->lock);
 		return ret;
 	}
 	mb->boot_cfg = defaults;
 #endif
 	ret = modbus_adapter_apply_config(&defaults);
+	k_mutex_unlock(&mb->lock);
 	return ret;
 }
 
 #else /* !CONFIG_MODBUS */
 
-int modbus_adapter_get_active_config(struct mb_adapter_config *cfg)
+static int modbus_adapter_set_slave_address(uint16_t addr)
 {
-	ARG_UNUSED(cfg);
-	return -ENODEV;
+	if (mb == NULL) {
+		return -ENODEV;
+	}
+	if (addr < 1U || addr > 247U) {
+		return -EINVAL;
+	}
+	k_mutex_lock(&mb->lock, K_FOREVER);
+	mb->active_cfg.slave_address = addr;
+	k_mutex_unlock(&mb->lock);
+	return 0;
 }
 
-int modbus_adapter_get_next_boot_config(struct mb_adapter_config *cfg)
+static int modbus_adapter_set_baud_rate_code(uint16_t code)
 {
-	ARG_UNUSED(cfg);
-	return -ENODEV;
+	if (mb == NULL) {
+		return -ENODEV;
+	}
+	if (code > VC_BAUD_RATE_9600) {
+		return -EINVAL;
+	}
+	k_mutex_lock(&mb->lock, K_FOREVER);
+	mb->active_cfg.baud_rate_code = code;
+	k_mutex_unlock(&mb->lock);
+	return 0;
 }
 
-bool modbus_adapter_config_is_persistent(void)
-{
-	return IS_ENABLED(CONFIG_SETTINGS);
-}
-
-int modbus_adapter_set_slave_address(uint16_t addr)
-{
-	ARG_UNUSED(addr);
-	return -ENODEV;
-}
-
-int modbus_adapter_set_baud_rate_code(uint16_t code)
-{
-	ARG_UNUSED(code);
-	return -ENODEV;
-}
-
-int modbus_adapter_config_save(void)
-{
-	return -ENODEV;
-}
-
-int modbus_adapter_config_load(void)
+static int modbus_adapter_config_save(void)
 {
 	return -ENODEV;
 }
 
-int modbus_adapter_config_factory(void)
+static int modbus_adapter_config_load(void)
 {
 	return -ENODEV;
+}
+
+static int modbus_adapter_config_factory(void)
+{
+	if (mb == NULL) {
+		return -ENODEV;
+	}
+	k_mutex_lock(&mb->lock, K_FOREVER);
+	mb->active_cfg = adapter_default_config();
+	k_mutex_unlock(&mb->lock);
+	return 0;
 }
 
 #endif /* CONFIG_MODBUS */

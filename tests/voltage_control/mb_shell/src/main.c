@@ -10,6 +10,8 @@
 #include <zephyr/ztest.h>
 
 #include "modbus_adapter/modbus_adapter.h"
+#include "reg_store/reg_catalog.h"
+#include "reg_store/reg_schema.h"
 #include "voltage_control/vc.h"
 
 static struct vc_ctx *ctx;
@@ -37,14 +39,15 @@ ZTEST(mb_shell, test_mb_set_slave_validates_range)
 
 ZTEST(mb_shell, test_mb_set_slave_changes_active_config_only)
 {
-	struct mb_adapter_config active;
-	struct mb_adapter_config next_boot;
+	union reg_value value = {};
 
 	expect_command_result("mb set slave 10", 0);
-	zassert_equal(modbus_adapter_get_active_config(&active), 0);
-	zassert_equal(modbus_adapter_get_next_boot_config(&next_boot), 0);
-	zassert_equal(active.slave_address, 10);
-	zassert_equal(next_boot.slave_address, 1);
+	zassert_equal(reg_read(REG_MODBUS_ID(
+		REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), &value), REG_OK);
+	zassert_equal(value.u16, 10);
+	zassert_equal(reg_read(REG_MODBUS_ID(
+		REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS), &value), REG_OK);
+	zassert_equal(value.u16, 1);
 }
 
 /* mb set baud: unknown code must be rejected before adapter init. */

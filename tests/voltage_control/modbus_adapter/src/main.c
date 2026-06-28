@@ -13,6 +13,8 @@
 #endif
 
 #include "reg_store/reg_map.h"
+#include "reg_store/reg_catalog.h"
+#include "reg_store/reg_schema.h"
 #include "modbus_adapter/modbus_adapter.h"
 #include "voltage_control/vc.h"
 
@@ -35,7 +37,73 @@ static void destroy_ctx(struct vc_ctx *ctx)
 	vc_destroy(ctx);
 }
 
+#if defined(CONFIG_SETTINGS)
+static uint16_t read_modbus_u16(enum reg_modbus_field field)
+{
+	union reg_value value = {};
+
+	zassert_equal(reg_read(REG_MODBUS_ID(field), &value), REG_OK);
+	return value.u16;
+}
+#endif
+
 ZTEST_SUITE(modbus_adapter, NULL, NULL, NULL, NULL, NULL);
+
+ZTEST(modbus_adapter, test_adapter_config_is_exposed_by_owner_registers)
+{
+	struct vc_ctx *ctx = make_ctx();
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	union reg_value value = {};
+
+	zassert_not_null(mb);
+	zassert_equal(reg_read(REG_MODBUS_ID(
+		REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), &value), REG_OK);
+	zassert_equal(value.u16, 1U);
+	zassert_equal(reg_read(REG_MODBUS_ID(
+		REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS), &value), REG_OK);
+	zassert_equal(value.u16, 1U);
+	destroy_ctx(ctx);
+}
+
+ZTEST(modbus_adapter, test_adapter_active_write_routes_through_owner)
+{
+	struct vc_ctx *ctx = make_ctx();
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	union reg_value value = { .u16 = 42U };
+	enum reg_status status;
+
+	zassert_not_null(mb);
+	status = reg_write(REG_MODBUS_ID(
+		REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), value, K_NO_WAIT);
+	zassert_equal(status, REG_OK, "catalog write returned %d", status);
+	value.u16 = 0U;
+	zassert_equal(reg_read(REG_MODBUS_ID(
+		REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), &value), REG_OK);
+	zassert_equal(value.u16, 42U);
+	destroy_ctx(ctx);
+}
+
+#if defined(CONFIG_SETTINGS)
+ZTEST(modbus_adapter, test_adapter_next_boot_write_routes_through_owner)
+{
+	struct vc_ctx *ctx = make_ctx();
+	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	union reg_value value = { .u16 = 77U };
+
+	zassert_not_null(mb);
+	zassert_equal(reg_write(REG_MODBUS_ID(
+		REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS), value, K_NO_WAIT),
+		REG_OK);
+	value.u16 = 0U;
+	zassert_equal(reg_read(REG_MODBUS_ID(
+		REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS), &value), REG_OK);
+	zassert_equal(value.u16, 77U);
+	zassert_equal(reg_read(REG_MODBUS_ID(
+		REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), &value), REG_OK);
+	zassert_equal(value.u16, 1U);
+	destroy_ctx(ctx);
+}
+#endif
 
 /* ---- Address decode ---- */
 
@@ -381,8 +449,6 @@ ZTEST(modbus_adapter, test_modbus_config_is_persisted_for_next_boot)
 {
 	struct vc_ctx *ctx = make_ctx();
 	struct vc_mb_adapter *mb;
-	struct mb_adapter_config active;
-	struct mb_adapter_config next_boot;
 	struct settings_read_ctx stored = {};
 
 	zassert_equal(settings_delete("mb/cfg"), 0);
@@ -390,31 +456,27 @@ ZTEST(modbus_adapter, test_modbus_config_is_persisted_for_next_boot)
 	zassert_not_null(mb);
 
 	zassert_equal(vc_mb_holding_wr(mb, SYS_SLAVE_ADDRESS, 42), VC_MB_OK);
-	zassert_equal(modbus_adapter_get_active_config(&active), 0);
-	zassert_equal(modbus_adapter_get_next_boot_config(&next_boot), 0);
-	zassert_equal(active.slave_address, 1);
-	zassert_equal(next_boot.slave_address, 42);
+	zassert_equal(read_modbus_u16(REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), 1);
+	zassert_equal(read_modbus_u16(REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS), 42);
 
 	mb = vc_mb_adapter_create(ctx);
 	zassert_not_null(mb);
-	zassert_equal(modbus_adapter_get_active_config(&active), 0);
-	zassert_equal(active.slave_address, 42);
+	zassert_equal(read_modbus_u16(REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), 42);
 
-	zassert_equal(modbus_adapter_set_slave_address(77), 0);
-	zassert_equal(modbus_adapter_get_active_config(&active), 0);
-	zassert_equal(modbus_adapter_get_next_boot_config(&next_boot), 0);
-	zassert_equal(active.slave_address, 77);
-	zassert_equal(next_boot.slave_address, 42);
-	zassert_equal(modbus_adapter_config_save(), 0);
-	zassert_equal(modbus_adapter_get_next_boot_config(&next_boot), 0);
-	zassert_equal(next_boot.slave_address, 77);
+	union reg_value value = { .u16 = 77U };
+	zassert_equal(reg_write(REG_MODBUS_ID(
+		REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), value, K_NO_WAIT), REG_OK);
+	zassert_equal(read_modbus_u16(REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), 77);
+	zassert_equal(read_modbus_u16(REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS), 42);
+	value.u16 = 1U;
+	zassert_equal(reg_write(REG_MODBUS_ID(REG_MODBUS_FIELD_CONFIG_SAVE),
+				value, K_NO_WAIT), REG_OK);
+	zassert_equal(read_modbus_u16(REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS), 77);
 
 	zassert_equal(vc_mb_holding_wr(mb, SYS_PARAM_ACTION,
 				       VC_PARAM_ACTION_FACTORY_RESET), VC_MB_OK);
-	zassert_equal(modbus_adapter_get_active_config(&active), 0);
-	zassert_equal(modbus_adapter_get_next_boot_config(&next_boot), 0);
-	zassert_equal(active.slave_address, 77);
-	zassert_equal(next_boot.slave_address, 1);
+	zassert_equal(read_modbus_u16(REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), 77);
+	zassert_equal(read_modbus_u16(REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS), 1);
 	zassert_equal(settings_load_subtree_direct("mb/cfg", read_mb_config,
 						   &stored), 0);
 	zassert_true(stored.found);

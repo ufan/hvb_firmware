@@ -32,15 +32,6 @@ struct mb_adapter_config {
 
 int modbus_adapter_init(struct vc_ctx *ctx);
 
-int  modbus_adapter_get_active_config(struct mb_adapter_config *cfg);
-int  modbus_adapter_get_next_boot_config(struct mb_adapter_config *cfg);
-bool modbus_adapter_config_is_persistent(void);
-int  modbus_adapter_set_slave_address(uint16_t addr);
-int  modbus_adapter_set_baud_rate_code(uint16_t code);
-int  modbus_adapter_config_save(void);
-int  modbus_adapter_config_load(void);
-int  modbus_adapter_config_factory(void);
-
 struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx);
 enum vc_mb_result vc_mb_input_rd(struct vc_mb_adapter *a, uint16_t addr,
 				 uint16_t *reg);
