@@ -65,13 +65,17 @@
 /* ------------------------------------------------------------------ */
 
 enum {
-#define SYS_REG16(name, field, type, access, category, bank, offset) \
+#define MODBUS_SYS16(name, bank, offset) \
 	SYS_##name = offset,
-#define SYS_REG32(name, field, type, access, category, bank, offset) \
+#define MODBUS_SYS32(name, bank, offset) \
 	SYS_##name##_HI = offset, SYS_##name##_LO = (offset) + 1,
-#include "reg_store/system_regs.def"
-#undef SYS_REG16
-#undef SYS_REG32
+#define MODBUS_VC16(name, bank, offset)
+#define MODBUS_VC32(name, bank, offset)
+#include "reg_store/modbus_view.def"
+#undef MODBUS_SYS16
+#undef MODBUS_SYS32
+#undef MODBUS_VC16
+#undef MODBUS_VC32
 };
 /* 15..39 reserved */
 
@@ -87,13 +91,17 @@ enum {
 /* ------------------------------------------------------------------ */
 
 enum {
-#define VC_REG16(name, field, type, access, category, bank, offset) \
+#define MODBUS_SYS16(name, bank, offset)
+#define MODBUS_SYS32(name, bank, offset)
+#define MODBUS_VC16(name, bank, offset) \
 	CH_##name = offset,
-#define VC_REG32(name, field, type, access, category, bank, offset) \
+#define MODBUS_VC32(name, bank, offset) \
 	CH_##name##_HI = offset, CH_##name##_LO = (offset) + 1,
-#include "reg_store/vc_regs.def"
-#undef VC_REG16
-#undef VC_REG32
+#include "reg_store/modbus_view.def"
+#undef MODBUS_SYS16
+#undef MODBUS_SYS32
+#undef MODBUS_VC16
+#undef MODBUS_VC32
 };
 /* 16..39 reserved */
 

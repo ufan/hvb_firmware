@@ -35,6 +35,8 @@ static void cal_watchdog_reset(struct vc_controller *ctrl)
 	(SYS_CAP_AUTOMATIC_MODE | SYS_CAP_CALIBRATION_MODE)
 #define VC_CHANNEL_MASK(c) ((1U << (c)) - 1)
 
+struct vc_controller vc_controller_canonical_state;
+
 static struct vc_system_config default_system_config(void)
 {
 	return (struct vc_system_config){
@@ -63,28 +65,28 @@ static void build_meas_index(struct vc_controller *ctrl)
 struct vc_controller *vc_controller_init(
 	vc_wake_fn_t wake_fn, void *wake_user_data)
 {
-	static struct vc_controller ctrl;
+	struct vc_controller *ctrl = &vc_controller_canonical_state;
 
-	memset(&ctrl, 0, sizeof(ctrl));
-	ctrl.operating_mode = VC_OPERATING_MODE_NORMAL;
-	ctrl.sys_cfg = default_system_config();
+	memset(ctrl, 0, sizeof(*ctrl));
+	ctrl->operating_mode = VC_OPERATING_MODE_NORMAL;
+	ctrl->sys_cfg = default_system_config();
 
 #ifdef CONFIG_VC_CHANNEL_CONTROLLER
-	ctrl.channel_count = DT_CHILD_NUM_STATUS_OKAY(VC_CONTROLLER_NODE);
-	build_meas_index(&ctrl);
+	ctrl->channel_count = DT_CHILD_NUM_STATUS_OKAY(VC_CONTROLLER_NODE);
+	build_meas_index(ctrl);
 
 #define INIT_CHANNEL(node_id)                                            \
-	vc_channel_init(&ctrl.channels[DT_REG_ADDR(node_id)],           \
+	vc_channel_init(&ctrl->channels[DT_REG_ADDR(node_id)],          \
 			DEVICE_DT_GET(node_id),                          \
 			DT_REG_ADDR(node_id),                            \
 			DT_PROP(node_id, capabilities),                  \
-			ctrl.meas_index[DT_REG_ADDR(node_id)],          \
+			ctrl->meas_index[DT_REG_ADDR(node_id)],         \
 			wake_fn, wake_user_data);
 
 	DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, INIT_CHANNEL)
 #endif
 
-	return &ctrl;
+	return ctrl;
 }
 
 /* ---- Thin wrappers: route to vc_channel ---- */

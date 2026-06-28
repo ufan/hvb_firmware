@@ -11,24 +11,153 @@
 
 #include "voltage_control/vc_shell.h"
 #include "voltage_control/vc.h"
+#include "reg_store/reg_catalog.h"
 #include "reg_store/reg_map.h"
+#include "reg_store/reg_schema.h"
 
 #define SHELL_CMD_TIMEOUT   K_SECONDS(1)
 #define SHELL_PARAM_TIMEOUT K_SECONDS(5)
 
-static struct vc_ctx *ctx;
+static bool initialized;
 
-void vc_shell_init(struct vc_ctx *c)
+void vc_shell_init(void)
 {
-	ctx = c;
+	initialized = true;
 }
 
 #define CTX_CHECK(sh) do { \
-	if (!ctx) { \
+	if (!initialized) { \
 		shell_error(sh, "vc not initialized"); \
 		return -ENODEV; \
 	} \
 } while (0)
+
+#define VC_SHELL_READ_REG(id_, member_, union_member_) do { \
+	union reg_value reg_value_ = {}; \
+	if (reg_read((id_), &reg_value_) != REG_OK) { \
+		return -EIO; \
+	} \
+	(member_) = reg_value_.union_member_; \
+} while (false)
+
+static int read_system_snapshot(struct vc_system_snapshot *s)
+{
+	memset(s, 0, sizeof(*s));
+	VC_SHELL_READ_REG(REG_MODBUS_ID(REG_MODBUS_FIELD_PROTOCOL_MAJOR),
+		 s->protocol_major, u16);
+	VC_SHELL_READ_REG(REG_MODBUS_ID(REG_MODBUS_FIELD_PROTOCOL_MINOR),
+		 s->protocol_minor, u16);
+	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_VARIANT_ID),
+		 s->variant_id, u16);
+	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAPABILITY_FLAGS),
+		 s->system_capability_flags, u16);
+	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_SUPPORTED_CHANNELS),
+		 s->supported_channel_count, u16);
+	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_ACTIVE_CHANNEL_MASK),
+		 s->active_channel_mask, u16);
+	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_ACTIVE_OPERATING_MODE),
+		 s->active_operating_mode, u16);
+	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_STATUS),
+		 s->system_status, u16);
+	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_FAULT_CAUSE),
+		 s->system_fault_cause, u16);
+	return 0;
+}
+
+static int read_channel_snapshot(uint8_t ch, struct vc_channel_snapshot *s)
+{
+	memset(s, 0, sizeof(*s));
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_VOLTAGE),
+		 s->measured_voltage, s16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_CURRENT),
+		 s->measured_current, s16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OPER_TARGET_VOLTAGE),
+		 s->operational_target_voltage, s16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_STATUS_BITS), s->status_bits, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_ACTIVE_FAULT_CAUSE),
+		 s->active_fault_cause, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_FAULT_HISTORY_CAUSE),
+		 s->fault_history_cause, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_LAST_PROT_OUT_ACTION),
+		 s->last_protection_output_action, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_AUTO_RETRY_COUNT),
+		 s->auto_retry_count, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_AUTO_COOLDOWN_REMAINING),
+		 s->auto_cooldown_remaining, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_LAST_FAULT_TIMESTAMP),
+		 s->last_fault_timestamp, u32);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAPABILITY_FLAGS),
+		 s->channel_capability_flags, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAW_ADC_VOLTAGE),
+		 s->raw_adc_voltage, s32);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAW_ADC_CURRENT),
+		 s->raw_adc_current, s32);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_DAC_CODE),
+		 s->raw_dac_readback, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_OUTPUT_ENABLE),
+		 s->cal_output_enabled, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT),
+		 s->cal_max_raw_dac_limit, u16);
+	return 0;
+}
+
+static int read_system_config(struct vc_system_config *c)
+{
+	memset(c, 0, sizeof(*c));
+	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE),
+		 c->operating_mode, u16);
+	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_STARTUP_CHANNEL_POLICY),
+		 c->startup_channel_policy, u16);
+	return 0;
+}
+
+static int read_channel_config(uint8_t ch, struct vc_channel_config *c)
+{
+	memset(c, 0, sizeof(*c));
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CFG_TARGET_VOLTAGE),
+		 c->configured_target_voltage, s16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_UP_STEP), c->ramp_up_step, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_UP_INTERVAL),
+		 c->ramp_up_interval, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_DOWN_STEP), c->ramp_down_step, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_DOWN_INTERVAL),
+		 c->ramp_down_interval, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RECOVERY_POLICY_MODE),
+		 c->recovery_policy_mode, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_AUTO_RETRY_DELAY),
+		 c->auto_retry_delay, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_AUTO_RETRY_MAX_COUNT),
+		 c->auto_retry_max_count, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_AUTO_RETRY_WINDOW),
+		 c->auto_retry_window, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CURRENT_SAFE_BAND_PCT),
+		 c->current_safe_band_pct, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CURRENT_PROTECTION_MODE),
+		 c->current_protection_mode, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CURRENT_PROT_OUT_ACTION),
+		 c->current_protection_output_action, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CURRENT_LIMIT_THRESHOLD),
+		 c->current_limit_threshold, s16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_AUTO_DERATE_STEP),
+		 c->auto_derate_step, u16);
+	return 0;
+}
+
+static int read_cal_config(uint8_t ch, struct vc_channel_cal_config *c)
+{
+	memset(c, 0, sizeof(*c));
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_K), c->output_calib_k, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_B), c->output_calib_b, s16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_K),
+		 c->measured_voltage_calib_k, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_B),
+		 c->measured_voltage_calib_b, s16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_K),
+		 c->measured_current_calib_k, u16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_B),
+		 c->measured_current_calib_b, s16);
+	return 0;
+}
 
 /* ------------------------------------------------------------------ */
 /* String conversion helpers                                           */
@@ -150,7 +279,7 @@ static int parse_channel(const struct shell *sh, const char *s, uint8_t *out)
 
 	struct vc_system_snapshot sys;
 
-	vc_query(ctx, vc_q_system_snapshot(&sys));
+	read_system_snapshot(&sys);
 	if (v >= sys.supported_channel_count) {
 		shell_error(sh, "channel %lu out of range (0..%d)",
 			    v, sys.supported_channel_count - 1);
@@ -246,26 +375,155 @@ static int lookup_field(const struct shell *sh, const char *name,
 /* Dispatch helper                                                     */
 /* ------------------------------------------------------------------ */
 
-static int dispatch(const struct shell *sh, struct vc_cmd cmd)
+static reg_id_t channel_config_id(uint8_t ch, enum vc_config_field field)
 {
-	enum vc_status st = vc_dispatch(ctx, cmd, SHELL_CMD_TIMEOUT);
+	switch (field) {
+	case VC_FIELD_CONFIGURED_TARGET_VOLTAGE:
+		return REG_VC_ID(ch, REG_VC_FIELD_CFG_TARGET_VOLTAGE);
+	case VC_FIELD_RAMP_UP_STEP: return REG_VC_ID(ch, REG_VC_FIELD_RAMP_UP_STEP);
+	case VC_FIELD_RAMP_UP_INTERVAL:
+		return REG_VC_ID(ch, REG_VC_FIELD_RAMP_UP_INTERVAL);
+	case VC_FIELD_RAMP_DOWN_STEP:
+		return REG_VC_ID(ch, REG_VC_FIELD_RAMP_DOWN_STEP);
+	case VC_FIELD_RAMP_DOWN_INTERVAL:
+		return REG_VC_ID(ch, REG_VC_FIELD_RAMP_DOWN_INTERVAL);
+	case VC_FIELD_RECOVERY_POLICY_MODE:
+		return REG_VC_ID(ch, REG_VC_FIELD_RECOVERY_POLICY_MODE);
+	case VC_FIELD_AUTO_RETRY_DELAY:
+		return REG_VC_ID(ch, REG_VC_FIELD_AUTO_RETRY_DELAY);
+	case VC_FIELD_AUTO_RETRY_MAX_COUNT:
+		return REG_VC_ID(ch, REG_VC_FIELD_AUTO_RETRY_MAX_COUNT);
+	case VC_FIELD_AUTO_RETRY_WINDOW:
+		return REG_VC_ID(ch, REG_VC_FIELD_AUTO_RETRY_WINDOW);
+	case VC_FIELD_CURRENT_SAFE_BAND_PCT:
+		return REG_VC_ID(ch, REG_VC_FIELD_CURRENT_SAFE_BAND_PCT);
+	case VC_FIELD_CURRENT_PROTECTION_MODE:
+		return REG_VC_ID(ch, REG_VC_FIELD_CURRENT_PROTECTION_MODE);
+	case VC_FIELD_CURRENT_PROT_OUT_ACTION:
+		return REG_VC_ID(ch, REG_VC_FIELD_CURRENT_PROT_OUT_ACTION);
+	case VC_FIELD_CURRENT_LIMIT_THRESHOLD:
+		return REG_VC_ID(ch, REG_VC_FIELD_CURRENT_LIMIT_THRESHOLD);
+	case VC_FIELD_AUTO_DERATE_STEP:
+		return REG_VC_ID(ch, REG_VC_FIELD_AUTO_DERATE_STEP);
+	default: return 0U;
+	}
+}
 
-	if (st != VC_OK) {
-		shell_error(sh, "error: %d", st);
+static reg_id_t cal_config_id(uint8_t ch, enum vc_cal_field field)
+{
+	switch (field) {
+	case VC_CAL_FIELD_OUTPUT_K: return REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_K);
+	case VC_CAL_FIELD_OUTPUT_B: return REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_B);
+	case VC_CAL_FIELD_MEASURED_V_K:
+		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_K);
+	case VC_CAL_FIELD_MEASURED_V_B:
+		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_B);
+	case VC_CAL_FIELD_MEASURED_I_K:
+		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_K);
+	case VC_CAL_FIELD_MEASURED_I_B:
+		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_B);
+	default: return 0U;
+	}
+}
+
+static int dispatch_timeout(const struct shell *sh, struct vc_cmd cmd,
+			    k_timeout_t timeout)
+{
+	reg_id_t id = 0U;
+	union reg_value value = {};
+
+	switch (cmd.type) {
+	case VC_CMD_SET_OPERATING_MODE:
+		id = REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE);
+		value.u16 = (uint16_t)cmd.operating_mode;
+		break;
+	case VC_CMD_OUTPUT_ACTION:
+		id = REG_VC_ID(cmd.channel, REG_VC_FIELD_OUTPUT_ACTION);
+		value.u16 = (uint16_t)cmd.output_action;
+		break;
+	case VC_CMD_FAULT_COMMAND:
+		id = REG_VC_ID(cmd.channel, REG_VC_FIELD_FAULT_CMD);
+		value.u16 = (uint16_t)cmd.fault_command;
+		break;
+	case VC_CMD_SET_SYSTEM_FIELD:
+		id = cmd.field_write.field == VC_FIELD_OPERATING_MODE
+			? REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE)
+			: REG_VC_GLOBAL_ID(
+				REG_VC_GLOBAL_FIELD_STARTUP_CHANNEL_POLICY);
+		value.u16 = cmd.field_write.value;
+		break;
+	case VC_CMD_SET_CHANNEL_FIELD:
+		id = channel_config_id(cmd.channel, cmd.field_write.field);
+		value.u16 = cmd.field_write.value;
+		break;
+	case VC_CMD_SET_CHANNEL_CAL_FIELD:
+		id = cal_config_id(cmd.channel, cmd.cal_field_write.field);
+		value.u16 = cmd.cal_field_write.value;
+		break;
+	case VC_CMD_SYSTEM_PARAM_ACTION:
+		id = REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_PARAM_ACTION);
+		value.u16 = (uint16_t)cmd.param_action;
+		break;
+	case VC_CMD_CHANNEL_PARAM_ACTION:
+		id = REG_VC_ID(cmd.channel, REG_VC_FIELD_PARAM_ACTION);
+		value.u16 = (uint16_t)cmd.param_action;
+		break;
+	case VC_CMD_CALIBRATION:
+		switch (cmd.cal.action) {
+		case VC_CAL_UNLOCK:
+			id = REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK);
+			value.u16 = cmd.cal.value;
+			break;
+		case VC_CAL_EXIT:
+			id = REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_EXIT);
+			value.u16 = 1U;
+			break;
+		case VC_CAL_SET_OUTPUT_ENABLE:
+			id = REG_VC_ID(cmd.cal.channel,
+					   REG_VC_FIELD_CAL_OUTPUT_ENABLE);
+			value.u16 = cmd.cal.enable ? 1U : 0U;
+			break;
+		case VC_CAL_SET_RAW_DAC:
+			id = REG_VC_ID(cmd.cal.channel, REG_VC_FIELD_CAL_DAC_CODE);
+			value.u16 = cmd.cal.value;
+			break;
+		case VC_CAL_SAMPLE:
+			id = REG_VC_ID(cmd.cal.channel, REG_VC_FIELD_CAL_SAMPLE_CMD);
+			value.u16 = CAL_COMMAND_EXECUTE;
+			break;
+		case VC_CAL_COMMIT:
+			id = REG_VC_ID(cmd.cal.channel, REG_VC_FIELD_CAL_COMMIT_CMD);
+			value.u16 = CAL_COMMAND_EXECUTE;
+			break;
+		case VC_CAL_SET_MAX_RAW_DAC:
+			id = REG_VC_ID(cmd.cal.channel,
+					   REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT);
+			value.u16 = cmd.cal.value;
+			break;
+		default: break;
+		}
+		break;
+	default: break;
+	}
+
+	enum reg_status status = id == 0U
+		? REG_INVALID_ARGUMENT : reg_write(id, value, timeout);
+
+	if (status != REG_OK) {
+		shell_error(sh, "error: %d", status);
 		return -EIO;
 	}
 	return 0;
 }
 
+static int dispatch(const struct shell *sh, struct vc_cmd cmd)
+{
+	return dispatch_timeout(sh, cmd, SHELL_CMD_TIMEOUT);
+}
+
 static int dispatch_param(const struct shell *sh, struct vc_cmd cmd)
 {
-	enum vc_status st = vc_dispatch(ctx, cmd, SHELL_PARAM_TIMEOUT);
-
-	if (st != VC_OK) {
-		shell_error(sh, "error: %d", st);
-		return -EIO;
-	}
-	return 0;
+	return dispatch_timeout(sh, cmd, SHELL_PARAM_TIMEOUT);
 }
 
 /* ------------------------------------------------------------------ */
@@ -357,13 +615,13 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
 
 	struct vc_system_snapshot sys;
 
-	vc_query(ctx, vc_q_system_snapshot(&sys));
+	read_system_snapshot(&sys);
 	print_sys_oneliner(sh, &sys);
 
 	for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
 		struct vc_channel_snapshot snap;
 
-		vc_query(ctx, vc_q_channel_snapshot(i, &snap));
+		read_channel_snapshot(i, &snap);
 		print_ch_oneliner(sh, i, &snap);
 	}
 	return 0;
@@ -403,7 +661,7 @@ static int cmd_param(const struct shell *sh, size_t argc, char **argv)
 
 	struct vc_system_snapshot sys;
 
-	vc_query(ctx, vc_q_system_snapshot(&sys));
+	read_system_snapshot(&sys);
 	for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
 		ret = dispatch_param(sh, vc_cmd_ch_param(i, action));
 		if (ret) {
@@ -427,7 +685,7 @@ static int cmd_sys_status(const struct shell *sh, size_t argc, char **argv)
 
 	struct vc_system_snapshot sys;
 
-	vc_query(ctx, vc_q_system_snapshot(&sys));
+	read_system_snapshot(&sys);
 
 	char fbuf[48];
 
@@ -451,7 +709,7 @@ static int cmd_sys_config(const struct shell *sh, size_t argc, char **argv)
 
 	struct vc_system_config cfg;
 
-	vc_query(ctx, vc_q_system_config(&cfg));
+	read_system_config(&cfg);
 	print_sys_config(sh, &cfg);
 	return 0;
 }
@@ -501,7 +759,7 @@ static int cmd_ch_status(const struct shell *sh, uint8_t ch)
 
 	struct vc_channel_snapshot snap;
 
-	vc_query(ctx, vc_q_channel_snapshot(ch, &snap));
+	read_channel_snapshot(ch, &snap);
 
 	char fbuf[48], cbuf[24];
 
@@ -553,7 +811,7 @@ static int cmd_ch(const struct shell *sh, size_t argc, char **argv)
 	if (strcmp(sub, "config") == 0) {
 		struct vc_channel_config cfg;
 
-		vc_query(ctx, vc_q_channel_config(ch, &cfg));
+		read_channel_config(ch, &cfg);
 		print_ch_config(sh, ch, &cfg);
 		return 0;
 	}
@@ -767,7 +1025,7 @@ static int cmd_cal_config(const struct shell *sh, size_t argc, char **argv)
 
 	struct vc_channel_cal_config cal;
 
-	vc_query(ctx, vc_q_channel_cal_config(ch, &cal));
+	read_cal_config(ch, &cal);
 	print_cal_config(sh, ch, &cal);
 	return 0;
 }
@@ -819,7 +1077,7 @@ static int cmd_watch(const struct shell *sh, size_t argc, char **argv)
 
 	struct vc_system_snapshot sys;
 
-	vc_query(ctx, vc_q_system_snapshot(&sys));
+	read_system_snapshot(&sys);
 
 	int8_t watch_ch = -1;
 	int interval_ms = CONFIG_VC_SHELL_WATCH_DEFAULT_INTERVAL_MS;
@@ -848,13 +1106,13 @@ static int cmd_watch(const struct shell *sh, size_t argc, char **argv)
 		if (watch_ch >= 0) {
 			struct vc_channel_snapshot snap;
 
-			vc_query(ctx, vc_q_channel_snapshot(watch_ch, &snap));
+			read_channel_snapshot(watch_ch, &snap);
 			print_ch_oneliner(sh, watch_ch, &snap);
 		} else {
 			for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
 				struct vc_channel_snapshot snap;
 
-				vc_query(ctx, vc_q_channel_snapshot(i, &snap));
+				read_channel_snapshot(i, &snap);
 				if (snap.channel_capability_flags &
 				    (CH_CAP_VOLTAGE_MEASUREMENT |
 				     CH_CAP_CURRENT_MEASUREMENT)) {

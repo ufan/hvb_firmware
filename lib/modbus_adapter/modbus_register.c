@@ -5,7 +5,7 @@
  */
 
 #include "modbus_register.h"
-#include "voltage_control/vc.h"
+#include "voltage_control/vc_types.h"
 #include "reg_store/reg_catalog.h"
 #include "reg_store/reg_map.h"
 #include "reg_store/reg_schema.h"
@@ -126,9 +126,31 @@ static bool ch_holding_supported(uint16_t caps, uint16_t off)
 /* ------------------------------------------------------------------ */
 
 struct wire_reg {
-	reg_id_t id;
+	reg_handle_t handle;
+	uint8_t ordinal;
 	uint8_t word;
+	bool mapped;
 };
+
+extern const struct reg_descriptor vc_catalog_channel_regs[];
+extern const struct reg_descriptor vc_catalog_global_regs[];
+extern const struct reg_descriptor modbus_protocol_major_reg;
+extern const struct reg_descriptor modbus_protocol_minor_reg;
+extern const struct reg_descriptor modbus_NEXT_BOOT_SLAVE_ADDRESS_reg;
+extern const struct reg_descriptor modbus_NEXT_BOOT_BAUD_RATE_CODE_reg;
+
+#if defined(CONFIG_SYS_STATUS)
+extern const struct reg_descriptor sys_status_temperature_reg;
+extern const struct reg_descriptor sys_status_humidity_reg;
+extern const struct reg_descriptor sys_status_uptime_reg;
+extern const struct reg_descriptor sys_status_firmware_version_reg;
+#define SYS_STATUS_HANDLE(name) (&sys_status_##name##_reg)
+#else
+#define SYS_STATUS_HANDLE(name) NULL
+#endif
+
+#define VC_GLOBAL_HANDLE(name) \
+	(&vc_catalog_global_regs[REG_VC_GLOBAL_ORD_##name])
 
 static struct {
 	reg_id_t id;
@@ -136,153 +158,132 @@ static struct {
 	bool valid;
 } word_latch;
 
-#define SYS_INPUT_16(name, field, offset) \
-	[offset] = { REG_SYS_ID(REG_SYS_FIELD_##name), 0 },
-#define SYS_INPUT_32(name, field, offset) \
-	[offset] = { REG_SYS_ID(REG_SYS_FIELD_##name), 0 }, \
-	[(offset) + 1] = { REG_SYS_ID(REG_SYS_FIELD_##name), 1 },
-#define SYS_HOLDING_16(name, field, offset)
-#define SYS_HOLDING_32(name, field, offset)
-#define SYS_REG16(name, field, type, access, category, bank, offset) \
-	SYS_##bank##_16(name, field, offset)
-#define SYS_REG32(name, field, type, access, category, bank, offset) \
-	SYS_##bank##_32(name, field, offset)
 static const struct wire_reg sys_input_view[CH_BLOCK_SIZE] = {
-#include "reg_store/system_regs.def"
+	[SYS_PROTOCOL_MAJOR] = { &modbus_protocol_major_reg, 0, 0, true },
+	[SYS_PROTOCOL_MINOR] = { &modbus_protocol_minor_reg, 0, 0, true },
+	[SYS_VARIANT_ID] = { VC_GLOBAL_HANDLE(VARIANT_ID), 0, 0, true },
+	[SYS_CAPABILITY_FLAGS] = { VC_GLOBAL_HANDLE(CAPABILITY_FLAGS), 0, 0, true },
+	[SYS_SUPPORTED_CHANNELS] = { VC_GLOBAL_HANDLE(SUPPORTED_CHANNELS), 0, 0, true },
+	[SYS_ACTIVE_CHANNEL_MASK] = { VC_GLOBAL_HANDLE(ACTIVE_CHANNEL_MASK), 0, 0, true },
+	[SYS_BOARD_TEMPERATURE] = { SYS_STATUS_HANDLE(temperature), 0, 0, true },
+	[SYS_BOARD_HUMIDITY] = { SYS_STATUS_HANDLE(humidity), 0, 0, true },
+	[SYS_UPTIME_HI] = { SYS_STATUS_HANDLE(uptime), 0, 0, true },
+	[SYS_UPTIME_LO] = { SYS_STATUS_HANDLE(uptime), 0, 1, true },
+	[SYS_FW_VERSION_HI] = { SYS_STATUS_HANDLE(firmware_version), 0, 0, true },
+	[SYS_FW_VERSION_LO] = { SYS_STATUS_HANDLE(firmware_version), 0, 1, true },
+	[SYS_ACTIVE_OPERATING_MODE] = {
+		VC_GLOBAL_HANDLE(ACTIVE_OPERATING_MODE), 0, 0, true },
+	[SYS_STATUS] = { VC_GLOBAL_HANDLE(STATUS), 0, 0, true },
+	[SYS_FAULT_CAUSE] = { VC_GLOBAL_HANDLE(FAULT_CAUSE), 0, 0, true },
 };
-#undef SYS_REG16
-#undef SYS_REG32
-#undef SYS_INPUT_16
-#undef SYS_INPUT_32
-#undef SYS_HOLDING_16
-#undef SYS_HOLDING_32
 
-#define SYS_INPUT_16(name, field, offset)
-#define SYS_INPUT_32(name, field, offset)
-#define SYS_HOLDING_16(name, field, offset) \
-	[offset] = { REG_SYS_ID(REG_SYS_FIELD_##name), 0 },
-#define SYS_HOLDING_32(name, field, offset) \
-	[offset] = { REG_SYS_ID(REG_SYS_FIELD_##name), 0 }, \
-	[(offset) + 1] = { REG_SYS_ID(REG_SYS_FIELD_##name), 1 },
-#define SYS_REG16(name, field, type, access, category, bank, offset) \
-	SYS_##bank##_16(name, field, offset)
-#define SYS_REG32(name, field, type, access, category, bank, offset) \
-	SYS_##bank##_32(name, field, offset)
 static const struct wire_reg sys_holding_view[CH_BLOCK_SIZE] = {
-#include "reg_store/system_regs.def"
+	[SYS_OPERATING_MODE] = { VC_GLOBAL_HANDLE(OPERATING_MODE), 0, 0, true },
+	[SYS_STARTUP_CHANNEL_POLICY] = {
+		VC_GLOBAL_HANDLE(STARTUP_CHANNEL_POLICY), 0, 0, true },
+	[SYS_SLAVE_ADDRESS] = {
+		&modbus_NEXT_BOOT_SLAVE_ADDRESS_reg, 0, 0, true },
+	[SYS_BAUD_RATE_CODE] = {
+		&modbus_NEXT_BOOT_BAUD_RATE_CODE_reg, 0, 0, true },
+	[SYS_PARAM_ACTION] = { VC_GLOBAL_HANDLE(PARAM_ACTION), 0, 0, true },
 };
-#undef SYS_REG16
-#undef SYS_REG32
-#undef SYS_INPUT_16
-#undef SYS_INPUT_32
-#undef SYS_HOLDING_16
-#undef SYS_HOLDING_32
 
-#define VC_INPUT_16(name, field, offset) \
-	[offset] = { REG_VC_FIELD_##name, 0 },
-#define VC_INPUT_32(name, field, offset) \
-	[offset] = { REG_VC_FIELD_##name, 0 }, \
-	[(offset) + 1] = { REG_VC_FIELD_##name, 1 },
-#define VC_HOLDING_16(name, field, offset)
-#define VC_HOLDING_32(name, field, offset)
-#define VC_REG16(name, field, type, access, category, bank, offset) \
-	VC_##bank##_16(name, field, offset)
-#define VC_REG32(name, field, type, access, category, bank, offset) \
-	VC_##bank##_32(name, field, offset)
+#define VC_INPUT_16(name, offset) \
+	[offset] = { NULL, REG_VC_ORD_##name, 0, true },
+#define VC_INPUT_32(name, offset) \
+	[offset] = { NULL, REG_VC_ORD_##name, 0, true }, \
+	[(offset) + 1] = { NULL, REG_VC_ORD_##name, 1, true },
+#define VC_HOLDING_16(name, offset)
+#define VC_HOLDING_32(name, offset)
+#define MODBUS_SYS16(name, bank, offset)
+#define MODBUS_SYS32(name, bank, offset)
+#define MODBUS_VC16(name, bank, offset) VC_##bank##_16(name, offset)
+#define MODBUS_VC32(name, bank, offset) VC_##bank##_32(name, offset)
 static const struct wire_reg ch_input_view[CH_BLOCK_SIZE] = {
-#include "reg_store/vc_regs.def"
+#include "reg_store/modbus_view.def"
 };
-#undef VC_REG16
-#undef VC_REG32
+#undef MODBUS_SYS16
+#undef MODBUS_SYS32
+#undef MODBUS_VC16
+#undef MODBUS_VC32
 #undef VC_INPUT_16
 #undef VC_INPUT_32
 #undef VC_HOLDING_16
 #undef VC_HOLDING_32
 
-#define VC_INPUT_16(name, field, offset)
-#define VC_INPUT_32(name, field, offset)
-#define VC_HOLDING_16(name, field, offset) \
-	[offset] = { REG_VC_FIELD_##name, 0 },
-#define VC_HOLDING_32(name, field, offset) \
-	[offset] = { REG_VC_FIELD_##name, 0 }, \
-	[(offset) + 1] = { REG_VC_FIELD_##name, 1 },
-#define VC_REG16(name, field, type, access, category, bank, offset) \
-	VC_##bank##_16(name, field, offset)
-#define VC_REG32(name, field, type, access, category, bank, offset) \
-	VC_##bank##_32(name, field, offset)
+#define VC_INPUT_16(name, offset)
+#define VC_INPUT_32(name, offset)
+#define VC_HOLDING_16(name, offset) \
+	[offset] = { NULL, REG_VC_ORD_##name, 0, true },
+#define VC_HOLDING_32(name, offset) \
+	[offset] = { NULL, REG_VC_ORD_##name, 0, true }, \
+	[(offset) + 1] = { NULL, REG_VC_ORD_##name, 1, true },
+#define MODBUS_SYS16(name, bank, offset)
+#define MODBUS_SYS32(name, bank, offset)
+#define MODBUS_VC16(name, bank, offset) VC_##bank##_16(name, offset)
+#define MODBUS_VC32(name, bank, offset) VC_##bank##_32(name, offset)
 static const struct wire_reg ch_holding_view[CH_BLOCK_SIZE] = {
-#include "reg_store/vc_regs.def"
+#include "reg_store/modbus_view.def"
 };
-#undef VC_REG16
-#undef VC_REG32
+#undef MODBUS_SYS16
+#undef MODBUS_SYS32
+#undef MODBUS_VC16
+#undef MODBUS_VC32
 #undef VC_INPUT_16
 #undef VC_INPUT_32
 #undef VC_HOLDING_16
 #undef VC_HOLDING_32
 
-static enum vc_status catalog_status(enum reg_status status)
-{
-	switch (status) {
-	case REG_OK: return VC_OK;
-	case REG_NOT_FOUND:
-	case REG_UNSUPPORTED: return VC_ERR_UNSUPPORTED_CAPABILITY;
-	case REG_INVALID_VALUE: return VC_ERR_INVALID_VALUE;
-	case REG_IO_ERROR: return VC_ERR_STORAGE;
-	case REG_READ_ONLY:
-	case REG_WRITE_ONLY: return VC_ERR_INVALID_COMMAND;
-	default: return VC_ERR_UNSAFE_STATE;
-	}
-}
-
-static enum vc_status read_wire(const struct wire_reg *wire, uint8_t ch,
+static enum reg_status read_wire(const struct wire_reg *wire, uint8_t ch,
 				bool channel, uint16_t *reg)
 {
 	const struct reg_descriptor *desc;
 	union reg_value value = {};
-	reg_id_t id;
 	enum reg_status status;
 	uint32_t raw;
 
-	if (wire->id == 0U) {
+	if (!wire->mapped) {
 		*reg = 0U;
-		return VC_OK;
+		return REG_OK;
 	}
-	id = channel ? REG_VC_ID(ch, wire->id) : wire->id;
-	desc = reg_describe(id);
+	desc = channel
+		? &vc_catalog_channel_regs[wire->ordinal * VC_MAX_CHANNELS + ch]
+		: wire->handle;
 	if (desc == NULL) {
-		return VC_ERR_UNSUPPORTED_CAPABILITY;
+		*reg = 0U;
+		return REG_OK;
 	}
 	if ((desc->type == REG_S32 || desc->type == REG_U32) &&
-	    wire->word == 1U && word_latch.valid && word_latch.id == id) {
+	    wire->word == 1U && word_latch.valid && word_latch.id == desc->id) {
 		*reg = (uint16_t)word_latch.value;
 		word_latch.valid = false;
-		return VC_OK;
+		return REG_OK;
 	}
 	status = reg_read_descriptor(desc, &value);
 	if (status != REG_OK) {
-		return catalog_status(status);
+		return status;
 	}
 
 	switch (desc->type) {
 	case REG_S16:
 		word_latch.valid = false;
 		*reg = (uint16_t)value.s16;
-		return VC_OK;
+		return REG_OK;
 	case REG_U16:
 	case REG_ENUM:
 		word_latch.valid = false;
 		*reg = value.u16;
-		return VC_OK;
+		return REG_OK;
 	case REG_BOOL:
 		word_latch.valid = false;
 		*reg = value.boolean ? 1U : 0U;
-		return VC_OK;
+		return REG_OK;
 	case REG_S32: raw = (uint32_t)value.s32; break;
 	case REG_U32: raw = value.u32; break;
-	default: return VC_ERR_INVALID_VALUE;
+	default: return REG_INVALID_VALUE;
 	}
 	if (wire->word == 0U) {
-		word_latch.id = id;
+		word_latch.id = desc->id;
 		word_latch.value = raw;
 		word_latch.valid = true;
 		*reg = (uint16_t)(raw >> 16);
@@ -290,59 +291,58 @@ static enum vc_status read_wire(const struct wire_reg *wire, uint8_t ch,
 		word_latch.valid = false;
 		*reg = (uint16_t)raw;
 	}
-	return VC_OK;
+	return REG_OK;
 }
 
-static enum vc_status write_wire(const struct wire_reg *wire, uint8_t ch,
+static enum reg_status write_wire(const struct wire_reg *wire, uint8_t ch,
 				 bool channel, uint16_t reg,
 				 k_timeout_t timeout)
 {
 	const struct reg_descriptor *desc;
 	union reg_value value = {};
-	reg_id_t id;
 
-	if (wire->id == 0U) {
-		return VC_ERR_INVALID_VALUE;
+	if (!wire->mapped) {
+		return REG_INVALID_VALUE;
 	}
-	id = channel ? REG_VC_ID(ch, wire->id) : wire->id;
-	desc = reg_describe(id);
+	desc = channel
+		? &vc_catalog_channel_regs[wire->ordinal * VC_MAX_CHANNELS + ch]
+		: wire->handle;
 	if (desc == NULL) {
-		return VC_ERR_UNSUPPORTED_CAPABILITY;
+		return REG_UNSUPPORTED;
 	}
 	if (desc->type == REG_S16) {
 		value.s16 = (int16_t)reg;
 	} else {
 		value.u16 = reg;
 	}
-	return catalog_status(reg_write_descriptor(desc, value, timeout));
+	return reg_write_descriptor(desc, value, timeout);
 }
 
 /* ------------------------------------------------------------------ */
 /* System register read/write                                          */
 /* ------------------------------------------------------------------ */
 
-enum vc_status vc_reg_read_sys_input(uint16_t off, uint16_t *reg)
+enum reg_status vc_reg_read_sys_input(uint16_t off, uint16_t *reg)
 {
 	if (off >= CH_BLOCK_SIZE) {
-		return VC_ERR_INVALID_VALUE;
+		return REG_INVALID_ARGUMENT;
 	}
 	return read_wire(&sys_input_view[off], 0, false, reg);
 }
 
-enum vc_status vc_reg_read_sys_holding(uint16_t off, uint16_t *reg)
+enum reg_status vc_reg_read_sys_holding(uint16_t off, uint16_t *reg)
 {
 	if (off >= CH_BLOCK_SIZE) {
-		return VC_ERR_INVALID_VALUE;
+		return REG_INVALID_ARGUMENT;
 	}
 	return read_wire(&sys_holding_view[off], 0, false, reg);
 }
 
-enum vc_status vc_reg_write_sys_holding(struct vc_ctx *ctx, uint16_t off,
-					uint16_t val, k_timeout_t timeout)
+enum reg_status vc_reg_write_sys_holding(uint16_t off, uint16_t val,
+					k_timeout_t timeout)
 {
-	ARG_UNUSED(ctx);
 	if (off >= CH_BLOCK_SIZE) {
-		return VC_ERR_INVALID_VALUE;
+		return REG_INVALID_ARGUMENT;
 	}
 	return write_wire(&sys_holding_view[off], 0, false, val, timeout);
 }
@@ -351,7 +351,7 @@ enum vc_status vc_reg_write_sys_holding(struct vc_ctx *ctx, uint16_t off,
 /* Channel register read/write                                         */
 /* ------------------------------------------------------------------ */
 
-enum vc_status vc_reg_read_ch_input(uint8_t ch, uint16_t off, uint16_t *reg)
+enum reg_status vc_reg_read_ch_input(uint8_t ch, uint16_t off, uint16_t *reg)
 {
 	uint16_t count = 0;
 	uint16_t caps = 0;
@@ -359,58 +359,56 @@ enum vc_status vc_reg_read_ch_input(uint8_t ch, uint16_t off, uint16_t *reg)
 
 	(void)read_wire(&sys_input_view[SYS_SUPPORTED_CHANNELS], 0, false, &count);
 	if (ch >= count) {
-		return VC_ERR_UNSUPPORTED_CHANNEL;
+		return REG_UNSUPPORTED;
 	}
 	if (off >= CH_BLOCK_SIZE) {
-		return VC_ERR_INVALID_VALUE;
+		return REG_INVALID_ARGUMENT;
 	}
 	(void)read_wire(&ch_input_view[CH_CAPABILITY_FLAGS], ch, true, &caps);
 	if (!ch_input_supported(caps, off)) {
-		return VC_ERR_UNSUPPORTED_CAPABILITY;
+		return REG_UNSUPPORTED;
 	}
 	(void)read_wire(&sys_input_view[SYS_ACTIVE_OPERATING_MODE], 0, false, &mode);
 	if (is_ch_cal_input_reg(off) &&
 	    (enum vc_operating_mode)mode != VC_OPERATING_MODE_CALIBRATION) {
-		return VC_ERR_UNSUPPORTED_CAPABILITY;
+		return REG_UNSUPPORTED;
 	}
 	return read_wire(&ch_input_view[off], ch, true, reg);
 }
 
-enum vc_status vc_reg_read_ch_holding(uint8_t ch, uint16_t off, uint16_t *reg)
+enum reg_status vc_reg_read_ch_holding(uint8_t ch, uint16_t off, uint16_t *reg)
 {
 	uint16_t count = 0;
 	uint16_t caps = 0;
 
 	(void)read_wire(&sys_input_view[SYS_SUPPORTED_CHANNELS], 0, false, &count);
 	if (ch >= count) {
-		return VC_ERR_UNSUPPORTED_CHANNEL;
+		return REG_UNSUPPORTED;
 	}
 	if (off >= CH_BLOCK_SIZE) {
-		return VC_ERR_INVALID_VALUE;
+		return REG_INVALID_ARGUMENT;
 	}
 	(void)read_wire(&ch_input_view[CH_CAPABILITY_FLAGS], ch, true, &caps);
 	if (!ch_holding_supported(caps, off)) {
-		return VC_ERR_UNSUPPORTED_CAPABILITY;
+		return REG_UNSUPPORTED;
 	}
 	return read_wire(&ch_holding_view[off], ch, true, reg);
 }
 
-enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
-					uint16_t off, uint16_t val,
+enum reg_status vc_reg_write_ch_holding(uint8_t ch, uint16_t off, uint16_t val,
 					k_timeout_t timeout)
 {
 	uint16_t count = 0;
 	uint16_t caps = 0;
 	uint16_t mode = 0;
 
-	ARG_UNUSED(ctx);
 	(void)read_wire(&sys_input_view[SYS_SUPPORTED_CHANNELS], 0, false, &count);
 	if (ch >= count) {
-		return VC_ERR_UNSUPPORTED_CHANNEL;
+		return REG_UNSUPPORTED;
 	}
 	(void)read_wire(&ch_input_view[CH_CAPABILITY_FLAGS], ch, true, &caps);
 	if (!ch_holding_supported(caps, off)) {
-		return VC_ERR_UNSUPPORTED_CAPABILITY;
+		return REG_UNSUPPORTED;
 	}
 
 	switch (off) {
@@ -432,41 +430,41 @@ enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 
 	if (is_ch_cal_holding_reg(off)) {
 		if ((enum vc_operating_mode)mode != VC_OPERATING_MODE_CALIBRATION) {
-			return VC_ERR_UNSUPPORTED_CAPABILITY;
+			return REG_UNSUPPORTED;
 		}
 		switch (off) {
 		case CH_CAL_OUTPUT_ENABLE:
 			if (val > 1) {
-				return VC_ERR_INVALID_VALUE;
+				return REG_INVALID_VALUE;
 			}
 			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 		case CH_CAL_DAC_CODE:
 			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 		case CH_CAL_SAMPLE_CMD:
 			if (val == CAL_COMMAND_NONE) {
-				return VC_OK;
+				return REG_OK;
 			}
 			if (val != CAL_COMMAND_EXECUTE) {
-				return VC_ERR_INVALID_VALUE;
+				return REG_INVALID_VALUE;
 			}
 			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 		case CH_CAL_COMMIT_CMD:
 			if (val == CAL_COMMAND_NONE) {
-				return VC_OK;
+				return REG_OK;
 			}
 			if (val != CAL_COMMAND_EXECUTE) {
-				return VC_ERR_INVALID_VALUE;
+				return REG_INVALID_VALUE;
 			}
 			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 		case CH_CAL_MAX_RAW_DAC_LIMIT:
 			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 		default:
-			return VC_ERR_UNSUPPORTED_CAPABILITY;
+			return REG_UNSUPPORTED;
 		}
 	}
 
 	if (off >= ARRAY_SIZE(ch_holding_view)) {
-		return VC_ERR_INVALID_VALUE;
+		return REG_INVALID_ARGUMENT;
 	}
 	return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 }
@@ -475,14 +473,21 @@ enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 /* Extension block                                                     */
 /* ------------------------------------------------------------------ */
 
-enum vc_status vc_reg_write_ext(struct vc_ctx *ctx, uint16_t off,
-				uint16_t val, k_timeout_t timeout)
+enum reg_status vc_reg_write_ext(uint16_t off, uint16_t val,
+				k_timeout_t timeout)
 {
+	union reg_value value = { .u16 = val };
+	enum reg_status status;
+
 	if (off == EXT_CAL_UNLOCK) {
-		return vc_dispatch(ctx, vc_cmd_cal_unlock(val), timeout);
+		status = reg_write(REG_VC_GLOBAL_ID(
+			REG_VC_GLOBAL_FIELD_CAL_UNLOCK), value, timeout);
+		return status;
 	}
 	if (off == EXT_CAL_EXIT) {
-		return vc_dispatch(ctx, vc_cmd_cal_exit(), timeout);
+		status = reg_write(REG_VC_GLOBAL_ID(
+			REG_VC_GLOBAL_FIELD_CAL_EXIT), value, timeout);
+		return status;
 	}
-	return VC_ERR_UNSUPPORTED_CAPABILITY;
+	return REG_UNSUPPORTED;
 }

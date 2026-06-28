@@ -49,7 +49,9 @@ static int cmd_ss_reset(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	int ret = sys_status_request_reset();
+	union reg_value value = { .u16 = 1U };
+	int ret = reg_write(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_RESET),
+			    value, K_NO_WAIT) == REG_OK ? 0 : -EIO;
 
 	if (ret == 0) {
 		shell_print(sh, "system reset requested");

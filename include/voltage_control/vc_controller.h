@@ -22,6 +22,8 @@ struct vc_controller {
 	struct vc_system_config sys_cfg;
 };
 
+extern struct vc_controller vc_controller_canonical_state;
+
 struct vc_controller *vc_controller_init(
 	vc_wake_fn_t wake_fn, void *wake_user_data);
 

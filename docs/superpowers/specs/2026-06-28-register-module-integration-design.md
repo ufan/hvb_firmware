@@ -40,11 +40,12 @@ Configuration are distinct semantic fields. The existing source-specific
 lifecycle remains unchanged: shell writes affect live state, while Modbus wire
 writes stage and persist next-boot state.
 
-VC, system-status, and Modbus shells read and write scalar catalog entries.
-Presentation snapshot/query APIs and aggregate adapter getters are removed after
-all in-repository callers migrate. Complete structures remain only at settings
-serialization boundaries and private policy interfaces where the whole object
-is the operation.
+VC, system-status, and Modbus shells read and write scalar catalog entries. The
+frontend `vc_query`/`vc_dispatch` facade and aggregate adapter getters are
+removed after all callers migrate. Controller-level typed snapshots remain as
+policy-test seams; they are assembled only on demand and are never canonical
+storage. Complete config structures remain at settings serialization and bulk
+load/factory boundaries where the whole object is the operation.
 
 ## Constraints
 

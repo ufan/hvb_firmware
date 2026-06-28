@@ -109,6 +109,8 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 	struct vc_runtime *runtime = catalog_runtime;
 	uint16_t field = (uint16_t)REG_ID_FIELD(desc->id);
 	uint8_t channel = (uint8_t)REG_ID_INSTANCE(desc->id);
+	bool global = REG_ID_MODULE(desc->id) == REG_MODULE_VOLTAGE_CONTROL &&
+		      channel == REG_GLOBAL_INSTANCE;
 	struct vc_controller *ctrl;
 	struct vc_channel *ch = NULL;
 
@@ -117,7 +119,7 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 	}
 
 	ctrl = runtime->ctrl;
-	if (REG_ID_MODULE(desc->id) == REG_MODULE_VOLTAGE_CONTROL) {
+	if (REG_ID_MODULE(desc->id) == REG_MODULE_VOLTAGE_CONTROL && !global) {
 		if (channel >= ctrl->channel_count) {
 			return REG_UNSUPPORTED;
 		}
@@ -130,40 +132,51 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 	k_mutex_lock(&runtime->lock, K_FOREVER);
 	memset(value, 0, sizeof(*value));
 
-	if (REG_ID_MODULE(desc->id) == REG_MODULE_SYSTEM) {
+	if (global) {
+		if (desc->value != NULL) {
+			enum reg_status status = reg_read_bound_value(desc, value);
+
+			k_mutex_unlock(&runtime->lock);
+			return status;
+		}
 		switch (field) {
-		case REG_SYS_FIELD_PROTOCOL_MAJOR: value->u16 = VC_PROTOCOL_MAJOR; break;
-		case REG_SYS_FIELD_PROTOCOL_MINOR: value->u16 = VC_PROTOCOL_MINOR; break;
-		case REG_SYS_FIELD_VARIANT_ID: value->u16 = 1U; break;
-		case REG_SYS_FIELD_CAPABILITY_FLAGS:
-			value->u16 = SYS_CAP_AUTOMATIC_MODE | SYS_CAP_CALIBRATION_MODE;
+		case REG_VC_GLOBAL_FIELD_VARIANT_ID: value->u16 = 1U; break;
+		case REG_VC_GLOBAL_FIELD_CAPABILITY_FLAGS:
+			value->u16 = SYS_CAP_AUTOMATIC_MODE |
+				     SYS_CAP_CALIBRATION_MODE;
 			if (IS_ENABLED(CONFIG_SYS_STATUS)) {
 				value->u16 |= SYS_CAP_ENV_SENSOR;
 			}
 			break;
-		case REG_SYS_FIELD_SUPPORTED_CHANNELS:
+		case REG_VC_GLOBAL_FIELD_SUPPORTED_CHANNELS:
 			value->u16 = (uint16_t)ctrl->channel_count;
 			break;
-		case REG_SYS_FIELD_ACTIVE_CHANNEL_MASK:
+		case REG_VC_GLOBAL_FIELD_ACTIVE_CHANNEL_MASK:
 			value->u16 = (uint16_t)((1U << ctrl->channel_count) - 1U);
 			break;
-		case REG_SYS_FIELD_ACTIVE_OPERATING_MODE:
+		case REG_VC_GLOBAL_FIELD_ACTIVE_OPERATING_MODE:
 			value->u16 = (uint16_t)ctrl->operating_mode;
 			break;
-		case REG_SYS_FIELD_STATUS: value->u16 = 0U; break;
-		case REG_SYS_FIELD_FAULT_CAUSE: value->u16 = 0U; break;
-		case REG_SYS_FIELD_OPERATING_MODE:
+		case REG_VC_GLOBAL_FIELD_STATUS: value->u16 = 0U; break;
+		case REG_VC_GLOBAL_FIELD_FAULT_CAUSE: value->u16 = 0U; break;
+		case REG_VC_GLOBAL_FIELD_OPERATING_MODE:
 			value->u16 = (uint16_t)ctrl->sys_cfg.operating_mode;
 			break;
-		case REG_SYS_FIELD_STARTUP_CHANNEL_POLICY:
+		case REG_VC_GLOBAL_FIELD_STARTUP_CHANNEL_POLICY:
 			value->u16 = ctrl->sys_cfg.startup_channel_policy;
 			break;
 		default:
 			k_mutex_unlock(&runtime->lock);
-			return REG_NOT_FOUND;
+			return REG_WRITE_ONLY;
 		}
 		k_mutex_unlock(&runtime->lock);
 		return REG_OK;
+	}
+	if (desc->value != NULL) {
+		enum reg_status status = reg_read_bound_value(desc, value);
+
+		k_mutex_unlock(&runtime->lock);
+		return status;
 	}
 
 	switch (field) {
@@ -289,6 +302,8 @@ static enum reg_status vc_catalog_write(const struct reg_descriptor *desc,
 	struct vc_runtime *runtime = catalog_runtime;
 	uint16_t field = (uint16_t)REG_ID_FIELD(desc->id);
 	uint8_t channel = (uint8_t)REG_ID_INSTANCE(desc->id);
+	bool global = REG_ID_MODULE(desc->id) == REG_MODULE_VOLTAGE_CONTROL &&
+		      channel == REG_GLOBAL_INSTANCE;
 	struct vc_runtime_command cmd = { .channel = channel };
 	enum vc_config_field config_field;
 	enum vc_cal_field cal_field;
@@ -296,29 +311,49 @@ static enum reg_status vc_catalog_write(const struct reg_descriptor *desc,
 	if (runtime == NULL) {
 		return REG_BUSY;
 	}
-	if (REG_ID_MODULE(desc->id) == REG_MODULE_VOLTAGE_CONTROL) {
+	if (REG_ID_MODULE(desc->id) == REG_MODULE_VOLTAGE_CONTROL && !global) {
 		if (channel >= runtime->ctrl->channel_count ||
 		    !vc_catalog_supported(field,
 			 runtime->ctrl->channels[channel].capabilities)) {
 			return REG_UNSUPPORTED;
 		}
 	}
-	if (REG_ID_MODULE(desc->id) == REG_MODULE_SYSTEM) {
-		if (field == REG_SYS_FIELD_OPERATING_MODE) {
+	if (global) {
+		if (field == REG_VC_GLOBAL_FIELD_OPERATING_MODE) {
 			return vc_status_to_reg(vc_runtime_set_operating_mode(
 				runtime, (enum vc_operating_mode)value.u16, timeout));
 		}
-		if (field == REG_SYS_FIELD_STARTUP_CHANNEL_POLICY) {
+		if (field == REG_VC_GLOBAL_FIELD_STARTUP_CHANNEL_POLICY) {
 			return vc_status_to_reg(vc_runtime_set_system_field(
-				runtime, VC_FIELD_STARTUP_CHANNEL_POLICY, value.u16, timeout));
+				runtime, VC_FIELD_STARTUP_CHANNEL_POLICY,
+				value.u16, timeout));
 		}
-		if (field == REG_SYS_FIELD_PARAM_ACTION) {
-			struct vc_runtime_command cmd = {
+		if (field == REG_VC_GLOBAL_FIELD_PARAM_ACTION) {
+			struct vc_runtime_command global_cmd = {
 				.type = VC_RUNTIME_CMD_SYSTEM_PARAM_ACTION,
-				.payload.param_action = (enum vc_param_action)value.u16,
+				.payload.param_action =
+					(enum vc_param_action)value.u16,
 			};
-			return vc_status_to_reg(
-				vc_runtime_submit_command(runtime, &cmd, timeout));
+			return vc_status_to_reg(vc_runtime_submit_command(
+				runtime, &global_cmd, timeout));
+		}
+		if (field == REG_VC_GLOBAL_FIELD_CAL_UNLOCK) {
+			struct vc_runtime_command global_cmd = {
+				.type = VC_RUNTIME_CMD_CALIBRATION_UNLOCK,
+				.payload.calibration_unlock_value = value.u16,
+			};
+			return vc_status_to_reg(vc_runtime_submit_command(
+				runtime, &global_cmd, timeout));
+		}
+		if (field == REG_VC_GLOBAL_FIELD_CAL_EXIT) {
+			if (value.u16 != 1U) {
+				return REG_INVALID_VALUE;
+			}
+			struct vc_runtime_command global_cmd = {
+				.type = VC_RUNTIME_CMD_CALIBRATION_EXIT,
+			};
+			return vc_status_to_reg(vc_runtime_submit_command(
+				runtime, &global_cmd, timeout));
 		}
 		return REG_UNSUPPORTED;
 	}
@@ -390,18 +425,74 @@ static const struct reg_owner vc_catalog_owner = {
 	.write = vc_catalog_write,
 };
 
-#define VC_DESC_INIT(ch, field_, type_, access_, category_) { \
+#define VC_DESC_INIT(ch, field_, type_, access_, category_, value_ptr_) { \
 	.id = REG_VC_ID((ch), REG_VC_FIELD_##field_), \
 	.type = REG_##type_, .access = REG_##access_, \
-	.category = REG_##category_, .value = NULL, .owner = &vc_catalog_owner, \
+	.category = REG_##category_, .value = (void *)(value_ptr_), \
+	.owner = &vc_catalog_owner, \
 }
 
 #define VC_CONTROLLER_NODE DT_NODELABEL(vc_controller)
-#define VC_REGS_PER_CHANNEL 41
+#define VC_REGS_PER_CHANNEL REG_VC_ORD_COUNT
+
+#define VC_CH(node_id) \
+	(vc_controller_canonical_state.channels[DT_REG_ADDR(node_id)])
+#define VC_VALUE_STATUS_BITS(node_id) (&VC_CH(node_id).status_bits)
+#define VC_VALUE_ACTIVE_FAULT_CAUSE(node_id) (&VC_CH(node_id).active_fault_cause)
+#define VC_VALUE_FAULT_HISTORY_CAUSE(node_id) (&VC_CH(node_id).fault_history_cause)
+#define VC_VALUE_LAST_PROT_OUT_ACTION(node_id) NULL
+#define VC_VALUE_AUTO_RETRY_COUNT(node_id) NULL
+#define VC_VALUE_AUTO_COOLDOWN_REMAINING(node_id) NULL
+#define VC_VALUE_LAST_FAULT_TIMESTAMP(node_id) (&VC_CH(node_id).last_fault_timestamp)
+#define VC_VALUE_OPER_TARGET_VOLTAGE(node_id) (&VC_CH(node_id).operational_target_voltage)
+#define VC_VALUE_CAPABILITY_FLAGS(node_id) (&VC_CH(node_id).capabilities)
+#define VC_VALUE_MEASURED_VOLTAGE(node_id) (&VC_CH(node_id).measured_voltage)
+#define VC_VALUE_MEASURED_CURRENT(node_id) (&VC_CH(node_id).measured_current)
+#define VC_VALUE_RAW_ADC_VOLTAGE(node_id) NULL
+#define VC_VALUE_RAW_ADC_CURRENT(node_id) NULL
+#define VC_VALUE_OUTPUT_ACTION(node_id) NULL
+#define VC_VALUE_FAULT_CMD(node_id) NULL
+#define VC_VALUE_PARAM_ACTION(node_id) NULL
+#define VC_VALUE_CFG_TARGET_VOLTAGE(node_id) \
+	(&VC_CH(node_id).config.configured_target_voltage)
+#define VC_VALUE_RAMP_UP_STEP(node_id) (&VC_CH(node_id).config.ramp_up_step)
+#define VC_VALUE_RAMP_UP_INTERVAL(node_id) (&VC_CH(node_id).config.ramp_up_interval)
+#define VC_VALUE_RAMP_DOWN_STEP(node_id) (&VC_CH(node_id).config.ramp_down_step)
+#define VC_VALUE_RAMP_DOWN_INTERVAL(node_id) \
+	(&VC_CH(node_id).config.ramp_down_interval)
+#define VC_VALUE_RECOVERY_POLICY_MODE(node_id) NULL
+#define VC_VALUE_AUTO_RETRY_DELAY(node_id) (&VC_CH(node_id).config.auto_retry_delay)
+#define VC_VALUE_AUTO_RETRY_MAX_COUNT(node_id) \
+	(&VC_CH(node_id).config.auto_retry_max_count)
+#define VC_VALUE_AUTO_RETRY_WINDOW(node_id) (&VC_CH(node_id).config.auto_retry_window)
+#define VC_VALUE_CURRENT_SAFE_BAND_PCT(node_id) \
+	(&VC_CH(node_id).config.current_safe_band_pct)
+#define VC_VALUE_CURRENT_PROTECTION_MODE(node_id) NULL
+#define VC_VALUE_CURRENT_PROT_OUT_ACTION(node_id) NULL
+#define VC_VALUE_CURRENT_LIMIT_THRESHOLD(node_id) \
+	(&VC_CH(node_id).config.current_limit_threshold)
+#define VC_VALUE_AUTO_DERATE_STEP(node_id) (&VC_CH(node_id).config.auto_derate_step)
+#define VC_VALUE_OUTPUT_CAL_K(node_id) (&VC_CH(node_id).cal_config.output_calib_k)
+#define VC_VALUE_OUTPUT_CAL_B(node_id) (&VC_CH(node_id).cal_config.output_calib_b)
+#define VC_VALUE_MEASURED_V_CAL_K(node_id) \
+	(&VC_CH(node_id).cal_config.measured_voltage_calib_k)
+#define VC_VALUE_MEASURED_V_CAL_B(node_id) \
+	(&VC_CH(node_id).cal_config.measured_voltage_calib_b)
+#define VC_VALUE_MEASURED_I_CAL_K(node_id) \
+	(&VC_CH(node_id).cal_config.measured_current_calib_k)
+#define VC_VALUE_MEASURED_I_CAL_B(node_id) \
+	(&VC_CH(node_id).cal_config.measured_current_calib_b)
+#define VC_VALUE_CAL_OUTPUT_ENABLE(node_id) (&VC_CH(node_id).cal_output_enabled)
+#define VC_VALUE_CAL_DAC_CODE(node_id) (&VC_CH(node_id).raw_dac_readback)
+#define VC_VALUE_CAL_SAMPLE_CMD(node_id) NULL
+#define VC_VALUE_CAL_COMMIT_CMD(node_id) NULL
+#define VC_VALUE_CAL_MAX_RAW_DAC_LIMIT(node_id) \
+	(&VC_CH(node_id).cal_max_raw_dac_limit)
 
 #define VC_NODE_DESCRIPTOR(node_id, field_, type_, access_, category_) \
-	VC_DESC_INIT(DT_REG_ADDR(node_id), field_, type_, access_, category_),
-#define VC_REG16(field_, semantic_field_, type_, access_, category_, bank_, offset_) \
+	VC_DESC_INIT(DT_REG_ADDR(node_id), field_, type_, access_, category_, \
+		     VC_VALUE_##field_(node_id)),
+#define VC_REG16(field_, semantic_field_, type_, access_, category_) \
 	DT_FOREACH_CHILD_STATUS_OKAY_VARGS(VC_CONTROLLER_NODE, VC_NODE_DESCRIPTOR, \
 					   field_, type_, access_, category_)
 #define VC_REG32 VC_REG16
@@ -413,26 +504,34 @@ const STRUCT_SECTION_ITERABLE_ARRAY(reg_descriptor, vc_catalog_channel_regs,
 #undef VC_REG32
 #undef VC_NODE_DESCRIPTOR
 
-#define SYS_DESC_INIT(field_, type_, access_, category_) { \
-	.id = REG_SYS_ID(REG_SYS_FIELD_##field_), \
-	.type = REG_##type_, .access = REG_##access_, \
-	.category = REG_##category_, .value = NULL, .owner = &vc_catalog_owner, \
-}
+#define VC_GLOBAL_VALUE_VARIANT_ID NULL
+#define VC_GLOBAL_VALUE_CAPABILITY_FLAGS NULL
+#define VC_GLOBAL_VALUE_SUPPORTED_CHANNELS NULL
+#define VC_GLOBAL_VALUE_ACTIVE_CHANNEL_MASK NULL
+#define VC_GLOBAL_VALUE_ACTIVE_OPERATING_MODE NULL
+#define VC_GLOBAL_VALUE_STATUS NULL
+#define VC_GLOBAL_VALUE_FAULT_CAUSE NULL
+#define VC_GLOBAL_VALUE_OPERATING_MODE NULL
+#define VC_GLOBAL_VALUE_STARTUP_CHANNEL_POLICY \
+	(&vc_controller_canonical_state.sys_cfg.startup_channel_policy)
+#define VC_GLOBAL_VALUE_PARAM_ACTION NULL
+#define VC_GLOBAL_VALUE_CAL_UNLOCK NULL
+#define VC_GLOBAL_VALUE_CAL_EXIT NULL
 
-const STRUCT_SECTION_ITERABLE_ARRAY(reg_descriptor, vc_catalog_system_regs, 12) = {
-	SYS_DESC_INIT(PROTOCOL_MAJOR, U16, RO, FIXED),
-	SYS_DESC_INIT(PROTOCOL_MINOR, U16, RO, FIXED),
-	SYS_DESC_INIT(VARIANT_ID, U16, RO, FIXED),
-	SYS_DESC_INIT(CAPABILITY_FLAGS, U16, RO, FIXED),
-	SYS_DESC_INIT(SUPPORTED_CHANNELS, U16, RO, FIXED),
-	SYS_DESC_INIT(ACTIVE_CHANNEL_MASK, U16, RO, FIXED),
-	SYS_DESC_INIT(ACTIVE_OPERATING_MODE, ENUM, RO, RUNTIME_STATE),
-	SYS_DESC_INIT(STATUS, U16, RO, RUNTIME_STATE),
-	SYS_DESC_INIT(FAULT_CAUSE, U16, RO, RUNTIME_STATE),
-	SYS_DESC_INIT(OPERATING_MODE, ENUM, RW, CONFIG),
-	SYS_DESC_INIT(STARTUP_CHANNEL_POLICY, U16, RW, CONFIG),
-	SYS_DESC_INIT(PARAM_ACTION, U16, WO, COMMAND),
+#define VC_GLOBAL_DESC_INIT(field_, type_, access_, category_) { \
+	.id = REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_##field_), \
+	.type = REG_##type_, .access = REG_##access_, \
+	.category = REG_##category_, .value = (void *)VC_GLOBAL_VALUE_##field_, \
+	.owner = &vc_catalog_owner, \
+}
+#define VC_GLOBAL_REG(field_, semantic_field_, type_, access_, category_) \
+	VC_GLOBAL_DESC_INIT(field_, type_, access_, category_),
+const STRUCT_SECTION_ITERABLE_ARRAY(reg_descriptor, vc_catalog_global_regs,
+	REG_VC_GLOBAL_ORD_COUNT) = {
+#include "reg_store/vc_global_regs.def"
 };
+#undef VC_GLOBAL_REG
+#undef VC_GLOBAL_DESC_INIT
 
 static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 						  const struct vc_runtime_command *cmd)

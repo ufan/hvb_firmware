@@ -18,12 +18,13 @@
 | **Virtual Voltage Channel** | A board-variant-provided abstraction for one controllable voltage channel that exposes channel capabilities and raw hardware evidence to the Domain Runtime Library. | Channel service when the intent is the channel abstraction, hardware support when product capabilities matter |
 | **Virtual Channel Provider** | A Zephyr-style implementation of a Virtual Voltage Channel using devicetree-derived configuration, runtime data, and API callbacks. | Driver when discussing the product-facing channel boundary |
 | **Channel Capability** | A static board-design ability of a Virtual Voltage Channel, such as on/off, raw output drive, voltage measurement, current measurement, or hardware status. Capabilities are derived from devicetree/Kconfig composition and are not dynamically negotiated at runtime. Calibration surfaces derive from Calibration Mode plus the relevant raw output or measurement capability. | Inferring capability from C function presence; treating capability as runtime configuration |
-| **Frontend Adapter** | A user- or host-facing adapter that submits commands to and reads snapshots from the Domain Runtime Library. | Direct channel-service access |
+| **Frontend Adapter** | A user- or host-facing adapter that reads and writes Semantic Registers through the Register Catalog. | Direct channel-service access or private module-state access |
 | **Runtime Config Snapshot** | A complete versioned runtime intent published by the Domain Runtime Library for Virtual Channel Providers to apply. | Partial config update when crossing the domain/channel boundary |
 | **Measurement Snapshot** | Raw hardware evidence published by a Virtual Channel Provider, including publication generation and measurement timestamp concepts. It is already-published evidence, not a blocking request to acquire new hardware data. | Domain snapshot when the data has not yet been interpreted by product policy |
 | **Semantic Register** | A protocol-neutral, typed, externally meaningful value or operation identified by module, instance, and field. | A Modbus wire address or an arbitrary private field |
 | **Register Catalog** | The firmware-wide static catalog that describes Semantic Registers and routes reads and owner-mediated writes to canonical module state. | A copied Modbus holding/input array |
 | **Register View** | An adapter-specific mapping from external addresses or controls to Semantic Registers, such as the Modbus v3 map. | Canonical product state |
+| **Register Handle** | A static descriptor reference used by a Register View to access a known Semantic Register without repeating an ID lookup. | Runtime registration or a copied register value |
 | **Presentation Snapshot** | An aggregate assembled on demand for display or compatibility. It is not canonical storage and does not promise one generation across all fields. | A periodically copied read model |
 
 ## Voltage control state
@@ -83,6 +84,8 @@
 - A **Virtual Voltage Channel** advertises **Channel Capabilities** to the **Domain Runtime Library**.
 - A **Measurement Snapshot** is raw evidence from a **Virtual Channel Provider**; calibrated and policy-derived values are separate **Semantic Registers** owned by the Domain Runtime Library.
 - Frontend Adapters access externally meaningful state through the **Register Catalog** and implement protocol-specific **Register Views**.
+- Semantic Register module IDs identify the canonical state owner. Voltage-control module-wide registers use the global instance; channel registers use instances 0 through 15.
+- Register Views keep static **Register Handles**. Generic Semantic Register ID lookup is reserved for diagnostics and infrequent dynamic access.
 - A **Runtime Config Snapshot** is published as a complete versioned intent, not as partial field updates.
 
 ## Example dialogue

@@ -20,11 +20,11 @@
 - Modify: `include/reg_store/vc_regs.def`
 - Test: `tests/voltage_control/reg_store/src/main.c`
 
-- [ ] Add tests proving owner module IDs, VC global/channel IDs, descriptor-handle reads, and generic lookup compatibility.
-- [ ] Run `west twister -p native_posix -s reg_store/voltage_control.reg_store` and confirm the new API tests fail.
-- [ ] Add direct descriptor read/write helpers and owner-specific schema definitions without Modbus placement fields.
-- [ ] Generate statically addressable descriptor arrays and make handle access independent of linear `reg_describe()`.
-- [ ] Re-run the focused suite and commit the catalog slice.
+- [x] Add tests proving owner module IDs, VC global/channel IDs, descriptor-handle reads, and generic lookup compatibility.
+- [x] Run the focused Register Catalog test and confirm the new API tests fail.
+- [x] Add direct descriptor read/write helpers and owner-specific schema definitions without Modbus placement fields.
+- [x] Generate statically addressable descriptor arrays and make handle access independent of linear `reg_describe()`.
+- [x] Re-run the focused suite and commit the catalog slice.
 
 ### Task 2: System-status ownership
 
@@ -35,11 +35,11 @@
 - Modify: `lib/sys_status/sys_status_shell.c`
 - Test: `tests/voltage_control/ss_shell/src/main.c`
 
-- [ ] Add failing tests for system-status owner IDs, scalar shell reads, and catalog-routed delayed reset.
-- [ ] Bind fixed identity and atomic telemetry descriptors to the system-status owner.
-- [ ] Add the write-only reset descriptor and route it to the existing delayed-work service.
-- [ ] Remove `sys_status_snapshot` and `sys_status_get()` after migrating the shell.
-- [ ] Run the system-status suite and commit the slice.
+- [x] Add failing tests for system-status owner IDs, scalar shell reads, and catalog-routed delayed reset.
+- [x] Bind fixed identity and atomic telemetry descriptors to the system-status owner.
+- [x] Add the write-only reset descriptor and route it to the existing delayed-work service.
+- [x] Remove `sys_status_snapshot` and `sys_status_get()` after migrating the shell.
+- [x] Run the system-status suite and commit the slice.
 
 ### Task 3: Modbus-adapter canonical state and protocol view
 
@@ -52,11 +52,11 @@
 - Test: `tests/voltage_control/modbus_adapter/src/main.c`
 - Test: `tests/voltage_control/mb_shell/src/main.c`
 
-- [ ] Add failing tests for distinct active/next-boot semantic fields, catalog commands, unchanged wire addresses, and descriptor-handle views.
-- [ ] Move active and next-boot fields behind owner descriptors and one mutex; preserve rollback and source-specific persistence semantics.
-- [ ] Split Modbus placement into `modbus_view.def`, map catalog status directly to Modbus exceptions, and remove the VC context dependency.
-- [ ] Migrate the Modbus shell to scalar catalog access and remove aggregate configuration getters.
-- [ ] Run both Modbus suites, including settings-enabled coverage, and commit the slice.
+- [x] Add failing tests for distinct active/next-boot semantic fields, catalog commands, unchanged wire addresses, and descriptor-handle views.
+- [x] Move active and next-boot fields behind owner descriptors and one mutex; preserve rollback and source-specific persistence semantics.
+- [x] Split Modbus placement into `modbus_view.def`, map catalog status directly to Modbus exceptions, and remove the VC context dependency.
+- [x] Migrate the Modbus shell to scalar catalog access and remove aggregate configuration getters.
+- [x] Run both Modbus suites, including settings-enabled coverage, and commit the slice.
 
 ### Task 4: VC direct bindings and field-wise mutation
 
@@ -71,12 +71,12 @@
 - Test: `tests/voltage_control/vc/src/main.c`
 - Test: `tests/voltage_control/vc_controller/src/main.c`
 
-- [ ] Add failing tests for VC global IDs, direct canonical reads, rejected-write non-mutation, worker serialization, and 16-channel handles.
-- [ ] Bind plain scalar descriptors to static controller/channel state; keep callbacks for computed, buffered, and enum values.
-- [ ] Replace copy-modify-validate single-field config writes with field-specific validation, mutation, and side effects.
-- [ ] Keep full-object operations only for settings load/save and factory defaults.
-- [ ] Remove `vc_query`, `vc_dispatch`, presentation snapshots, and obsolete controller getters after callers migrate.
-- [ ] Run VC, controller, channel-state, and 16-channel suites and commit the slice.
+- [x] Add failing tests for VC global IDs, direct canonical reads, rejected-write non-mutation, worker serialization, and 16-channel handles.
+- [x] Bind plain scalar descriptors to static controller/channel state; keep callbacks for computed, buffered, and enum values.
+- [x] Replace copy-modify-validate single-field config writes with field-specific validation, mutation, and side effects.
+- [x] Keep full-object operations only for settings load/save and factory defaults.
+- [x] Remove frontend `vc_query` and `vc_dispatch`; retain on-demand controller snapshots as policy-test seams.
+- [x] Run VC, controller, channel-state, and 16-channel suites and commit the slice.
 
 ### Task 5: Frontends, simulator, documentation, and verification
 
@@ -88,9 +88,9 @@
 - Test: `tests/voltage_control/vc_shell/src/main.c`
 - Test: `tests/architecture/controller_split.sh`
 
-- [ ] Add failing shell tests showing reads and commands work without aggregate VC APIs.
-- [ ] Migrate the VC shell and application initialization to catalog-backed module services.
-- [ ] Repair the simulator against current DTS/provider APIs and remove stale legacy symbols.
-- [ ] Update terminology and architecture documentation, then search for all removed APIs.
-- [ ] Run `west twister -T tests/voltage_control -p native_posix --no-clean`, architecture checks, host-tool tests, clean product and simulator builds, and `git diff --check`.
+- [x] Add failing shell tests showing reads and commands work without aggregate VC APIs.
+- [x] Migrate the VC shell and application initialization to catalog-backed module services.
+- [x] Repair the simulator against current DTS/provider APIs and remove stale legacy symbols.
+- [x] Update terminology and architecture documentation, then search for all removed APIs.
+- [ ] Run final Twister, architecture checks, host-tool tests, clean product and simulator builds, and `git diff --check`.
 - [ ] Compare map files with baseline, document the delta, and commit the completed integration.

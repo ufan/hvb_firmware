@@ -18,10 +18,10 @@ const struct reg_descriptor *reg_describe(reg_id_t id)
 	return NULL;
 }
 
-static enum reg_status read_direct(const struct reg_descriptor *desc,
-				   union reg_value *out)
+enum reg_status reg_read_bound_value(const struct reg_descriptor *desc,
+				     union reg_value *out)
 {
-	if (desc->value == NULL) {
+	if (desc == NULL || out == NULL || desc->value == NULL) {
 		return REG_INVALID_ARGUMENT;
 	}
 
@@ -63,7 +63,7 @@ enum reg_status reg_read_descriptor(const struct reg_descriptor *desc,
 		return desc->owner->read(desc, out);
 	}
 
-	return read_direct(desc, out);
+	return reg_read_bound_value(desc, out);
 }
 
 enum reg_status reg_read(reg_id_t id, union reg_value *out)

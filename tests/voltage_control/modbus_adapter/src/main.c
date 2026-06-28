@@ -52,7 +52,7 @@ ZTEST_SUITE(modbus_adapter, NULL, NULL, NULL, NULL, NULL);
 ZTEST(modbus_adapter, test_adapter_config_is_exposed_by_owner_registers)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	union reg_value value = {};
 
 	zassert_not_null(mb);
@@ -68,7 +68,7 @@ ZTEST(modbus_adapter, test_adapter_config_is_exposed_by_owner_registers)
 ZTEST(modbus_adapter, test_adapter_active_write_routes_through_owner)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	union reg_value value = { .u16 = 42U };
 	enum reg_status status;
 
@@ -87,7 +87,7 @@ ZTEST(modbus_adapter, test_adapter_active_write_routes_through_owner)
 ZTEST(modbus_adapter, test_adapter_next_boot_write_routes_through_owner)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	union reg_value value = { .u16 = 77U };
 
 	zassert_not_null(mb);
@@ -110,7 +110,7 @@ ZTEST(modbus_adapter, test_adapter_next_boot_write_routes_through_owner)
 ZTEST(modbus_adapter, test_sys_input_reads_protocol_version)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t major, minor;
 
 	zassert_not_null(ctx);
@@ -125,7 +125,7 @@ ZTEST(modbus_adapter, test_sys_input_reads_protocol_version)
 ZTEST(modbus_adapter, test_sys_input_reads_channel_count)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t count;
 
 	zassert_not_null(ctx);
@@ -138,7 +138,7 @@ ZTEST(modbus_adapter, test_sys_input_reads_channel_count)
 ZTEST(modbus_adapter, test_ch_input_reads_capability_flags)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t caps;
 
 	zassert_not_null(ctx);
@@ -153,7 +153,7 @@ ZTEST(modbus_adapter, test_ch_input_reads_capability_flags)
 ZTEST(modbus_adapter, test_unsupported_channel_returns_illegal_address)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t reg;
 
 	zassert_not_null(ctx);
@@ -168,7 +168,7 @@ ZTEST(modbus_adapter, test_unsupported_channel_returns_illegal_address)
 ZTEST(modbus_adapter, test_invalid_address_returns_illegal_address)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t reg;
 
 	zassert_not_null(ctx);
@@ -183,7 +183,7 @@ ZTEST(modbus_adapter, test_invalid_address_returns_illegal_address)
 ZTEST(modbus_adapter, test_sys_holding_slave_address_is_read_only_without_settings)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t reg;
 
 	zassert_not_null(ctx);
@@ -198,7 +198,7 @@ ZTEST(modbus_adapter, test_sys_holding_slave_address_is_read_only_without_settin
 ZTEST(modbus_adapter, test_sys_holding_baud_is_read_only_without_settings)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t reg;
 
 	zassert_not_null(ctx);
@@ -217,7 +217,7 @@ ZTEST(modbus_adapter, test_sys_holding_baud_is_read_only_without_settings)
 ZTEST(modbus_adapter, test_channel_param_action_rejects_system_reset)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 
 	zassert_not_null(ctx);
 	zassert_equal(vc_mb_holding_wr(mb, CH_BLOCK_BASE(0) + CH_PARAM_ACTION,
@@ -230,7 +230,7 @@ ZTEST(modbus_adapter, test_channel_param_action_rejects_system_reset)
 ZTEST(modbus_adapter, test_sys_holding_write_startup_policy)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t reg;
 
 	zassert_not_null(ctx);
@@ -258,7 +258,7 @@ ZTEST(modbus_adapter, test_sys_holding_write_startup_policy)
 ZTEST(modbus_adapter, test_ch_holding_write_target_voltage)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t reg;
 
 	zassert_not_null(ctx);
@@ -277,7 +277,7 @@ ZTEST(modbus_adapter, test_ch_holding_write_target_voltage)
 ZTEST(modbus_adapter, test_ch_output_action_enable_disable)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t bits;
 
 	zassert_not_null(ctx);
@@ -303,7 +303,7 @@ ZTEST(modbus_adapter, test_ch_output_action_enable_disable)
 ZTEST(modbus_adapter, test_cal_registers_rejected_outside_calibration)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t reg;
 
 	zassert_not_null(ctx);
@@ -323,7 +323,7 @@ ZTEST(modbus_adapter, test_cal_registers_rejected_outside_calibration)
 ZTEST(modbus_adapter, test_cal_unlock_and_mode_entry)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t reg;
 
 	zassert_not_null(ctx);
@@ -349,7 +349,7 @@ ZTEST(modbus_adapter, test_cal_unlock_and_mode_entry)
 ZTEST(modbus_adapter, test_extension_read_returns_zero)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t reg = 0xFFFF;
 
 	zassert_not_null(ctx);
@@ -362,7 +362,7 @@ ZTEST(modbus_adapter, test_extension_read_returns_zero)
 ZTEST(modbus_adapter, test_extension_write_non_unlock_rejected)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 
 	zassert_not_null(ctx);
 	/* Offset 2 is not assigned — must be rejected */
@@ -375,7 +375,7 @@ ZTEST(modbus_adapter, test_extension_write_non_unlock_rejected)
 ZTEST(modbus_adapter, test_cal_exit_via_ext_register)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 	uint16_t reg;
 
 	zassert_not_null(ctx);
@@ -405,7 +405,7 @@ ZTEST(modbus_adapter, test_cal_exit_via_ext_register)
 ZTEST(modbus_adapter, test_fault_cmd_maps_to_mb_result)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 
 	zassert_not_null(ctx);
 	zassert_equal(vc_mb_holding_wr(mb, CH_BLOCK_BASE(0) + CH_FAULT_CMD,
@@ -417,7 +417,7 @@ ZTEST(modbus_adapter, test_fault_cmd_maps_to_mb_result)
 ZTEST(modbus_adapter, test_param_action_storage_returns_device_failure)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 
 	zassert_not_null(ctx);
 	zassert_equal(vc_mb_holding_wr(mb, SYS_PARAM_ACTION, VC_PARAM_ACTION_SAVE),
@@ -452,14 +452,14 @@ ZTEST(modbus_adapter, test_modbus_config_is_persisted_for_next_boot)
 	struct settings_read_ctx stored = {};
 
 	zassert_equal(settings_delete("mb/cfg"), 0);
-	mb = vc_mb_adapter_create(ctx);
+	mb = vc_mb_adapter_create();
 	zassert_not_null(mb);
 
 	zassert_equal(vc_mb_holding_wr(mb, SYS_SLAVE_ADDRESS, 42), VC_MB_OK);
 	zassert_equal(read_modbus_u16(REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), 1);
 	zassert_equal(read_modbus_u16(REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS), 42);
 
-	mb = vc_mb_adapter_create(ctx);
+	mb = vc_mb_adapter_create();
 	zassert_not_null(mb);
 	zassert_equal(read_modbus_u16(REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS), 42);
 
@@ -489,7 +489,7 @@ ZTEST(modbus_adapter, test_modbus_config_is_persisted_for_next_boot)
 ZTEST(modbus_adapter, test_system_reset_requires_system_reset_service)
 {
 	struct vc_ctx *ctx = make_ctx();
-	struct vc_mb_adapter *mb = vc_mb_adapter_create(ctx);
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
 
 	zassert_not_null(ctx);
 #if defined(CONFIG_SYS_RESET)

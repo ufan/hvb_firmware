@@ -72,7 +72,7 @@ static void *mb_shell_setup(void)
 {
 	ctx = vc_init();
 	zassert_not_null(ctx);
-	zassert_not_null(vc_mb_adapter_create(ctx));
+	zassert_not_null(vc_mb_adapter_create());
 	return NULL;
 }
 

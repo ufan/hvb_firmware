@@ -21,8 +21,6 @@
 #include "reg_store/reg_catalog.h"
 #include "reg_store/reg_map.h"
 #include "reg_store/reg_schema.h"
-#include "sys_status/sys_status.h"
-
 #ifdef CONFIG_SETTINGS
 #include <zephyr/settings/settings.h>
 #endif
@@ -39,7 +37,6 @@
 #define MB_CMD_TIMEOUT K_SECONDS(1)
 
 struct vc_mb_adapter {
-	struct vc_ctx *ctx;
 	struct k_mutex lock;
 	struct mb_adapter_config active_cfg;
 	struct mb_adapter_config boot_cfg;
@@ -221,26 +218,8 @@ static bool is_extension(uint16_t addr)
 }
 
 /* ------------------------------------------------------------------ */
-/* vc_status → vc_mb_result mapping                                    */
+/* Register Catalog status to Modbus exception mapping.                */
 /* ------------------------------------------------------------------ */
-
-static enum vc_mb_result domain_st_to_mb_result(enum vc_status st)
-{
-	switch (st) {
-	case VC_OK:
-		return VC_MB_OK;
-	case VC_ERR_UNSUPPORTED_CHANNEL:
-	case VC_ERR_UNSUPPORTED_CAPABILITY:
-		return VC_MB_ILLEGAL_ADDRESS;
-	case VC_ERR_INVALID_VALUE:
-	case VC_ERR_INVALID_COMMAND:
-	case VC_ERR_UNSAFE_STATE:
-		return VC_MB_ILLEGAL_VALUE;
-	case VC_ERR_STORAGE:
-	default:
-		return VC_MB_DEVICE_FAILURE;
-	}
-}
 
 static enum vc_mb_result reg_st_to_mb_result(enum reg_status st)
 {
@@ -268,96 +247,21 @@ static enum vc_mb_result read_sys_input(struct vc_mb_adapter *a, uint16_t off,
 					uint16_t *reg)
 {
 	ARG_UNUSED(a);
-	reg_id_t id;
-	union reg_value value = {};
-
-	switch (off) {
-	case SYS_PROTOCOL_MAJOR:
-		id = REG_MODBUS_ID(REG_MODBUS_FIELD_PROTOCOL_MAJOR);
-		break;
-	case SYS_PROTOCOL_MINOR:
-		id = REG_MODBUS_ID(REG_MODBUS_FIELD_PROTOCOL_MINOR);
-		break;
-	case SYS_BOARD_TEMPERATURE:
-		id = REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_TEMPERATURE);
-		break;
-	case SYS_BOARD_HUMIDITY:
-		id = REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_HUMIDITY);
-		break;
-	case SYS_UPTIME_HI:
-	case SYS_UPTIME_LO:
-		id = REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_UPTIME);
-		break;
-	case SYS_FW_VERSION_HI:
-	case SYS_FW_VERSION_LO:
-		id = REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_FW_VERSION);
-		break;
-	default:
-		return domain_st_to_mb_result(vc_reg_read_sys_input(off, reg));
-	}
-
-	enum reg_status status = reg_read(id, &value);
-
-	if (status != REG_OK) {
-		return reg_st_to_mb_result(status);
-	}
-	if (off == SYS_UPTIME_HI || off == SYS_FW_VERSION_HI) {
-		*reg = (uint16_t)(value.u32 >> 16);
-	} else if (off == SYS_UPTIME_LO || off == SYS_FW_VERSION_LO) {
-		*reg = (uint16_t)value.u32;
-	} else if (off == SYS_BOARD_TEMPERATURE) {
-		*reg = (uint16_t)value.s16;
-	} else {
-		*reg = value.u16;
-	}
-	return VC_MB_OK;
+	return reg_st_to_mb_result(vc_reg_read_sys_input(off, reg));
 }
 
 static enum vc_mb_result read_sys_holding(struct vc_mb_adapter *a,
 					  uint16_t off, uint16_t *reg)
 {
-	union reg_value value = {};
-	reg_id_t id;
-
-	if (off == SYS_SLAVE_ADDRESS) {
-		id = REG_MODBUS_ID(REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS);
-		goto read_config;
-	}
-	if (off == SYS_BAUD_RATE_CODE) {
-		id = REG_MODBUS_ID(REG_MODBUS_FIELD_NEXT_BOOT_BAUD_RATE_CODE);
-		goto read_config;
-	}
-	return domain_st_to_mb_result(vc_reg_read_sys_holding(off, reg));
-
-read_config:
 	ARG_UNUSED(a);
-	enum reg_status status = reg_read(id, &value);
-
-	if (status == REG_OK) {
-		*reg = value.u16;
-	}
-	return reg_st_to_mb_result(status);
+	return reg_st_to_mb_result(vc_reg_read_sys_holding(off, reg));
 }
 
 static enum vc_mb_result write_sys_holding(struct vc_mb_adapter *a,
 					   uint16_t off, uint16_t val)
 {
-	union reg_value value = { .u16 = val };
-	reg_id_t id;
-
-	if (off == SYS_SLAVE_ADDRESS) {
-		id = REG_MODBUS_ID(REG_MODBUS_FIELD_NEXT_BOOT_SLAVE_ADDRESS);
-		goto write_config;
-	}
-	if (off == SYS_BAUD_RATE_CODE) {
-		id = REG_MODBUS_ID(REG_MODBUS_FIELD_NEXT_BOOT_BAUD_RATE_CODE);
-		goto write_config;
-	}
-	return domain_st_to_mb_result(
-		vc_reg_write_sys_holding(a->ctx, off, val, MB_CMD_TIMEOUT));
-
-write_config:
-	return reg_st_to_mb_result(reg_write(id, value, MB_CMD_TIMEOUT));
+	return reg_st_to_mb_result(
+		vc_reg_write_sys_holding(off, val, MB_CMD_TIMEOUT));
 }
 
 /* ------------------------------------------------------------------ */
@@ -465,7 +369,10 @@ static enum vc_mb_result handle_sys_param_action(struct vc_mb_adapter *a,
 {
 	if (val == SYS_PARAM_ACTION_SOFTWARE_RESET) {
 #if defined(CONFIG_SYS_RESET)
-		return sys_status_request_reset() == 0
+		union reg_value reset = { .u16 = 1U };
+
+		return reg_write(REG_SYS_STATUS_ID(
+			REG_SYS_STATUS_FIELD_RESET), reset, MB_CMD_TIMEOUT) == REG_OK
 			? VC_MB_OK : VC_MB_DEVICE_FAILURE;
 #else
 		return VC_MB_DEVICE_FAILURE;
@@ -508,8 +415,8 @@ static enum vc_mb_result handle_sys_param_action(struct vc_mb_adapter *a,
 		break;
 	}
 
-	enum vc_mb_result res = domain_st_to_mb_result(
-		vc_reg_write_sys_holding(a->ctx, SYS_PARAM_ACTION, val,
+	enum vc_mb_result res = reg_st_to_mb_result(
+		vc_reg_write_sys_holding(SYS_PARAM_ACTION, val,
 					 MB_CMD_TIMEOUT));
 
 	return res;
@@ -534,7 +441,7 @@ enum vc_mb_result vc_mb_input_rd(struct vc_mb_adapter *a, uint16_t addr,
 		return read_sys_input(a, off, reg);
 	}
 
-	return domain_st_to_mb_result(
+	return reg_st_to_mb_result(
 		vc_reg_read_ch_input(ch, off, reg));
 }
 
@@ -558,7 +465,7 @@ enum vc_mb_result vc_mb_holding_rd(struct vc_mb_adapter *a, uint16_t addr,
 		return read_sys_holding(a, off, reg);
 	}
 
-	return domain_st_to_mb_result(
+	return reg_st_to_mb_result(
 		vc_reg_read_ch_holding(ch, off, reg));
 }
 
@@ -570,8 +477,8 @@ enum vc_mb_result vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr,
 	uint16_t off;
 
 	if (is_extension(addr)) {
-		return domain_st_to_mb_result(
-			vc_reg_write_ext(a->ctx, addr - EXT_BLOCK_BASE, val,
+		return reg_st_to_mb_result(
+			vc_reg_write_ext(addr - EXT_BLOCK_BASE, val,
 					 MB_CMD_TIMEOUT));
 	}
 
@@ -586,17 +493,16 @@ enum vc_mb_result vc_mb_holding_wr(struct vc_mb_adapter *a, uint16_t addr,
 		return write_sys_holding(a, off, val);
 	}
 
-	return domain_st_to_mb_result(
-		vc_reg_write_ch_holding(a->ctx, ch, off, val, MB_CMD_TIMEOUT));
+	return reg_st_to_mb_result(
+		vc_reg_write_ch_holding(ch, off, val, MB_CMD_TIMEOUT));
 }
 
-struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx)
+struct vc_mb_adapter *vc_mb_adapter_create(void)
 {
 	struct mb_adapter_config defaults = adapter_default_config();
 
 	mb = &adapter;
 	k_mutex_init(&mb->lock);
-	mb->ctx = ctx;
 	mb->boot_cfg = defaults;
 	if (adapter_load_config(&mb->boot_cfg) < 0 ||
 	    !adapter_config_valid(&mb->boot_cfg)) {
@@ -688,9 +594,9 @@ static int modbus_adapter_apply_config(const struct mb_adapter_config *cfg)
 	return 0;
 }
 
-int modbus_adapter_init(struct vc_ctx *ctx)
+int modbus_adapter_init(void)
 {
-	mb = vc_mb_adapter_create(ctx);
+	mb = vc_mb_adapter_create();
 	if (!mb) {
 		printk("Failed to create Modbus adapter\n");
 		return -ENOMEM;

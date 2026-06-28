@@ -6,8 +6,7 @@
  * Unified voltage-control API.
  *
  * vc_init() constructs the singleton from DTS-composed channel data.
- * vc_dispatch() handles all state mutations.
- * vc_query() handles all state reads.
+ * Frontends access state and commands through the Register Catalog.
  */
 
 #ifndef VOLTAGE_CONTROL_VC_H
@@ -78,37 +77,6 @@ struct vc_cmd {
 		enum vc_param_action param_action;
 	};
 };
-
-/* Route a command to the runtime worker thread; blocks until processed or timeout. */
-enum vc_status vc_dispatch(struct vc_ctx *ctx, struct vc_cmd cmd,
-			   k_timeout_t timeout);
-
-/* ------------------------------------------------------------------ */
-/* Query types                                                         */
-/* ------------------------------------------------------------------ */
-
-enum vc_query_type {
-	VC_QUERY_SYSTEM_SNAPSHOT,
-	VC_QUERY_CHANNEL_SNAPSHOT,
-	VC_QUERY_SYSTEM_CONFIG,
-	VC_QUERY_CHANNEL_CONFIG,
-	VC_QUERY_CHANNEL_CAL_CONFIG,
-};
-
-struct vc_query_msg {
-	enum vc_query_type type;
-	uint8_t channel;
-	union {
-		struct vc_system_snapshot *system_snapshot;
-		struct vc_channel_snapshot *channel_snapshot;
-		struct vc_system_config *system_config;
-		struct vc_channel_config *channel_config;
-		struct vc_channel_cal_config *channel_cal_config;
-	} out;
-};
-
-/* Read canonical state, optionally assembled into a presentation snapshot. */
-enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query_msg q);
 
 /* ------------------------------------------------------------------ */
 /* Command builders                                                    */
@@ -267,63 +235,6 @@ static inline struct vc_cmd vc_cmd_ch_param(uint8_t ch,
 		.type = VC_CMD_CHANNEL_PARAM_ACTION,
 		.channel = ch,
 		.param_action = action,
-	};
-}
-
-/* ------------------------------------------------------------------ */
-/* Query builders                                                      */
-/* ------------------------------------------------------------------ */
-
-/* Build a query for the system snapshot (protocol, uptime, channel info). */
-static inline struct vc_query_msg vc_q_system_snapshot(
-	struct vc_system_snapshot *out)
-{
-	return (struct vc_query_msg){
-		.type = VC_QUERY_SYSTEM_SNAPSHOT,
-		.out.system_snapshot = out,
-	};
-}
-
-/* Build a query for a channel snapshot (measurements, status, faults). */
-static inline struct vc_query_msg vc_q_channel_snapshot(
-	uint8_t ch, struct vc_channel_snapshot *out)
-{
-	return (struct vc_query_msg){
-		.type = VC_QUERY_CHANNEL_SNAPSHOT,
-		.channel = ch,
-		.out.channel_snapshot = out,
-	};
-}
-
-/* Build a query for the system config (address, baud, recovery, etc.). */
-static inline struct vc_query_msg vc_q_system_config(
-	struct vc_system_config *out)
-{
-	return (struct vc_query_msg){
-		.type = VC_QUERY_SYSTEM_CONFIG,
-		.out.system_config = out,
-	};
-}
-
-/* Build a query for a channel config (target voltage, ramp, protection, cal). */
-static inline struct vc_query_msg vc_q_channel_config(
-	uint8_t ch, struct vc_channel_config *out)
-{
-	return (struct vc_query_msg){
-		.type = VC_QUERY_CHANNEL_CONFIG,
-		.channel = ch,
-		.out.channel_config = out,
-	};
-}
-
-/* Build a query for a channel calibration config (6 k/b coefficients). */
-static inline struct vc_query_msg vc_q_channel_cal_config(
-	uint8_t ch, struct vc_channel_cal_config *out)
-{
-	return (struct vc_query_msg){
-		.type = VC_QUERY_CHANNEL_CAL_CONFIG,
-		.channel = ch,
-		.out.channel_cal_config = out,
 	};
 }
 

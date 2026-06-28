@@ -100,6 +100,8 @@ struct reg_descriptor {
 const struct reg_descriptor *reg_describe(reg_id_t id);
 enum reg_status reg_read_descriptor(const struct reg_descriptor *desc,
 				    union reg_value *out);
+enum reg_status reg_read_bound_value(const struct reg_descriptor *desc,
+				     union reg_value *out);
 enum reg_status reg_write_descriptor(const struct reg_descriptor *desc,
 				     union reg_value value,
 				     k_timeout_t timeout);

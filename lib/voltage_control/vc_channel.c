@@ -399,62 +399,102 @@ enum vc_status vc_channel_set_config(struct vc_channel *ch,
 enum vc_status vc_channel_set_field(struct vc_channel *ch,
 				    enum vc_config_field field, uint16_t value)
 {
-	struct vc_channel_config cfg;
-	enum vc_status st;
-
-	st = vc_channel_get_config(ch, &cfg);
-	if (st != VC_OK) {
-		return st;
-	}
-
 	switch (field) {
 	case VC_FIELD_CONFIGURED_TARGET_VOLTAGE:
-		cfg.configured_target_voltage = (int16_t)value;
+		if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
+			return VC_ERR_UNSUPPORTED_CAPABILITY;
+		}
+		if ((int16_t)value > VC_DEFAULT_MAX_VOLTAGE_RAW ||
+		    (int16_t)value < VC_DEFAULT_MIN_VOLTAGE_RAW) {
+			return VC_ERR_INVALID_VALUE;
+		}
+		ch->config.configured_target_voltage = (int16_t)value;
 		break;
 	case VC_FIELD_RAMP_UP_STEP:
-		cfg.ramp_up_step = value;
+		if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
+			return VC_ERR_UNSUPPORTED_CAPABILITY;
+		}
+		ch->config.ramp_up_step = value;
 		break;
 	case VC_FIELD_RAMP_UP_INTERVAL:
-		cfg.ramp_up_interval = value;
+		if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
+			return VC_ERR_UNSUPPORTED_CAPABILITY;
+		}
+		ch->config.ramp_up_interval = value;
 		break;
 	case VC_FIELD_RAMP_DOWN_STEP:
-		cfg.ramp_down_step = value;
+		if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
+			return VC_ERR_UNSUPPORTED_CAPABILITY;
+		}
+		ch->config.ramp_down_step = value;
 		break;
 	case VC_FIELD_RAMP_DOWN_INTERVAL:
-		cfg.ramp_down_interval = value;
+		if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
+			return VC_ERR_UNSUPPORTED_CAPABILITY;
+		}
+		ch->config.ramp_down_interval = value;
 		break;
 	case VC_FIELD_RECOVERY_POLICY_MODE:
-		cfg.recovery_policy_mode = (enum vc_recovery_policy_mode)value;
+		ch->config.recovery_policy_mode =
+			(enum vc_recovery_policy_mode)value;
 		break;
 	case VC_FIELD_AUTO_RETRY_DELAY:
-		cfg.auto_retry_delay = value;
+		ch->config.auto_retry_delay = value;
 		break;
 	case VC_FIELD_AUTO_RETRY_MAX_COUNT:
-		cfg.auto_retry_max_count = value;
+		ch->config.auto_retry_max_count = value;
 		break;
 	case VC_FIELD_AUTO_RETRY_WINDOW:
-		cfg.auto_retry_window = value;
+		ch->config.auto_retry_window = value;
 		break;
 	case VC_FIELD_CURRENT_SAFE_BAND_PCT:
-		cfg.current_safe_band_pct = value;
+		ch->config.current_safe_band_pct = value;
 		break;
 	case VC_FIELD_CURRENT_PROTECTION_MODE:
-		cfg.current_protection_mode = (enum vc_protection_mode)value;
+		if (!channel_has_cap(ch, CH_CAP_CURRENT_MEASUREMENT)) {
+			return VC_ERR_UNSUPPORTED_CAPABILITY;
+		}
+		if (!is_valid_protection_mode((enum vc_protection_mode)value)) {
+			return VC_ERR_INVALID_VALUE;
+		}
+		ch->config.current_protection_mode =
+			(enum vc_protection_mode)value;
 		break;
 	case VC_FIELD_CURRENT_PROT_OUT_ACTION:
-		cfg.current_protection_output_action = (enum vc_output_action)value;
+		if (!channel_has_cap(ch, CH_CAP_CURRENT_MEASUREMENT)) {
+			return VC_ERR_UNSUPPORTED_CAPABILITY;
+		}
+		if (!is_valid_protection_output_action(
+			    (enum vc_output_action)value)) {
+			return VC_ERR_INVALID_VALUE;
+		}
+		ch->config.current_protection_output_action =
+			(enum vc_output_action)value;
 		break;
 	case VC_FIELD_CURRENT_LIMIT_THRESHOLD:
-		cfg.current_limit_threshold = (int16_t)value;
+		if (!channel_has_cap(ch, CH_CAP_CURRENT_MEASUREMENT)) {
+			return VC_ERR_UNSUPPORTED_CAPABILITY;
+		}
+		if ((int16_t)value < 0) {
+			return VC_ERR_INVALID_VALUE;
+		}
+		ch->config.current_limit_threshold = (int16_t)value;
 		break;
 	case VC_FIELD_AUTO_DERATE_STEP:
-		cfg.auto_derate_step = value;
+		if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE) ||
+		    !channel_has_cap(ch, CH_CAP_VOLTAGE_MEASUREMENT)) {
+			return VC_ERR_UNSUPPORTED_CAPABILITY;
+		}
+		ch->config.auto_derate_step = value;
 		break;
 	default:
 		return VC_ERR_INVALID_VALUE;
 	}
 
-	return vc_channel_set_config(ch, &cfg);
+	tick_current_protection(ch);
+	apply_hw(ch);
+	update_status_bits(ch);
+	return VC_OK;
 }
 
 void vc_channel_get_snapshot(const struct vc_channel *ch,

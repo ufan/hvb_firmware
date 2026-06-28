@@ -9,7 +9,6 @@
 
 #include <stdint.h>
 
-struct vc_ctx;
 struct vc_mb_adapter;
 
 enum vc_mb_result {
@@ -30,9 +29,9 @@ struct mb_adapter_config {
 	uint16_t baud_rate_code;
 };
 
-int modbus_adapter_init(struct vc_ctx *ctx);
+int modbus_adapter_init(void);
 
-struct vc_mb_adapter *vc_mb_adapter_create(struct vc_ctx *ctx);
+struct vc_mb_adapter *vc_mb_adapter_create(void);
 enum vc_mb_result vc_mb_input_rd(struct vc_mb_adapter *a, uint16_t addr,
 				 uint16_t *reg);
 enum vc_mb_result vc_mb_holding_rd(struct vc_mb_adapter *a, uint16_t addr,

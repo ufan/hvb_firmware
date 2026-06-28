@@ -33,13 +33,13 @@ static const struct reg_owner test_owner = {
 };
 
 REG_DESCRIPTOR_DEFINE(test_fixed_reg,
-	REG_ID(1, 0, 1), REG_U16, REG_RO, REG_FIXED,
+	REG_ID(0xfe, 0, 1), REG_U16, REG_RO, REG_FIXED,
 	&fixed_value, NULL);
 REG_DESCRIPTOR_DEFINE(test_mutable_reg,
-	REG_ID(1, 0, 2), REG_U16, REG_RW, REG_CONFIG,
+	REG_ID(0xfe, 0, 2), REG_U16, REG_RW, REG_CONFIG,
 	&mutable_value, &test_owner);
 REG_DESCRIPTOR_DEFINE(test_command_reg,
-	REG_ID(1, 0, 3), REG_U16, REG_WO, REG_COMMAND,
+	REG_ID(0xfe, 0, 3), REG_U16, REG_WO, REG_COMMAND,
 	NULL, &test_owner);
 
 ZTEST_SUITE(reg_store, NULL, NULL, NULL, NULL, NULL);
@@ -74,7 +74,7 @@ ZTEST(reg_store, test_semantic_ids_are_protocol_neutral_and_stable)
 
 ZTEST(reg_store, test_descriptor_handle_avoids_id_lookup_at_access_time)
 {
-	reg_handle_t handle = reg_describe(REG_ID(1, 0, 2));
+	reg_handle_t handle = reg_describe(REG_ID(0xfe, 0, 2));
 	union reg_value value = {};
 
 	zassert_not_null(handle);
@@ -83,6 +83,18 @@ ZTEST(reg_store, test_descriptor_handle_avoids_id_lookup_at_access_time)
 	value.u16 = 23U;
 	zassert_equal(reg_handle_write(handle, value, K_NO_WAIT), REG_OK);
 	zassert_equal(mutable_value, 23U);
+}
+
+ZTEST(reg_store, test_catalog_ids_are_unique)
+{
+	STRUCT_SECTION_FOREACH(reg_descriptor, lhs) {
+		STRUCT_SECTION_FOREACH(reg_descriptor, rhs) {
+			if (lhs != rhs) {
+				zassert_not_equal(lhs->id, rhs->id,
+					  "duplicate register id 0x%08x", lhs->id);
+			}
+		}
+	}
 }
 
 ZTEST(reg_store, test_modbus_v3_view_keeps_fixed_wire_layout)
@@ -99,9 +111,9 @@ ZTEST(reg_store, test_catalog_reads_fixed_and_mutable_values)
 {
 	union reg_value value = {};
 
-	zassert_equal(reg_read(REG_ID(1, 0, 1), &value), REG_OK);
+	zassert_equal(reg_read(REG_ID(0xfe, 0, 1), &value), REG_OK);
 	zassert_equal(value.u16, 42U);
-	zassert_equal(reg_read(REG_ID(1, 0, 2), &value), REG_OK);
+	zassert_equal(reg_read(REG_ID(0xfe, 0, 2), &value), REG_OK);
 	zassert_equal(value.u16, 7U);
 }
 
@@ -109,9 +121,9 @@ ZTEST(reg_store, test_catalog_enforces_access_and_missing_ids)
 {
 	union reg_value value = { .u16 = 9U };
 
-	zassert_equal(reg_write(REG_ID(1, 0, 1), value, K_NO_WAIT),
+	zassert_equal(reg_write(REG_ID(0xfe, 0, 1), value, K_NO_WAIT),
 		      REG_READ_ONLY);
-	zassert_equal(reg_read(REG_ID(1, 0, 3), &value), REG_WRITE_ONLY);
+	zassert_equal(reg_read(REG_ID(0xfe, 0, 3), &value), REG_WRITE_ONLY);
 	zassert_equal(reg_read(REG_ID(9, 9, 9), &value), REG_NOT_FOUND);
 }
 
@@ -119,10 +131,10 @@ ZTEST(reg_store, test_owner_write_commits_only_valid_values)
 {
 	union reg_value value = { .u16 = 99U };
 
-	zassert_equal(reg_write(REG_ID(1, 0, 2), value, K_MSEC(1)), REG_OK);
+	zassert_equal(reg_write(REG_ID(0xfe, 0, 2), value, K_MSEC(1)), REG_OK);
 	zassert_equal(mutable_value, 99U);
 	value.u16 = 101U;
-	zassert_equal(reg_write(REG_ID(1, 0, 2), value, K_MSEC(1)),
+	zassert_equal(reg_write(REG_ID(0xfe, 0, 2), value, K_MSEC(1)),
 		      REG_INVALID_VALUE);
 	zassert_equal(mutable_value, 99U);
 }
@@ -136,7 +148,8 @@ ZTEST(reg_store, test_sixteen_channel_catalog_is_statically_composed)
 	zassert_not_null(ctx);
 	zassert_not_null(reg_describe(
 		REG_VC_ID(15, REG_VC_FIELD_STATUS_BITS)));
-	zassert_equal(reg_read(REG_SYS_ID(REG_SYS_FIELD_SUPPORTED_CHANNELS),
+	zassert_equal(reg_read(REG_VC_GLOBAL_ID(
+			       REG_VC_GLOBAL_FIELD_SUPPORTED_CHANNELS),
 			       &value), REG_OK);
 	zassert_equal(value.u16, 16U);
 	vc_destroy(ctx);

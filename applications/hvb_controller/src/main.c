@@ -34,14 +34,14 @@ int main(void)
 	}
 
 #if IS_ENABLED(CONFIG_UI_MODBUS_RTU)
-	ret = modbus_adapter_init(ctx);
+	ret = modbus_adapter_init();
 	if (ret < 0) {
 		return 0;
 	}
 #endif
 
 #if IS_ENABLED(CONFIG_VC_SHELL)
-	vc_shell_init(ctx);
+	vc_shell_init();
 #endif
 
 	printk("hvb_controller ready\n");

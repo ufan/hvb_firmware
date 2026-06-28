@@ -14,8 +14,12 @@
 #include <zephyr/sys/printk.h>
 
 #include <dt-bindings/voltage_control/capabilities.h>
+#include "reg_store/reg_catalog.h"
+#include "reg_store/reg_map.h"
+#include "reg_store/reg_schema.h"
 #include "voltage_control/vc.h"
-#include "voltage_control/modbus_adapter.h"
+#include "voltage_control/vc_channel_api.h"
+#include "modbus_adapter/modbus_adapter.h"
 
 #define HEARTBEAT_INTERVAL_MS 500
 #define MODBUS_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_modbus_serial)
@@ -79,21 +83,26 @@ static int init_modbus_server(void)
 	return modbus_init_server(iface, server_param);
 }
 
-static const struct vc_channel_entry sim_channels[] = {
-	{ .dev = NULL, .index = 0,
-	  .capabilities = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
-			  CH_CAP_VOLTAGE_MEASUREMENT |
-			  CH_CAP_CURRENT_MEASUREMENT },
-	{ .dev = NULL, .index = 1,
-	  .capabilities = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
-			  CH_CAP_VOLTAGE_MEASUREMENT |
-			  CH_CAP_CURRENT_MEASUREMENT },
-};
+#define VC_CONTROLLER_NODE DT_NODELABEL(vc_controller)
+#define DECLARE_BUFFER(node_id) VC_CHANNEL_BUFFER_EXTERN(node_id);
+DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, DECLARE_BUFFER)
+
+static struct vc_channel_buffer *channel_buffer(uint8_t channel)
+{
+	switch (channel) {
+#define BUFFER_CASE(node_id) \
+	case DT_REG_ADDR(node_id): return VC_CHANNEL_BUFFER_PTR(node_id);
+	DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, BUFFER_CASE)
+#undef BUFFER_CASE
+	default: return NULL;
+	}
+}
 
 int main(void)
 {
 	struct vc_ctx *ctx;
-	struct vc_system_snapshot system_snapshot;
+	union reg_value value = {};
+	uint16_t channel_count;
 	int ret;
 
 	if (!gpio_is_ready_dt(&sys_run)) {
@@ -107,14 +116,20 @@ int main(void)
 		return 0;
 	}
 
-	ctx = vc_init_custom(sim_channels, ARRAY_SIZE(sim_channels));
+	ctx = vc_init();
 	if (!ctx) {
 		printk("Failed to initialize voltage control\n");
 		return 0;
 	}
-	vc_query(ctx, vc_q_system_snapshot(&system_snapshot));
+	if (vc_ctx_start(ctx) != VC_OK ||
+	    reg_read(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_SUPPORTED_CHANNELS),
+		     &value) != REG_OK) {
+		printk("Failed to start voltage control\n");
+		return 0;
+	}
+	channel_count = value.u16;
 
-	mb = vc_mb_adapter_create(ctx);
+	mb = vc_mb_adapter_create();
 	if (!mb) {
 		printk("Failed to create Modbus adapter\n");
 		return 0;
@@ -128,9 +143,7 @@ int main(void)
 
 	printk("modbus_sim ready: slave=1 USART6 115200 8N1 RS485_DIR=PG11"
 	       " variant=%u channels=%u protocol=%u.%u simulated_runtime=1\n",
-	       system_snapshot.variant_id,
-	       system_snapshot.supported_channel_count,
-	       system_snapshot.protocol_major, system_snapshot.protocol_minor);
+	       1U, channel_count, VC_PROTOCOL_MAJOR, VC_PROTOCOL_MINOR);
 
 	while (1) {
 		ret = gpio_pin_toggle_dt(&sys_run);
@@ -138,32 +151,25 @@ int main(void)
 			printk("Failed to toggle SYS_RUN GPIO: %d\n", ret);
 		}
 
-		for (uint8_t ch = 0; ch < system_snapshot.supported_channel_count;
+		for (uint8_t ch = 0; ch < channel_count;
 		     ch++) {
-			struct vc_channel_snapshot snap;
+			struct vc_channel_buffer *buffer = channel_buffer(ch);
 
-			if (vc_query(ctx, vc_q_channel_snapshot(ch, &snap))
-			    == VC_OK) {
-				struct vc_measurement_snapshot meas = {
-					.channel = ch,
-					.generation = 1,
-					.timestamp_ms = (uint32_t)k_uptime_get_32(),
-					.present_mask = VC_MEAS_PRESENT_VOLTAGE |
-							VC_MEAS_PRESENT_CURRENT,
-				};
-				int32_t v = snap.operational_target_voltage +
+			if (buffer != NULL &&
+			    reg_read(REG_VC_ID(ch, REG_VC_FIELD_OPER_TARGET_VOLTAGE),
+				     &value) == REG_OK) {
+				int32_t v = value.s16 +
 					    gen_noise(5);
-				int32_t i = snap.operational_target_voltage / 2 +
+				int32_t i = value.s16 / 2 +
 					    gen_noise(20);
+				uint32_t now = k_uptime_get_32();
 
 				if (v > 20000) v = 20000;
 				if (v < 0) v = 0;
 				if (i > 32767) i = 32767;
 				if (i < 0) i = 0;
-				meas.raw_voltage = v;
-				meas.raw_current = i;
-				vc_dispatch(ctx, vc_cmd_measurement(&meas),
-					    K_FOREVER);
+				vc_channel_buffer_publish_voltage(buffer, v, now);
+				vc_channel_buffer_publish_current(buffer, i, now);
 			}
 		}
 

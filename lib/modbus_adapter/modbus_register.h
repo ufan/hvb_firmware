@@ -12,23 +12,20 @@
 
 #include <stdint.h>
 #include <zephyr/kernel.h>
+#include "reg_store/reg_catalog.h"
 #include "voltage_control/vc_types.h"
 
-struct vc_ctx;
+/* Register View accessors over the protocol-neutral Register Catalog. */
+enum reg_status vc_reg_read_sys_input(uint16_t off, uint16_t *reg);
+enum reg_status vc_reg_read_sys_holding(uint16_t off, uint16_t *reg);
+enum reg_status vc_reg_read_ch_input(uint8_t ch, uint16_t off, uint16_t *reg);
+enum reg_status vc_reg_read_ch_holding(uint8_t ch, uint16_t off, uint16_t *reg);
 
-/* Read functions — no ctx needed, data comes from the Register Catalog. */
-enum vc_status vc_reg_read_sys_input(uint16_t off, uint16_t *reg);
-enum vc_status vc_reg_read_sys_holding(uint16_t off, uint16_t *reg);
-enum vc_status vc_reg_read_ch_input(uint8_t ch, uint16_t off, uint16_t *reg);
-enum vc_status vc_reg_read_ch_holding(uint8_t ch, uint16_t off, uint16_t *reg);
-
-/* Write functions — ctx needed for domain dispatch. */
-enum vc_status vc_reg_write_sys_holding(struct vc_ctx *ctx, uint16_t off,
-					uint16_t val, k_timeout_t timeout);
-enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
-					uint16_t off, uint16_t val,
+enum reg_status vc_reg_write_sys_holding(uint16_t off, uint16_t val,
 					k_timeout_t timeout);
-enum vc_status vc_reg_write_ext(struct vc_ctx *ctx, uint16_t off,
-				uint16_t val, k_timeout_t timeout);
+enum reg_status vc_reg_write_ch_holding(uint8_t ch, uint16_t off, uint16_t val,
+				       k_timeout_t timeout);
+enum reg_status vc_reg_write_ext(uint16_t off, uint16_t val,
+				k_timeout_t timeout);
 
 #endif

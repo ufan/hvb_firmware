@@ -13,6 +13,21 @@
 
 static struct vc_ctx *ctx;
 
+static void write_u16(reg_id_t id, uint16_t input)
+{
+	union reg_value value = { .u16 = input };
+
+	zassert_equal(reg_write(id, value, K_SECONDS(1)), REG_OK);
+}
+
+static uint16_t read_u16(reg_id_t id)
+{
+	union reg_value value = {};
+
+	zassert_equal(reg_read(id, &value), REG_OK);
+	return value.u16;
+}
+
 static void *suite_setup(void)
 {
 	ctx = vc_init();
@@ -32,76 +47,61 @@ ZTEST(vc_api, test_start_returns_ok)
 	zassert_equal(vc_ctx_start(ctx), VC_OK);
 }
 
-ZTEST(vc_api, test_dispatch_set_mode)
+ZTEST(vc_api, test_catalog_sets_mode)
 {
-	zassert_equal(vc_dispatch(ctx,
-				  vc_cmd_set_mode(VC_OPERATING_MODE_AUTOMATIC),
-				  K_SECONDS(1)), VC_OK);
-
-	struct vc_system_snapshot snap;
+	write_u16(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE),
+		  VC_OPERATING_MODE_AUTOMATIC);
 
 	k_msleep(50);
-	zassert_equal(vc_query(ctx, vc_q_system_snapshot(&snap)), VC_OK);
-	zassert_equal(snap.active_operating_mode, VC_OPERATING_MODE_AUTOMATIC);
+	zassert_equal(read_u16(REG_VC_GLOBAL_ID(
+		REG_VC_GLOBAL_FIELD_ACTIVE_OPERATING_MODE)),
+		VC_OPERATING_MODE_AUTOMATIC);
 
-	vc_dispatch(ctx, vc_cmd_set_mode(VC_OPERATING_MODE_NORMAL),
-		    K_SECONDS(1));
+	write_u16(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE),
+		  VC_OPERATING_MODE_NORMAL);
 }
 
-ZTEST(vc_api, test_dispatch_output_action)
+ZTEST(vc_api, test_catalog_dispatches_output_action)
 {
-	zassert_equal(vc_dispatch(ctx,
-				  vc_cmd_output(0, VC_OUTPUT_ACTION_ENABLE),
-				  K_SECONDS(1)), VC_OK);
-
-	struct vc_channel_snapshot snap;
+	write_u16(REG_VC_ID(0, REG_VC_FIELD_OUTPUT_ACTION),
+		  VC_OUTPUT_ACTION_ENABLE);
 
 	k_msleep(50);
-	zassert_equal(vc_query(ctx, vc_q_channel_snapshot(0, &snap)), VC_OK);
-	zassert_true(snap.status_bits & 0x0002);
+	zassert_true(read_u16(REG_VC_ID(0, REG_VC_FIELD_STATUS_BITS)) & 0x0002);
 
-	vc_dispatch(ctx, vc_cmd_output(0, VC_OUTPUT_ACTION_DISABLE_IMMEDIATE),
-		    K_SECONDS(1));
+	write_u16(REG_VC_ID(0, REG_VC_FIELD_OUTPUT_ACTION),
+		  VC_OUTPUT_ACTION_DISABLE_IMMEDIATE);
 }
 
-ZTEST(vc_api, test_dispatch_channel_field)
+ZTEST(vc_api, test_catalog_sets_channel_field)
 {
-	zassert_equal(vc_dispatch(ctx,
-				  vc_cmd_ch_field(0, VC_FIELD_CONFIGURED_TARGET_VOLTAGE, 5000),
-				  K_SECONDS(1)), VC_OK);
-
-	struct vc_channel_config cfg;
+	write_u16(REG_VC_ID(0, REG_VC_FIELD_CFG_TARGET_VOLTAGE), 5000);
 
 	k_msleep(50);
-	zassert_equal(vc_query(ctx, vc_q_channel_config(0, &cfg)), VC_OK);
-	zassert_equal(cfg.configured_target_voltage, 5000);
+	zassert_equal(read_u16(REG_VC_ID(0, REG_VC_FIELD_CFG_TARGET_VOLTAGE)),
+		5000);
 }
 
-ZTEST(vc_api, test_dispatch_system_field)
+ZTEST(vc_api, test_catalog_sets_system_field)
 {
-	zassert_equal(vc_dispatch(ctx,
-				  vc_cmd_sys_field(VC_FIELD_STARTUP_CHANNEL_POLICY, 1),
-				  K_SECONDS(1)), VC_OK);
-
-	struct vc_system_config cfg;
+	write_u16(REG_VC_GLOBAL_ID(
+		REG_VC_GLOBAL_FIELD_STARTUP_CHANNEL_POLICY), 1);
 
 	k_msleep(50);
-	zassert_equal(vc_query(ctx, vc_q_system_config(&cfg)), VC_OK);
-	zassert_equal(cfg.startup_channel_policy, 1);
+	zassert_equal(read_u16(REG_VC_GLOBAL_ID(
+		REG_VC_GLOBAL_FIELD_STARTUP_CHANNEL_POLICY)), 1);
 }
 
 ZTEST(vc_api, test_catalog_reads_vc_fixed_and_config_state)
 {
 	union reg_value value = {};
-	zassert_equal(vc_dispatch(ctx,
-				  vc_cmd_ch_field(0,
-					VC_FIELD_CONFIGURED_TARGET_VOLTAGE, 5000),
-				  K_SECONDS(1)), VC_OK);
+	write_u16(REG_VC_ID(0, REG_VC_FIELD_CFG_TARGET_VOLTAGE), 5000);
 
-	zassert_equal(reg_read(REG_SYS_ID(REG_SYS_FIELD_PROTOCOL_MAJOR), &value),
+	zassert_equal(reg_read(REG_MODBUS_ID(REG_MODBUS_FIELD_PROTOCOL_MAJOR), &value),
 		      REG_OK);
 	zassert_equal(value.u16, VC_PROTOCOL_MAJOR);
-	zassert_equal(reg_read(REG_SYS_ID(REG_SYS_FIELD_SUPPORTED_CHANNELS),
+	zassert_equal(reg_read(REG_VC_GLOBAL_ID(
+			       REG_VC_GLOBAL_FIELD_SUPPORTED_CHANNELS),
 			       &value), REG_OK);
 	zassert_equal(value.u16, 2U);
 	zassert_equal(reg_read(REG_VC_ID(0, REG_VC_FIELD_CFG_TARGET_VOLTAGE),
@@ -127,16 +127,24 @@ ZTEST(vc_api, test_catalog_write_is_validated_and_committed_by_vc_owner)
 	zassert_equal(value.s16, 3200);
 }
 
-ZTEST(vc_api, test_query_reads_canonical_state_after_command_completion)
+ZTEST(vc_api, test_plain_scalars_are_bound_to_canonical_storage)
 {
-	struct vc_channel_config cfg;
+	const struct reg_descriptor *target = reg_describe(
+		REG_VC_ID(0, REG_VC_FIELD_CFG_TARGET_VOLTAGE));
+	const struct reg_descriptor *status = reg_describe(
+		REG_VC_ID(0, REG_VC_FIELD_STATUS_BITS));
 
-	zassert_equal(vc_dispatch(ctx,
-				  vc_cmd_ch_field(1,
-					VC_FIELD_CONFIGURED_TARGET_VOLTAGE, 4100),
-				  K_SECONDS(1)), VC_OK);
-	zassert_equal(vc_query(ctx, vc_q_channel_config(1, &cfg)), VC_OK);
-	zassert_equal(cfg.configured_target_voltage, 4100);
+	zassert_not_null(target);
+	zassert_not_null(target->value);
+	zassert_not_null(status);
+	zassert_not_null(status->value);
+}
+
+ZTEST(vc_api, test_read_observes_state_after_command_completion)
+{
+	write_u16(REG_VC_ID(1, REG_VC_FIELD_CFG_TARGET_VOLTAGE), 4100);
+	zassert_equal(read_u16(REG_VC_ID(1, REG_VC_FIELD_CFG_TARGET_VOLTAGE)),
+		4100);
 }
 
 ZTEST(vc_api, test_catalog_command_routes_through_runtime)
@@ -155,30 +163,26 @@ ZTEST(vc_api, test_catalog_command_routes_through_runtime)
 				value, K_SECONDS(1)), REG_OK);
 }
 
-ZTEST(vc_api, test_dispatch_calibration)
+ZTEST(vc_api, test_catalog_dispatches_calibration)
 {
-	zassert_equal(vc_dispatch(ctx, vc_cmd_cal_unlock(CAL_UNLOCK_STEP1),
-				  K_SECONDS(1)), VC_OK);
-	zassert_equal(vc_dispatch(ctx, vc_cmd_cal_unlock(CAL_UNLOCK_STEP2),
-				  K_SECONDS(1)), VC_OK);
-	zassert_equal(vc_dispatch(ctx,
-				  vc_cmd_set_mode(VC_OPERATING_MODE_CALIBRATION),
-				  K_SECONDS(1)), VC_OK);
-
-	struct vc_system_snapshot snap;
+	write_u16(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK),
+		  CAL_UNLOCK_STEP1);
+	write_u16(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK),
+		  CAL_UNLOCK_STEP2);
+	write_u16(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE),
+		  VC_OPERATING_MODE_CALIBRATION);
 
 	k_msleep(50);
-	zassert_equal(vc_query(ctx, vc_q_system_snapshot(&snap)), VC_OK);
-	zassert_equal(snap.active_operating_mode, VC_OPERATING_MODE_CALIBRATION);
+	zassert_equal(read_u16(REG_VC_GLOBAL_ID(
+		REG_VC_GLOBAL_FIELD_ACTIVE_OPERATING_MODE)),
+		VC_OPERATING_MODE_CALIBRATION);
 
-	vc_dispatch(ctx, vc_cmd_set_mode(VC_OPERATING_MODE_NORMAL),
-		    K_SECONDS(1));
+	write_u16(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE),
+		  VC_OPERATING_MODE_NORMAL);
 }
 
-ZTEST(vc_api, test_query_system_snapshot)
+ZTEST(vc_api, test_catalog_reads_supported_channel_count)
 {
-	struct vc_system_snapshot snap;
-
-	zassert_equal(vc_query(ctx, vc_q_system_snapshot(&snap)), VC_OK);
-	zassert_equal(snap.supported_channel_count, 2);
+	zassert_equal(read_u16(REG_VC_GLOBAL_ID(
+		REG_VC_GLOBAL_FIELD_SUPPORTED_CHANNELS)), 2);
 }
