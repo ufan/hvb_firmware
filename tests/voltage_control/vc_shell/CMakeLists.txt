@@ -8,6 +8,7 @@ project(voltage_control_vc_shell)
 
 target_sources(app PRIVATE
 	src/main.c
+	src/cal_verify.c
 	../vc_controller/src/vc_channel_stub.c
 )
 target_include_directories(app PRIVATE ${HVB_FIRMWARE_ROOT}/include)
