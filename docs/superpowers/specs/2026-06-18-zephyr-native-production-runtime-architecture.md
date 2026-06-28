@@ -162,9 +162,37 @@ For Modbus, `CH_CAPABILITY_FLAGS` is the primary per-channel discovery mechanism
 
 Modbus channel blocks keep core/discovery fields in a contiguous front range and capability-specific fields in the tail. Supported channels must allow broad reads of the core/discovery range. Tail block reads fail as unsupported if any included register is unsupported for that channel, so host tools should read `CH_CAPABILITY_FLAGS` first and then select capability-specific tail groups.
 
+## Interface Topology
+
+The firmware supports up to three coexisting frontend interfaces in the most feature-rich production build:
+
+1. **Shell console** — embedded debug interface, always present in debug builds. Interaction is slow, rare, and operator-driven. Never the primary user interface in production.
+2. **Remote wire protocol adapter** — the primary user interface. Exactly one wire protocol adapter is built per product image (Modbus RTU, CAN, TCP/IP, or similar). The adapter runs in its own thread and may issue commands at any time.
+3. **Local panel** — optional local user interface (knob, button, display). May coexist with the remote wire adapter in the same image. Not yet implemented; planned for a future variant.
+
+When all three are present, the shell and panel share the same physical enclosure while the remote adapter connects over a communication bus. The shell is low-frequency enough that it does not practically contend with the other two; the remote adapter and local panel can contend and must be handled correctly.
+
 ## Concurrency Model
 
-Frontend commands may be serialized through a shared command path because Modbus, shell, and local UI are effectively mutually exclusive in practical operation. Channel runtime communication runs independently so measurement acquisition and hardware communication are not blocked by frontend interaction.
+### Command serialization — single executor
+
+All frontend adapters submit commands through the same `vc_runtime_submit_command()` path, which enqueues work onto a `k_msgq` consumed by a single worker thread. Commands from shell, remote wire adapter, and local panel all enter the same queue and are processed one at a time in arrival order. No two commands execute simultaneously regardless of how many frontends are active.
+
+This property holds today and will continue to hold when a panel adapter is added, because the queue is the only command entry point and new adapters must use it.
+
+### Status coherence — all readers see the same live state
+
+Register reads go through the typed register catalog (`vc_catalog_read()`) under a single `runtime->lock` mutex. There is no per-frontend state mirror or copied snapshot. A panel, the Modbus adapter, and the shell all read from the same live `vc_channel` and `vc_controller` state and will always see mutually consistent values. Status coherence requires no additional mechanism when a panel is added.
+
+### Session arbitration — open gap, deferred to panel design
+
+The command queue serializes individual commands but not sequences of commands. A multi-step operation such as calibration (unlock → set DAC → sample → commit) is a sequence of discrete commands with no queue-level atomicity. A concurrent remote adapter command can interleave between any two steps of a panel-driven sequence, and vice versa.
+
+This is the one concurrency property not yet provided. It requires a session-ownership concept above the command queue: a token that a frontend acquires for the duration of a multi-step operation and that causes the other commanding frontend's commands to be rejected or deferred until the session is released.
+
+Session arbitration is deferred to the panel design phase for two reasons. First, the panel's interaction model (menu-driven display vs. live rotary encoder vs. touchscreen) determines the granularity and duration of sessions; designing arbitration before that is known produces the wrong abstraction. Second, a session gate is a thin policy layer of a few dozen lines above the existing command queue, not an architectural change — adding it later does not require restructuring the queue, the catalog, or any existing adapter.
+
+### Snapshot and transport preferences
 
 The implementation should prefer complete versioned snapshots over ad hoc shared mutable state:
 
