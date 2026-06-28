@@ -108,6 +108,94 @@ ZTEST(reg_store, test_modbus_v3_view_keeps_fixed_wire_layout)
 	zassert_equal(EXT_BLOCK_BASE, 680U);
 }
 
+ZTEST(reg_store, test_sys_input_wire_offsets_are_unique)
+{
+	uint8_t used[40] = {0};
+
+	zassert_equal(used[SYS_PROTOCOL_MAJOR]++,        0, "offset %u reused", SYS_PROTOCOL_MAJOR);
+	zassert_equal(used[SYS_PROTOCOL_MINOR]++,        0, "offset %u reused", SYS_PROTOCOL_MINOR);
+	zassert_equal(used[SYS_VARIANT_ID]++,            0, "offset %u reused", SYS_VARIANT_ID);
+	zassert_equal(used[SYS_CAPABILITY_FLAGS]++,      0, "offset %u reused", SYS_CAPABILITY_FLAGS);
+	zassert_equal(used[SYS_SUPPORTED_CHANNELS]++,    0, "offset %u reused", SYS_SUPPORTED_CHANNELS);
+	zassert_equal(used[SYS_ACTIVE_CHANNEL_MASK]++,   0, "offset %u reused", SYS_ACTIVE_CHANNEL_MASK);
+	zassert_equal(used[SYS_BOARD_TEMPERATURE]++,     0, "offset %u reused", SYS_BOARD_TEMPERATURE);
+	zassert_equal(used[SYS_BOARD_HUMIDITY]++,        0, "offset %u reused", SYS_BOARD_HUMIDITY);
+	zassert_equal(used[SYS_UPTIME_HI]++,             0, "offset %u reused", SYS_UPTIME_HI);
+	zassert_equal(used[SYS_UPTIME_LO]++,             0, "offset %u reused", SYS_UPTIME_LO);
+	zassert_equal(used[SYS_FW_VERSION_HI]++,         0, "offset %u reused", SYS_FW_VERSION_HI);
+	zassert_equal(used[SYS_FW_VERSION_LO]++,         0, "offset %u reused", SYS_FW_VERSION_LO);
+	zassert_equal(used[SYS_ACTIVE_OPERATING_MODE]++, 0, "offset %u reused", SYS_ACTIVE_OPERATING_MODE);
+	zassert_equal(used[SYS_STATUS]++,                0, "offset %u reused", SYS_STATUS);
+	zassert_equal(used[SYS_FAULT_CAUSE]++,           0, "offset %u reused", SYS_FAULT_CAUSE);
+}
+
+ZTEST(reg_store, test_sys_holding_wire_offsets_are_unique)
+{
+	uint8_t used[40] = {0};
+
+	zassert_equal(used[SYS_OPERATING_MODE]++,         0, "offset %u reused", SYS_OPERATING_MODE);
+	zassert_equal(used[SYS_STARTUP_CHANNEL_POLICY]++, 0, "offset %u reused", SYS_STARTUP_CHANNEL_POLICY);
+	zassert_equal(used[SYS_SLAVE_ADDRESS]++,          0, "offset %u reused", SYS_SLAVE_ADDRESS);
+	zassert_equal(used[SYS_BAUD_RATE_CODE]++,         0, "offset %u reused", SYS_BAUD_RATE_CODE);
+	zassert_equal(used[SYS_PARAM_ACTION]++,           0, "offset %u reused", SYS_PARAM_ACTION);
+}
+
+ZTEST(reg_store, test_channel_input_wire_offsets_are_unique)
+{
+	uint8_t used[40] = {0};
+
+	zassert_equal(used[CH_STATUS_BITS]++,              0, "offset %u reused", CH_STATUS_BITS);
+	zassert_equal(used[CH_ACTIVE_FAULT_CAUSE]++,       0, "offset %u reused", CH_ACTIVE_FAULT_CAUSE);
+	zassert_equal(used[CH_FAULT_HISTORY_CAUSE]++,      0, "offset %u reused", CH_FAULT_HISTORY_CAUSE);
+	zassert_equal(used[CH_LAST_PROT_OUT_ACTION]++,     0, "offset %u reused", CH_LAST_PROT_OUT_ACTION);
+	zassert_equal(used[CH_AUTO_RETRY_COUNT]++,         0, "offset %u reused", CH_AUTO_RETRY_COUNT);
+	zassert_equal(used[CH_AUTO_COOLDOWN_REMAINING]++,  0, "offset %u reused", CH_AUTO_COOLDOWN_REMAINING);
+	zassert_equal(used[CH_LAST_FAULT_TIMESTAMP_HI]++,  0, "offset %u reused", CH_LAST_FAULT_TIMESTAMP_HI);
+	zassert_equal(used[CH_LAST_FAULT_TIMESTAMP_LO]++,  0, "offset %u reused", CH_LAST_FAULT_TIMESTAMP_LO);
+	zassert_equal(used[CH_OPER_TARGET_VOLTAGE]++,      0, "offset %u reused", CH_OPER_TARGET_VOLTAGE);
+	zassert_equal(used[CH_CAPABILITY_FLAGS]++,         0, "offset %u reused", CH_CAPABILITY_FLAGS);
+	zassert_equal(used[CH_MEASURED_VOLTAGE]++,         0, "offset %u reused", CH_MEASURED_VOLTAGE);
+	zassert_equal(used[CH_MEASURED_CURRENT]++,         0, "offset %u reused", CH_MEASURED_CURRENT);
+	zassert_equal(used[CH_RAW_ADC_VOLTAGE_HI]++,       0, "offset %u reused", CH_RAW_ADC_VOLTAGE_HI);
+	zassert_equal(used[CH_RAW_ADC_VOLTAGE_LO]++,       0, "offset %u reused", CH_RAW_ADC_VOLTAGE_LO);
+	zassert_equal(used[CH_RAW_ADC_CURRENT_HI]++,       0, "offset %u reused", CH_RAW_ADC_CURRENT_HI);
+	zassert_equal(used[CH_RAW_ADC_CURRENT_LO]++,       0, "offset %u reused", CH_RAW_ADC_CURRENT_LO);
+}
+
+ZTEST(reg_store, test_channel_holding_wire_offsets_are_unique)
+{
+	uint8_t used[40] = {0};
+
+	zassert_equal(used[CH_OUTPUT_ACTION]++,            0, "offset %u reused", CH_OUTPUT_ACTION);
+	zassert_equal(used[CH_FAULT_CMD]++,                0, "offset %u reused", CH_FAULT_CMD);
+	zassert_equal(used[CH_PARAM_ACTION]++,             0, "offset %u reused", CH_PARAM_ACTION);
+	zassert_equal(used[CH_CFG_TARGET_VOLTAGE]++,       0, "offset %u reused", CH_CFG_TARGET_VOLTAGE);
+	zassert_equal(used[CH_RAMP_UP_STEP]++,             0, "offset %u reused", CH_RAMP_UP_STEP);
+	zassert_equal(used[CH_RAMP_UP_INTERVAL]++,         0, "offset %u reused", CH_RAMP_UP_INTERVAL);
+	zassert_equal(used[CH_RAMP_DOWN_STEP]++,           0, "offset %u reused", CH_RAMP_DOWN_STEP);
+	zassert_equal(used[CH_RAMP_DOWN_INTERVAL]++,       0, "offset %u reused", CH_RAMP_DOWN_INTERVAL);
+	zassert_equal(used[CH_RECOVERY_POLICY_MODE]++,     0, "offset %u reused", CH_RECOVERY_POLICY_MODE);
+	zassert_equal(used[CH_AUTO_RETRY_DELAY]++,         0, "offset %u reused", CH_AUTO_RETRY_DELAY);
+	zassert_equal(used[CH_AUTO_RETRY_MAX_COUNT]++,     0, "offset %u reused", CH_AUTO_RETRY_MAX_COUNT);
+	zassert_equal(used[CH_AUTO_RETRY_WINDOW]++,        0, "offset %u reused", CH_AUTO_RETRY_WINDOW);
+	zassert_equal(used[CH_CURRENT_SAFE_BAND_PCT]++,    0, "offset %u reused", CH_CURRENT_SAFE_BAND_PCT);
+	zassert_equal(used[CH_CURRENT_PROTECTION_MODE]++,  0, "offset %u reused", CH_CURRENT_PROTECTION_MODE);
+	zassert_equal(used[CH_CURRENT_PROT_OUT_ACTION]++,  0, "offset %u reused", CH_CURRENT_PROT_OUT_ACTION);
+	zassert_equal(used[CH_CURRENT_LIMIT_THRESHOLD]++,  0, "offset %u reused", CH_CURRENT_LIMIT_THRESHOLD);
+	zassert_equal(used[CH_AUTO_DERATE_STEP]++,         0, "offset %u reused", CH_AUTO_DERATE_STEP);
+	zassert_equal(used[CH_OUTPUT_CAL_K]++,             0, "offset %u reused", CH_OUTPUT_CAL_K);
+	zassert_equal(used[CH_OUTPUT_CAL_B]++,             0, "offset %u reused", CH_OUTPUT_CAL_B);
+	zassert_equal(used[CH_MEASURED_V_CAL_K]++,         0, "offset %u reused", CH_MEASURED_V_CAL_K);
+	zassert_equal(used[CH_MEASURED_V_CAL_B]++,         0, "offset %u reused", CH_MEASURED_V_CAL_B);
+	zassert_equal(used[CH_MEASURED_I_CAL_K]++,         0, "offset %u reused", CH_MEASURED_I_CAL_K);
+	zassert_equal(used[CH_MEASURED_I_CAL_B]++,         0, "offset %u reused", CH_MEASURED_I_CAL_B);
+	zassert_equal(used[CH_CAL_OUTPUT_ENABLE]++,        0, "offset %u reused", CH_CAL_OUTPUT_ENABLE);
+	zassert_equal(used[CH_CAL_DAC_CODE]++,             0, "offset %u reused", CH_CAL_DAC_CODE);
+	zassert_equal(used[CH_CAL_SAMPLE_CMD]++,           0, "offset %u reused", CH_CAL_SAMPLE_CMD);
+	zassert_equal(used[CH_CAL_COMMIT_CMD]++,           0, "offset %u reused", CH_CAL_COMMIT_CMD);
+	zassert_equal(used[CH_CAL_MAX_RAW_DAC_LIMIT]++,    0, "offset %u reused", CH_CAL_MAX_RAW_DAC_LIMIT);
+}
+
 ZTEST(reg_store, test_catalog_reads_fixed_and_mutable_values)
 {
 	union reg_value value = {};
