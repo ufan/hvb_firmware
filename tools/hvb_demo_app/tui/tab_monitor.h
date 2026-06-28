@@ -20,11 +20,11 @@ inline Component makeMonitorTab(AppState& s) {
     struct St {
         int  selectedRow  = 0;
         bool panelFocused = false;
-        std::string targetV[2];
-        std::string ruStep[2], ruInt[2];
-        std::string rdStep[2], rdInt[2];
-        std::string iThr[2];
-        int iModeIdx[2]{}, iActIdx[2]{};
+        std::string targetV[MAX_CHANNELS];
+        std::string ruStep[MAX_CHANNELS], ruInt[MAX_CHANNELS];
+        std::string rdStep[MAX_CHANNELS], rdInt[MAX_CHANNELS];
+        std::string iThr[MAX_CHANNELS];
+        int iModeIdx[MAX_CHANNELS]{}, iActIdx[MAX_CHANNELS]{};
     };
     auto st = std::make_shared<St>();
 
@@ -34,12 +34,14 @@ inline Component makeMonitorTab(AppState& s) {
             return text(" Not connected — press 'c' to connect ") | center | bold;
 
         const auto& si = s.data.sysInfo;
+        int n = s.data.numChannels();
         char tmp[16], hum[16];
         snprintf(tmp, sizeof(tmp), "%.1f", si.boardTempRaw * 0.1);
         snprintf(hum, sizeof(hum), "%.1f", si.boardHumidityRaw * 0.1);
         auto sysbar = hbox({
             text("Proto: " + std::to_string(si.protoMajor) + "." + std::to_string(si.protoMinor)),
             text("  Variant: " + std::to_string(si.variantId)),
+            text("  Ch: " + std::to_string(n)),
             text("  Uptime: " + std::to_string(si.uptimeSec) + " s"),
             text("  Mode: " + std::string(opModeName(si.activeOpMode))),
             text("  Temp: " + std::string(tmp) + " \xc2\xb0\x43"), // °C
@@ -47,9 +49,12 @@ inline Component makeMonitorTab(AppState& s) {
             text("  Fault: " + faultStr(si.faultCause)),
         });
 
+        if (n == 0)
+            return vbox({ sysbar, text(" Discovering channels... ") | dim | center });
+
         std::vector<std::vector<std::string>> rows;
         rows.push_back({"CH","Vmeas","Imeas","Status","Ramp\xe2\x86\x91","Ramp\xe2\x86\x93","I-Prot","Target V","Fault"});
-        for (int ch = 0; ch < 2; ++ch) {
+        for (int ch = 0; ch < n; ++ch) {
             const auto& ci = s.data.chInfo[ch];
             const auto& cc = s.data.chCfg[ch];
             std::string sel = (ch == st->selectedRow) ? "\xe2\x96\xb6" : " ";
@@ -70,13 +75,13 @@ inline Component makeMonitorTab(AppState& s) {
         tbl.SelectAll().Separator(LIGHT);
         tbl.SelectRows(0, 0).Decorate(bold);
         tbl.SelectRows(0, 0).Separator(HEAVY);
-        if (s.data.valid && st->selectedRow < 2)
+        if (st->selectedRow < n)
             tbl.SelectRows(st->selectedRow + 1, st->selectedRow + 1)
                .Decorate(bold | color(Color::Cyan));
         return vbox({ sysbar, separator(), tbl.Render() });
     };
 
-    // ---- Action panel factory (one per channel, both built at startup) ----
+    // ---- Action panel factory (one per channel, all built at startup) ----
     auto makePanel = [&s, st, &kProtModes, &kIActNames, &kIActVals](int ch) -> Component {
         auto onTarget = [&s, st, ch] {
             try {
@@ -159,19 +164,21 @@ inline Component makeMonitorTab(AppState& s) {
         });
     };
 
-    auto panel0 = makePanel(0);
-    auto panel1 = makePanel(1);
+    // Build one action panel per protocol-max channel; selectedRow drives which is active.
+    Components panels;
+    for (int ch = 0; ch < MAX_CHANNELS; ++ch) panels.push_back(makePanel(ch));
 
     // Container::Tab switches the active (event-routing) panel when selectedRow changes
-    auto panelTab = Container::Tab({panel0, panel1}, &st->selectedRow);
+    auto panelTab = Container::Tab(panels, &st->selectedRow);
 
     // Full tab: render table + panel; route keyboard between them
     return Renderer(panelTab, [=, &s, st, drawTable]() {
         return vbox({ drawTable(), separator(), panelTab->Render() });
-    }) | CatchEvent([st](Event e) {
+    }) | CatchEvent([&s, st](Event e) {
+        int n = std::max(1, s.data.numChannels());
         if (!st->panelFocused) {
             if (e == Event::ArrowUp)   { st->selectedRow = std::max(0, st->selectedRow - 1); return true; }
-            if (e == Event::ArrowDown) { st->selectedRow = std::min(1, st->selectedRow + 1); return true; }
+            if (e == Event::ArrowDown) { st->selectedRow = std::min(n - 1, st->selectedRow + 1); return true; }
             if (e == Event::Tab)       { st->panelFocused = true; return true; }
             return false;
         }

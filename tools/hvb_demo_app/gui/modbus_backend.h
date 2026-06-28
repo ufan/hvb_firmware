@@ -4,6 +4,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVariant>
+#include <QVariantList>
 #include <QVariantMap>
 #include <QTimer>
 #include <QThread>
@@ -25,14 +26,14 @@ class ModbusBackend : public QObject
 
     // System Info (FC04)
     Q_PROPERTY(QVariantMap sysInfo READ sysInfo NOTIFY sysInfoChanged)
-    // Channel Info
-    Q_PROPERTY(QVariantMap ch0Info READ ch0Info NOTIFY ch0InfoChanged)
-    Q_PROPERTY(QVariantMap ch1Info READ ch1Info NOTIFY ch1InfoChanged)
+
+    // Dynamic channel data — length = channelCount after connection.
+    Q_PROPERTY(int channelCount READ channelCount NOTIFY channelDataChanged)
+    Q_PROPERTY(QVariantList channelInfoList READ channelInfoList NOTIFY channelDataChanged)
+    Q_PROPERTY(QVariantList channelConfigList READ channelConfigList NOTIFY channelDataChanged)
+
     // System Config
     Q_PROPERTY(QVariantMap sysConfig READ sysConfig NOTIFY sysConfigChanged)
-    // Channel Config
-    Q_PROPERTY(QVariantMap ch0Config READ ch0Config NOTIFY ch0ConfigChanged)
-    Q_PROPERTY(QVariantMap ch1Config READ ch1Config NOTIFY ch1ConfigChanged)
 
     // Raw log
     Q_PROPERTY(QString rawLog READ rawLog NOTIFY rawLogChanged)
@@ -41,6 +42,8 @@ class ModbusBackend : public QObject
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
 
 public:
+    static constexpr int MAX_CHANNELS = 16;
+
     explicit ModbusBackend(QObject* parent = nullptr);
     ~ModbusBackend() override;
 
@@ -52,11 +55,12 @@ public:
     int pollIntervalMs() const { return m_pollInterval; }
 
     QVariantMap sysInfo() const { return m_sysInfo; }
-    QVariantMap ch0Info() const { return m_chInfo0; }
-    QVariantMap ch1Info() const { return m_chInfo1; }
+
+    int channelCount() const;
+    QVariantList channelInfoList() const;
+    QVariantList channelConfigList() const;
+
     QVariantMap sysConfig() const { return m_sysConfig; }
-    QVariantMap ch0Config() const { return m_chConfig0; }
-    QVariantMap ch1Config() const { return m_chConfig1; }
 
     QString rawLog() const { return m_rawLogLines.join("\n"); }
     QString statusMessage() const { return m_statusMessage; }
@@ -113,11 +117,8 @@ signals:
     void slaveIdChanged();
     void pollIntervalChanged();
     void sysInfoChanged();
-    void ch0InfoChanged();
-    void ch1InfoChanged();
+    void channelDataChanged();   // fires when channelCount, channelInfoList, or channelConfigList change
     void sysConfigChanged();
-    void ch0ConfigChanged();
-    void ch1ConfigChanged();
     void rawLogChanged();
     void statusMessageChanged();
     void rawHexReady(const QString& hex);
@@ -137,6 +138,7 @@ private slots:
 private:
     void setStatus(const QString& msg);
     void pollTick();
+    void refreshChannels();
 
     // Connection
     bool m_connected = false;
@@ -150,13 +152,11 @@ private:
     QThread* m_thread = nullptr;
     ModbusWorker* m_worker = nullptr;
 
-    // Cached data
+    // Cached data — indexed by channel number
     QVariantMap m_sysInfo;
-    QVariantMap m_chInfo0;
-    QVariantMap m_chInfo1;
+    QVariantMap m_chInfo[MAX_CHANNELS];
     QVariantMap m_sysConfig;
-    QVariantMap m_chConfig0;
-    QVariantMap m_chConfig1;
+    QVariantMap m_chConfig[MAX_CHANNELS];
 
     // UI state
     QStringList m_rawLogLines;

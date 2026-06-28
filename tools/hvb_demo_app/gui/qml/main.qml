@@ -16,17 +16,19 @@ ApplicationWindow {
         // Connection bar
         ConnectionBar { Layout.fillWidth: true }
 
-        // Tab bar
+        // Tab bar — first two tabs are always present; channel tabs appear after connect.
         TabBar {
             id: tabBar
             Layout.fillWidth: true
             TabButton { text: "System Info" }
             TabButton { text: "System Config" }
-            TabButton { text: "Channel 0" }
-            TabButton { text: "Channel 1" }
+            Repeater {
+                model: backend.channelCount
+                TabButton { text: "Channel " + index }
+            }
         }
 
-        // Tab content
+        // Tab content — StackLayout index tracks tabBar.
         StackLayout {
             id: tabContent
             Layout.fillWidth: true
@@ -35,8 +37,10 @@ ApplicationWindow {
 
             SystemInfoTab { }
             SystemConfigTab { }
-            ChannelTab { channelIndex: 0 }
-            ChannelTab { channelIndex: 1 }
+            Repeater {
+                model: backend.channelCount
+                ChannelTab { channelIndex: index }
+            }
         }
 
         // Status bar

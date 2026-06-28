@@ -111,42 +111,45 @@ inline Component makeChannelTab(AppState& s, int ch) {
     });
 
     return Renderer(container, [=, &s, ch]() {
+        // Channel beyond device's reported count — show placeholder.
+        if (s.data.valid && ch >= s.data.numChannels())
+            return text(" CH" + std::to_string(ch) + " not present on this device ") | dim | center;
+
+        // Capability flags — all bits set when disconnected (show everything).
+        const uint16_t caps = s.data.valid ? s.data.chInfo[ch].chCapFlags : 0xFFFFu;
+        const bool hasOutEn = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
+        const bool hasVolts = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+        const bool hasCurr  = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
+
         Element liveBar = text(" Not connected ") | dim;
         if (s.data.valid) {
             const auto& ci = s.data.chInfo[ch];
-            {
-                char lastFault[24] = "--";
-                if (ci.lastFaultTimestamp > 0)
-                    snprintf(lastFault, sizeof(lastFault), "%u s ago", (unsigned)ci.lastFaultTimestamp);
-                liveBar = hbox({
-                    text("  Vmeas: "),  text(fmtVoltage(ci.voltageRaw))  | bold,
-                    text("   Imeas: "), text(fmtCurrentUA(ci.currentRaw)) | bold,
-                    text("   Op Target: "), text(fmtVoltage(ci.operationalTargetVoltageRaw)),
-                    text("   Status: "), text(statusBadge(ci.status)) | bold,
-                    text("   Retries: "), text(std::to_string(ci.retryCount)),
-                    text("\n  Active Fault: "), text(faultStr(ci.activeFault)),
-                    text("   Fault History: "), text(faultStr(ci.faultHistory)),
-                    text("   Cooldown: "), text(std::to_string(ci.cooldownSec) + " s"),
-                    text("   Last Fault: "), text(lastFault),
-                });
-            }
+            char lastFault[24] = "--";
+            if (ci.lastFaultTimestamp > 0)
+                snprintf(lastFault, sizeof(lastFault), "%u s ago", (unsigned)ci.lastFaultTimestamp);
+            Elements liveParts;
+            if (hasVolts) { liveParts.push_back(text("  Vmeas: ")); liveParts.push_back(text(fmtVoltage(ci.voltageRaw)) | bold); }
+            if (hasCurr)  { liveParts.push_back(text("   Imeas: ")); liveParts.push_back(text(fmtCurrentUA(ci.currentRaw)) | bold); }
+            liveParts.push_back(text("   Op Target: "));
+            liveParts.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)));
+            liveParts.push_back(text("   Status: "));
+            liveParts.push_back(text(statusBadge(ci.status)) | bold);
+            liveParts.push_back(text("   Retries: "));
+            liveParts.push_back(text(std::to_string(ci.retryCount)));
+            liveBar = hbox(std::move(liveParts));
         }
 
         auto outputPanel = window(text(" Output "), vbox({
             hbox({ text("Target V : "), tgtInp->Render(), text(" V") }),
-            hbox({ bEnable->Render(), text("  "), bDisImm->Render(), text("  "), bDisGra->Render() }),
+            hasOutEn
+                ? hbox({ bEnable->Render(), text("  "), bDisImm->Render(), text("  "), bDisGra->Render() })
+                : hbox({ text("  (output control not supported) ") | dim }),
         }));
 
         auto rampPanel = window(text(" Ramping "), vbox({
             hbox({ text("Ramp Up   : step "), ruStepInp->Render(), text(" LSB  int "), ruIntInp->Render(), text(" \xc3\x970.1s") }),
             hbox({ text("Ramp Down : step "), rdStepInp->Render(), text(" LSB  int "), rdIntInp->Render(), text(" \xc3\x970.1s") }),
             hbox({ text("Derate Step:      "), derInp->Render(),   text(" LSB") }),
-        }));
-
-        auto iProtPanel = window(text(" Current Protection "), hbox({
-            text("Mode : "), iModeC->Render(),
-            text("   Action : "), iActC->Render(),
-            text("   Threshold: "), iThrInp->Render(), text(" \xc2\xb5\x41"), // µA
         }));
 
         auto recovPanel = window(text(" Recovery "), vbox({
@@ -157,29 +160,35 @@ inline Component makeChannelTab(AppState& s, int ch) {
             hbox({ text("I Safe Band: "), iBandInp->Render(), text(" % (0-50)") }),
         }));
 
-        Element calInfo = text(" No data ") | dim;
-        if (s.data.valid) {
-            const auto& cc = s.data.chCalCfg[ch];
-            calInfo = vbox({
-                hbox({ text("Output  K: "), text(std::to_string(cc.outCalK))  | bold, text("  B: "), text(std::to_string(cc.outCalB))  | bold }),
-                hbox({ text("Meas V  K: "), text(std::to_string(cc.measVCalK)) | bold, text("  B: "), text(std::to_string(cc.measVCalB)) | bold }),
-                hbox({ text("Meas I  K: "), text(std::to_string(cc.measICalK)) | bold, text("  B: "), text(std::to_string(cc.measICalB)) | bold }),
-            });
-        }
-        auto calPanel = window(text(" Calibration (read-only) "), calInfo);
-
         auto persistPanel = window(text(" Persistence "), vbox({
             hbox({ bSave->Render(), text("  "), bLoad->Render(), text("  "), bFactory->Render() }),
             hbox({ bClrAct->Render(), text("  "), bClrHist->Render() }),
         }));
 
-        return vbox({
-            window(text(" CH" + std::to_string(ch) + " Live "), liveBar),
-            hbox({ outputPanel, rampPanel }),
-            iProtPanel,
-            recovPanel,
-            hbox({ calPanel, persistPanel }),
-        });
+        Element calInfo = text(" No data ") | dim;
+        if (s.data.valid) {
+            const auto& cc = s.data.chCalCfg[ch];
+            Elements calRows;
+            calRows.push_back(hbox({ text("Output  K: "), text(std::to_string(cc.outCalK))  | bold, text("  B: "), text(std::to_string(cc.outCalB))  | bold }));
+            if (hasVolts) calRows.push_back(hbox({ text("Meas V  K: "), text(std::to_string(cc.measVCalK)) | bold, text("  B: "), text(std::to_string(cc.measVCalB)) | bold }));
+            if (hasCurr)  calRows.push_back(hbox({ text("Meas I  K: "), text(std::to_string(cc.measICalK)) | bold, text("  B: "), text(std::to_string(cc.measICalB)) | bold }));
+            calInfo = vbox(std::move(calRows));
+        }
+        auto calPanel = window(text(" Calibration (read-only) "), calInfo);
+
+        Elements rows;
+        rows.push_back(window(text(" CH" + std::to_string(ch) + " Live "), liveBar));
+        rows.push_back(hbox({ outputPanel, rampPanel }));
+        rows.push_back(recovPanel);
+        if (hasCurr) {
+            rows.push_back(window(text(" Current Protection "), hbox({
+                text("Mode : "), iModeC->Render(),
+                text("   Action : "), iActC->Render(),
+                text("   Threshold: "), iThrInp->Render(), text(" \xc2\xb5\x41"), // µA
+            })));
+        }
+        rows.push_back(hbox({ calPanel, persistPanel }));
+        return vbox(std::move(rows));
     });
 }
 

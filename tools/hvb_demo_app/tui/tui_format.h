@@ -7,13 +7,21 @@
 
 namespace hvb::tui {
 
+static constexpr int MAX_CHANNELS = static_cast<int>(hvb::reg::MAX_CHANNELS);
+
 struct ScannedData {
-    hvb::SystemInfo      sysInfo{};
-    hvb::ChannelInfo     chInfo[2]{};
-    hvb::SystemConfig    sysCfg{};
-    hvb::ChannelConfig   chCfg[2]{};
-    hvb::ChannelCalConfig chCalCfg[2]{};
+    hvb::SystemInfo       sysInfo{};
+    hvb::ChannelInfo      chInfo[MAX_CHANNELS]{};
+    hvb::SystemConfig     sysCfg{};
+    hvb::ChannelConfig    chCfg[MAX_CHANNELS]{};
+    hvb::ChannelCalConfig chCalCfg[MAX_CHANNELS]{};
     bool valid = false;
+
+    // Number of channels to iterate over — 0 before first sysInfo read.
+    int numChannels() const {
+        int n = sysInfo.supportedChannels;
+        return (n > 0 && n <= MAX_CHANNELS) ? n : 0;
+    }
 };
 
 inline std::string fmtVoltage(int16_t raw) {

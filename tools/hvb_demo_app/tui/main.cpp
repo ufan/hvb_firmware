@@ -19,6 +19,26 @@ static hvb::ConfigManager   g_cfg;
 static std::atomic<bool>    g_connected{false};
 static int g_pollInterval = 2;
 
+// Perform a full data scan on the connected device into `data`.
+// `n` is the channel count to read; pass 0 to read sysInfo first and derive it.
+static void doScan(hvb::tui::ScannedData& data) {
+    data.sysInfo = g_client.readSystemInfo();
+    int n = data.numChannels();
+    for (int ch = 0; ch < n; ++ch) data.chInfo[ch]   = g_client.readChannelInfo(ch);
+    data.sysCfg  = g_client.readSystemConfig();
+    for (int ch = 0; ch < n; ++ch) data.chCfg[ch]    = g_client.readChannelConfig(ch);
+    for (int ch = 0; ch < n; ++ch) data.chCalCfg[ch] = g_client.readChannelCalConfig(ch);
+}
+
+// Push channel tab titles into `titles` based on discovered channel count.
+// Called after successful connect once sysInfo is known.
+static void rebuildChannelTitles(std::vector<std::string>& titles, int numChannels) {
+    // Keep "Mon" and "Sys" at indices 0 and 1, then replace channel entries.
+    titles.resize(2);
+    for (int ch = 0; ch < numChannels; ++ch)
+        titles.push_back("CH" + std::to_string(ch));
+}
+
 int main(int argc, char** argv) {
     g_cfg.load();
 
@@ -26,10 +46,10 @@ int main(int argc, char** argv) {
     int baudArg = 115200, slaveArg = 1, timeoutArg = 500;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
-        if      (a == "-p" && i+1 < argc) portArg    = argv[++i];
-        else if (a == "-b" && i+1 < argc) baudArg    = std::stoi(argv[++i]);
-        else if (a == "-i" && i+1 < argc) slaveArg   = std::stoi(argv[++i]);
-        else if (a == "-t" && i+1 < argc) timeoutArg = std::stoi(argv[++i]);
+        if      (a == "-p" && i+1 < argc) portArg        = argv[++i];
+        else if (a == "-b" && i+1 < argc) baudArg        = std::stoi(argv[++i]);
+        else if (a == "-i" && i+1 < argc) slaveArg       = std::stoi(argv[++i]);
+        else if (a == "-t" && i+1 < argc) timeoutArg     = std::stoi(argv[++i]);
         else if (a == "-s" && i+1 < argc) g_pollInterval = std::stoi(argv[++i]);
     }
 
@@ -53,11 +73,7 @@ int main(int argc, char** argv) {
     std::thread pollThread([&] {
         while (running) {
             if (g_connected) {
-                data.sysInfo = g_client.readSystemInfo();
-                for (int ch = 0; ch < 2; ++ch) data.chInfo[ch] = g_client.readChannelInfo(ch);
-                data.sysCfg  = g_client.readSystemConfig();
-                for (int ch = 0; ch < 2; ++ch) data.chCfg[ch]    = g_client.readChannelConfig(ch);
-                for (int ch = 0; ch < 2; ++ch) data.chCalCfg[ch] = g_client.readChannelCalConfig(ch);
+                doScan(data);
                 data.valid = g_client.isConnected();
                 if (running) screen.PostEvent(Event::Custom);
             }
@@ -71,6 +87,22 @@ int main(int argc, char** argv) {
     auto baudInput  = Input(&modalBaud,    "115200");
     auto slaveInput = Input(&modalSlaveId, "1");
 
+    // Tab titles — dynamically updated after connection.
+    // We start with just "Mon" and "Sys"; channel tabs added after connect.
+    std::vector<std::string> tabTitles = {"Mon", "Sys"};
+    auto tabSelector = Toggle(&tabTitles, &activeTab);
+
+    // Build all MAX_CHANNELS channel tab components upfront.
+    // Container::Tab renders whichever index is active; tabTitles controls
+    // how many are shown in the toggle — phantom channels show a placeholder.
+    Components tabComponents = {
+        hvb::tui::makeMonitorTab(appState),
+        hvb::tui::makeSystemTab(appState),
+    };
+    for (int ch = 0; ch < hvb::tui::MAX_CHANNELS; ++ch)
+        tabComponents.push_back(hvb::tui::makeChannelTab(appState, ch));
+    auto tabContent = Container::Tab(tabComponents, &activeTab);
+
     auto doConnect = [&] {
         if (modalPort.empty() || connecting) return;
         connecting = true;
@@ -83,15 +115,17 @@ int main(int argc, char** argv) {
             bool ok = g_client.connect(modalPort, baud, slave, timeoutArg);
             g_connected = ok;
             if (ok) {
-                data.sysInfo = g_client.readSystemInfo();
-                for (int ch = 0; ch < 2; ++ch) data.chInfo[ch] = g_client.readChannelInfo(ch);
-                data.sysCfg  = g_client.readSystemConfig();
-                for (int ch = 0; ch < 2; ++ch) data.chCfg[ch]    = g_client.readChannelConfig(ch);
-                for (int ch = 0; ch < 2; ++ch) data.chCalCfg[ch] = g_client.readChannelCalConfig(ch);
+                doScan(data);
                 data.valid = true;
+                rebuildChannelTitles(tabTitles, data.numChannels());
+                // Clamp activeTab to the new tab count.
+                int maxTab = static_cast<int>(tabTitles.size()) - 1;
+                if (activeTab > maxTab) activeTab = maxTab;
             }
             { std::lock_guard<std::mutex> lk(statusMutex);
-              statusMsg = ok ? "Connected " + modalPort : "Connect failed: " + g_client.lastError(); }
+              statusMsg = ok
+                ? ("Connected " + modalPort + "  (" + std::to_string(data.numChannels()) + " ch)")
+                : ("Connect failed: " + g_client.lastError()); }
             connecting = false;
             showModal  = false;
             screen.PostEvent(Event::Custom);
@@ -115,24 +149,15 @@ int main(int argc, char** argv) {
         }) | border | size(WIDTH, EQUAL, 50);
     });
 
-    // ---- Tab content (tab factories) ----
-    std::vector<std::string> tabTitles = {"Mon", "Sys", "CH0", "CH1"};
-    auto tabSelector = Toggle(&tabTitles, &activeTab);
-
-    auto tabContent = Container::Tab({
-        hvb::tui::makeMonitorTab(appState),
-        hvb::tui::makeSystemTab(appState),
-        hvb::tui::makeChannelTab(appState, 0),
-        hvb::tui::makeChannelTab(appState, 1),
-    }, &activeTab);
-
-    // topBar: visual only — tabSelector rendered here but NOT in focus chain
+    // Help line: tab shortcuts depend on how many channels are present.
     auto topBar = Renderer([&] {
         std::string msg;
         { std::lock_guard<std::mutex> lk(statusMutex); msg = statusMsg; }
         std::string connStr = g_connected
             ? ("\xe2\x97\x8f Connected " + modalPort)   // ● Connected
             : (msg.empty() ? "\xe2\x97\x8b Disconnected" : msg);
+        int nTabs = static_cast<int>(tabTitles.size());
+        std::string hint = " q:quit  r:poll  c:connect  d:disconnect  1-" + std::to_string(nTabs) + ":tabs ";
         return hbox({
             text(" HVB TUI ") | bold,
             separator(),
@@ -140,12 +165,10 @@ int main(int argc, char** argv) {
             separator(),
             tabSelector->Render(),
             filler(),
-            text(" q:quit  r:poll  c:connect  d:disconnect  1-4:tabs ") | dim,
+            text(hint) | dim,
         });
     });
 
-    // mainContainer: topBar (visual) + tabContent (interactive only)
-    // tabSelector is NOT added here so ↑/↓ always reach the active tab
     auto mainContainer = Container::Vertical({topBar, tabContent});
 
     auto root = mainContainer
@@ -158,11 +181,8 @@ int main(int argc, char** argv) {
             if (e == Event::Character('q')) { running = false; screen.ExitLoopClosure()(); return true; }
             if (e == Event::Character('r')) {
                 if (g_connected) {
-                    data.sysInfo = g_client.readSystemInfo();
-                    for (int i = 0; i < 2; ++i) data.chInfo[i] = g_client.readChannelInfo(i);
-                    data.sysCfg  = g_client.readSystemConfig();
-                    for (int i = 0; i < 2; ++i) data.chCfg[i]    = g_client.readChannelConfig(i);
-                    for (int i = 0; i < 2; ++i) data.chCalCfg[i] = g_client.readChannelCalConfig(i);
+                    doScan(data);
+                    rebuildChannelTitles(tabTitles, data.numChannels());
                     data.valid = true;
                 }
                 return true;
@@ -170,13 +190,18 @@ int main(int argc, char** argv) {
             if (e == Event::Character('c')) { if (!g_connected && !connecting) showModal = true; return true; }
             if (e == Event::Character('d')) {
                 g_client.disconnect(); g_connected = false; data.valid = false;
+                tabTitles = {"Mon", "Sys"};  // collapse channel tabs on disconnect
+                activeTab = std::min(activeTab, 1);
                 { std::lock_guard<std::mutex> lk(statusMutex); statusMsg = "Disconnected"; }
                 return true;
             }
-            if (e == Event::Character('1')) { activeTab = 0; return true; }
-            if (e == Event::Character('2')) { activeTab = 1; return true; }
-            if (e == Event::Character('3')) { activeTab = 2; return true; }
-            if (e == Event::Character('4')) { activeTab = 3; return true; }
+            // Numeric shortcuts: clamp to available tabs
+            for (int i = 1; i <= 9; ++i) {
+                if (e == Event::Character(static_cast<char>('0' + i))) {
+                    int idx = i - 1;
+                    if (idx < static_cast<int>(tabTitles.size())) { activeTab = idx; return true; }
+                }
+            }
             return false;
         });
 
@@ -186,12 +211,9 @@ int main(int argc, char** argv) {
             bool ok = g_client.connect(portArg, baudArg, slaveArg, timeoutArg);
             g_connected = ok;
             if (ok) {
-                data.sysInfo = g_client.readSystemInfo();
-                for (int i = 0; i < 2; ++i) data.chInfo[i] = g_client.readChannelInfo(i);
-                data.sysCfg  = g_client.readSystemConfig();
-                for (int i = 0; i < 2; ++i) data.chCfg[i]    = g_client.readChannelConfig(i);
-                for (int i = 0; i < 2; ++i) data.chCalCfg[i] = g_client.readChannelCalConfig(i);
+                doScan(data);
                 data.valid = true;
+                rebuildChannelTitles(tabTitles, data.numChannels());
             }
             { std::lock_guard<std::mutex> lk(statusMutex);
               statusMsg = ok ? "" : "Connect failed: " + g_client.lastError(); }

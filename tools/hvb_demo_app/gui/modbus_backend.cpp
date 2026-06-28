@@ -47,6 +47,29 @@ void ModbusBackend::setBaudRate(int b) { if (m_baud != b) { m_baud = b; emit bau
 void ModbusBackend::setSlaveId(int id) { if (m_slaveId != id) { m_slaveId = id; emit slaveIdChanged(); } }
 void ModbusBackend::setPollIntervalMs(int ms) { if (m_pollInterval != ms) { m_pollInterval = ms; m_pollTimer.setInterval(ms); emit pollIntervalChanged(); } }
 
+int ModbusBackend::channelCount() const
+{
+    if (!m_connected) return 0;
+    int n = m_sysInfo.value("supportedChannels", 0).toInt();
+    return (n >= 1 && n <= MAX_CHANNELS) ? n : 0;
+}
+
+QVariantList ModbusBackend::channelInfoList() const
+{
+    QVariantList list;
+    int n = channelCount();
+    for (int i = 0; i < n; ++i) list << m_chInfo[i];
+    return list;
+}
+
+QVariantList ModbusBackend::channelConfigList() const
+{
+    QVariantList list;
+    int n = channelCount();
+    for (int i = 0; i < n; ++i) list << m_chConfig[i];
+    return list;
+}
+
 // ---------------------------------------------------------------------------
 //  Connection
 // ---------------------------------------------------------------------------
@@ -74,12 +97,18 @@ void ModbusBackend::scanPorts()
 //  Refresh
 // ---------------------------------------------------------------------------
 
+void ModbusBackend::refreshChannels()
+{
+    int n = channelCount();
+    for (int ch = 0; ch < n; ++ch)
+        QMetaObject::invokeMethod(m_worker, "doRefreshChannelInfo", Qt::QueuedConnection, Q_ARG(int, ch));
+}
+
 void ModbusBackend::refreshAll()
 {
     if (!m_connected) return;
     QMetaObject::invokeMethod(m_worker, "doRefreshSystemInfo", Qt::QueuedConnection);
-    QMetaObject::invokeMethod(m_worker, "doRefreshChannelInfo", Qt::QueuedConnection, Q_ARG(int, 0));
-    QMetaObject::invokeMethod(m_worker, "doRefreshChannelInfo", Qt::QueuedConnection, Q_ARG(int, 1));
+    refreshChannels();
 }
 
 void ModbusBackend::pollTick()
@@ -137,12 +166,12 @@ void ModbusBackend::onConnected(bool ok, const QString& error)
 {
     m_connected = ok;
     if (ok) {
-        setStatus("Connected");
-        m_pollTimer.start();
-        refreshAll();
+        // Read sysInfo first — channelCount() is derived from it.
+        // Channel reads fire in onSysInfoReady once the count is known.
+        QMetaObject::invokeMethod(m_worker, "doRefreshSystemInfo", Qt::QueuedConnection);
         QMetaObject::invokeMethod(m_worker, "doReadSystemConfig", Qt::QueuedConnection);
-        QMetaObject::invokeMethod(m_worker, "doReadChannelConfig", Qt::QueuedConnection, Q_ARG(int, 0));
-        QMetaObject::invokeMethod(m_worker, "doReadChannelConfig", Qt::QueuedConnection, Q_ARG(int, 1));
+        setStatus("Connected — discovering channels...");
+        m_pollTimer.start();
     } else {
         setStatus("Error: " + error);
     }
@@ -154,18 +183,30 @@ void ModbusBackend::onDisconnected()
     m_connected = false;
     setStatus("Disconnected");
     emit connectedChanged();
+    emit channelDataChanged();
 }
 
 void ModbusBackend::onSysInfoReady(const QVariantMap& info)
 {
     m_sysInfo = info;
     emit sysInfoChanged();
+
+    // Now that supportedChannels is known, kick off per-channel reads.
+    int n = channelCount();
+    for (int ch = 0; ch < n; ++ch) {
+        QMetaObject::invokeMethod(m_worker, "doRefreshChannelInfo", Qt::QueuedConnection, Q_ARG(int, ch));
+        QMetaObject::invokeMethod(m_worker, "doReadChannelConfig",  Qt::QueuedConnection, Q_ARG(int, ch));
+    }
+    if (n > 0)
+        setStatus(QString("Connected — %1 channel%2").arg(n).arg(n > 1 ? "s" : ""));
+    emit channelDataChanged();
 }
 
 void ModbusBackend::onChInfoReady(int ch, const QVariantMap& info)
 {
-    if (ch == 0) { m_chInfo0 = info; emit ch0InfoChanged(); }
-    else         { m_chInfo1 = info; emit ch1InfoChanged(); }
+    if (ch < 0 || ch >= MAX_CHANNELS) return;
+    m_chInfo[ch] = info;
+    emit channelDataChanged();
 }
 
 void ModbusBackend::onSysConfigReady(const QVariantMap& cfg)
@@ -176,8 +217,9 @@ void ModbusBackend::onSysConfigReady(const QVariantMap& cfg)
 
 void ModbusBackend::onChConfigReady(int ch, const QVariantMap& cfg)
 {
-    if (ch == 0) { m_chConfig0 = cfg; emit ch0ConfigChanged(); }
-    else         { m_chConfig1 = cfg; emit ch1ConfigChanged(); }
+    if (ch < 0 || ch >= MAX_CHANNELS) return;
+    m_chConfig[ch] = cfg;
+    emit channelDataChanged();
 }
 
 void ModbusBackend::onOperationComplete(bool ok, const QString& msg)
