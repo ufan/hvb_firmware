@@ -9,6 +9,7 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/sys/atomic.h>
 
 #include "voltage_control/vc_runtime.h"
 #include "voltage_control/vc_controller.h"
@@ -34,12 +35,52 @@ struct vc_runtime {
 	struct k_msgq command_queue;
 	struct k_sem wake;
 	struct k_thread thread;
-	bool stop_requested;
+	atomic_t stop_requested;
 	char command_buffer[CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH *
 			    sizeof(struct vc_runtime_work_item)];
 };
 
 static struct vc_runtime *catalog_runtime;
+
+enum vc_catalog_lifecycle {
+	VC_CATALOG_STOPPED,
+	VC_CATALOG_STARTING,
+	VC_CATALOG_RUNNING,
+	VC_CATALOG_STOPPING,
+};
+
+static atomic_t catalog_lifecycle = ATOMIC_INIT(VC_CATALOG_STOPPED);
+static atomic_t catalog_active_operations;
+K_SEM_DEFINE(catalog_quiesced, 0, 1);
+
+static void vc_catalog_release(void)
+{
+	if (atomic_dec(&catalog_active_operations) == 1 &&
+	    atomic_get(&catalog_lifecycle) == VC_CATALOG_STOPPING) {
+		k_sem_give(&catalog_quiesced);
+	}
+}
+
+static struct vc_runtime *vc_catalog_acquire(void)
+{
+	struct vc_runtime *runtime;
+
+	if (atomic_get(&catalog_lifecycle) != VC_CATALOG_RUNNING) {
+		return NULL;
+	}
+
+	atomic_inc(&catalog_active_operations);
+	if (atomic_get(&catalog_lifecycle) != VC_CATALOG_RUNNING) {
+		vc_catalog_release();
+		return NULL;
+	}
+
+	runtime = catalog_runtime;
+	if (runtime == NULL) {
+		vc_catalog_release();
+	}
+	return runtime;
+}
 
 static enum reg_status vc_status_to_reg(enum vc_status status)
 {
@@ -106,7 +147,7 @@ static bool vc_catalog_supported(uint16_t field, uint16_t caps)
 static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 				       union reg_value *value)
 {
-	struct vc_runtime *runtime = catalog_runtime;
+	struct vc_runtime *runtime = vc_catalog_acquire();
 	uint16_t field = (uint16_t)REG_ID_FIELD(desc->id);
 	uint8_t channel = (uint8_t)REG_ID_INSTANCE(desc->id);
 	bool global = REG_ID_MODULE(desc->id) == REG_MODULE_VOLTAGE_CONTROL &&
@@ -114,17 +155,23 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 	struct vc_controller *ctrl;
 	struct vc_channel *ch = NULL;
 
-	if (runtime == NULL || value == NULL) {
+	if (runtime == NULL) {
 		return REG_BUSY;
+	}
+	if (value == NULL) {
+		vc_catalog_release();
+		return REG_INVALID_ARGUMENT;
 	}
 
 	ctrl = runtime->ctrl;
 	if (REG_ID_MODULE(desc->id) == REG_MODULE_VOLTAGE_CONTROL && !global) {
 		if (channel >= ctrl->channel_count) {
+			vc_catalog_release();
 			return REG_UNSUPPORTED;
 		}
 		ch = &ctrl->channels[channel];
 		if (!vc_catalog_supported(field, ch->capabilities)) {
+			vc_catalog_release();
 			return REG_UNSUPPORTED;
 		}
 	}
@@ -137,6 +184,7 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 			enum reg_status status = reg_read_bound_value(desc, value);
 
 			k_mutex_unlock(&runtime->lock);
+			vc_catalog_release();
 			return status;
 		}
 		switch (field) {
@@ -167,15 +215,18 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 			break;
 		default:
 			k_mutex_unlock(&runtime->lock);
+			vc_catalog_release();
 			return REG_WRITE_ONLY;
 		}
 		k_mutex_unlock(&runtime->lock);
+		vc_catalog_release();
 		return REG_OK;
 	}
 	if (desc->value != NULL) {
 		enum reg_status status = reg_read_bound_value(desc, value);
 
 		k_mutex_unlock(&runtime->lock);
+		vc_catalog_release();
 		return status;
 	}
 
@@ -252,10 +303,12 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 		value->u16 = ch->cal_max_raw_dac_limit; break;
 	default:
 		k_mutex_unlock(&runtime->lock);
+		vc_catalog_release();
 		return REG_WRITE_ONLY;
 	}
 
 	k_mutex_unlock(&runtime->lock);
+	vc_catalog_release();
 	return REG_OK;
 }
 
@@ -299,7 +352,7 @@ static enum reg_status vc_catalog_write(const struct reg_descriptor *desc,
 					union reg_value value,
 					k_timeout_t timeout)
 {
-	struct vc_runtime *runtime = catalog_runtime;
+	struct vc_runtime *runtime = vc_catalog_acquire();
 	uint16_t field = (uint16_t)REG_ID_FIELD(desc->id);
 	uint8_t channel = (uint8_t)REG_ID_INSTANCE(desc->id);
 	bool global = REG_ID_MODULE(desc->id) == REG_MODULE_VOLTAGE_CONTROL &&
@@ -315,18 +368,28 @@ static enum reg_status vc_catalog_write(const struct reg_descriptor *desc,
 		if (channel >= runtime->ctrl->channel_count ||
 		    !vc_catalog_supported(field,
 			 runtime->ctrl->channels[channel].capabilities)) {
+			vc_catalog_release();
 			return REG_UNSUPPORTED;
 		}
 	}
+
+#define VC_CATALOG_WRITE_RETURN(expr_) do { \
+	enum reg_status status_ = (expr_); \
+	vc_catalog_release(); \
+	return status_; \
+} while (false)
+
 	if (global) {
 		if (field == REG_VC_GLOBAL_FIELD_OPERATING_MODE) {
-			return vc_status_to_reg(vc_runtime_set_operating_mode(
-				runtime, (enum vc_operating_mode)value.u16, timeout));
+			VC_CATALOG_WRITE_RETURN(vc_status_to_reg(
+				vc_runtime_set_operating_mode(runtime,
+					(enum vc_operating_mode)value.u16, timeout)));
 		}
 		if (field == REG_VC_GLOBAL_FIELD_STARTUP_CHANNEL_POLICY) {
-			return vc_status_to_reg(vc_runtime_set_system_field(
-				runtime, VC_FIELD_STARTUP_CHANNEL_POLICY,
-				value.u16, timeout));
+			VC_CATALOG_WRITE_RETURN(vc_status_to_reg(
+				vc_runtime_set_system_field(runtime,
+					VC_FIELD_STARTUP_CHANNEL_POLICY,
+					value.u16, timeout)));
 		}
 		if (field == REG_VC_GLOBAL_FIELD_PARAM_ACTION) {
 			struct vc_runtime_command global_cmd = {
@@ -334,37 +397,39 @@ static enum reg_status vc_catalog_write(const struct reg_descriptor *desc,
 				.payload.param_action =
 					(enum vc_param_action)value.u16,
 			};
-			return vc_status_to_reg(vc_runtime_submit_command(
-				runtime, &global_cmd, timeout));
+			VC_CATALOG_WRITE_RETURN(vc_status_to_reg(
+				vc_runtime_submit_command(runtime, &global_cmd, timeout)));
 		}
 		if (field == REG_VC_GLOBAL_FIELD_CAL_UNLOCK) {
 			struct vc_runtime_command global_cmd = {
 				.type = VC_RUNTIME_CMD_CALIBRATION_UNLOCK,
 				.payload.calibration_unlock_value = value.u16,
 			};
-			return vc_status_to_reg(vc_runtime_submit_command(
-				runtime, &global_cmd, timeout));
+			VC_CATALOG_WRITE_RETURN(vc_status_to_reg(
+				vc_runtime_submit_command(runtime, &global_cmd, timeout)));
 		}
 		if (field == REG_VC_GLOBAL_FIELD_CAL_EXIT) {
 			if (value.u16 != 1U) {
-				return REG_INVALID_VALUE;
+				VC_CATALOG_WRITE_RETURN(REG_INVALID_VALUE);
 			}
 			struct vc_runtime_command global_cmd = {
 				.type = VC_RUNTIME_CMD_CALIBRATION_EXIT,
 			};
-			return vc_status_to_reg(vc_runtime_submit_command(
-				runtime, &global_cmd, timeout));
+			VC_CATALOG_WRITE_RETURN(vc_status_to_reg(
+				vc_runtime_submit_command(runtime, &global_cmd, timeout)));
 		}
-		return REG_UNSUPPORTED;
+		VC_CATALOG_WRITE_RETURN(REG_UNSUPPORTED);
 	}
 
 	if (vc_catalog_field(field, &config_field)) {
-		return vc_status_to_reg(vc_runtime_set_channel_field(
-			runtime, channel, config_field, value.u16, timeout));
+		VC_CATALOG_WRITE_RETURN(vc_status_to_reg(
+			vc_runtime_set_channel_field(runtime, channel, config_field,
+				value.u16, timeout)));
 	}
 	if (vc_catalog_cal_field(field, &cal_field)) {
-		return vc_status_to_reg(vc_runtime_set_channel_cal_field(
-			runtime, channel, cal_field, value.u16, timeout));
+		VC_CATALOG_WRITE_RETURN(vc_status_to_reg(
+			vc_runtime_set_channel_cal_field(runtime, channel, cal_field,
+				value.u16, timeout)));
 	}
 
 	switch (field) {
@@ -382,7 +447,7 @@ static enum reg_status vc_catalog_write(const struct reg_descriptor *desc,
 		break;
 	case REG_VC_FIELD_CAL_OUTPUT_ENABLE:
 		if (value.u16 > 1U) {
-			return REG_INVALID_VALUE;
+			VC_CATALOG_WRITE_RETURN(REG_INVALID_VALUE);
 		}
 		cmd.type = VC_RUNTIME_CMD_CALIBRATION_OUTPUT_ENABLE;
 		cmd.payload.calibration_output_enable = value.u16 != 0U;
@@ -393,19 +458,19 @@ static enum reg_status vc_catalog_write(const struct reg_descriptor *desc,
 		break;
 	case REG_VC_FIELD_CAL_SAMPLE_CMD:
 		if (value.u16 == CAL_COMMAND_NONE) {
-			return REG_OK;
+			VC_CATALOG_WRITE_RETURN(REG_OK);
 		}
 		if (value.u16 != CAL_COMMAND_EXECUTE) {
-			return REG_INVALID_VALUE;
+			VC_CATALOG_WRITE_RETURN(REG_INVALID_VALUE);
 		}
 		cmd.type = VC_RUNTIME_CMD_CALIBRATION_SAMPLE;
 		break;
 	case REG_VC_FIELD_CAL_COMMIT_CMD:
 		if (value.u16 == CAL_COMMAND_NONE) {
-			return REG_OK;
+			VC_CATALOG_WRITE_RETURN(REG_OK);
 		}
 		if (value.u16 != CAL_COMMAND_EXECUTE) {
-			return REG_INVALID_VALUE;
+			VC_CATALOG_WRITE_RETURN(REG_INVALID_VALUE);
 		}
 		cmd.type = VC_RUNTIME_CMD_CALIBRATION_COMMIT;
 		break;
@@ -414,10 +479,12 @@ static enum reg_status vc_catalog_write(const struct reg_descriptor *desc,
 		cmd.payload.calibration_max_raw_dac = value.u16;
 		break;
 	default:
-		return REG_UNSUPPORTED;
+		VC_CATALOG_WRITE_RETURN(REG_UNSUPPORTED);
 	}
 
-	return vc_status_to_reg(vc_runtime_submit_command(runtime, &cmd, timeout));
+	VC_CATALOG_WRITE_RETURN(vc_status_to_reg(
+		vc_runtime_submit_command(runtime, &cmd, timeout)));
+#undef VC_CATALOG_WRITE_RETURN
 }
 
 static const struct reg_owner vc_catalog_owner = {
@@ -605,7 +672,7 @@ static void vc_runtime_worker(void *p1, void *p2, void *p3)
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
-	while (!runtime->stop_requested) {
+	while (atomic_get(&runtime->stop_requested) == 0) {
 		k_sem_take(&runtime->wake,
 			   K_MSEC(CONFIG_VC_RUNTIME_TICK_INTERVAL_MS));
 
@@ -675,29 +742,43 @@ struct vc_runtime *vc_runtime_create_static(void)
 {
 	static struct vc_runtime runtime;
 	struct vc_controller *ctrl;
+	k_tid_t tid;
 
-	memset(&runtime, 0, sizeof(runtime));
-	runtime.stop_requested = false;
-	k_mutex_init(&runtime.lock);
-	k_sem_init(&runtime.wake, 0, 1);
-
-	ctrl = vc_controller_init(runtime_wake, &runtime);
-	if (ctrl == NULL) {
+	if (!atomic_cas(&catalog_lifecycle, VC_CATALOG_STOPPED,
+			VC_CATALOG_STARTING)) {
 		return NULL;
 	}
 
-	runtime.ctrl = ctrl;
-	catalog_runtime = &runtime;
-
-	vc_runtime_auto_load(&runtime);
+	memset(&runtime, 0, sizeof(runtime));
+	atomic_clear(&runtime.stop_requested);
+	atomic_clear(&catalog_active_operations);
+	k_sem_reset(&catalog_quiesced);
+	k_mutex_init(&runtime.lock);
+	k_sem_init(&runtime.wake, 0, 1);
 	k_msgq_init(&runtime.command_queue, runtime.command_buffer,
 		     sizeof(struct vc_runtime_work_item),
 		     CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH);
 
-	(void)k_thread_create(&runtime.thread, vc_runtime_stack,
-			       K_KERNEL_STACK_SIZEOF(vc_runtime_stack),
-			       vc_runtime_worker, &runtime, NULL, NULL,
-			       CONFIG_VC_RUNTIME_THREAD_PRIORITY, 0, K_NO_WAIT);
+	ctrl = vc_controller_init(runtime_wake, &runtime);
+	if (ctrl == NULL) {
+		atomic_set(&catalog_lifecycle, VC_CATALOG_STOPPED);
+		return NULL;
+	}
+
+	runtime.ctrl = ctrl;
+	vc_runtime_auto_load(&runtime);
+
+	tid = k_thread_create(&runtime.thread, vc_runtime_stack,
+			      K_KERNEL_STACK_SIZEOF(vc_runtime_stack),
+			      vc_runtime_worker, &runtime, NULL, NULL,
+			      CONFIG_VC_RUNTIME_THREAD_PRIORITY, 0, K_FOREVER);
+	if (tid == NULL) {
+		atomic_set(&catalog_lifecycle, VC_CATALOG_STOPPED);
+		return NULL;
+	}
+	catalog_runtime = &runtime;
+	atomic_set(&catalog_lifecycle, VC_CATALOG_RUNNING);
+	k_thread_start(&runtime.thread);
 
 	return &runtime;
 }
@@ -708,9 +789,18 @@ void vc_runtime_destroy(struct vc_runtime *runtime)
 		return;
 	}
 
-	runtime->stop_requested = true;
+	if (!atomic_cas(&catalog_lifecycle, VC_CATALOG_RUNNING,
+			VC_CATALOG_STOPPING)) {
+		return;
+	}
+	if (atomic_get(&catalog_active_operations) != 0) {
+		(void)k_sem_take(&catalog_quiesced, K_FOREVER);
+	}
+	catalog_runtime = NULL;
+	atomic_set(&runtime->stop_requested, 1);
 	k_sem_give(&runtime->wake);
 	(void)k_thread_join(&runtime->thread, K_FOREVER);
+	atomic_set(&catalog_lifecycle, VC_CATALOG_STOPPED);
 }
 
 enum vc_status vc_runtime_submit_command(struct vc_runtime *runtime,
