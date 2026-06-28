@@ -1,0 +1,146 @@
+# Factory Calibration Guide — Jianwei Voltage-Control Board
+
+## Overview
+
+This guide describes the shell command sequence for factory calibration of a Jianwei voltage-control board channel. Calibration computes linear coefficients `y = x * k/10000 + b` per measurement axis (output, voltage measurement, current measurement) by collecting (DAC code, raw ADC reading) pairs and persisting them to NVS.
+
+| Coefficient | Identity | Description |
+|-------------|----------|-------------|
+| `out_cal_k` / `out_cal_b` | k=10000, b=0 | Output DAC: raw_dac = target * k/10000 + b |
+| `v_cal_k` / `v_cal_b` | k=10000, b=0 | Voltage measurement: measured = raw_adc * k/10000 + b |
+| `i_cal_k` / `i_cal_b` | k=10000, b=0 | Current measurement: measured = raw_adc * k/10000 + b |
+
+## Prerequisites
+
+- Board powered and connected via serial console (USART3, 115200 8N1)
+- Zephyr shell prompt available (`uart:~$`)
+- Calibration fixture with calibrated external DMM (for coefficient computation outside firmware)
+- Each channel calibrated independently; complete one before starting the next
+
+## Procedure
+
+### 1. Enter Calibration Mode
+
+```
+vc cal unlock
+vc mode cal
+```
+
+The two-step unlock (0xCA1B → 0xA11B) is a volatile guard against accidental entry. A 30s inactivity watchdog will auto-exit calibration mode if no commands are issued.
+
+### 2. Per-Channel Calibration
+
+Repeat the following for each channel that needs calibration.
+
+#### 2a. Set Safety DAC Ceiling
+
+```
+vc cal max_dac <ch> <limit>
+```
+
+Default is 65535 (full 16-bit range). Set lower if the calibration fixture imposes a voltage ceiling. The firmware rejects any DAC code exceeding this limit.
+
+#### 2b. Enable Calibration Output
+
+```
+vc cal output <ch> on
+```
+
+The controller enforces that only one channel has calibration output active at a time. Command fails with error if another channel is still active.
+
+#### 2c. Collect Calibration Points
+
+For each DAC code the factory tool needs:
+
+```
+vc cal dac <ch> <code>        # set raw DAC output
+vc cal sample <ch>             # capture ADC snapshot
+```
+
+The factory tool reads raw ADC values via Modbus input registers (FC04). Channel 0 example:
+
+| Register | Modbus Address (1-indexed) | 0-based Offset | Type |
+|----------|---------------------------|----------------|------|
+| `CH_RAW_ADC_VOLTAGE_HI` | 53 | ch_base + 12 | uint16 HI |
+| `CH_RAW_ADC_VOLTAGE_LO` | 54 | ch_base + 13 | uint16 LO |
+| `CH_RAW_ADC_CURRENT_HI` | 55 | ch_base + 14 | uint16 HI |
+| `CH_RAW_ADC_CURRENT_LO` | 56 | ch_base + 15 | uint16 LO |
+
+For channel `n`, the base is `40 + n × 40`. Add the offset to get the 0-based Modbus address; add 1 for the 1-indexed address used by `mbpoll`.
+
+Collect minimum 2 pairs (DAC code, raw ADC) per axis for linear fit.
+
+#### 2d. Write Calibration Coefficients
+
+After the factory tool computes k and b from the collected pairs:
+
+```
+vc cal set <ch> out_cal_k <k>
+vc cal set <ch> out_cal_b <b>
+vc cal set <ch> v_cal_k   <k>
+vc cal set <ch> v_cal_b   <b>
+vc cal set <ch> i_cal_k   <k>
+vc cal set <ch> i_cal_b   <b>
+```
+
+Verify with:
+
+```
+vc cal config <ch>
+```
+
+#### 2e. Disable Calibration Output
+
+```
+vc cal output <ch> off
+```
+
+**Required before commit.** The commit command is rejected while calibration output is enabled or the DAC code is non-zero.
+
+#### 2f. Persist Coefficients
+
+```
+vc cal commit <ch>
+```
+
+Commits calibration coefficients to NVS flash. Only coefficients are stored; raw debug state and temporary output values are discarded.
+
+### 3. Exit Calibration Mode
+
+```
+vc cal exit
+```
+
+Returns to the previous operating mode. All calibration state (`cal_unlocked`, DAC code, output enable) is cleared. Alternatively: `vc mode normal` or `vc mode auto`.
+
+## Quick Reference
+
+| Step | Command |
+|------|---------|
+| Unlock | `vc cal unlock` |
+| Enter cal mode | `vc mode cal` |
+| Set DAC ceiling | `vc cal max_dac <ch> <limit>` |
+| Enable cal output | `vc cal output <ch> on` |
+| Set DAC code | `vc cal dac <ch> <code>` |
+| Capture ADC | `vc cal sample <ch>` |
+| Set coefficient | `vc cal set <ch> <field> <v>` |
+| View coefficients | `vc cal config <ch>` |
+| Disable cal output | `vc cal output <ch> off` |
+| Commit to NVS | `vc cal commit <ch>` |
+| Exit cal mode | `vc cal exit` |
+
+**Coefficient fields:** `out_cal_k`, `out_cal_b`, `v_cal_k`, `v_cal_b`, `i_cal_k`, `i_cal_b`
+
+## Safety Rules (Enforced by Firmware)
+
+- Calibration mode requires two-step unlock before entry.
+- Only one channel may have calibration output enabled at a time.
+- Non-zero DAC code requires calibration output already enabled.
+- Commit is rejected if output is enabled or DAC code is non-zero.
+- Hard safety faults (hardware/interlock) block any non-zero calibration output.
+- 30s inactivity watchdog auto-exits calibration mode.
+- Calibration mode is volatile and cannot persist across reboot.
+
+## Sequence Diagram
+
+![Calibration Sequence](calibration-guide.png)
