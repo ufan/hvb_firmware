@@ -1,152 +1,24 @@
 @startuml
-title Provider Bus — Config Push & Measurement Feedback Flows
+title Measurement Publication and Frontend Read
 
-skinparam backgroundColor #FAFAFA
-skinparam ArrowColor #333333
-skinparam FontName Arial
-skinparam sequenceArrowThickness 2
-skinparam sequenceParticipantBorderColor #555555
-skinparam sequenceLifeLineBorderColor #999999
-skinparam sequenceGroupBorderColor #888888
-skinparam noteBackgroundColor #FFFFCC
-skinparam noteBorderColor #CCCC88
+participant "Hardware Provider" as provider
+database "Channel Measurement Buffer" as buffer
+participant "VC Worker" as worker
+database "Canonical Channel State" as state
+participant "Register Catalog" as catalog
+participant "Frontend" as frontend
 
-participant "Modbus / vc.h\nCaller" as caller #D7BDE2
-participant "Runtime Worker\nThread" as worker #A9DFBF
-participant "Domain\nState" as domain #81C784
-participant "Config Slots\n[per-ch mutex]" as slots #FAD7A0
-participant "provider_msgq\n[k_msgq]" as provQ #FAD7A0
-participant "evidence_msgq\n[k_msgq]" as evidQ #FAD7A0
-participant "Meas Buffer\n[per-ch mutex]" as mbuf #FAD7A0
-participant "HVB VC Channel\nDriver (workq)" as driver #F1948A
-participant "Hardware\nDAC/ADC/GPIO" as hw #EF9A9A
+provider -> buffer : publish voltage/current + timestamp
+provider -> worker : wake semaphore
+worker -> buffer : synchronized evidence read
+worker -> state : calibrate, protect, ramp, recover
 
-== Flow A: Config Push (Runtime → Driver → Hardware) ==
+frontend -> catalog : read measurement Semantic Register
+catalog -> state : VC owner lock + scalar read
+state --> catalog : calibrated value
+catalog --> frontend : typed value
 
-caller -> worker : vc_dispatch(cmd)\nk_msgq_put(command_queue)\nk_sem_give(wake)\n<i>blocks on result_sem</i>
-
-activate worker
-worker -> domain : dispatch_command(cmd)\ne.g. domain_set_channel_field()
-activate domain
-domain --> worker : VC_OK
-deactivate domain
-
-note over worker : publish_all_configs()\nfor each channel:
-
-worker -> domain : domain_get_runtime_config(ch)
-activate domain
-domain --> worker : vc_runtime_config_snapshot\n{version, output_enable,\nraw_output_drive, cal_mode, ...}
-deactivate domain
-
-worker -> slots : publish_config(ch, &cfg)\nk_mutex_lock → copy → unlock
-activate slots
-slots --> worker
-deactivate slots
-
-worker -> provQ : k_msgq_put(CONFIG_CHANGED\n{ch, version})
-activate provQ
-provQ --> worker
-deactivate provQ
-
-worker -> provQ : dispatch_one(K_NO_WAIT)
-activate provQ
-provQ -> provQ : k_msgq_get → msg
-provQ -> driver : notify_config_changed(dev, version)\nvia vc_provider_binding lookup
-deactivate provQ
-
-activate driver
-driver -> driver : k_work_schedule(K_NO_WAIT)\nwake work handler
-deactivate driver
-
-worker --> caller : result via *cmd.result\nk_sem_give(result_sem)
-deactivate worker
-
-note over caller : caller unblocks
-
-... driver work handler fires ...
-
-activate driver
-driver -> slots : acquire_config(ch)\nk_mutex_lock
-activate slots
-slots --> driver : const snapshot* (zero-copy)
-deactivate slots
-
-driver -> driver : version != applied?\nhvb_vc_apply_config()
-
-driver -> hw : set_enable(output_enable)
-activate hw
-hw --> driver
-deactivate hw
-
-driver -> hw : set_output(raw_output_drive)
-activate hw
-hw --> driver
-deactivate hw
-
-driver -> slots : release_config(ch)\nk_mutex_unlock
-deactivate driver
-
-== Flow B: Measurement Feedback (Driver → Runtime → Domain) ==
-
-activate driver
-note over driver : sample_rate_ms timer fires
-
-driver -> hw : adc_read(ch0) → raw_voltage
-activate hw
-hw --> driver : int32_t raw_voltage
-deactivate hw
-
-driver -> hw : adc_read(ch1) → raw_current
-activate hw
-hw --> driver : int32_t raw_current
-deactivate hw
-
-driver -> evidQ : publish_measurement(\n{channel, raw_V, raw_I,\ntimestamp_ms, present_mask,\nprovider_status})
-activate evidQ
-evidQ --> driver
-deactivate evidQ
-note over driver : reschedule work\nat sample_rate_ms
-deactivate driver
-
-... runtime worker wakes (sem or tick) ...
-
-activate worker
-worker -> evidQ : take_measurement(K_NO_WAIT)\n<i>drain loop: while OK</i>
-activate evidQ
-evidQ --> worker : vc_measurement_snapshot
-deactivate evidQ
-
-worker -> mbuf : buffer_store(ch, &meas)\nk_mutex_lock → overwrite → unlock
-activate mbuf
-mbuf --> worker
-deactivate mbuf
-
-worker -> domain : consume_measurement(&meas)
-activate domain
-note over domain
-  Apply calibration K/B:
-    measured_V = raw_V * K / 10000 + B
-    measured_I = raw_I * K / 10000 + B
-  Check provider_status for
-    INTERLOCK / APPLY_FAILED →
-    force safe state
-  Run vc_tick_protection():
-    compare vs limits →
-    set faults, apply output action
+note over frontend,state
+No dense snapshot mirror and no blocking hardware acquisition.
 end note
-domain --> worker : VC_OK
-deactivate domain
-
-worker -> domain : domain_get_runtime_config(ch)
-activate domain
-domain --> worker : updated config\n(may have changed if\nprotection triggered)
-deactivate domain
-
-worker -> slots : publish_config(ch)\n<i>if protection changed output</i>
-worker -> provQ : CONFIG_CHANGED\n<i>driver will pick up\nsafe-state on next wake</i>
-
-worker -> worker : publish_snapshot()\ncopy to published cache\ncheck stale timestamps
-
-deactivate worker
-
 @enduml

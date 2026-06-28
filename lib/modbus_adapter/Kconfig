@@ -3,7 +3,7 @@
 config UI_MODBUS_RTU
 	bool "Modbus RTU UI adapter"
 	default n
-	depends on MODBUS
+	depends on MODBUS && VC_RUNTIME && VC_CHANNEL_CONTROLLER
 	select REBOOT
 	select SYS_RESET
 	help

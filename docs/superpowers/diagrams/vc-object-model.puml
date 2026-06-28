@@ -1,203 +1,38 @@
 @startuml
-!theme plain
-title voltage_control — Object Model & Interface Duplication
+title Voltage-Control Runtime Object Model
 
-skinparam classAttributeIconSize 0
-skinparam classFontSize 11
-skinparam noteFontSize 10
-skinparam defaultFontName monospace
-left to right direction
-
-package "Facade (vc.h)" #FAFAD2 {
-  class vc_ctx <<singleton>> {
-    runtime : vc_runtime*
-  }
-
-  class vc_cmd <<value>> {
-    type : vc_cmd_type
-    channel : uint8_t
-    union { mode, action,\n  fault, field_write,\n  cal, param, meas }
-  }
-
-  class vc_query <<value>> {
-    type : vc_query_type
-    channel : uint8_t
-    out : union { snap, cfg }
-  }
+class vc_ctx <<singleton facade>> {
+  runtime : vc_runtime*
 }
 
-package "Runtime (vc_runtime.h)" #D6EAF8 {
-  class vc_runtime <<singleton>> {
-    ctrl : vc_controller*
-    lock : k_mutex
-    command_queue : k_msgq
-    wake : k_sem
-    thread : k_thread
-    published : vc_published_snapshot
-    snapshot_lock : k_mutex
-  }
-
-  class vc_runtime_command <<value>> {
-    type : vc_runtime_command_type
-    channel : uint8_t
-    payload : union { ... }
-    result_sem : k_sem*
-    result : vc_status*
-  }
-
-  class vc_published_snapshot {
-    system : vc_system_snapshot
-    channels[N] : vc_channel_snapshot
-    configs[N] : vc_channel_config
-    sys_config : vc_system_config
-  }
+class vc_runtime <<single writer>> {
+  controller : vc_controller*
+  command_queue : k_msgq
+  wake : k_sem
+  lock : k_mutex
+  lifecycle : atomic
 }
 
-package "Controller (vc_controller.h)" #D5F5E3 {
-  class vc_controller <<singleton>> {
-    channels[N] : vc_channel
-    channel_count : size_t
-    operating_mode : vc_operating_mode
-    cal_unlock_step : uint8_t
-    cal_unlocked : bool
-    storage : vc_storage_backend*
-    sys_cfg : vc_system_config
-    --
-    <color:red>channel_count()</color>
-    <color:red>channel_capabilities(ch)</color>
-  }
+class vc_controller <<canonical state>> {
+  channels[VC_MAX_CHANNELS]
+  channel_count : size_t
+  operating_mode
+  system_config
 }
 
-package "Channel State (vc_channel_state.h)" #E8DAEF {
-  class vc_channel <<embedded>> {
-    lock : k_spinlock
-    smf : smf_ctx
-    index : uint8_t
-    capabilities : uint16_t
-    config : vc_channel_config
-    .. runtime volatile ..
-    output_enabled : bool
-    ramping : bool
-    operational_target_voltage : int16_t
-    measured_voltage / current : int16_t
-    active_fault_cause : uint16_t
-    .. calibration ..
-    cal_output_enabled : uint16_t
-    raw_dac_readback : uint16_t
-    .. pending hw command ..
-    pending : vc_pending_command
-  }
-
-  class vc_pending_command <<value>> {
-    output_code : uint16_t
-    output_enable : bool
-    valid : bool
-  }
+class vc_channel <<canonical state>> {
+  config
+  calibration_config
+  measurements
+  runtime_state
+  faults
 }
 
-package "Channel Table (vc_channel_table.h)" #FCE4EC {
-  class vc_channel_table <<global array>> {
-    entries[] : vc_channel_table_entry
-    g_ctrl : vc_controller*
-    --
-    <color:red>count()</color>
-    <color:red>capabilities(ch)</color>
-    set_output(ch, code)
-    set_enable(ch, enable)
-    start/stop_sampling(ch)
-  }
+class reg_descriptor <<static>>
 
-  class vc_channel_table_entry <<DTS-composed>> {
-    dev : device*
-    index : uint8_t
-    capabilities : uint16_t
-    meas : measurement_buffer*
-  }
-
-  class vc_measurement_buffer_entry {
-    raw_voltage : int32_t
-    raw_current : int32_t
-    timestamps : uint32_t
-  }
-}
-
-package "Init-time" #F5F5F5 {
-  class vc_channel_entry <<value>> {
-    dev : device*
-    index : uint8_t
-    capabilities : uint16_t
-  }
-}
-
-package "Driver APIs" #FFF3E0 {
-  interface vc_channel_hw_api <<vtable>> {
-    set_output(dev, code)
-    set_enable(dev, enable)
-    start_sampling(dev)
-    stop_sampling(dev)
-  }
-
-  interface vc_channel_api <<vtable>> {
-    <color:blue>set_output(dev, code)</color>
-    <color:blue>set_enable(dev, enable)</color>
-    apply_config(dev, cfg)
-    start(dev) / stop(dev)
-    notify_config_changed(dev, ver)
-    measure_voltage / current(dev)
-    get_capabilities(dev)
-  }
-}
-
-' Ownership
-vc_ctx "1" *--> "1" vc_runtime : owns
-vc_runtime "1" *--> "1" vc_controller : owns
-vc_controller "1" *--> "N" vc_channel : embeds
-vc_channel "1" *--> "1" vc_pending_command : embeds
-
-' Channel table
-vc_channel_table "1" *--> "N" vc_channel_table_entry
-vc_channel_table_entry "1" --> "1" vc_measurement_buffer_entry
-vc_channel_table_entry ..> vc_channel_hw_api : calls via dev->api
-
-' Init flow
-vc_channel_entry ..> vc_channel : "copied into at init"
-vc_channel_entry ..> vc_channel_table_entry : "same fields,\nindependent copy"
-
-' Published snapshots
-vc_runtime "1" *--> "1" vc_published_snapshot
-
-' Weak link
-vc_channel_table ..> vc_controller : "g_ctrl (stored\nbut barely used)"
-
-' Command flow
-vc_cmd ..> vc_runtime_command : "vc_dispatch()\ntranslates"
-vc_runtime_command ..> vc_controller : "dispatch_command()\nroutes to"
-
-note as N1 #FFCCCC
-  **drain_pending() discards commands**
-  vc_controller calls vc_channel_take_pending_command()
-  but casts result to (void) — pending {output_code,
-  output_enable} never reaches vc_channel_table
-end note
-
-N1 .. vc_pending_command
-
-note as N2 #FFCCCC
-  **Duplicate metadata queries**
-  vc_controller_channel_count() vs vc_channel_table_count()
-  vc_controller_channel_capabilities() vs vc_channel_table_capabilities()
-  Same data, two independent paths
-end note
-
-N2 .. vc_channel_table
-
-note as N3 #FFCCCC
-  **Two driver APIs with overlapping ops**
-  vc_channel_hw_api.set_output/set_enable
-  vc_channel_api.set_output/set_enable
-  Both exist, unclear which path is canonical
-end note
-
-N3 .. vc_channel_api
-
+vc_ctx --> vc_runtime
+vc_runtime --> vc_controller
+vc_controller "1" *-- "1..16" vc_channel
+reg_descriptor --> vc_controller : global fields
+reg_descriptor --> vc_channel : channel fields
 @enduml

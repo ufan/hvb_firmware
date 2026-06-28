@@ -1,187 +1,33 @@
 @startuml
-title Voltage Control Data Model & Contracts
+title Register Catalog Contracts
 
-skinparam backgroundColor #FAFAFA
-skinparam ArrowColor #333333
-skinparam FontName Arial
-skinparam classBorderColor #555555
-skinparam packageBorderColor #888888
-
-skinparam class {
-  BackgroundColor<<config>> #A9DFBF
-  BackgroundColor<<snapshot>> #AED6F1
-  BackgroundColor<<command>> #FAD7A0
-  BackgroundColor<<bus>> #F9E79F
-  BackgroundColor<<driver>> #F1948A
-  BackgroundColor<<storage>> #D7BDE2
+class reg_id_t {
+  module : uint8_t
+  instance : uint8_t
+  field : uint16_t
 }
 
-package "Configuration (Persistent)" {
-  class vc_system_config <<config>> {
-    operating_mode : enum
-    slave_address : uint16
-    baud_rate_code : enum
-    recovery_policy_mode : enum
-    auto_retry_delay : uint16
-    auto_retry_max_count : uint16
-    auto_retry_window : uint16
-    voltage_safe_band_pct : uint16
-    current_safe_band_pct : uint16
-  }
-
-  class vc_channel_config <<config>> {
-    configured_target_voltage : int16
-    ramp_up_step / interval : uint16
-    ramp_down_step / interval : uint16
-    voltage_protection_mode : enum
-    voltage_prot_out_action : enum
-    voltage_limit_threshold : int16
-    current_protection_mode : enum
-    current_prot_out_action : enum
-    current_limit_threshold : int16
-    auto_derate_step : uint16
-    output_calib_k/b : uint16/int16
-    measured_v_calib_k/b : uint16/int16
-    measured_i_calib_k/b : uint16/int16
-  }
+class reg_descriptor {
+  id : reg_id_t
+  type : reg_type
+  access : reg_access
+  category : reg_category
+  value : void*
+  owner : reg_owner*
 }
 
-package "Host-Visible Snapshots (Read Model)" {
-  class vc_system_snapshot <<snapshot>> {
-    protocol_major/minor : uint16
-    variant_id : uint16
-    system_capability_flags : uint16
-    supported_channel_count : uint16
-    active_channel_mask : uint16
-    board_temperature : int16
-    board_humidity : uint16
-    uptime : uint32
-    active_operating_mode : enum
-    system_status : uint16
-    system_fault_cause : uint16
-  }
-
-  class vc_channel_snapshot <<snapshot>> {
-    measured_voltage/current : int16
-    operational_target_voltage : int16
-    status_bits : uint16
-    active_fault_cause : uint16
-    fault_history_cause : uint16
-    last_protection_output_action : enum
-    auto_retry_count : uint16
-    auto_cooldown_remaining : uint16
-    raw_adc_voltage/current : int32
-    cal_sample_status : enum
-    raw_dac_readback : uint16
-    channel_capability_flags : uint16
-  }
+interface reg_owner {
+  read(descriptor, value) : reg_status
+  write(descriptor, value, timeout) : reg_status
 }
 
-package "CQRS Commands (Write Path)" {
-  class vc_cmd <<command>> {
-    type : enum vc_cmd_type
-    channel : uint8
-    --
-    operating_mode : enum
-    output_action : enum
-    fault_command : enum
-    field_write : {field, value}
-    cal : vc_cal_command
-    param_action : enum
-    measurement : vc_measurement_snapshot
-  }
+class reg_handle_t <<const pointer>>
+class reg_value <<typed scalar>>
+class PresentationSnapshot <<temporary>>
 
-  class vc_query <<command>> {
-    type : enum vc_query_type
-    channel : uint8
-    --
-    out.system_snapshot : ptr
-    out.channel_snapshot : ptr
-    out.system_config : ptr
-    out.channel_config : ptr
-    out.runtime_config : ptr
-  }
-
-  class vc_runtime_command <<command>> {
-    type : enum (13 variants)
-    channel : uint8
-    payload : union
-  }
-}
-
-package "Provider Bus (Hardware Bridge)" {
-  class vc_runtime_config_snapshot <<bus>> {
-    channel : uint8
-    version : uint32
-    capability_flags : uint16
-    output_enable : bool
-    raw_output_drive : uint16
-    calibration_mode : bool
-    calibration_output_enable : bool
-    calibration_raw_output_drive : uint16
-    force_safe_state : bool
-  }
-
-  class vc_measurement_snapshot <<bus>> {
-    channel : uint8
-    generation : uint32
-    timestamp_ms : uint32
-    present_mask : uint16
-    raw_voltage : int32
-    raw_current : int32
-    provider_status : uint16
-    provider_fault_cause : uint16
-  }
-
-  class vc_provider_binding <<bus>> {
-    channel : uint8
-    dev : const device *
-    config_slot : ptr
-    route_bit : uint32
-  }
-}
-
-package "Interfaces" {
-  class vc_channel_api <<driver>> {
-    set_output(dev, code)
-    set_enable(dev, enable)
-    apply_config(dev, cfg)
-    start(dev) / stop(dev)
-    notify_config_changed(dev, ver)
-    measure_voltage(dev, *val)
-    measure_current(dev, *val)
-    get_capabilities(dev)
-  }
-
-  class vc_storage_backend <<storage>> {
-    save/load_system_config()
-    save/load_channel_config()
-    save/load_channel_cal()
-    erase_all()
-  }
-}
-
-vc_cmd ..> vc_runtime_command : "vc_dispatch()\ntranslates"
-vc_runtime_command ..> vc_system_config : "mutates"
-vc_runtime_command ..> vc_channel_config : "mutates"
-
-vc_system_config ..> vc_system_snapshot : "domain publishes"
-vc_channel_config ..> vc_channel_snapshot : "domain publishes"
-
-vc_query ..> vc_system_snapshot : "reads"
-vc_query ..> vc_channel_snapshot : "reads"
-vc_query ..> vc_system_config : "reads"
-vc_query ..> vc_channel_config : "reads"
-
-vc_channel_config ..> vc_runtime_config_snapshot : "domain derives"
-vc_runtime_config_snapshot ..> vc_channel_api : "provider applies"
-
-vc_channel_api ..> vc_measurement_snapshot : "provider produces"
-vc_measurement_snapshot ..> vc_channel_snapshot : "domain consumes\n& calibrates"
-
-vc_storage_backend ..> vc_system_config : "persists"
-vc_storage_backend ..> vc_channel_config : "persists"
-
-vc_provider_binding ..> vc_channel_api : "routes to"
-
+reg_descriptor *-- reg_id_t
+reg_descriptor --> reg_owner
+reg_handle_t --> reg_descriptor
+reg_owner --> reg_value
+PresentationSnapshot ..> reg_handle_t : assembled on demand
 @enduml

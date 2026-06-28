@@ -1,89 +1,31 @@
 @startuml
-title Domain Layer Separation: domain vs domain_state vs domain_runtime
+title Register-Catalog Layer Separation
 
-skinparam backgroundColor #FAFAFA
-skinparam ArrowColor #333333
-skinparam FontName Arial
-skinparam componentBorderColor #555555
-skinparam rectangleBorderColor #555555
-skinparam packageBorderColor #888888
-skinparam noteBorderColor #888888
-
-rectangle "vc.h / vc.c  (Thin Facade)" #E8E8E8 {
-  component "vc_init()" as vinit #D3D3D3
-  component "vc_dispatch(ctx, cmd)" as vdisp #D3D3D3
-  component "vc_query(ctx, q)" as vquery #D3D3D3
+rectangle "Frontend Adapters" {
+  component "Modbus View" as modbus
+  component "Shell" as shell
+  component "Future UI / Protocol" as future
 }
 
-rectangle "domain_runtime.c  (Threading + Queueing)" #E8F8E8 {
-  component "struct vc_runtime" as rt #A9DFBF
-  component "Worker Thread" as worker #A9DFBF
-  component "command_queue\n(k_msgq)" as cmdq #A9DFBF
-  component "runtime->lock\n(k_mutex)" as lock #A9DFBF
-  component "snapshot_lock\n(k_mutex)" as snaplock #A9DFBF
-  component "Published Snapshots\n(cached copies)" as pubsnap #AED6F1
+component "Register Catalog\nstatic iterable descriptors" as catalog
 
-  note bottom of rt
-    struct vc_runtime {
-      domain *domain;
-      k_mutex lock;
-      k_msgq command_queue;
-      k_sem wake;
-      k_thread thread;
-      published_snapshot published;
-      k_mutex snapshot_lock;
-    };
-  end note
+rectangle "State Owners" {
+  component "VC Runtime Owner" as vc
+  component "System Status Owner" as sys
+  component "Modbus Adapter Owner" as mbowner
 }
 
-rectangle "domain_state.c  (Pure State Machine)" #FFF3E0 {
-  component "struct domain" as dom #FAD7A0
-  component "Channel SMF\n(7 states x N ch)" as chsmf #FAD7A0
-  component "Domain SMF\n(3 modes)" as dsmf #FAD7A0
-  component "Ramp Engine\n(tick_ramp)" as ramp #F9E79F
-  component "Protection\n(tick_protection)" as prot #F9E79F
-  component "Recovery\n(tick_recovery)" as recov #F9E79F
-  component "Calibration\nLogic" as cal #F9E79F
+database "VC Canonical State" as vcstate
+database "Atomic System Telemetry" as sysstate
+database "Active + Next-Boot Modbus Config" as mbstate
 
-  note bottom of dom
-    struct domain {
-      vc_domain_smf_ctx smf;
-      vc_channel_entry *ch_entry;
-      size_t channel_count;
-      operating_mode;
-      vc_system_config sys_cfg;
-      vc_channel_config channels[];
-      vc_channel_snapshot snapshots[];
-      vc_channel_runtime runtime[];
-      vc_storage_backend *storage;
-    };
-  end note
-}
-
-rectangle "Provider Bus" #FFEBEE {
-  component "Config Slots\n(per-channel)" as slots #F1948A
-  component "Measurement\nBuffer" as mbuf #F1948A
-}
-
-vinit -down-> rt : creates
-vdisp -down-> cmdq : enqueue cmd\n(blocks on result_sem)
-vquery -down-> pubsnap : read cached\n(snapshot_lock)
-
-worker -down-> lock : acquire
-lock -down-> dom : domain_*() calls\n(all mutations)
-worker -right-> pubsnap : publish_snapshot()\n(snapshot_lock)
-worker -down-> slots : publish_config()
-
-dom -down-> chsmf : owns
-dom -down-> dsmf : owns
-dom -right-> ramp : process_periodic()
-dom -right-> prot
-dom -right-> recov
-dom -right-> cal
-
-mbuf -up-> worker : take_measurement()
-worker -down-> dom : consume_measurement()\n(under lock)
-
-slots -[hidden]down-> mbuf
-
+modbus --> catalog : descriptor handles
+shell --> catalog : semantic IDs
+future --> catalog : generated view
+catalog --> vc : owner callback
+catalog --> sys : owner callback
+catalog --> mbowner : owner callback
+vc --> vcstate
+sys --> sysstate
+mbowner --> mbstate
 @enduml

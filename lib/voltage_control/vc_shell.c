@@ -412,7 +412,7 @@ static int lookup_field(const struct shell *sh, const char *name,
 }
 
 /* ------------------------------------------------------------------ */
-/* Dispatch helper                                                     */
+/* Register write helpers                                              */
 /* ------------------------------------------------------------------ */
 
 static reg_id_t channel_config_id(uint8_t ch, enum vc_config_field field)
@@ -466,88 +466,12 @@ static reg_id_t cal_config_id(uint8_t ch, enum vc_cal_field field)
 	}
 }
 
-static int dispatch_timeout(const struct shell *sh, struct vc_cmd cmd,
-			    k_timeout_t timeout)
+static int write_register(const struct shell *sh, reg_id_t id, uint16_t input,
+			  k_timeout_t timeout)
 {
-	reg_id_t id = 0U;
-	union reg_value value = {};
-
-	switch (cmd.type) {
-	case VC_CMD_SET_OPERATING_MODE:
-		id = REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE);
-		value.u16 = (uint16_t)cmd.operating_mode;
-		break;
-	case VC_CMD_OUTPUT_ACTION:
-		id = REG_VC_ID(cmd.channel, REG_VC_FIELD_OUTPUT_ACTION);
-		value.u16 = (uint16_t)cmd.output_action;
-		break;
-	case VC_CMD_FAULT_COMMAND:
-		id = REG_VC_ID(cmd.channel, REG_VC_FIELD_FAULT_CMD);
-		value.u16 = (uint16_t)cmd.fault_command;
-		break;
-	case VC_CMD_SET_SYSTEM_FIELD:
-		id = cmd.field_write.field == VC_FIELD_OPERATING_MODE
-			? REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE)
-			: REG_VC_GLOBAL_ID(
-				REG_VC_GLOBAL_FIELD_STARTUP_CHANNEL_POLICY);
-		value.u16 = cmd.field_write.value;
-		break;
-	case VC_CMD_SET_CHANNEL_FIELD:
-		id = channel_config_id(cmd.channel, cmd.field_write.field);
-		value.u16 = cmd.field_write.value;
-		break;
-	case VC_CMD_SET_CHANNEL_CAL_FIELD:
-		id = cal_config_id(cmd.channel, cmd.cal_field_write.field);
-		value.u16 = cmd.cal_field_write.value;
-		break;
-	case VC_CMD_SYSTEM_PARAM_ACTION:
-		id = REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_PARAM_ACTION);
-		value.u16 = (uint16_t)cmd.param_action;
-		break;
-	case VC_CMD_CHANNEL_PARAM_ACTION:
-		id = REG_VC_ID(cmd.channel, REG_VC_FIELD_PARAM_ACTION);
-		value.u16 = (uint16_t)cmd.param_action;
-		break;
-	case VC_CMD_CALIBRATION:
-		switch (cmd.cal.action) {
-		case VC_CAL_UNLOCK:
-			id = REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK);
-			value.u16 = cmd.cal.value;
-			break;
-		case VC_CAL_EXIT:
-			id = REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_EXIT);
-			value.u16 = 1U;
-			break;
-		case VC_CAL_SET_OUTPUT_ENABLE:
-			id = REG_VC_ID(cmd.cal.channel,
-					   REG_VC_FIELD_CAL_OUTPUT_ENABLE);
-			value.u16 = cmd.cal.enable ? 1U : 0U;
-			break;
-		case VC_CAL_SET_RAW_DAC:
-			id = REG_VC_ID(cmd.cal.channel, REG_VC_FIELD_CAL_DAC_CODE);
-			value.u16 = cmd.cal.value;
-			break;
-		case VC_CAL_SAMPLE:
-			id = REG_VC_ID(cmd.cal.channel, REG_VC_FIELD_CAL_SAMPLE_CMD);
-			value.u16 = CAL_COMMAND_EXECUTE;
-			break;
-		case VC_CAL_COMMIT:
-			id = REG_VC_ID(cmd.cal.channel, REG_VC_FIELD_CAL_COMMIT_CMD);
-			value.u16 = CAL_COMMAND_EXECUTE;
-			break;
-		case VC_CAL_SET_MAX_RAW_DAC:
-			id = REG_VC_ID(cmd.cal.channel,
-					   REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT);
-			value.u16 = cmd.cal.value;
-			break;
-		default: break;
-		}
-		break;
-	default: break;
-	}
-
-	enum reg_status status = id == 0U
-		? REG_INVALID_ARGUMENT : reg_write(id, value, timeout);
+	union reg_value value = { .u16 = input };
+	enum reg_status status = id == 0U ? REG_INVALID_ARGUMENT
+					       : reg_write(id, value, timeout);
 
 	if (status != REG_OK) {
 		shell_error(sh, "error: %d", status);
@@ -556,14 +480,14 @@ static int dispatch_timeout(const struct shell *sh, struct vc_cmd cmd,
 	return 0;
 }
 
-static int dispatch(const struct shell *sh, struct vc_cmd cmd)
+static int write_command(const struct shell *sh, reg_id_t id, uint16_t input)
 {
-	return dispatch_timeout(sh, cmd, SHELL_CMD_TIMEOUT);
+	return write_register(sh, id, input, SHELL_CMD_TIMEOUT);
 }
 
-static int dispatch_param(const struct shell *sh, struct vc_cmd cmd)
+static int write_param(const struct shell *sh, reg_id_t id, uint16_t input)
 {
-	return dispatch_timeout(sh, cmd, SHELL_PARAM_TIMEOUT);
+	return write_register(sh, id, input, SHELL_PARAM_TIMEOUT);
 }
 
 /* ------------------------------------------------------------------ */
@@ -700,7 +624,9 @@ static int cmd_mode(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "usage: vc mode <normal|auto|cal>");
 		return -EINVAL;
 	}
-	return dispatch(sh, vc_cmd_set_mode(m));
+	return write_command(sh,
+		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE),
+		(uint16_t)m);
 }
 
 static int cmd_param(const struct shell *sh, size_t argc, char **argv)
@@ -715,7 +641,9 @@ static int cmd_param(const struct shell *sh, size_t argc, char **argv)
 		return -EINVAL;
 	}
 
-	int ret = dispatch_param(sh, vc_cmd_sys_param(action));
+	int ret = write_param(sh,
+		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_PARAM_ACTION),
+		(uint16_t)action);
 
 	if (ret) {
 		return ret;
@@ -727,7 +655,8 @@ static int cmd_param(const struct shell *sh, size_t argc, char **argv)
 		return -EIO;
 	}
 	for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
-		ret = dispatch_param(sh, vc_cmd_ch_param(i, action));
+		ret = write_param(sh, REG_VC_ID(i, REG_VC_FIELD_PARAM_ACTION),
+				  (uint16_t)action);
 		if (ret) {
 			return ret;
 		}
@@ -793,7 +722,9 @@ static int cmd_sys_param(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "usage: vc sys param <save|load|reset>");
 		return -EINVAL;
 	}
-	int ret = dispatch_param(sh, vc_cmd_sys_param(action));
+	int ret = write_param(sh,
+		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_PARAM_ACTION),
+		(uint16_t)action);
 
 	if (ret == 0) {
 		shell_print(sh, "OK");
@@ -814,7 +745,11 @@ static int cmd_sys_set(const struct shell *sh, size_t argc, char **argv)
 	}
 	uint16_t value = (uint16_t)strtoul(argv[2], NULL, 0);
 
-	return dispatch(sh, vc_cmd_sys_field(field, value));
+	reg_id_t id = field == VC_FIELD_OPERATING_MODE
+		? REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE)
+		: REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_STARTUP_CHANNEL_POLICY);
+
+	return write_command(sh, id, value);
 }
 
 /* ------------------------------------------------------------------ */
@@ -891,7 +826,8 @@ static int cmd_ch(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	if (strcmp(sub, "enable") == 0) {
-		return dispatch(sh, vc_cmd_output(ch, VC_OUTPUT_ACTION_ENABLE));
+		return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_ACTION),
+				     VC_OUTPUT_ACTION_ENABLE);
 	}
 
 	if (strcmp(sub, "disable") == 0) {
@@ -900,7 +836,8 @@ static int cmd_ch(const struct shell *sh, size_t argc, char **argv)
 		if (argc > 3 && strcmp(argv[3], "graceful") == 0) {
 			action = VC_OUTPUT_ACTION_DISABLE_GRACEFUL;
 		}
-		return dispatch(sh, vc_cmd_output(ch, action));
+		return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_ACTION),
+				     (uint16_t)action);
 	}
 
 	if (strcmp(sub, "target") == 0) {
@@ -910,10 +847,8 @@ static int cmd_ch(const struct shell *sh, size_t argc, char **argv)
 		}
 		uint16_t v = (uint16_t)strtoul(argv[3], NULL, 0);
 
-		return dispatch(sh,
-				vc_cmd_ch_field(ch,
-						VC_FIELD_CONFIGURED_TARGET_VOLTAGE,
-						v));
+		return write_command(sh,
+			REG_VC_ID(ch, REG_VC_FIELD_CFG_TARGET_VOLTAGE), v);
 	}
 
 	if (strcmp(sub, "set") == 0) {
@@ -929,7 +864,7 @@ static int cmd_ch(const struct shell *sh, size_t argc, char **argv)
 		}
 		uint16_t value = (uint16_t)strtoul(argv[4], NULL, 0);
 
-		return dispatch(sh, vc_cmd_ch_field(ch, field, value));
+		return write_command(sh, channel_config_id(ch, field), value);
 	}
 
 	if (strcmp(sub, "fault") == 0) {
@@ -943,7 +878,8 @@ static int cmd_ch(const struct shell *sh, size_t argc, char **argv)
 			shell_error(sh, "expected: clear, clear-history");
 			return -EINVAL;
 		}
-		return dispatch(sh, vc_cmd_fault(ch, cmd));
+		return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_FAULT_CMD),
+				     (uint16_t)cmd);
 	}
 
 	if (strcmp(sub, "param") == 0) {
@@ -957,7 +893,8 @@ static int cmd_ch(const struct shell *sh, size_t argc, char **argv)
 			shell_error(sh, "expected: save, load, reset");
 			return -EINVAL;
 		}
-		int ret = dispatch_param(sh, vc_cmd_ch_param(ch, action));
+		int ret = write_param(sh, REG_VC_ID(ch, REG_VC_FIELD_PARAM_ACTION),
+				      (uint16_t)action);
 
 		if (ret == 0) {
 			shell_print(sh, "OK");
@@ -980,12 +917,16 @@ static int cmd_cal_unlock(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argv);
 	CTX_CHECK(sh);
 
-	int ret = dispatch(sh, vc_cmd_cal_unlock(CAL_UNLOCK_STEP1));
+	int ret = write_command(sh,
+		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK),
+		CAL_UNLOCK_STEP1);
 
 	if (ret) {
 		return ret;
 	}
-	ret = dispatch(sh, vc_cmd_cal_unlock(CAL_UNLOCK_STEP2));
+	ret = write_command(sh,
+		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK),
+		CAL_UNLOCK_STEP2);
 	if (ret == 0) {
 		shell_print(sh, "calibration unlocked");
 	}
@@ -998,7 +939,8 @@ static int cmd_cal_exit(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argv);
 	CTX_CHECK(sh);
 
-	int ret = dispatch(sh, vc_cmd_cal_exit());
+	int ret = write_command(sh,
+		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_EXIT), 1U);
 
 	if (ret == 0) {
 		shell_print(sh, "exited calibration mode");
@@ -1027,7 +969,8 @@ static int cmd_cal_output(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "expected: on, off");
 		return -EINVAL;
 	}
-	return dispatch(sh, vc_cmd_cal_output(ch, enable));
+	return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_OUTPUT_ENABLE),
+			     enable ? 1U : 0U);
 }
 
 static int cmd_cal_dac(const struct shell *sh, size_t argc, char **argv)
@@ -1042,7 +985,7 @@ static int cmd_cal_dac(const struct shell *sh, size_t argc, char **argv)
 	}
 	uint16_t code = (uint16_t)strtoul(argv[2], NULL, 0);
 
-	return dispatch(sh, vc_cmd_cal_dac(ch, code));
+	return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_DAC_CODE), code);
 }
 
 static int cmd_cal_sample(const struct shell *sh, size_t argc, char **argv)
@@ -1055,7 +998,8 @@ static int cmd_cal_sample(const struct shell *sh, size_t argc, char **argv)
 	if (parse_channel(sh, argv[1], &ch) < 0) {
 		return -EINVAL;
 	}
-	return dispatch(sh, vc_cmd_cal_sample(ch));
+	return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_SAMPLE_CMD),
+			     CAL_COMMAND_EXECUTE);
 }
 
 static int cmd_cal_commit(const struct shell *sh, size_t argc, char **argv)
@@ -1068,7 +1012,8 @@ static int cmd_cal_commit(const struct shell *sh, size_t argc, char **argv)
 	if (parse_channel(sh, argv[1], &ch) < 0) {
 		return -EINVAL;
 	}
-	return dispatch(sh, vc_cmd_cal_commit(ch));
+	return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_COMMIT_CMD),
+			     CAL_COMMAND_EXECUTE);
 }
 
 static int cmd_cal_max_dac(const struct shell *sh, size_t argc, char **argv)
@@ -1083,7 +1028,8 @@ static int cmd_cal_max_dac(const struct shell *sh, size_t argc, char **argv)
 	}
 	uint16_t limit = (uint16_t)strtoul(argv[2], NULL, 0);
 
-	return dispatch(sh, vc_cmd_cal_max_dac(ch, limit));
+	return write_command(sh,
+		REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT), limit);
 }
 
 static int cmd_cal_config(const struct shell *sh, size_t argc, char **argv)
@@ -1132,7 +1078,8 @@ static int cmd_cal_set(const struct shell *sh, size_t argc, char **argv)
 		return -EINVAL;
 	}
 
-	return dispatch(sh, vc_cmd_cal_set_field(ch, field, (uint16_t)(int16_t)val));
+	return write_command(sh, cal_config_id(ch, field),
+			     (uint16_t)(int16_t)val);
 }
 
 /* ------------------------------------------------------------------ */
