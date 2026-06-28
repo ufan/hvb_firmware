@@ -1098,6 +1098,43 @@ static int cmd_cal_set(const struct shell *sh, size_t argc, char **argv)
 			     (uint16_t)(int16_t)val);
 }
 
+static int cmd_cal_status(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	CTX_CHECK(sh);
+
+	struct vc_system_snapshot sys;
+
+	if (read_system_snapshot(&sys) < 0) {
+		return -EIO;
+	}
+	shell_print(sh, "Cal status  mode=%s", mode_str(sys.active_operating_mode));
+	for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
+		struct vc_channel_snapshot snap;
+
+		if (read_channel_snapshot(i, &snap) < 0) {
+			return -EIO;
+		}
+		shell_fprintf(sh, SHELL_NORMAL, "  CH%d:", i);
+		if (snap.channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
+			shell_fprintf(sh, SHELL_NORMAL, " out=%s dac=%u",
+				      snap.cal_output_enabled ? "ON" : "OFF",
+				      snap.raw_dac_readback);
+		}
+		if (snap.channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
+			shell_fprintf(sh, SHELL_NORMAL, " raw_v=%d",
+				      snap.raw_adc_voltage);
+		}
+		if (snap.channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
+			shell_fprintf(sh, SHELL_NORMAL, " raw_i=%d",
+				      snap.raw_adc_current);
+		}
+		shell_fprintf(sh, SHELL_NORMAL, "\n");
+	}
+	return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* Watch mode                                                          */
 /* ------------------------------------------------------------------ */
@@ -1192,6 +1229,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_cal,
 	SHELL_CMD_ARG(max_dac, NULL, "Set max DAC limit <ch> <limit>", cmd_cal_max_dac, 3, 0),
 	SHELL_CMD_ARG(config, NULL, "Show cal config <ch>", cmd_cal_config, 2, 0),
 	SHELL_CMD_ARG(set, NULL, "Set cal field <ch> <field> <value>", cmd_cal_set, 4, 0),
+	SHELL_CMD(status, NULL, "Cal session status (all channels)", cmd_cal_status),
 	SHELL_SUBCMD_SET_END
 );
 

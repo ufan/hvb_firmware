@@ -122,6 +122,25 @@ ZTEST(vc_shell, test_cal_set_max_dac_field)
 	k_msleep(50);
 }
 
+ZTEST(vc_shell, test_cal_status_shows_channel_state)
+{
+	const struct shell *sh = shell_backend_dummy_get_ptr();
+	const char *output;
+	size_t size;
+
+	(void)shell_execute_cmd(sh, "vc cal unlock");
+	k_msleep(50);
+	shell_backend_dummy_clear_output(sh);
+	zassert_equal(shell_execute_cmd(sh, "vc cal status"), 0);
+	k_msleep(50);
+	output = shell_backend_dummy_get_output(sh, &size);
+	zassert_not_null(strstr(output, "CH0"), "missing CH0: %s", output);
+	zassert_not_null(strstr(output, "dac="), "missing dac field: %s", output);
+
+	(void)shell_execute_cmd(sh, "vc cal exit");
+	k_msleep(50);
+}
+
 ZTEST(vc_shell, test_mode_cal_is_rejected)
 {
 	expect_command_result("vc mode cal", -EINVAL);
