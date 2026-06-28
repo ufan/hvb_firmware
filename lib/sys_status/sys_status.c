@@ -41,13 +41,13 @@ static enum reg_status sys_status_reg_read(const struct reg_descriptor *desc,
 					   union reg_value *value)
 {
 	switch (REG_ID_FIELD(desc->id)) {
-	case REG_SYS_FIELD_UPTIME:
+	case REG_SYS_STATUS_FIELD_UPTIME:
 		value->u32 = (uint32_t)(k_uptime_get() / 1000);
 		return REG_OK;
-	case REG_SYS_FIELD_BOARD_TEMPERATURE:
+	case REG_SYS_STATUS_FIELD_BOARD_TEMPERATURE:
 		value->s16 = (int16_t)atomic_get(&env_temperature);
 		return REG_OK;
-	case REG_SYS_FIELD_BOARD_HUMIDITY:
+	case REG_SYS_STATUS_FIELD_BOARD_HUMIDITY:
 		value->u16 = (uint16_t)atomic_get(&env_humidity);
 		return REG_OK;
 	default:
@@ -60,16 +60,16 @@ static const struct reg_owner sys_status_reg_owner = {
 };
 
 REG_DESCRIPTOR_DEFINE(sys_status_temperature_reg,
-	REG_SYS_ID(REG_SYS_FIELD_BOARD_TEMPERATURE),
+	REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_TEMPERATURE),
 	REG_S16, REG_RO, REG_MEASUREMENT_RAW, NULL, &sys_status_reg_owner);
 REG_DESCRIPTOR_DEFINE(sys_status_humidity_reg,
-	REG_SYS_ID(REG_SYS_FIELD_BOARD_HUMIDITY),
+	REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_HUMIDITY),
 	REG_U16, REG_RO, REG_MEASUREMENT_RAW, NULL, &sys_status_reg_owner);
 REG_DESCRIPTOR_DEFINE(sys_status_uptime_reg,
-	REG_SYS_ID(REG_SYS_FIELD_UPTIME),
+	REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_UPTIME),
 	REG_U32, REG_RO, REG_RUNTIME_STATE, NULL, &sys_status_reg_owner);
 REG_DESCRIPTOR_DEFINE(sys_status_firmware_version_reg,
-	REG_SYS_ID(REG_SYS_FIELD_FW_VERSION),
+	REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_FW_VERSION),
 	REG_U32, REG_RO, REG_FIXED, &firmware_version, NULL);
 
 static K_KERNEL_STACK_DEFINE(sys_status_stack,
@@ -137,17 +137,6 @@ static void sys_status_worker(void *p1, void *p2, void *p3)
 			read_environment();
 		}
 	}
-}
-
-struct sys_status_snapshot sys_status_get(void)
-{
-	return (struct sys_status_snapshot){
-		.board_temperature = (int16_t)atomic_get(&env_temperature),
-		.board_humidity = (uint16_t)atomic_get(&env_humidity),
-		.uptime = (uint32_t)(k_uptime_get() / 1000),
-		.fw_version_high = SYS_STATUS_FW_VERSION_HIGH,
-		.fw_version_low = SYS_STATUS_FW_VERSION_LOW,
-	};
 }
 
 /* SHT31 warm-reset workaround: force sensor out of periodic mode. */

@@ -9,16 +9,6 @@
 
 #include <stdint.h>
 
-struct sys_status_snapshot {
-	int16_t board_temperature;
-	uint16_t board_humidity;
-	uint32_t uptime;
-	uint16_t fw_version_high;
-	uint16_t fw_version_low;
-};
-
-struct sys_status_snapshot sys_status_get(void);
-
 int sys_status_request_reset(void);
 void sys_status_platform_reset(void);
 

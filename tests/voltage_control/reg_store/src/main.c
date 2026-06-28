@@ -55,15 +55,34 @@ ZTEST(reg_store, test_structured_register_id)
 
 ZTEST(reg_store, test_semantic_ids_are_protocol_neutral_and_stable)
 {
-	zassert_equal(REG_ID_MODULE(REG_SYS_PROTOCOL_MAJOR_ID), REG_MODULE_SYSTEM);
-	zassert_equal(REG_ID_INSTANCE(REG_SYS_PROTOCOL_MAJOR_ID), 0U);
-	zassert_equal(REG_ID_FIELD(REG_SYS_PROTOCOL_MAJOR_ID),
-		      REG_SYS_FIELD_PROTOCOL_MAJOR);
+	zassert_not_equal(REG_MODULE_SYSTEM_STATUS,
+			  REG_MODULE_MODBUS_ADAPTER);
+	zassert_not_equal(REG_MODULE_SYSTEM_STATUS,
+			  REG_MODULE_VOLTAGE_CONTROL);
+	zassert_equal(REG_ID_MODULE(REG_MODBUS_PROTOCOL_MAJOR_ID),
+		      REG_MODULE_MODBUS_ADAPTER);
+	zassert_equal(REG_ID_MODULE(REG_SYS_STATUS_UPTIME_ID),
+		      REG_MODULE_SYSTEM_STATUS);
+	zassert_equal(REG_ID_INSTANCE(REG_VC_GLOBAL_SUPPORTED_CHANNELS_ID),
+		      REG_GLOBAL_INSTANCE);
 	zassert_equal(REG_ID_MODULE(REG_VC_STATUS_BITS_ID(15)),
 		      REG_MODULE_VOLTAGE_CONTROL);
 	zassert_equal(REG_ID_INSTANCE(REG_VC_STATUS_BITS_ID(15)), 15U);
 	zassert_equal(REG_ID_FIELD(REG_VC_STATUS_BITS_ID(15)),
 		      REG_VC_FIELD_STATUS_BITS);
+}
+
+ZTEST(reg_store, test_descriptor_handle_avoids_id_lookup_at_access_time)
+{
+	reg_handle_t handle = reg_describe(REG_ID(1, 0, 2));
+	union reg_value value = {};
+
+	zassert_not_null(handle);
+	zassert_equal(reg_handle_read(handle, &value), REG_OK);
+	zassert_equal(value.u16, mutable_value);
+	value.u16 = 23U;
+	zassert_equal(reg_handle_write(handle, value, K_NO_WAIT), REG_OK);
+	zassert_equal(mutable_value, 23U);
 }
 
 ZTEST(reg_store, test_modbus_v3_view_keeps_fixed_wire_layout)

@@ -38,14 +38,25 @@ ZTEST(ss_shell, test_system_status_is_exposed_through_catalog)
 {
 	union reg_value value = {};
 
-	zassert_equal(reg_read(REG_SYS_ID(REG_SYS_FIELD_FW_VERSION), &value),
+	zassert_equal(reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_FW_VERSION), &value),
 		      REG_OK);
 	zassert_equal(value.u32, 1U);
-	zassert_equal(reg_read(REG_SYS_ID(REG_SYS_FIELD_UPTIME), &value), REG_OK);
-	zassert_equal(reg_read(REG_SYS_ID(REG_SYS_FIELD_BOARD_TEMPERATURE),
+	zassert_equal(reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_UPTIME), &value), REG_OK);
+	zassert_equal(reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_TEMPERATURE),
 			       &value), REG_OK);
-	zassert_equal(reg_read(REG_SYS_ID(REG_SYS_FIELD_BOARD_HUMIDITY),
+	zassert_equal(reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_HUMIDITY),
 			       &value), REG_OK);
+}
+
+ZTEST(ss_shell, test_reset_is_routed_through_catalog)
+{
+	union reg_value value = { .u16 = 1U };
+
+	k_sem_init(&reset_called, 0, 1);
+	zassert_equal(reg_write(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_RESET),
+				value, K_NO_WAIT), REG_OK);
+	zassert_equal(k_sem_take(&reset_called, K_NO_WAIT), -EBUSY);
+	zassert_equal(k_sem_take(&reset_called, K_MSEC(100)), 0);
 }
 
 ZTEST(ss_shell, test_reset_is_acknowledged_before_execution)

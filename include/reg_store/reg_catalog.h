@@ -67,6 +67,7 @@ union reg_value {
 };
 
 struct reg_descriptor;
+typedef const struct reg_descriptor *reg_handle_t;
 
 struct reg_owner {
 	enum reg_status (*read)(const struct reg_descriptor *desc,
@@ -105,5 +106,18 @@ enum reg_status reg_write_descriptor(const struct reg_descriptor *desc,
 enum reg_status reg_read(reg_id_t id, union reg_value *out);
 enum reg_status reg_write(reg_id_t id, union reg_value value,
 			  k_timeout_t timeout);
+
+static inline enum reg_status reg_handle_read(reg_handle_t handle,
+					       union reg_value *out)
+{
+	return reg_read_descriptor(handle, out);
+}
+
+static inline enum reg_status reg_handle_write(reg_handle_t handle,
+						union reg_value value,
+						k_timeout_t timeout)
+{
+	return reg_write_descriptor(handle, value, timeout);
+}
 
 #endif /* REG_STORE_REG_CATALOG_H */
