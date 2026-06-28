@@ -107,7 +107,7 @@ struct vc_query_msg {
 	} out;
 };
 
-/* Read published state (snapshot or config) from the runtime; non-blocking. */
+/* Read canonical state, optionally assembled into a presentation snapshot. */
 enum vc_status vc_query(struct vc_ctx *ctx, struct vc_query_msg q);
 
 /* ------------------------------------------------------------------ */

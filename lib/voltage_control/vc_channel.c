@@ -333,16 +333,21 @@ void vc_channel_init(struct vc_channel *ch,
 }
 
 void vc_channel_run(struct vc_channel *ch, uint32_t dt_ms,
-		    const struct vc_system_config *sys_cfg)
+			    const struct vc_system_config *sys_cfg)
 {
 	if (ch->meas != NULL) {
-		if (ch->meas->voltage_timestamp_ms != ch->last_consumed_voltage_ts) {
-			vc_channel_consume_voltage(ch, ch->meas->raw_voltage);
-			ch->last_consumed_voltage_ts = ch->meas->voltage_timestamp_ms;
+		int32_t raw_voltage, raw_current;
+		uint32_t voltage_ts, current_ts;
+
+		vc_channel_buffer_read(ch->meas, &raw_voltage, &voltage_ts,
+				       &raw_current, &current_ts);
+		if (voltage_ts != ch->last_consumed_voltage_ts) {
+			vc_channel_consume_voltage(ch, raw_voltage);
+			ch->last_consumed_voltage_ts = voltage_ts;
 		}
-		if (ch->meas->current_timestamp_ms != ch->last_consumed_current_ts) {
-			vc_channel_consume_current(ch, ch->meas->raw_current);
-			ch->last_consumed_current_ts = ch->meas->current_timestamp_ms;
+		if (current_ts != ch->last_consumed_current_ts) {
+			vc_channel_consume_current(ch, raw_current);
+			ch->last_consumed_current_ts = current_ts;
 		}
 	}
 

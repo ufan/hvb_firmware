@@ -1,0 +1,21 @@
+#include <dt-bindings/voltage_control/capabilities.h>
+
+#define FULL_CAPS (CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE | \
+		   CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)
+
+&vc_controller {
+	channel@2 { compatible = "jianwei,vc-channel-stub"; reg = <2>; label = "CH2"; capabilities = <FULL_CAPS>; };
+	channel@3 { compatible = "jianwei,vc-channel-stub"; reg = <3>; label = "CH3"; capabilities = <FULL_CAPS>; };
+	channel@4 { compatible = "jianwei,vc-channel-stub"; reg = <4>; label = "CH4"; capabilities = <FULL_CAPS>; };
+	channel@5 { compatible = "jianwei,vc-channel-stub"; reg = <5>; label = "CH5"; capabilities = <FULL_CAPS>; };
+	channel@6 { compatible = "jianwei,vc-channel-stub"; reg = <6>; label = "CH6"; capabilities = <FULL_CAPS>; };
+	channel@7 { compatible = "jianwei,vc-channel-stub"; reg = <7>; label = "CH7"; capabilities = <FULL_CAPS>; };
+	channel@8 { compatible = "jianwei,vc-channel-stub"; reg = <8>; label = "CH8"; capabilities = <FULL_CAPS>; };
+	channel@9 { compatible = "jianwei,vc-channel-stub"; reg = <9>; label = "CH9"; capabilities = <FULL_CAPS>; };
+	channel@10 { compatible = "jianwei,vc-channel-stub"; reg = <10>; label = "CH10"; capabilities = <FULL_CAPS>; };
+	channel@11 { compatible = "jianwei,vc-channel-stub"; reg = <11>; label = "CH11"; capabilities = <FULL_CAPS>; };
+	channel@12 { compatible = "jianwei,vc-channel-stub"; reg = <12>; label = "CH12"; capabilities = <FULL_CAPS>; };
+	channel@13 { compatible = "jianwei,vc-channel-stub"; reg = <13>; label = "CH13"; capabilities = <FULL_CAPS>; };
+	channel@14 { compatible = "jianwei,vc-channel-stub"; reg = <14>; label = "CH14"; capabilities = <FULL_CAPS>; };
+	channel@15 { compatible = "jianwei,vc-channel-stub"; reg = <15>; label = "CH15"; capabilities = <FULL_CAPS>; };
+};

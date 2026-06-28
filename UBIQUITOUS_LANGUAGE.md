@@ -21,7 +21,10 @@
 | **Frontend Adapter** | A user- or host-facing adapter that submits commands to and reads snapshots from the Domain Runtime Library. | Direct channel-service access |
 | **Runtime Config Snapshot** | A complete versioned runtime intent published by the Domain Runtime Library for Virtual Channel Providers to apply. | Partial config update when crossing the domain/channel boundary |
 | **Measurement Snapshot** | Raw hardware evidence published by a Virtual Channel Provider, including publication generation and measurement timestamp concepts. It is already-published evidence, not a blocking request to acquire new hardware data. | Domain snapshot when the data has not yet been interpreted by product policy |
-| **Domain Snapshot** | The host-visible product read model produced by the Domain Runtime Library after applying calibration, freshness, protection, recovery, and status policy. | Raw measurement snapshot |
+| **Semantic Register** | A protocol-neutral, typed, externally meaningful value or operation identified by module, instance, and field. | A Modbus wire address or an arbitrary private field |
+| **Register Catalog** | The firmware-wide static catalog that describes Semantic Registers and routes reads and owner-mediated writes to canonical module state. | A copied Modbus holding/input array |
+| **Register View** | An adapter-specific mapping from external addresses or controls to Semantic Registers, such as the Modbus v3 map. | Canonical product state |
+| **Presentation Snapshot** | An aggregate assembled on demand for display or compatibility. It is not canonical storage and does not promise one generation across all fields. | A periodically copied read model |
 
 ## Voltage control state
 
@@ -78,7 +81,8 @@
 - A **Protocol Adapter** translates frontend-specific representations into domain operations without owning product behavior.
 - A **Frontend Adapter** uses the **Domain Runtime Library** and must not call a **Virtual Channel Provider** directly.
 - A **Virtual Voltage Channel** advertises **Channel Capabilities** to the **Domain Runtime Library**.
-- A **Measurement Snapshot** is raw evidence from a **Virtual Channel Provider**; a **Domain Snapshot** is product state derived by the **Domain Runtime Library**.
+- A **Measurement Snapshot** is raw evidence from a **Virtual Channel Provider**; calibrated and policy-derived values are separate **Semantic Registers** owned by the Domain Runtime Library.
+- Frontend Adapters access externally meaningful state through the **Register Catalog** and implement protocol-specific **Register Views**.
 - A **Runtime Config Snapshot** is published as a complete versioned intent, not as partial field updates.
 
 ## Example dialogue
@@ -109,11 +113,11 @@
 
 > **Dev:** "Can the embedded shell sample a **Virtual Voltage Channel** directly for debugging?"
 
-> **Domain expert:** "No. The shell is a **Frontend Adapter**. It reads a **Domain Snapshot** or submits a domain command; only the **Domain Runtime Library** talks to **Virtual Channel Providers**."
+> **Domain expert:** "No. The shell is a **Frontend Adapter**. It reads **Semantic Registers** or writes commands through the **Register Catalog**; only the **Domain Runtime Library** talks to **Virtual Channel Providers**."
 
-> **Dev:** "Why do we keep both **Measurement Snapshot** and **Domain Snapshot**?"
+> **Dev:** "Why keep a **Measurement Snapshot** when measurements are exposed through the **Register Catalog**?"
 
-> **Domain expert:** "A **Measurement Snapshot** is raw evidence with generation and timestamp. A **Domain Snapshot** is calibrated product state after freshness, protection, and recovery policy have been applied."
+> **Domain expert:** "A **Measurement Snapshot** is raw evidence with generation and timestamp. Calibrated product values are separate **Semantic Registers** owned by the Domain Runtime Library after policy has been applied."
 
 ## Flagged ambiguities
 
@@ -127,5 +131,5 @@
 - "Password" or "login" were used for the unlock sequence; use **Calibration Unlock** since the guard is not cryptographic authentication but a two-step accidental-entry barrier. The unlock is volatile and self-clearing.
 - "Channel save" was used for persisting coefficients; use **Calibration Commit** when the intent is specifically to persist calibration coefficients, not general channel configuration.
 - "Channel service" was overloaded between product policy and board hardware abstraction; use **Domain Runtime Library** for policy and **Virtual Voltage Channel** or **Virtual Channel Provider** for the board-implemented channel boundary.
-- "Snapshot" was ambiguous; use **Measurement Snapshot** for raw channel evidence and **Domain Snapshot** for host-visible product state.
+- "Snapshot" was ambiguous; use **Measurement Snapshot** for raw channel evidence and **Presentation Snapshot** only for an on-demand aggregate.
 - "Frontend" should refer to user/host interaction surfaces; use **Frontend Adapter** for Modbus, shell, future CAN/TCP/IP, or local display/buttons.

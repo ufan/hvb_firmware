@@ -6,7 +6,9 @@
 
 #include "modbus_register.h"
 #include "voltage_control/vc.h"
-#include "reg_store/reg_store.h"
+#include "reg_store/reg_catalog.h"
+#include "reg_store/reg_map.h"
+#include "reg_store/reg_schema.h"
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -120,39 +122,200 @@ static bool ch_holding_supported(uint16_t caps, uint16_t off)
 }
 
 /* ------------------------------------------------------------------ */
-/* Register-to-field mapping tables                                    */
+/* Generated wire views                                                 */
 /* ------------------------------------------------------------------ */
 
-static const enum vc_config_field sys_reg_to_field[] = {
-	[SYS_OPERATING_MODE]         = VC_FIELD_OPERATING_MODE,
-	[SYS_STARTUP_CHANNEL_POLICY] = VC_FIELD_STARTUP_CHANNEL_POLICY,
+struct wire_reg {
+	reg_id_t id;
+	uint8_t word;
 };
 
-static const enum vc_config_field ch_reg_to_field[] = {
-	[CH_CFG_TARGET_VOLTAGE]      = VC_FIELD_CONFIGURED_TARGET_VOLTAGE,
-	[CH_RAMP_UP_STEP]            = VC_FIELD_RAMP_UP_STEP,
-	[CH_RAMP_UP_INTERVAL]        = VC_FIELD_RAMP_UP_INTERVAL,
-	[CH_RAMP_DOWN_STEP]          = VC_FIELD_RAMP_DOWN_STEP,
-	[CH_RAMP_DOWN_INTERVAL]      = VC_FIELD_RAMP_DOWN_INTERVAL,
-	[CH_RECOVERY_POLICY_MODE]    = VC_FIELD_RECOVERY_POLICY_MODE,
-	[CH_AUTO_RETRY_DELAY]        = VC_FIELD_AUTO_RETRY_DELAY,
-	[CH_AUTO_RETRY_MAX_COUNT]    = VC_FIELD_AUTO_RETRY_MAX_COUNT,
-	[CH_AUTO_RETRY_WINDOW]       = VC_FIELD_AUTO_RETRY_WINDOW,
-	[CH_CURRENT_SAFE_BAND_PCT]   = VC_FIELD_CURRENT_SAFE_BAND_PCT,
-	[CH_CURRENT_PROTECTION_MODE] = VC_FIELD_CURRENT_PROTECTION_MODE,
-	[CH_CURRENT_PROT_OUT_ACTION] = VC_FIELD_CURRENT_PROT_OUT_ACTION,
-	[CH_CURRENT_LIMIT_THRESHOLD] = VC_FIELD_CURRENT_LIMIT_THRESHOLD,
-	[CH_AUTO_DERATE_STEP]        = VC_FIELD_AUTO_DERATE_STEP,
-};
+static struct {
+	reg_id_t id;
+	uint32_t value;
+	bool valid;
+} word_latch;
 
-static const enum vc_cal_field ch_reg_to_cal_field[] = {
-	[CH_OUTPUT_CAL_K]     = VC_CAL_FIELD_OUTPUT_K,
-	[CH_OUTPUT_CAL_B]     = VC_CAL_FIELD_OUTPUT_B,
-	[CH_MEASURED_V_CAL_K] = VC_CAL_FIELD_MEASURED_V_K,
-	[CH_MEASURED_V_CAL_B] = VC_CAL_FIELD_MEASURED_V_B,
-	[CH_MEASURED_I_CAL_K] = VC_CAL_FIELD_MEASURED_I_K,
-	[CH_MEASURED_I_CAL_B] = VC_CAL_FIELD_MEASURED_I_B,
+#define SYS_INPUT_16(name, field, offset) \
+	[offset] = { REG_SYS_ID(REG_SYS_FIELD_##name), 0 },
+#define SYS_INPUT_32(name, field, offset) \
+	[offset] = { REG_SYS_ID(REG_SYS_FIELD_##name), 0 }, \
+	[(offset) + 1] = { REG_SYS_ID(REG_SYS_FIELD_##name), 1 },
+#define SYS_HOLDING_16(name, field, offset)
+#define SYS_HOLDING_32(name, field, offset)
+#define SYS_REG16(name, field, type, access, category, bank, offset) \
+	SYS_##bank##_16(name, field, offset)
+#define SYS_REG32(name, field, type, access, category, bank, offset) \
+	SYS_##bank##_32(name, field, offset)
+static const struct wire_reg sys_input_view[CH_BLOCK_SIZE] = {
+#include "reg_store/system_regs.def"
 };
+#undef SYS_REG16
+#undef SYS_REG32
+#undef SYS_INPUT_16
+#undef SYS_INPUT_32
+#undef SYS_HOLDING_16
+#undef SYS_HOLDING_32
+
+#define SYS_INPUT_16(name, field, offset)
+#define SYS_INPUT_32(name, field, offset)
+#define SYS_HOLDING_16(name, field, offset) \
+	[offset] = { REG_SYS_ID(REG_SYS_FIELD_##name), 0 },
+#define SYS_HOLDING_32(name, field, offset) \
+	[offset] = { REG_SYS_ID(REG_SYS_FIELD_##name), 0 }, \
+	[(offset) + 1] = { REG_SYS_ID(REG_SYS_FIELD_##name), 1 },
+#define SYS_REG16(name, field, type, access, category, bank, offset) \
+	SYS_##bank##_16(name, field, offset)
+#define SYS_REG32(name, field, type, access, category, bank, offset) \
+	SYS_##bank##_32(name, field, offset)
+static const struct wire_reg sys_holding_view[CH_BLOCK_SIZE] = {
+#include "reg_store/system_regs.def"
+};
+#undef SYS_REG16
+#undef SYS_REG32
+#undef SYS_INPUT_16
+#undef SYS_INPUT_32
+#undef SYS_HOLDING_16
+#undef SYS_HOLDING_32
+
+#define VC_INPUT_16(name, field, offset) \
+	[offset] = { REG_VC_FIELD_##name, 0 },
+#define VC_INPUT_32(name, field, offset) \
+	[offset] = { REG_VC_FIELD_##name, 0 }, \
+	[(offset) + 1] = { REG_VC_FIELD_##name, 1 },
+#define VC_HOLDING_16(name, field, offset)
+#define VC_HOLDING_32(name, field, offset)
+#define VC_REG16(name, field, type, access, category, bank, offset) \
+	VC_##bank##_16(name, field, offset)
+#define VC_REG32(name, field, type, access, category, bank, offset) \
+	VC_##bank##_32(name, field, offset)
+static const struct wire_reg ch_input_view[CH_BLOCK_SIZE] = {
+#include "reg_store/vc_regs.def"
+};
+#undef VC_REG16
+#undef VC_REG32
+#undef VC_INPUT_16
+#undef VC_INPUT_32
+#undef VC_HOLDING_16
+#undef VC_HOLDING_32
+
+#define VC_INPUT_16(name, field, offset)
+#define VC_INPUT_32(name, field, offset)
+#define VC_HOLDING_16(name, field, offset) \
+	[offset] = { REG_VC_FIELD_##name, 0 },
+#define VC_HOLDING_32(name, field, offset) \
+	[offset] = { REG_VC_FIELD_##name, 0 }, \
+	[(offset) + 1] = { REG_VC_FIELD_##name, 1 },
+#define VC_REG16(name, field, type, access, category, bank, offset) \
+	VC_##bank##_16(name, field, offset)
+#define VC_REG32(name, field, type, access, category, bank, offset) \
+	VC_##bank##_32(name, field, offset)
+static const struct wire_reg ch_holding_view[CH_BLOCK_SIZE] = {
+#include "reg_store/vc_regs.def"
+};
+#undef VC_REG16
+#undef VC_REG32
+#undef VC_INPUT_16
+#undef VC_INPUT_32
+#undef VC_HOLDING_16
+#undef VC_HOLDING_32
+
+static enum vc_status catalog_status(enum reg_status status)
+{
+	switch (status) {
+	case REG_OK: return VC_OK;
+	case REG_NOT_FOUND:
+	case REG_UNSUPPORTED: return VC_ERR_UNSUPPORTED_CAPABILITY;
+	case REG_INVALID_VALUE: return VC_ERR_INVALID_VALUE;
+	case REG_IO_ERROR: return VC_ERR_STORAGE;
+	case REG_READ_ONLY:
+	case REG_WRITE_ONLY: return VC_ERR_INVALID_COMMAND;
+	default: return VC_ERR_UNSAFE_STATE;
+	}
+}
+
+static enum vc_status read_wire(const struct wire_reg *wire, uint8_t ch,
+				bool channel, uint16_t *reg)
+{
+	const struct reg_descriptor *desc;
+	union reg_value value = {};
+	reg_id_t id;
+	enum reg_status status;
+	uint32_t raw;
+
+	if (wire->id == 0U) {
+		*reg = 0U;
+		return VC_OK;
+	}
+	id = channel ? REG_VC_ID(ch, wire->id) : wire->id;
+	desc = reg_describe(id);
+	if (desc == NULL) {
+		return VC_ERR_UNSUPPORTED_CAPABILITY;
+	}
+	if ((desc->type == REG_S32 || desc->type == REG_U32) &&
+	    wire->word == 1U && word_latch.valid && word_latch.id == id) {
+		*reg = (uint16_t)word_latch.value;
+		word_latch.valid = false;
+		return VC_OK;
+	}
+	status = reg_read_descriptor(desc, &value);
+	if (status != REG_OK) {
+		return catalog_status(status);
+	}
+
+	switch (desc->type) {
+	case REG_S16:
+		word_latch.valid = false;
+		*reg = (uint16_t)value.s16;
+		return VC_OK;
+	case REG_U16:
+	case REG_ENUM:
+		word_latch.valid = false;
+		*reg = value.u16;
+		return VC_OK;
+	case REG_BOOL:
+		word_latch.valid = false;
+		*reg = value.boolean ? 1U : 0U;
+		return VC_OK;
+	case REG_S32: raw = (uint32_t)value.s32; break;
+	case REG_U32: raw = value.u32; break;
+	default: return VC_ERR_INVALID_VALUE;
+	}
+	if (wire->word == 0U) {
+		word_latch.id = id;
+		word_latch.value = raw;
+		word_latch.valid = true;
+		*reg = (uint16_t)(raw >> 16);
+	} else {
+		word_latch.valid = false;
+		*reg = (uint16_t)raw;
+	}
+	return VC_OK;
+}
+
+static enum vc_status write_wire(const struct wire_reg *wire, uint8_t ch,
+				 bool channel, uint16_t reg,
+				 k_timeout_t timeout)
+{
+	const struct reg_descriptor *desc;
+	union reg_value value = {};
+	reg_id_t id;
+
+	if (wire->id == 0U) {
+		return VC_ERR_INVALID_VALUE;
+	}
+	id = channel ? REG_VC_ID(ch, wire->id) : wire->id;
+	desc = reg_describe(id);
+	if (desc == NULL) {
+		return VC_ERR_UNSUPPORTED_CAPABILITY;
+	}
+	if (desc->type == REG_S16) {
+		value.s16 = (int16_t)reg;
+	} else {
+		value.u16 = reg;
+	}
+	return catalog_status(reg_write_descriptor(desc, value, timeout));
+}
 
 /* ------------------------------------------------------------------ */
 /* System register read/write                                          */
@@ -163,8 +326,7 @@ enum vc_status vc_reg_read_sys_input(uint16_t off, uint16_t *reg)
 	if (off >= CH_BLOCK_SIZE) {
 		return VC_ERR_INVALID_VALUE;
 	}
-	reg_store_read_input(SYS_BLOCK_BASE + off, reg);
-	return VC_OK;
+	return read_wire(&sys_input_view[off], 0, false, reg);
 }
 
 enum vc_status vc_reg_read_sys_holding(uint16_t off, uint16_t *reg)
@@ -172,26 +334,17 @@ enum vc_status vc_reg_read_sys_holding(uint16_t off, uint16_t *reg)
 	if (off >= CH_BLOCK_SIZE) {
 		return VC_ERR_INVALID_VALUE;
 	}
-	reg_store_read_holding(SYS_BLOCK_BASE + off, reg);
-	return VC_OK;
+	return read_wire(&sys_holding_view[off], 0, false, reg);
 }
 
 enum vc_status vc_reg_write_sys_holding(struct vc_ctx *ctx, uint16_t off,
 					uint16_t val, k_timeout_t timeout)
 {
-	if (off == SYS_PARAM_ACTION) {
-		return vc_dispatch(ctx, vc_cmd_sys_param((enum vc_param_action)val),
-				   timeout);
-	}
-	if (off > SYS_STARTUP_CHANNEL_POLICY) {
+	ARG_UNUSED(ctx);
+	if (off >= CH_BLOCK_SIZE) {
 		return VC_ERR_INVALID_VALUE;
 	}
-	enum vc_status st = vc_dispatch(ctx,
-		vc_cmd_sys_field(sys_reg_to_field[off], val), timeout);
-	if (st == VC_OK) {
-		reg_store_write_holding(SYS_BLOCK_BASE + off, val);
-	}
-	return st;
+	return write_wire(&sys_holding_view[off], 0, false, val, timeout);
 }
 
 /* ------------------------------------------------------------------ */
@@ -204,24 +357,23 @@ enum vc_status vc_reg_read_ch_input(uint8_t ch, uint16_t off, uint16_t *reg)
 	uint16_t caps = 0;
 	uint16_t mode = 0;
 
-	reg_store_read_input(SYS_BLOCK_BASE + SYS_SUPPORTED_CHANNELS, &count);
+	(void)read_wire(&sys_input_view[SYS_SUPPORTED_CHANNELS], 0, false, &count);
 	if (ch >= count) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
 	if (off >= CH_BLOCK_SIZE) {
 		return VC_ERR_INVALID_VALUE;
 	}
-	reg_store_read_input(CH_BLOCK_BASE(ch) + CH_CAPABILITY_FLAGS, &caps);
+	(void)read_wire(&ch_input_view[CH_CAPABILITY_FLAGS], ch, true, &caps);
 	if (!ch_input_supported(caps, off)) {
 		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
-	reg_store_read_input(SYS_BLOCK_BASE + SYS_ACTIVE_OPERATING_MODE, &mode);
+	(void)read_wire(&sys_input_view[SYS_ACTIVE_OPERATING_MODE], 0, false, &mode);
 	if (is_ch_cal_input_reg(off) &&
 	    (enum vc_operating_mode)mode != VC_OPERATING_MODE_CALIBRATION) {
 		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
-	reg_store_read_input(CH_BLOCK_BASE(ch) + off, reg);
-	return VC_OK;
+	return read_wire(&ch_input_view[off], ch, true, reg);
 }
 
 enum vc_status vc_reg_read_ch_holding(uint8_t ch, uint16_t off, uint16_t *reg)
@@ -229,19 +381,18 @@ enum vc_status vc_reg_read_ch_holding(uint8_t ch, uint16_t off, uint16_t *reg)
 	uint16_t count = 0;
 	uint16_t caps = 0;
 
-	reg_store_read_input(SYS_BLOCK_BASE + SYS_SUPPORTED_CHANNELS, &count);
+	(void)read_wire(&sys_input_view[SYS_SUPPORTED_CHANNELS], 0, false, &count);
 	if (ch >= count) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
 	if (off >= CH_BLOCK_SIZE) {
 		return VC_ERR_INVALID_VALUE;
 	}
-	reg_store_read_input(CH_BLOCK_BASE(ch) + CH_CAPABILITY_FLAGS, &caps);
+	(void)read_wire(&ch_input_view[CH_CAPABILITY_FLAGS], ch, true, &caps);
 	if (!ch_holding_supported(caps, off)) {
 		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
-	reg_store_read_holding(CH_BLOCK_BASE(ch) + off, reg);
-	return VC_OK;
+	return read_wire(&ch_holding_view[off], ch, true, reg);
 }
 
 enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
@@ -252,62 +403,45 @@ enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 	uint16_t caps = 0;
 	uint16_t mode = 0;
 
-	reg_store_read_input(SYS_BLOCK_BASE + SYS_SUPPORTED_CHANNELS, &count);
+	ARG_UNUSED(ctx);
+	(void)read_wire(&sys_input_view[SYS_SUPPORTED_CHANNELS], 0, false, &count);
 	if (ch >= count) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;
 	}
-	reg_store_read_input(CH_BLOCK_BASE(ch) + CH_CAPABILITY_FLAGS, &caps);
+	(void)read_wire(&ch_input_view[CH_CAPABILITY_FLAGS], ch, true, &caps);
 	if (!ch_holding_supported(caps, off)) {
 		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
 
 	switch (off) {
 	case CH_OUTPUT_ACTION:
-		return vc_dispatch(ctx,
-			vc_cmd_output(ch, (enum vc_output_action)val), timeout);
+		return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 	case CH_FAULT_CMD:
-		return vc_dispatch(ctx,
-			vc_cmd_fault(ch, (enum vc_channel_fault_command)val), timeout);
+		return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 	case CH_PARAM_ACTION:
-		return vc_dispatch(ctx,
-			vc_cmd_ch_param(ch, (enum vc_param_action)val), timeout);
+		return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 	default:
 		break;
 	}
 
-	reg_store_read_input(SYS_BLOCK_BASE + SYS_ACTIVE_OPERATING_MODE, &mode);
+	(void)read_wire(&sys_input_view[SYS_ACTIVE_OPERATING_MODE], 0, false, &mode);
 
 	if (is_ch_calibration_coefficient_reg(off)) {
-		enum vc_status st = vc_dispatch(ctx,
-			vc_cmd_cal_set_field(ch, ch_reg_to_cal_field[off], val),
-			timeout);
-		if (st == VC_OK) {
-			reg_store_write_holding(CH_BLOCK_BASE(ch) + off, val);
-		}
-		return st;
+		return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 	}
 
 	if (is_ch_cal_holding_reg(off)) {
 		if ((enum vc_operating_mode)mode != VC_OPERATING_MODE_CALIBRATION) {
 			return VC_ERR_UNSUPPORTED_CAPABILITY;
 		}
-		enum vc_status st;
 		switch (off) {
 		case CH_CAL_OUTPUT_ENABLE:
 			if (val > 1) {
 				return VC_ERR_INVALID_VALUE;
 			}
-			st = vc_dispatch(ctx, vc_cmd_cal_output(ch, val != 0), timeout);
-			if (st == VC_OK) {
-				reg_store_write_holding(CH_BLOCK_BASE(ch) + off, val);
-			}
-			return st;
+			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 		case CH_CAL_DAC_CODE:
-			st = vc_dispatch(ctx, vc_cmd_cal_dac(ch, val), timeout);
-			if (st == VC_OK) {
-				reg_store_write_holding(CH_BLOCK_BASE(ch) + off, val);
-			}
-			return st;
+			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 		case CH_CAL_SAMPLE_CMD:
 			if (val == CAL_COMMAND_NONE) {
 				return VC_OK;
@@ -315,7 +449,7 @@ enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 			if (val != CAL_COMMAND_EXECUTE) {
 				return VC_ERR_INVALID_VALUE;
 			}
-			return vc_dispatch(ctx, vc_cmd_cal_sample(ch), timeout);
+			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 		case CH_CAL_COMMIT_CMD:
 			if (val == CAL_COMMAND_NONE) {
 				return VC_OK;
@@ -323,28 +457,18 @@ enum vc_status vc_reg_write_ch_holding(struct vc_ctx *ctx, uint8_t ch,
 			if (val != CAL_COMMAND_EXECUTE) {
 				return VC_ERR_INVALID_VALUE;
 			}
-			return vc_dispatch(ctx, vc_cmd_cal_commit(ch), timeout);
+			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 		case CH_CAL_MAX_RAW_DAC_LIMIT:
-			st = vc_dispatch(ctx, vc_cmd_cal_max_dac(ch, val), timeout);
-			if (st == VC_OK) {
-				reg_store_write_holding(CH_BLOCK_BASE(ch) + off, val);
-			}
-			return st;
+			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 		default:
 			return VC_ERR_UNSUPPORTED_CAPABILITY;
 		}
 	}
 
-	if (off >= ARRAY_SIZE(ch_reg_to_field)) {
+	if (off >= ARRAY_SIZE(ch_holding_view)) {
 		return VC_ERR_INVALID_VALUE;
 	}
-
-	enum vc_status st = vc_dispatch(ctx,
-		vc_cmd_ch_field(ch, ch_reg_to_field[off], val), timeout);
-	if (st == VC_OK) {
-		reg_store_write_holding(CH_BLOCK_BASE(ch) + off, val);
-	}
-	return st;
+	return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 }
 
 /* ------------------------------------------------------------------ */
