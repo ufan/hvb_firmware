@@ -25,14 +25,13 @@ CH0: V=0 I=0 target=5000 fault=none
 CH1: V=0 I=0 target=0 fault=none
 ```
 
-### `vc mode <normal|auto|cal>`
+### `vc mode <normal|auto>`
 
-Set the operating mode. For calibration mode, must first run `vc cal unlock`.
+Set the operating mode. Calibration mode is entered exclusively via `vc cal unlock` (not via `vc mode`).
 
 ```
 vc mode normal
 vc mode auto
-vc mode cal
 ```
 
 ### `vc param <save|load|reset>`
@@ -224,10 +223,23 @@ vc ch 0 set derate_step  500    # mV per derate
 
 ### `vc cal unlock`
 
-Two-step calibration unlock (0xCA1B → 0xA11B). Volatile, self-clears on mode change.
+Two-step calibration unlock (0xCA1B → 0xA11B) followed immediately by mode transition into calibration mode. Prints a session guide on success. The unlock flag self-clears once calibration mode is active.
 
 ```
 vc cal unlock
+```
+
+Example output:
+```
+Calibration session started.
+  vc cal status              -- session overview
+  vc cal max_dac <ch> <lim>  -- set safety DAC cap first
+  vc cal output <ch> on      -- enable output
+  vc cal dac <ch> <code>     -- set raw DAC code
+  vc cal sample <ch>         -- read raw ADC (blocking)
+  vc cal set <ch> <fld> <v>  -- adjust cal coefficients
+  vc cal commit <ch>         -- save to NVS
+  vc cal exit                -- end session
 ```
 
 ### `vc cal exit`
@@ -258,10 +270,18 @@ vc cal dac 0 0
 
 ### `vc cal sample <ch>`
 
-Trigger an ADC sample capture. Raw ADC values available via Modbus input registers `CH_RAW_ADC_VOLTAGE` (offset 12–13) and `CH_RAW_ADC_CURRENT` (offset 14–15).
+Trigger an ADC sample capture (blocking). Waits for the snapshot to complete, then prints `dac=`, `raw_v=`, and `raw_i=` values directly in the shell. Raw ADC values are also available via Modbus input registers `CH_RAW_ADC_VOLTAGE` (offset 12–13) and `CH_RAW_ADC_CURRENT` (offset 14–15).
 
 ```
 vc cal sample 0
+```
+
+Example output:
+```
+  dac=1000
+  raw_v=1023
+  raw_i=0
+hint: vc cal set 0 <field> <val>  or  vc cal commit 0
 ```
 
 ### `vc cal max_dac <ch> <limit>`
@@ -296,6 +316,7 @@ Set a calibration coefficient field. Only writable in calibration mode. Availabl
 | `v_cal_b` | Voltage measurement offset | |
 | `i_cal_k` | Current measurement gain | Measured = raw_adc × k/10000 + b |
 | `i_cal_b` | Current measurement offset | |
+| `max_dac` | Safety DAC ceiling (uint16) | Same as `vc cal max_dac <ch> <limit>` |
 
 ```
 vc cal set 0 out_cal_k 10000
@@ -304,6 +325,27 @@ vc cal set 0 v_cal_k   10000
 vc cal set 0 v_cal_b   0
 vc cal set 0 i_cal_k   10000
 vc cal set 0 i_cal_b   0
+```
+
+### `vc cal status`
+
+Show the current calibration session state for all channels: active mode, per-channel output enabled flag, raw DAC readback, and raw ADC values.
+
+```
+uart:~$ vc cal status
+Cal status  mode=CAL
+  CH0: out=ON dac=1000 raw_v=1023 raw_i=0
+  CH1: out=OFF dac=0 raw_v=0 raw_i=0
+```
+
+### `vc cal watch [<ch>] [<interval_ms>]`
+
+Continuous raw DAC/ADC monitor. Default interval is 1000 ms. Prints one line per channel per tick. Press any key to stop.
+
+```
+vc cal watch            # watch all channels, 1s interval
+vc cal watch 0          # watch channel 0, 1s interval
+vc cal watch 0 500      # watch channel 0, 500ms interval
 ```
 
 ### `vc cal commit <ch>`
@@ -468,7 +510,7 @@ Capabilities shown as comma-separated letters:
 
 ## Safety Notes
 
-- `vc mode cal` requires prior `vc cal unlock`; 30s inactivity watchdog auto-exits.
+- `vc cal unlock` performs unlock and mode entry in one step; `vc mode cal` is not a valid path. 30s inactivity watchdog auto-exits calibration mode.
 - `vc cal output on` only one channel at a time; cross-channel enforced by controller.
 - `vc cal dac` with non-zero code requires cal output enabled.
 - `vc cal commit` rejected while cal output enabled or DAC code non-zero.

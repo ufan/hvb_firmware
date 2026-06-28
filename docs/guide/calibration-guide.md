@@ -23,10 +23,9 @@ This guide describes the shell command sequence for factory calibration of a Jia
 
 ```
 vc cal unlock
-vc mode cal
 ```
 
-The two-step unlock (0xCA1B → 0xA11B) is a volatile guard against accidental entry. A 30s inactivity watchdog will auto-exit calibration mode if no commands are issued.
+This single command performs the two-step unlock (0xCA1B → 0xA11B) and immediately enters calibration mode. A session guide is printed on success. A 30s inactivity watchdog will auto-exit calibration mode if no commands are issued.
 
 ### 2. Per-Channel Calibration
 
@@ -54,10 +53,10 @@ For each DAC code the factory tool needs:
 
 ```
 vc cal dac <ch> <code>        # set raw DAC output
-vc cal sample <ch>             # capture ADC snapshot
+vc cal sample <ch>             # capture ADC snapshot (blocking — prints dac/raw_v/raw_i)
 ```
 
-The factory tool reads raw ADC values via Modbus input registers (FC04). Channel 0 example:
+`vc cal sample` blocks until the snapshot is ready and prints the raw values directly. The factory tool can also read raw ADC values via Modbus input registers (FC04). Channel 0 example:
 
 | Register | Modbus Address (1-indexed) | 0-based Offset | Type |
 |----------|---------------------------|----------------|------|
@@ -117,12 +116,13 @@ Returns to the previous operating mode. All calibration state (`cal_unlocked`, D
 
 | Step | Command |
 |------|---------|
-| Unlock | `vc cal unlock` |
-| Enter cal mode | `vc mode cal` |
-| Set DAC ceiling | `vc cal max_dac <ch> <limit>` |
+| Unlock + enter cal mode | `vc cal unlock` |
+| Session overview | `vc cal status` |
+| Set DAC ceiling | `vc cal max_dac <ch> <limit>` (or `vc cal set <ch> max_dac <limit>`) |
 | Enable cal output | `vc cal output <ch> on` |
 | Set DAC code | `vc cal dac <ch> <code>` |
-| Capture ADC | `vc cal sample <ch>` |
+| Capture ADC (blocking) | `vc cal sample <ch>` |
+| Monitor raw DAC/ADC | `vc cal watch [<ch>] [<interval_ms>]` |
 | Set coefficient | `vc cal set <ch> <field> <v>` |
 | View coefficients | `vc cal config <ch>` |
 | Disable cal output | `vc cal output <ch> off` |
