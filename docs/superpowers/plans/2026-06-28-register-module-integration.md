@@ -92,5 +92,12 @@
 - [x] Migrate the VC shell and application initialization to catalog-backed module services.
 - [x] Repair the simulator against current DTS/provider APIs and remove stale legacy symbols.
 - [x] Update terminology and architecture documentation, then search for all removed APIs.
-- [ ] Run final Twister, architecture checks, host-tool tests, clean product and simulator builds, and `git diff --check`.
-- [ ] Compare map files with baseline, document the delta, and commit the completed integration.
+- [x] Run final Twister, architecture checks, host-tool tests, clean product and simulator builds, and `git diff --check`.
+- [x] Compare map files with baseline, document the delta, and commit the completed integration.
+
+### Final verification
+
+- Twister: 11 configurations, 215 test cases, all passed.
+- Host protocol tests: 44 test cases and 162 assertions, all passed.
+- Architecture check, clean `hvb_controller` build, clean `modbus_sim` build, and `git diff --check`: passed.
+- Product image versus the prior local baseline: text +4,976 bytes, initialized data +48 bytes, BSS -979 bytes.
