@@ -67,10 +67,20 @@ static int read_system_snapshot(struct vc_system_snapshot *s)
 static int read_channel_snapshot(uint8_t ch, struct vc_channel_snapshot *s)
 {
 	memset(s, 0, sizeof(*s));
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_VOLTAGE),
-		 s->measured_voltage, s16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_CURRENT),
-		 s->measured_current, s16);
+	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAPABILITY_FLAGS),
+			 s->channel_capability_flags, u16);
+	if (s->channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_VOLTAGE),
+				 s->measured_voltage, s16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAW_ADC_VOLTAGE),
+				 s->raw_adc_voltage, s32);
+	}
+	if (s->channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_CURRENT),
+				 s->measured_current, s16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAW_ADC_CURRENT),
+				 s->raw_adc_current, s32);
+	}
 	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OPER_TARGET_VOLTAGE),
 		 s->operational_target_voltage, s16);
 	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_STATUS_BITS), s->status_bits, u16);
@@ -86,18 +96,14 @@ static int read_channel_snapshot(uint8_t ch, struct vc_channel_snapshot *s)
 		 s->auto_cooldown_remaining, u16);
 	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_LAST_FAULT_TIMESTAMP),
 		 s->last_fault_timestamp, u32);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAPABILITY_FLAGS),
-		 s->channel_capability_flags, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAW_ADC_VOLTAGE),
-		 s->raw_adc_voltage, s32);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAW_ADC_CURRENT),
-		 s->raw_adc_current, s32);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_DAC_CODE),
-		 s->raw_dac_readback, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_OUTPUT_ENABLE),
-		 s->cal_output_enabled, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT),
-		 s->cal_max_raw_dac_limit, u16);
+	if (s->channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_DAC_CODE),
+				 s->raw_dac_readback, u16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_OUTPUT_ENABLE),
+				 s->cal_output_enabled, u16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT),
+				 s->cal_max_raw_dac_limit, u16);
+	}
 	return 0;
 }
 
@@ -111,17 +117,28 @@ static int read_system_config(struct vc_system_config *c)
 	return 0;
 }
 
-static int read_channel_config(uint8_t ch, struct vc_channel_config *c)
+static int read_channel_config(uint8_t ch, struct vc_channel_config *c,
+			       uint16_t *caps)
 {
+	union reg_value value = {};
+
 	memset(c, 0, sizeof(*c));
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CFG_TARGET_VOLTAGE),
-		 c->configured_target_voltage, s16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_UP_STEP), c->ramp_up_step, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_UP_INTERVAL),
-		 c->ramp_up_interval, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_DOWN_STEP), c->ramp_down_step, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_DOWN_INTERVAL),
-		 c->ramp_down_interval, u16);
+	if (reg_read(REG_VC_ID(ch, REG_VC_FIELD_CAPABILITY_FLAGS), &value) != REG_OK) {
+		return -EIO;
+	}
+	*caps = value.u16;
+	if (*caps & CH_CAP_RAW_OUTPUT_DRIVE) {
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CFG_TARGET_VOLTAGE),
+				 c->configured_target_voltage, s16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_UP_STEP),
+				 c->ramp_up_step, u16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_UP_INTERVAL),
+				 c->ramp_up_interval, u16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_DOWN_STEP),
+				 c->ramp_down_step, u16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_DOWN_INTERVAL),
+				 c->ramp_down_interval, u16);
+	}
 	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RECOVERY_POLICY_MODE),
 		 c->recovery_policy_mode, u16);
 	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_AUTO_RETRY_DELAY),
@@ -132,30 +149,50 @@ static int read_channel_config(uint8_t ch, struct vc_channel_config *c)
 		 c->auto_retry_window, u16);
 	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CURRENT_SAFE_BAND_PCT),
 		 c->current_safe_band_pct, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CURRENT_PROTECTION_MODE),
-		 c->current_protection_mode, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CURRENT_PROT_OUT_ACTION),
-		 c->current_protection_output_action, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CURRENT_LIMIT_THRESHOLD),
-		 c->current_limit_threshold, s16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_AUTO_DERATE_STEP),
-		 c->auto_derate_step, u16);
+	if (*caps & CH_CAP_CURRENT_MEASUREMENT) {
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CURRENT_PROTECTION_MODE),
+				 c->current_protection_mode, u16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CURRENT_PROT_OUT_ACTION),
+				 c->current_protection_output_action, u16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CURRENT_LIMIT_THRESHOLD),
+				 c->current_limit_threshold, s16);
+	}
+	if ((*caps & (CH_CAP_RAW_OUTPUT_DRIVE | CH_CAP_VOLTAGE_MEASUREMENT)) ==
+	    (CH_CAP_RAW_OUTPUT_DRIVE | CH_CAP_VOLTAGE_MEASUREMENT)) {
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_AUTO_DERATE_STEP),
+				 c->auto_derate_step, u16);
+	}
 	return 0;
 }
 
-static int read_cal_config(uint8_t ch, struct vc_channel_cal_config *c)
+static int read_cal_config(uint8_t ch, struct vc_channel_cal_config *c,
+			   uint16_t *caps)
 {
+	union reg_value value = {};
+
 	memset(c, 0, sizeof(*c));
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_K), c->output_calib_k, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_B), c->output_calib_b, s16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_K),
-		 c->measured_voltage_calib_k, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_B),
-		 c->measured_voltage_calib_b, s16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_K),
-		 c->measured_current_calib_k, u16);
-	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_B),
-		 c->measured_current_calib_b, s16);
+	if (reg_read(REG_VC_ID(ch, REG_VC_FIELD_CAPABILITY_FLAGS), &value) != REG_OK) {
+		return -EIO;
+	}
+	*caps = value.u16;
+	if (*caps & CH_CAP_RAW_OUTPUT_DRIVE) {
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_K),
+				 c->output_calib_k, u16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_B),
+				 c->output_calib_b, s16);
+	}
+	if (*caps & CH_CAP_VOLTAGE_MEASUREMENT) {
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_K),
+				 c->measured_voltage_calib_k, u16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_B),
+				 c->measured_voltage_calib_b, s16);
+	}
+	if (*caps & CH_CAP_CURRENT_MEASUREMENT) {
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_K),
+				 c->measured_current_calib_k, u16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_B),
+				 c->measured_current_calib_b, s16);
+	}
 	return 0;
 }
 
@@ -279,7 +316,10 @@ static int parse_channel(const struct shell *sh, const char *s, uint8_t *out)
 
 	struct vc_system_snapshot sys;
 
-	read_system_snapshot(&sys);
+	if (read_system_snapshot(&sys) < 0) {
+		shell_error(sh, "voltage control unavailable");
+		return -EIO;
+	}
 	if (v >= sys.supported_channel_count) {
 		shell_error(sh, "channel %lu out of range (0..%d)",
 			    v, sys.supported_channel_count - 1);
@@ -564,24 +604,32 @@ static void print_ch_oneliner(const struct shell *sh, uint8_t ch,
 }
 
 static void print_ch_config(const struct shell *sh, uint8_t ch,
-			    const struct vc_channel_config *c)
+				    const struct vc_channel_config *c,
+				    uint16_t caps)
 {
 	shell_print(sh, "Channel %d Configuration", ch);
-	shell_print(sh, "  target:       %d", c->configured_target_voltage);
-	shell_print(sh, "  ramp_up:      step=%d interval=%d",
-		    c->ramp_up_step, c->ramp_up_interval);
-	shell_print(sh, "  ramp_down:    step=%d interval=%d",
-		    c->ramp_down_step, c->ramp_down_interval);
+	if (caps & CH_CAP_RAW_OUTPUT_DRIVE) {
+		shell_print(sh, "  target:       %d", c->configured_target_voltage);
+		shell_print(sh, "  ramp_up:      step=%d interval=%d",
+			    c->ramp_up_step, c->ramp_up_interval);
+		shell_print(sh, "  ramp_down:    step=%d interval=%d",
+			    c->ramp_down_step, c->ramp_down_interval);
+	}
 	shell_print(sh, "  recovery:     %s", recovery_str(c->recovery_policy_mode));
 	shell_print(sh, "  retry:        delay=%d max=%d window=%d",
 		    c->auto_retry_delay, c->auto_retry_max_count,
 		    c->auto_retry_window);
 	shell_print(sh, "  safe_band:    %d%%", c->current_safe_band_pct);
-	shell_print(sh, "  protection:   mode=%s action=%s limit=%d",
-		    prot_str(c->current_protection_mode),
-		    action_str(c->current_protection_output_action),
-		    c->current_limit_threshold);
-	shell_print(sh, "  derate_step:  %d", c->auto_derate_step);
+	if (caps & CH_CAP_CURRENT_MEASUREMENT) {
+		shell_print(sh, "  protection:   mode=%s action=%s limit=%d",
+			    prot_str(c->current_protection_mode),
+			    action_str(c->current_protection_output_action),
+			    c->current_limit_threshold);
+	}
+	if ((caps & (CH_CAP_RAW_OUTPUT_DRIVE | CH_CAP_VOLTAGE_MEASUREMENT)) ==
+	    (CH_CAP_RAW_OUTPUT_DRIVE | CH_CAP_VOLTAGE_MEASUREMENT)) {
+		shell_print(sh, "  derate_step:  %d", c->auto_derate_step);
+	}
 }
 
 static void print_sys_config(const struct shell *sh,
@@ -593,14 +641,24 @@ static void print_sys_config(const struct shell *sh,
 }
 
 static void print_cal_config(const struct shell *sh, uint8_t ch,
-			     const struct vc_channel_cal_config *c)
+				     const struct vc_channel_cal_config *c,
+				     uint16_t caps)
 {
 	shell_print(sh, "Channel %d Calibration Config", ch);
-	shell_print(sh, "  out_cal:  k=%d b=%d", c->output_calib_k, c->output_calib_b);
-	shell_print(sh, "  v_cal:    k=%d b=%d",
-		    c->measured_voltage_calib_k, c->measured_voltage_calib_b);
-	shell_print(sh, "  i_cal:    k=%d b=%d",
-		    c->measured_current_calib_k, c->measured_current_calib_b);
+	if (caps & CH_CAP_RAW_OUTPUT_DRIVE) {
+		shell_print(sh, "  out_cal:  k=%d b=%d",
+			    c->output_calib_k, c->output_calib_b);
+	}
+	if (caps & CH_CAP_VOLTAGE_MEASUREMENT) {
+		shell_print(sh, "  v_cal:    k=%d b=%d",
+			    c->measured_voltage_calib_k,
+			    c->measured_voltage_calib_b);
+	}
+	if (caps & CH_CAP_CURRENT_MEASUREMENT) {
+		shell_print(sh, "  i_cal:    k=%d b=%d",
+			    c->measured_current_calib_k,
+			    c->measured_current_calib_b);
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -615,13 +673,17 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
 
 	struct vc_system_snapshot sys;
 
-	read_system_snapshot(&sys);
+	if (read_system_snapshot(&sys) < 0) {
+		return -EIO;
+	}
 	print_sys_oneliner(sh, &sys);
 
 	for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
 		struct vc_channel_snapshot snap;
 
-		read_channel_snapshot(i, &snap);
+		if (read_channel_snapshot(i, &snap) < 0) {
+			return -EIO;
+		}
 		print_ch_oneliner(sh, i, &snap);
 	}
 	return 0;
@@ -661,7 +723,9 @@ static int cmd_param(const struct shell *sh, size_t argc, char **argv)
 
 	struct vc_system_snapshot sys;
 
-	read_system_snapshot(&sys);
+	if (read_system_snapshot(&sys) < 0) {
+		return -EIO;
+	}
 	for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
 		ret = dispatch_param(sh, vc_cmd_ch_param(i, action));
 		if (ret) {
@@ -685,7 +749,9 @@ static int cmd_sys_status(const struct shell *sh, size_t argc, char **argv)
 
 	struct vc_system_snapshot sys;
 
-	read_system_snapshot(&sys);
+	if (read_system_snapshot(&sys) < 0) {
+		return -EIO;
+	}
 
 	char fbuf[48];
 
@@ -709,7 +775,9 @@ static int cmd_sys_config(const struct shell *sh, size_t argc, char **argv)
 
 	struct vc_system_config cfg;
 
-	read_system_config(&cfg);
+	if (read_system_config(&cfg) < 0) {
+		return -EIO;
+	}
 	print_sys_config(sh, &cfg);
 	return 0;
 }
@@ -759,7 +827,10 @@ static int cmd_ch_status(const struct shell *sh, uint8_t ch)
 
 	struct vc_channel_snapshot snap;
 
-	read_channel_snapshot(ch, &snap);
+	if (read_channel_snapshot(ch, &snap) < 0) {
+		shell_error(sh, "failed to read channel %u", ch);
+		return -EIO;
+	}
 
 	char fbuf[48], cbuf[24];
 
@@ -810,9 +881,12 @@ static int cmd_ch(const struct shell *sh, size_t argc, char **argv)
 
 	if (strcmp(sub, "config") == 0) {
 		struct vc_channel_config cfg;
+		uint16_t caps;
 
-		read_channel_config(ch, &cfg);
-		print_ch_config(sh, ch, &cfg);
+		if (read_channel_config(ch, &cfg, &caps) < 0) {
+			return -EIO;
+		}
+		print_ch_config(sh, ch, &cfg, caps);
 		return 0;
 	}
 
@@ -1024,9 +1098,12 @@ static int cmd_cal_config(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	struct vc_channel_cal_config cal;
+	uint16_t caps;
 
-	read_cal_config(ch, &cal);
-	print_cal_config(sh, ch, &cal);
+	if (read_cal_config(ch, &cal, &caps) < 0) {
+		return -EIO;
+	}
+	print_cal_config(sh, ch, &cal, caps);
 	return 0;
 }
 
@@ -1077,7 +1154,9 @@ static int cmd_watch(const struct shell *sh, size_t argc, char **argv)
 
 	struct vc_system_snapshot sys;
 
-	read_system_snapshot(&sys);
+	if (read_system_snapshot(&sys) < 0) {
+		return -EIO;
+	}
 
 	int8_t watch_ch = -1;
 	int interval_ms = CONFIG_VC_SHELL_WATCH_DEFAULT_INTERVAL_MS;
@@ -1106,13 +1185,17 @@ static int cmd_watch(const struct shell *sh, size_t argc, char **argv)
 		if (watch_ch >= 0) {
 			struct vc_channel_snapshot snap;
 
-			read_channel_snapshot(watch_ch, &snap);
+			if (read_channel_snapshot(watch_ch, &snap) < 0) {
+				return -EIO;
+			}
 			print_ch_oneliner(sh, watch_ch, &snap);
 		} else {
 			for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
 				struct vc_channel_snapshot snap;
 
-				read_channel_snapshot(i, &snap);
+				if (read_channel_snapshot(i, &snap) < 0) {
+					return -EIO;
+				}
 				if (snap.channel_capability_flags &
 				    (CH_CAP_VOLTAGE_MEASUREMENT |
 				     CH_CAP_CURRENT_MEASUREMENT)) {

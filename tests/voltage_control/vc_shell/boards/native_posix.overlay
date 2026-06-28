@@ -19,8 +19,7 @@
 			compatible = "jianwei,vc-channel-stub";
 			reg = <1>;
 			label = "CH1";
-			capabilities = <(CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
-					 CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)>;
+			capabilities = <CH_CAP_CURRENT_MEASUREMENT>;
 		};
 	};
 };
