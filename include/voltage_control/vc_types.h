@@ -38,13 +38,6 @@ enum vc_operating_mode {
 	VC_OPERATING_MODE_CALIBRATION = 2,
 };
 
-enum vc_cal_sample_status {
-	VC_CAL_SAMPLE_NONE = 0,
-	VC_CAL_SAMPLE_VALID = 1,
-	VC_CAL_SAMPLE_BUSY = 2,
-	VC_CAL_SAMPLE_ERROR = 3,
-};
-
 enum vc_output_action {
 	VC_OUTPUT_ACTION_NONE = 0,
 	VC_OUTPUT_ACTION_ENABLE = 1,

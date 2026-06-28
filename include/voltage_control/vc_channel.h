@@ -57,7 +57,6 @@ struct vc_channel {
 
 	uint16_t raw_dac_readback;
 	uint16_t cal_output_enabled;
-	enum vc_cal_sample_status cal_sample_status;
 	int32_t raw_adc_voltage;
 	int32_t raw_adc_current;
 

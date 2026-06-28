@@ -52,7 +52,6 @@ struct vc_runtime_command {
 };
 
 struct vc_runtime;
-struct domain;
 
 /* Start hardware sampling on all channels. */
 enum vc_status vc_runtime_start_sampling(struct vc_runtime *runtime);

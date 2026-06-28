@@ -390,7 +390,6 @@ ZTEST(vc_channel_state, test_cal_sample_captures_raw)
 	vc_channel_cal_set_output_enable(&ch, true);
 	vc_channel_cal_set_raw_dac(&ch, 123);
 	zassert_equal(vc_channel_cal_sample(&ch), VC_OK);
-	zassert_equal(ch.cal_sample_status, VC_CAL_SAMPLE_VALID);
 	zassert_equal(ch.raw_adc_voltage, 123);
 }
 
@@ -410,7 +409,6 @@ ZTEST(vc_channel_state, test_cal_disable_clears_sample_state)
 	vc_channel_cal_set_output_enable(&ch, false);
 	zassert_equal(ch.raw_adc_voltage, 0);
 	zassert_equal(ch.raw_adc_current, 0);
-	zassert_equal(ch.cal_sample_status, VC_CAL_SAMPLE_NONE);
 }
 
 ZTEST(vc_channel_state, test_reset_calibration_entering)

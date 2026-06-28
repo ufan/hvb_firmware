@@ -701,7 +701,6 @@ void vc_channel_reset_calibration(struct vc_channel *ch, bool entering)
 	ch->cal_output_enabled = 0;
 	ch->raw_adc_voltage = 0;
 	ch->raw_adc_current = 0;
-	ch->cal_sample_status = VC_CAL_SAMPLE_NONE;
 
 	if (entering) {
 		set_smf_state(ch, VC_CHANNEL_SMF_CALIBRATION_OUTPUT);
@@ -729,7 +728,6 @@ enum vc_status vc_channel_cal_set_output_enable(struct vc_channel *ch,
 		ch->raw_dac_readback = 0;
 		ch->raw_adc_voltage = 0;
 		ch->raw_adc_current = 0;
-		ch->cal_sample_status = VC_CAL_SAMPLE_NONE;
 	}
 	apply_hw(ch);
 	return VC_OK;
@@ -778,7 +776,6 @@ enum vc_status vc_channel_cal_sample(struct vc_channel *ch)
 	}
 	ch->raw_adc_voltage = ch->raw_dac_readback;
 	ch->raw_adc_current = 0;
-	ch->cal_sample_status = VC_CAL_SAMPLE_VALID;
 	return VC_OK;
 }
 
