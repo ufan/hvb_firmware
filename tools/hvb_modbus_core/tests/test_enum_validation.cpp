@@ -15,27 +15,26 @@ TEST_CASE("Validation — Enable rejected in protection context", "[validation]"
     CHECK(client.lastError().find("invalid") != std::string::npos);
 }
 
-TEST_CASE("Validation — Clamp rejected in host context", "[validation]") {
+TEST_CASE("Validation — ForceZero rejected in host context", "[validation]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
 
     hvb::HvbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
-    REQUIRE_FALSE(client.sendOutputAction(0, hvb::OutputAction::Clamp));
+    REQUIRE_FALSE(client.sendOutputAction(0, hvb::OutputAction::ForceOutputZero));
     CHECK(client.lastError().find("invalid") != std::string::npos);
 }
 
-TEST_CASE("Validation — Clamp rejected in current prot context", "[validation]") {
+TEST_CASE("Validation — ForceZero accepted in protection context", "[validation]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
 
     hvb::HvbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
-    REQUIRE_FALSE(client.writeCurrentProtection(0, hvb::ProtectionMode::ApplyOutputAction,
-        hvb::OutputAction::Clamp, 1000));
-    CHECK(client.lastError().find("invalid") != std::string::npos);
+    CHECK(client.writeCurrentProtection(0, hvb::ProtectionMode::ApplyOutputAction,
+        hvb::OutputAction::ForceOutputZero, 1000));
 }
 
 TEST_CASE("Validation — valid output actions pass", "[validation]") {

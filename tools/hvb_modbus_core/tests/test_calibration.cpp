@@ -11,9 +11,9 @@ static constexpr int MAX_ADDR = EXT_BLOCK_BASE + EXT_BLOCK_SIZE;
 static void initBoard(uint16_t* input, uint16_t* holding) {
     memset(input, 0, MAX_ADDR * sizeof(uint16_t));
     memset(holding, 0, MAX_ADDR * sizeof(uint16_t));
-    input[SYS_PROTOCOL_MAJOR] = 2;
-    input[SYS_PROTOCOL_MINOR] = 1;
-    input[SYS_CAPABILITY_FLAGS] = 0x0007;
+    input[SYS_PROTOCOL_MAJOR] = 3;
+    input[SYS_PROTOCOL_MINOR] = 0;
+    input[SYS_CAPABILITY_FLAGS] = SYS_CAP_AUTOMATIC_MODE | SYS_CAP_ENV_SENSOR | SYS_CAP_CALIBRATION_MODE;
     input[SYS_SUPPORTED_CHANNELS] = 2;
     input[SYS_ACTIVE_CHANNEL_MASK] = 0x0003;
     for (int ch = 0; ch < 2; ++ch) {
@@ -25,7 +25,7 @@ static void initBoard(uint16_t* input, uint16_t* holding) {
     }
 }
 
-TEST_CASE("Protocol v2.1 system info", "[calibration]") {
+TEST_CASE("Protocol v3 system info", "[calibration]") {
     uint16_t input[MAX_ADDR], holding[MAX_ADDR];
     initBoard(input, holding);
 
@@ -33,19 +33,14 @@ TEST_CASE("Protocol v2.1 system info", "[calibration]") {
     client.attachTestArrays(input, holding, MAX_ADDR);
 
     auto info = client.readSystemInfo();
-    REQUIRE(info.protoMajor == 2);
-    REQUIRE(info.protoMinor == 1);
+    REQUIRE(info.protoMajor == 3);
+    REQUIRE(info.protoMinor == 0);
     REQUIRE((info.sysCapFlags & SysCap::CALIBRATION_MODE) != 0);
 
     client.detachTestArrays();
 }
 
-TEST_CASE("CalibrationSampleStatus enum names", "[calibration]") {
-    REQUIRE(std::string(calSampleStatusName(CalibrationSampleStatus::NoSample)) == "NoSample");
-    REQUIRE(std::string(calSampleStatusName(CalibrationSampleStatus::Valid)) == "Valid");
-    REQUIRE(std::string(calSampleStatusName(CalibrationSampleStatus::Busy)) == "Busy");
-    REQUIRE(std::string(calSampleStatusName(CalibrationSampleStatus::Error)) == "Error");
-}
+/* v3: CalibrationSampleStatus enum removed — CH_CAL_SAMPLE_STATUS register deleted */
 
 TEST_CASE("OpMode Calibration name", "[calibration]") {
     REQUIRE(std::string(opModeName(OpMode::Calibration)) == "Calibration");
@@ -133,7 +128,7 @@ TEST_CASE("CalibrationSnapshot round-trip", "[calibration]") {
     /* v3: sampleStatus removed from FC04 input regs; not available via Modbus */
     REQUIRE(snap.outputEnabled == true);
     REQUIRE(snap.rawDacCode == 2048);
-    REQUIRE(snap.rawDacReadback == 2048); /* v3: rawDacReadback == rawDacCode (FC03) */
+    /* v3: rawDacReadback is the same FC03 register (CAL_DAC_CODE), no separate field */
     REQUIRE(snap.maxRawDacLimit == 3000);
 
     client.detachTestArrays();

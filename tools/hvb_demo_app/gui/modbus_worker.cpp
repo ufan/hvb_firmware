@@ -72,8 +72,8 @@ QVariantMap ModbusWorker::systemInfoToMap(const hvb::SystemInfo& info)
     m["faultCause"] = info.faultCause;
     m["sysCapFlags"] = info.sysCapFlags;
 
-    m["capAutoMode"] = (info.sysCapFlags & hvb::SysCap::AUTO_MODE_SUPPORTED) != 0;
-    m["capEnvSensor"] = (info.sysCapFlags & hvb::SysCap::ENV_SENSOR_PRESENT) != 0;
+    m["capAutoMode"] = (info.sysCapFlags & hvb::SysCap::AUTOMATIC_MODE) != 0;
+    m["capEnvSensor"] = (info.sysCapFlags & hvb::SysCap::ENV_SENSOR) != 0;
     return m;
 }
 
@@ -103,18 +103,18 @@ QVariantMap ModbusWorker::channelInfoToMap(int /*ch*/, const hvb::ChannelInfo& i
     m["statusCooldown"] = (info.status & hvb::ChStatus::COOLDOWN_ACTIVE) != 0;
     m["statusMeasStale"] = (info.status & hvb::ChStatus::MEASUREMENT_STALE) != 0;
 
-    m["faultVLimit"] = (info.activeFault & hvb::FaultCause::VOLTAGE_LIMIT) != 0;
-    m["faultILimit"] = (info.activeFault & hvb::FaultCause::CURRENT_LIMIT) != 0;
-    m["faultMeasInvalid"] = (info.activeFault & hvb::FaultCause::MEASUREMENT_INVALID) != 0;
-    m["faultHw"] = (info.activeFault & hvb::FaultCause::OUTPUT_HW_FAULT) != 0;
-    m["faultInterlock"] = (info.activeFault & hvb::FaultCause::VARIANT_INTERLOCK) != 0;
-    m["faultRetryExhausted"] = (info.activeFault & hvb::FaultCause::AUTO_RETRY_EXHAUSTED) != 0;
-    m["faultConfigInvalid"] = (info.activeFault & hvb::FaultCause::CONFIG_INVALID_AUTO) != 0;
-    m["faultMeasStale"] = (info.activeFault & hvb::FaultCause::MEASUREMENT_STALE) != 0;
+    m["faultILimit"] = (info.activeFault & hvb::FaultCause::CURRENT) != 0;
+    m["faultMeasInvalid"] = (info.activeFault & hvb::FaultCause::MEASUREMENT) != 0;
+    m["faultHw"] = (info.activeFault & hvb::FaultCause::HARDWARE) != 0;
+    m["faultInterlock"] = (info.activeFault & hvb::FaultCause::INTERLOCK) != 0;
+    m["faultRetryExhausted"] = (info.activeFault & hvb::FaultCause::RETRY_EXHAUST) != 0;
+    m["faultConfigInvalid"] = (info.activeFault & hvb::FaultCause::CFG_INVALID) != 0;
+    m["faultMeasStale"] = (info.activeFault & hvb::FaultCause::STALE) != 0;
 
-    m["capOutEn"] = (info.chCapFlags & hvb::ChCap::OUTPUT_ENABLE_CTRL) != 0;
-    m["capCurrentMeas"] = (info.chCapFlags & hvb::ChCap::CURRENT_MEAS) != 0;
-    m["capAutoRec"] = (info.chCapFlags & hvb::ChCap::AUTO_RECOVERY) != 0;
+    m["capOutEn"] = (info.chCapFlags & CH_CAP_OUTPUT_ENABLE) != 0;
+    m["capRawDrive"] = (info.chCapFlags & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
+    m["capVoltageMeas"] = (info.chCapFlags & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+    m["capCurrentMeas"] = (info.chCapFlags & CH_CAP_CURRENT_MEASUREMENT) != 0;
     return m;
 }
 

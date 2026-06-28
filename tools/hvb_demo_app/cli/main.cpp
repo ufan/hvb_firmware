@@ -53,14 +53,13 @@ static void printFaultCause(uint16_t fault, const char* label) {
     if (fault == 0) { std::cout << "None\n"; return; }
     bool first = true;
     auto p = [&](const char* s) { if (!first) std::cout << ","; std::cout << s; first = false; };
-    if (fault & hvb::FaultCause::VOLTAGE_LIMIT)        p("VL");
-    if (fault & hvb::FaultCause::CURRENT_LIMIT)        p("CL");
-    if (fault & hvb::FaultCause::MEASUREMENT_INVALID)  p("MI");
-    if (fault & hvb::FaultCause::OUTPUT_HW_FAULT)      p("HW");
-    if (fault & hvb::FaultCause::VARIANT_INTERLOCK)    p("IL");
-    if (fault & hvb::FaultCause::AUTO_RETRY_EXHAUSTED) p("RE");
-    if (fault & hvb::FaultCause::CONFIG_INVALID_AUTO)  p("CI");
-    if (fault & hvb::FaultCause::MEASUREMENT_STALE)   p("ST");
+    if (fault & hvb::FaultCause::CURRENT)        p("CL");
+    if (fault & hvb::FaultCause::MEASUREMENT)    p("MI");
+    if (fault & hvb::FaultCause::HARDWARE)       p("HW");
+    if (fault & hvb::FaultCause::INTERLOCK)      p("IL");
+    if (fault & hvb::FaultCause::RETRY_EXHAUST)  p("RE");
+    if (fault & hvb::FaultCause::CFG_INVALID)    p("CI");
+    if (fault & hvb::FaultCause::STALE)          p("ST");
     std::cout << "\n";
 }
 
@@ -112,8 +111,8 @@ int cmdInfo() {
     printSep("Protocol:", std::to_string(info.protoMajor) + "." + std::to_string(info.protoMinor));
     printSep("Variant ID:", std::to_string(info.variantId));
     printSep("Cap Flags:", std::to_string(info.sysCapFlags) + " "
-        + (info.sysCapFlags & hvb::SysCap::AUTO_MODE_SUPPORTED ? "[Auto]" : "")
-        + (info.sysCapFlags & hvb::SysCap::ENV_SENSOR_PRESENT ? "[Env]" : "")
+        + (info.sysCapFlags & hvb::SysCap::AUTOMATIC_MODE ? "[Auto]" : "")
+        + (info.sysCapFlags & hvb::SysCap::ENV_SENSOR ? "[Env]" : "")
         + (info.sysCapFlags & hvb::SysCap::CALIBRATION_MODE ? "[Cal]" : ""));
     printSep("Channels:", std::to_string(info.supportedChannels) + " (mask " + formatHex(info.activeChMask) + ")");
     printSep("Board Temp:", std::to_string(info.boardTempRaw) + " raw");
@@ -144,9 +143,10 @@ int cmdStatus() {
         printSep("Cooldown:", std::to_string(ci.cooldownSec) + " s");
         printSep("Last Fault TS:", std::to_string(ci.lastFaultTimestamp) + " s");
         printSep("Cap Flags:", formatHex(ci.chCapFlags)
-            + (ci.chCapFlags & hvb::ChCap::OUTPUT_ENABLE_CTRL ? " [OutEn]" : "")
-            + (ci.chCapFlags & hvb::ChCap::CURRENT_MEAS ? " [CurrMeas]" : "")
-            + (ci.chCapFlags & hvb::ChCap::AUTO_RECOVERY ? " [AutoRec]" : ""));
+            + (ci.chCapFlags & CH_CAP_OUTPUT_ENABLE ? " [OutEn]" : "")
+            + (ci.chCapFlags & CH_CAP_RAW_OUTPUT_DRIVE ? " [RawDrive]" : "")
+            + (ci.chCapFlags & CH_CAP_VOLTAGE_MEASUREMENT ? " [VMeas]" : "")
+            + (ci.chCapFlags & CH_CAP_CURRENT_MEASUREMENT ? " [IMeas]" : ""));
         if (ch == 0) std::cout << "\n";
     }
     return 0;

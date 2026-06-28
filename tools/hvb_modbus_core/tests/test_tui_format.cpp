@@ -16,9 +16,9 @@ TEST_CASE("statusBadge") {
 
 TEST_CASE("faultStr") {
     CHECK(faultStr(0) == "--");
-    CHECK(faultStr(FaultCause::VOLTAGE_LIMIT) == "VL");
-    CHECK(faultStr(FaultCause::VOLTAGE_LIMIT | FaultCause::CURRENT_LIMIT) == "VL CL");
-    CHECK(faultStr(FaultCause::OUTPUT_HW_FAULT) == "HW");
+    CHECK(faultStr(FaultCause::CURRENT) == "CL");
+    CHECK(faultStr(FaultCause::CURRENT | FaultCause::MEASUREMENT) == "CL MI");
+    CHECK(faultStr(FaultCause::HARDWARE) == "HW");
 }
 
 TEST_CASE("protCompact") {
@@ -27,7 +27,7 @@ TEST_CASE("protCompact") {
     CHECK(protCompact(ProtectionMode::ApplyOutputAction, OutputAction::DisableGraceful)  == "Apply/Dis-Gr");
     CHECK(protCompact(ProtectionMode::ApplyOutputAction, OutputAction::DisableImmediate) == "Apply/Dis-Im");
     CHECK(protCompact(ProtectionMode::ApplyOutputAction, OutputAction::ForceOutputZero)  == "Apply/Force0");
-    CHECK(protCompact(ProtectionMode::ApplyOutputAction, OutputAction::Clamp)            == "Apply/Clamp");
+    CHECK(protCompact(ProtectionMode::ApplyOutputAction, OutputAction::ForceOutputZero)  == "Apply/Force0");
 }
 
 TEST_CASE("fmtVoltage") {

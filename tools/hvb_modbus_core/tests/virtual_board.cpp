@@ -25,11 +25,11 @@ void VirtualBoard::setVariantDefaults() {
     memset(inputRegs, 0, sizeof(inputRegs));
     memset(holdingRegs, 0, sizeof(holdingRegs));
 
-    // System input
-    inputRegs[reg::sysAddr(0) + SYS_PROTOCOL_MAJOR] = 2;
-    inputRegs[reg::sysAddr(0) + SYS_PROTOCOL_MINOR] = 1;
+    // System input (v3 protocol)
+    inputRegs[reg::sysAddr(0) + SYS_PROTOCOL_MAJOR] = 3;
+    inputRegs[reg::sysAddr(0) + SYS_PROTOCOL_MINOR] = 0;
     inputRegs[reg::sysAddr(0) + SYS_VARIANT_ID] = 1;
-    inputRegs[reg::sysAddr(0) + SYS_CAPABILITY_FLAGS] = 0x0007; // Auto + Env + Cal
+    inputRegs[reg::sysAddr(0) + SYS_CAPABILITY_FLAGS] = SYS_CAP_AUTOMATIC_MODE | SYS_CAP_ENV_SENSOR | SYS_CAP_CALIBRATION_MODE;
     inputRegs[reg::sysAddr(0) + SYS_SUPPORTED_CHANNELS] = 2;
     inputRegs[reg::sysAddr(0) + SYS_ACTIVE_CHANNEL_MASK] = 0x0003;
     inputRegs[reg::sysAddr(0) + SYS_BOARD_TEMPERATURE] = 254;  // 25.4 °C
@@ -57,7 +57,7 @@ void VirtualBoard::setVariantDefaults() {
         holdingRegs[base + CH_MEASURED_I_CAL_B] = 0;
         holdingRegs[base + CH_CAL_MAX_RAW_DAC_LIMIT] = 4095;
 
-        inputRegs[base + CH_CAPABILITY_FLAGS] = 0x0007; // OutEn + CurrMeas + AutoRec
+        inputRegs[base + CH_CAPABILITY_FLAGS] = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE | CH_CAP_VOLTAGE_MEASUREMENT;
     }
 }
 

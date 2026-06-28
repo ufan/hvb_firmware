@@ -50,14 +50,13 @@ inline std::string statusBadge(uint16_t status) {
 inline std::string faultStr(uint16_t fault) {
     if (!fault) return "--";
     std::string s;
-    if (fault & hvb::FaultCause::VOLTAGE_LIMIT)        s += "VL ";
-    if (fault & hvb::FaultCause::CURRENT_LIMIT)        s += "CL ";
-    if (fault & hvb::FaultCause::MEASUREMENT_INVALID)  s += "MI ";
-    if (fault & hvb::FaultCause::OUTPUT_HW_FAULT)      s += "HW ";
-    if (fault & hvb::FaultCause::VARIANT_INTERLOCK)    s += "IL ";
-    if (fault & hvb::FaultCause::AUTO_RETRY_EXHAUSTED) s += "RE ";
-    if (fault & hvb::FaultCause::CONFIG_INVALID_AUTO)  s += "CI ";
-    if (fault & hvb::FaultCause::MEASUREMENT_STALE)   s += "ST ";
+    if (fault & hvb::FaultCause::CURRENT)        s += "CL ";
+    if (fault & hvb::FaultCause::MEASUREMENT)    s += "MI ";
+    if (fault & hvb::FaultCause::HARDWARE)       s += "HW ";
+    if (fault & hvb::FaultCause::INTERLOCK)      s += "IL ";
+    if (fault & hvb::FaultCause::RETRY_EXHAUST)  s += "RE ";
+    if (fault & hvb::FaultCause::CFG_INVALID)    s += "CI ";
+    if (fault & hvb::FaultCause::STALE)          s += "ST ";
     if (!s.empty() && s.back() == ' ') s.pop_back();
     return s;
 }
@@ -72,7 +71,6 @@ inline std::string protCompact(ProtectionMode mode, OutputAction action) {
     case OutputAction::DisableGraceful:  return "Apply/Dis-Gr";
     case OutputAction::DisableImmediate: return "Apply/Dis-Im";
     case OutputAction::ForceOutputZero:  return "Apply/Force0";
-    case OutputAction::Clamp:            return "Apply/Clamp";
     default:                             return "Apply/None";
     }
 }

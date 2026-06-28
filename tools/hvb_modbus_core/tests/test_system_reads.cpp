@@ -1,13 +1,14 @@
 #include "hvb_modbus_client.h"
 #include "types.h"
+#include "register_map.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 static void fillDefaultInputRegs(uint16_t* regs) {
-    regs[0] = 2;    // Protocol Major
+    regs[0] = 3;    // Protocol Major
     regs[1] = 0;    // Protocol Minor
     regs[2] = 1;    // Variant ID
-    regs[3] = 0x0003; // Capability flags (Auto + Env)
+    regs[3] = SYS_CAP_AUTOMATIC_MODE | SYS_CAP_ENV_SENSOR; // Capability flags (Auto + Env)
     regs[4] = 2;    // Supported channels
     regs[5] = 0x0003; // Active channel mask
     regs[6] = 254;  // Board temp (25.4C)
@@ -39,7 +40,7 @@ TEST_CASE("SystemInfo — defaults", "[system-reads]") {
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     auto info = client.readSystemInfo();
-    CHECK(info.protoMajor == 2);
+    CHECK(info.protoMajor == 3);
     CHECK(info.protoMinor == 0);
     CHECK(info.variantId == 1);
     CHECK(info.supportedChannels == 2);
@@ -75,6 +76,6 @@ TEST_CASE("SystemInfo — capability flags decoded", "[system-reads]") {
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     auto info = client.readSystemInfo();
-    CHECK((info.sysCapFlags & hvb::SysCap::AUTO_MODE_SUPPORTED) != 0);
-    CHECK((info.sysCapFlags & hvb::SysCap::ENV_SENSOR_PRESENT) != 0);
+    CHECK((info.sysCapFlags & hvb::SysCap::AUTOMATIC_MODE) != 0);
+    CHECK((info.sysCapFlags & hvb::SysCap::ENV_SENSOR) != 0);
 }

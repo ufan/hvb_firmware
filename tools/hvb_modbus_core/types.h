@@ -3,10 +3,15 @@
 #include <cstdint>
 #include <cmath>
 
+// Firmware system capability bits — from reg_map.h
+#include "reg_store/reg_map.h"
+// Channel capability bits — from capabilities.h
+#include "dt-bindings/voltage_control/capabilities.h"
+
 namespace hvb {
 
 // ============================================================================
-//  Enumerations (from ref/modbus_interface.md §8)
+//  Enumerations — synced with firmware include/voltage_control/vc_types.h
 // ============================================================================
 
 enum class OpMode : uint16_t {
@@ -15,20 +20,12 @@ enum class OpMode : uint16_t {
     Calibration = 2,
 };
 
-enum class CalibrationSampleStatus : uint16_t {
-    NoSample = 0,
-    Valid    = 1,
-    Busy     = 2,
-    Error    = 3,
-};
-
 enum class OutputAction : uint16_t {
     None               = 0,
     Enable             = 1,
     DisableGraceful    = 2,
     DisableImmediate   = 3,
     ForceOutputZero    = 4,
-    Clamp              = 5,
 };
 
 enum class ChannelFaultCommand : uint16_t {
@@ -58,48 +55,50 @@ enum class RecoveryPolicy : uint16_t {
     NeverRetry      = 3,
 };
 
+// Firmware uses enums directly; keep ActionContext for tool-side validation
 enum class ActionContext {
     Host,
-    VoltageProtection,
-    CurrentProtection,
+    Protection,
 };
 
 // ============================================================================
-//  Bitmask constants
+//  Bitmask constants — synced with firmware include/voltage_control/vc_types.h
 // ============================================================================
 
 namespace ChStatus {
+    // Firmware status_bits layout (computed in vc_channel_run)
     inline constexpr uint16_t OUTPUT_DRIVE_NONZERO = 0x0001;
     inline constexpr uint16_t OUTPUT_ENABLE_ACTIVE = 0x0002;
     inline constexpr uint16_t RAMPING_ACTIVE       = 0x0004;
     inline constexpr uint16_t ACTIVE_FAULT         = 0x0008;
     inline constexpr uint16_t FAULT_HISTORY        = 0x0010;
     inline constexpr uint16_t COOLDOWN_ACTIVE      = 0x0020;
-    inline constexpr uint16_t MEASUREMENT_STALE   = 0x0040;
+    inline constexpr uint16_t MEASUREMENT_STALE    = 0x0040;
 }
 
+// Mirror of firmware VC_FAULT_* defines (include/voltage_control/vc_types.h:17-23)
 namespace FaultCause {
-    inline constexpr uint16_t VOLTAGE_LIMIT         = 0x0001;
-    inline constexpr uint16_t CURRENT_LIMIT         = 0x0002;
-    inline constexpr uint16_t MEASUREMENT_INVALID   = 0x0004;
-    inline constexpr uint16_t OUTPUT_HW_FAULT       = 0x0008;
-    inline constexpr uint16_t VARIANT_INTERLOCK     = 0x0010;
-    inline constexpr uint16_t AUTO_RETRY_EXHAUSTED  = 0x0020;
-    inline constexpr uint16_t CONFIG_INVALID_AUTO   = 0x0040;
-    inline constexpr uint16_t MEASUREMENT_STALE    = 0x0080;
+    inline constexpr uint16_t CURRENT        = 0x0002;
+    inline constexpr uint16_t MEASUREMENT    = 0x0004;
+    inline constexpr uint16_t HARDWARE       = 0x0008;
+    inline constexpr uint16_t INTERLOCK      = 0x0010;
+    inline constexpr uint16_t RETRY_EXHAUST  = 0x0020;
+    inline constexpr uint16_t CFG_INVALID    = 0x0040;
+    inline constexpr uint16_t STALE          = 0x0080;
 }
 
+// Mirror of firmware reg_map.h SYS_CAP_* defines
 namespace SysCap {
-    inline constexpr uint16_t AUTO_MODE_SUPPORTED = 0x0001;
-    inline constexpr uint16_t ENV_SENSOR_PRESENT  = 0x0002;
-    inline constexpr uint16_t CALIBRATION_MODE    = 0x0004;
+    inline constexpr uint16_t AUTOMATIC_MODE   = SYS_CAP_AUTOMATIC_MODE;
+    inline constexpr uint16_t ENV_SENSOR       = SYS_CAP_ENV_SENSOR;
+    inline constexpr uint16_t CALIBRATION_MODE = SYS_CAP_CALIBRATION_MODE;
 }
 
-namespace ChCap {
-    inline constexpr uint16_t OUTPUT_ENABLE_CTRL = 0x0001;
-    inline constexpr uint16_t CURRENT_MEAS       = 0x0002;
-    inline constexpr uint16_t AUTO_RECOVERY      = 0x0004;
-}
+// Channel capabilities now sourced directly from firmware
+// dt-bindings/voltage_control/capabilities.h via CH_CAP_* defines.
+// Use CH_CAP_OUTPUT_ENABLE, CH_CAP_RAW_OUTPUT_DRIVE,
+// CH_CAP_VOLTAGE_MEASUREMENT, CH_CAP_CURRENT_MEASUREMENT,
+// CH_CAP_HARDWARE_STATUS directly.
 
 // ============================================================================
 //  Value structs — raw LSB values
@@ -135,7 +134,7 @@ struct ChannelInfo {
     uint16_t chCapFlags = 0;
     int32_t rawAdcVoltage = 0;
     int32_t rawAdcCurrent = 0;
-    /* v3: sampleStatus and rawDacReadback removed from FC04 input regs */
+    /* v3: CH_CAL_SAMPLE_STATUS and CH_RAW_DAC_READBACK removed from FC04 input regs */
 };
 
 struct SystemConfig {
@@ -182,10 +181,10 @@ struct CalibrationSnapshot {
     bool outputEnabled = false;
     uint16_t rawDacCode = 0;
     uint16_t maxRawDacLimit = 0;
-    uint16_t rawDacReadback = 0;  /* v3: same as rawDacCode (readback is FC03 holding, not FC04) */
     int32_t rawAdcVoltage = 0;
     int32_t rawAdcCurrent = 0;
-    /* v3: sampleStatus removed (CH_CAL_SAMPLE_STATUS deleted from FC04 input regs) */
+    /* v3: rawDacReadback = CAL_DAC_CODE holding reg (FC03), no separate input reg */
+    /* v3: cal_sample_status removed */
 };
 
 // ============================================================================
@@ -201,9 +200,7 @@ inline bool isValidOutputAction(OutputAction action, ActionContext ctx) {
     case OutputAction::Enable:
         return ctx == ActionContext::Host;
     case OutputAction::ForceOutputZero:
-        return ctx != ActionContext::Host;
-    case OutputAction::Clamp:
-        return ctx == ActionContext::VoltageProtection;
+        return ctx == ActionContext::Protection;
     }
     return false;
 }
@@ -221,16 +218,6 @@ inline const char* opModeName(OpMode m) {
     return "?";
 }
 
-inline const char* calSampleStatusName(CalibrationSampleStatus s) {
-    switch (s) {
-    case CalibrationSampleStatus::NoSample: return "NoSample";
-    case CalibrationSampleStatus::Valid:    return "Valid";
-    case CalibrationSampleStatus::Busy:     return "Busy";
-    case CalibrationSampleStatus::Error:    return "Error";
-    }
-    return "?";
-}
-
 inline const char* outputActionName(OutputAction a) {
     switch (a) {
     case OutputAction::None:             return "None";
@@ -238,7 +225,6 @@ inline const char* outputActionName(OutputAction a) {
     case OutputAction::DisableGraceful:  return "DisableGraceful";
     case OutputAction::DisableImmediate: return "DisableImmediate";
     case OutputAction::ForceOutputZero:  return "ForceZero";
-    case OutputAction::Clamp:            return "Clamp";
     }
     return "?";
 }

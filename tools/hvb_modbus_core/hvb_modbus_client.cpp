@@ -337,8 +337,8 @@ bool HvbModbusClient::writeChannelSafeBand(int ch, uint16_t pct) {
     return CHW(CH_CURRENT_SAFE_BAND_PCT, &pct);
 }
 bool HvbModbusClient::writeCurrentProtection(int ch, ProtectionMode mode, OutputAction action, int16_t thresholdRaw) {
-    if (!isValidOutputAction(action, ActionContext::CurrentProtection)) {
-        m_impl->errorText = "invalid output action for current protection";
+    if (!isValidOutputAction(action, ActionContext::Protection)) {
+        m_impl->errorText = "invalid output action for protection context";
         return false;
     }
     uint16_t buf[3] = { static_cast<uint16_t>(mode), static_cast<uint16_t>(action), static_cast<uint16_t>(thresholdRaw) };
@@ -419,7 +419,7 @@ CalibrationSnapshot HvbModbusClient::readCalibrationSnapshot(int ch) {
 
     snap.outputEnabled  = hbuf[0] != 0;
     snap.rawDacCode     = hbuf[1];
-    snap.rawDacReadback = hbuf[1]; /* v3: rawDacReadback is now the same as rawDacCode (FC03) */
+    /* v3: rawDacReadback field removed — CAL_DAC_CODE (holding:31) is the readback register */
     snap.maxRawDacLimit = hbuf[4];
     return snap;
 }

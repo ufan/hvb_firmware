@@ -125,7 +125,7 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                     out << "  CH" << ch
                         << " out=" << (snap.outputEnabled ? "ON" : "OFF")
                         << " dac=" << snap.rawDacCode
-                        << " readback=" << snap.rawDacReadback
+                        << " readback=" << snap.rawDacCode
                         << " adc_v=" << snap.rawAdcVoltage
                         << " adc_i=" << snap.rawAdcCurrent
                         << " limit=" << snap.maxRawDacLimit << "\n";
@@ -207,7 +207,7 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                 auto snap = session.client().readCalibrationSnapshot(ch);
                 out << "CH" << ch << " snapshot:\n"
                     << "  Output:    " << (snap.outputEnabled ? "ON" : "OFF") << "\n"
-                    << "  DAC code:  " << snap.rawDacCode << "  readback: " << snap.rawDacReadback << "\n"
+                    << "  DAC code:  " << snap.rawDacCode << "  readback: " << snap.rawDacCode << "\n"
                     << "  Max limit: " << snap.maxRawDacLimit << "\n"
                     << "  ADC V:     " << snap.rawAdcVoltage << "\n"
                     << "  ADC I:     " << snap.rawAdcCurrent << "\n";

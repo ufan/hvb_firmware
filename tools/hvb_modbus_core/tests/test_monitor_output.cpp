@@ -9,7 +9,7 @@ extern std::string renderMonitorTable(const hvb::SystemInfo& sys,
 
 TEST_CASE("Monitor — table includes protocol version and uptime", "[monitor]") {
     hvb::SystemInfo sys;
-    sys.protoMajor = 2;
+    sys.protoMajor = 3;
     sys.protoMinor = 0;
     sys.uptimeSec = 3600;
     sys.activeOpMode = hvb::OpMode::Normal;
@@ -19,13 +19,13 @@ TEST_CASE("Monitor — table includes protocol version and uptime", "[monitor]")
     channels[0].status = 0x0003;
 
     auto output = renderMonitorTable(sys, channels);
-    CHECK(output.find("2.0") != std::string::npos);
+    CHECK(output.find("3.0") != std::string::npos);
     CHECK(output.find("3600s") != std::string::npos);
 }
 
 TEST_CASE("Monitor — table includes channel data", "[monitor]") {
     hvb::SystemInfo sys;
-    sys.protoMajor = 2;
+    sys.protoMajor = 3;
     sys.uptimeSec = 100;
     sys.activeOpMode = hvb::OpMode::Normal;
 
@@ -46,13 +46,13 @@ TEST_CASE("Monitor — table includes channel data", "[monitor]") {
 
 TEST_CASE("Monitor — shows fault status", "[monitor]") {
     hvb::SystemInfo sys;
-    sys.protoMajor = 2;
+    sys.protoMajor = 3;
     sys.uptimeSec = 60;
     sys.activeOpMode = hvb::OpMode::Automatic;
 
     std::vector<hvb::ChannelInfo> channels(1);
     channels[0].voltageRaw = 6000;
-    channels[0].activeFault = hvb::FaultCause::VOLTAGE_LIMIT;
+    channels[0].activeFault = hvb::FaultCause::CURRENT;
     channels[0].status = 0x000B; // OutputDrive + ActiveFault
 
     auto output = renderMonitorTable(sys, channels);
