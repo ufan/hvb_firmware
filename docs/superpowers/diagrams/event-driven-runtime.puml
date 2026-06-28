@@ -1,92 +1,27 @@
 @startuml
-title Event-Driven Runtime: Command and Measurement Flow
+title Register Read and Worker-Serialized Write
 
-skinparam backgroundColor #FAFAFA
-skinparam ArrowColor #333333
-skinparam FontName Arial
-skinparam participantBorderColor #555555
-skinparam sequenceLifeLineBorderColor #888888
+participant "Frontend" as frontend
+participant "Register Catalog" as catalog
+participant "VC Owner" as owner
+queue "VC Command Queue" as queue
+participant "VC Worker" as worker
+database "Canonical State" as state
 
-participant "Modbus\nAdapter" as MB #D7BDE2
-participant "vc.h\nFacade" as VC #D7BDE2
-participant "command_queue\n(k_msgq)" as CQ #FAD7A0
-participant "Runtime\nWorker" as RT #A9DFBF
-participant "Domain\nState" as DOM #A9DFBF
-participant "Config Slots\n(per-ch)" as CS #FAD7A0
-participant "Provider\n(hvb_vc_ch)" as PV #F1948A
-participant "evidence_queue\n(k_msgq)" as EQ #FAD7A0
-participant "Published\nSnapshot" as PUB #AED6F1
+== Scalar read ==
+frontend -> catalog : reg_handle_read() / reg_read()
+catalog -> owner : read(descriptor)
+owner -> state : lock + read one field
+state --> owner : value
+owner --> frontend : reg_status + value
 
-== Command Dispatch (Write Path) ==
-
-MB -> VC : vc_dispatch(ctx, cmd, timeout)
-activate VC
-VC -> VC : translate vc_cmd\nto vc_runtime_command
-VC -> CQ : k_msgq_put(work_item)
-VC -> RT : k_sem_give(wake)
-VC -> VC : k_sem_take(result_sem)\n**blocks caller**
-
-activate RT
-RT -> CQ : k_msgq_get(K_NO_WAIT)
-RT -> RT : k_mutex_lock(runtime.lock)
-activate DOM
-RT -> DOM : dispatch_command(cmd)
-DOM -> DOM : domain mutation
-DOM --> RT : status
-deactivate DOM
-RT -> CS : publish_config(ch)\n[lock, update, unlock]
-CS -> PV : CONFIG_CHANGED msg\nvia provider_msgq
-RT -> RT : k_mutex_unlock
-RT -> VC : k_sem_give(result_sem)
-deactivate RT
-
-VC --> MB : vc_status
-deactivate VC
-
-== Measurement Evidence (Hardware to Domain) ==
-
-PV -> PV : k_work_delayable fires
-activate PV
-PV -> CS : acquire_config(ch)\n[zero-copy read]
-PV -> PV : apply_config\nif version changed
-PV -> CS : release_config(ch)
-PV -> PV : read ADC voltage\nread ADC current
-PV -> EQ : publish_measurement()
-PV -> RT : k_sem_give(wake)
-deactivate PV
-
-activate RT
-RT -> EQ : take_measurement(K_NO_WAIT)
-RT -> RT : measurement_buffer_store
-RT -> DOM : consume_measurement(meas)
-activate DOM
-DOM -> DOM : apply calibration\nevaluate protection\nupdate fault state
-DOM --> RT
-deactivate DOM
-RT -> CS : publish_all_configs()
-deactivate RT
-
-== Periodic Tick (100ms timeout) ==
-
-RT -> RT : k_sem_take(wake)\ntimes out
-activate RT
-RT -> RT : k_mutex_lock
-RT -> DOM : process_periodic(dt_ms)
-activate DOM
-DOM -> DOM : tick_ramp()\ntick_protection()\ntick_recovery()\ntick_status_bits()
-DOM --> RT
-deactivate DOM
-RT -> PUB : publish_snapshot()\n[lock, copy, unlock]
-RT -> RT : k_mutex_unlock
-deactivate RT
-
-== Query (Read Path from Host) ==
-
-MB -> VC : vc_query(ctx, query)
-activate VC
-VC -> PUB : get_published_*()\n[lock, copy, unlock]
-PUB --> VC : snapshot copy
-VC --> MB : vc_status
-deactivate VC
-
+== Mutation ==
+frontend -> catalog : reg_handle_write() / reg_write()
+catalog -> owner : write(descriptor, value)
+owner -> queue : enqueue command
+worker -> queue : dequeue
+worker -> state : lock + validate + mutate
+state --> worker : result
+worker --> owner : completion semaphore
+owner --> frontend : reg_status
 @enduml

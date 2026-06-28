@@ -132,7 +132,6 @@ struct wire_reg {
 	bool mapped;
 };
 
-extern const struct reg_descriptor vc_catalog_channel_regs[];
 extern const struct reg_descriptor vc_catalog_global_regs[];
 extern const struct reg_descriptor modbus_protocol_major_reg;
 extern const struct reg_descriptor modbus_protocol_minor_reg;
@@ -158,35 +157,70 @@ static struct {
 	bool valid;
 } word_latch;
 
-static const struct wire_reg sys_input_view[CH_BLOCK_SIZE] = {
-	[SYS_PROTOCOL_MAJOR] = { &modbus_protocol_major_reg, 0, 0, true },
-	[SYS_PROTOCOL_MINOR] = { &modbus_protocol_minor_reg, 0, 0, true },
-	[SYS_VARIANT_ID] = { VC_GLOBAL_HANDLE(VARIANT_ID), 0, 0, true },
-	[SYS_CAPABILITY_FLAGS] = { VC_GLOBAL_HANDLE(CAPABILITY_FLAGS), 0, 0, true },
-	[SYS_SUPPORTED_CHANNELS] = { VC_GLOBAL_HANDLE(SUPPORTED_CHANNELS), 0, 0, true },
-	[SYS_ACTIVE_CHANNEL_MASK] = { VC_GLOBAL_HANDLE(ACTIVE_CHANNEL_MASK), 0, 0, true },
-	[SYS_BOARD_TEMPERATURE] = { SYS_STATUS_HANDLE(temperature), 0, 0, true },
-	[SYS_BOARD_HUMIDITY] = { SYS_STATUS_HANDLE(humidity), 0, 0, true },
-	[SYS_UPTIME_HI] = { SYS_STATUS_HANDLE(uptime), 0, 0, true },
-	[SYS_UPTIME_LO] = { SYS_STATUS_HANDLE(uptime), 0, 1, true },
-	[SYS_FW_VERSION_HI] = { SYS_STATUS_HANDLE(firmware_version), 0, 0, true },
-	[SYS_FW_VERSION_LO] = { SYS_STATUS_HANDLE(firmware_version), 0, 1, true },
-	[SYS_ACTIVE_OPERATING_MODE] = {
-		VC_GLOBAL_HANDLE(ACTIVE_OPERATING_MODE), 0, 0, true },
-	[SYS_STATUS] = { VC_GLOBAL_HANDLE(STATUS), 0, 0, true },
-	[SYS_FAULT_CAUSE] = { VC_GLOBAL_HANDLE(FAULT_CAUSE), 0, 0, true },
-};
+#define SYS_VIEW_HANDLE_PROTOCOL_MAJOR (&modbus_protocol_major_reg)
+#define SYS_VIEW_HANDLE_PROTOCOL_MINOR (&modbus_protocol_minor_reg)
+#define SYS_VIEW_HANDLE_VARIANT_ID VC_GLOBAL_HANDLE(VARIANT_ID)
+#define SYS_VIEW_HANDLE_CAPABILITY_FLAGS VC_GLOBAL_HANDLE(CAPABILITY_FLAGS)
+#define SYS_VIEW_HANDLE_SUPPORTED_CHANNELS VC_GLOBAL_HANDLE(SUPPORTED_CHANNELS)
+#define SYS_VIEW_HANDLE_ACTIVE_CHANNEL_MASK VC_GLOBAL_HANDLE(ACTIVE_CHANNEL_MASK)
+#define SYS_VIEW_HANDLE_BOARD_TEMPERATURE SYS_STATUS_HANDLE(temperature)
+#define SYS_VIEW_HANDLE_BOARD_HUMIDITY SYS_STATUS_HANDLE(humidity)
+#define SYS_VIEW_HANDLE_UPTIME SYS_STATUS_HANDLE(uptime)
+#define SYS_VIEW_HANDLE_FW_VERSION SYS_STATUS_HANDLE(firmware_version)
+#define SYS_VIEW_HANDLE_ACTIVE_OPERATING_MODE VC_GLOBAL_HANDLE(ACTIVE_OPERATING_MODE)
+#define SYS_VIEW_HANDLE_STATUS VC_GLOBAL_HANDLE(STATUS)
+#define SYS_VIEW_HANDLE_FAULT_CAUSE VC_GLOBAL_HANDLE(FAULT_CAUSE)
+#define SYS_VIEW_HANDLE_OPERATING_MODE VC_GLOBAL_HANDLE(OPERATING_MODE)
+#define SYS_VIEW_HANDLE_STARTUP_CHANNEL_POLICY VC_GLOBAL_HANDLE(STARTUP_CHANNEL_POLICY)
+#define SYS_VIEW_HANDLE_SLAVE_ADDRESS (&modbus_NEXT_BOOT_SLAVE_ADDRESS_reg)
+#define SYS_VIEW_HANDLE_BAUD_RATE_CODE (&modbus_NEXT_BOOT_BAUD_RATE_CODE_reg)
+#define SYS_VIEW_HANDLE_PARAM_ACTION VC_GLOBAL_HANDLE(PARAM_ACTION)
 
-static const struct wire_reg sys_holding_view[CH_BLOCK_SIZE] = {
-	[SYS_OPERATING_MODE] = { VC_GLOBAL_HANDLE(OPERATING_MODE), 0, 0, true },
-	[SYS_STARTUP_CHANNEL_POLICY] = {
-		VC_GLOBAL_HANDLE(STARTUP_CHANNEL_POLICY), 0, 0, true },
-	[SYS_SLAVE_ADDRESS] = {
-		&modbus_NEXT_BOOT_SLAVE_ADDRESS_reg, 0, 0, true },
-	[SYS_BAUD_RATE_CODE] = {
-		&modbus_NEXT_BOOT_BAUD_RATE_CODE_reg, 0, 0, true },
-	[SYS_PARAM_ACTION] = { VC_GLOBAL_HANDLE(PARAM_ACTION), 0, 0, true },
+#define SYS_INPUT_16(name, offset) \
+	[offset] = { SYS_VIEW_HANDLE_##name, 0, 0, true },
+#define SYS_INPUT_32(name, offset) \
+	[offset] = { SYS_VIEW_HANDLE_##name, 0, 0, true }, \
+	[(offset) + 1] = { SYS_VIEW_HANDLE_##name, 0, 1, true },
+#define SYS_HOLDING_16(name, offset)
+#define SYS_HOLDING_32(name, offset)
+#define MODBUS_SYS16(name, bank, offset) SYS_##bank##_16(name, offset)
+#define MODBUS_SYS32(name, bank, offset) SYS_##bank##_32(name, offset)
+#define MODBUS_VC16(name, bank, offset)
+#define MODBUS_VC32(name, bank, offset)
+static const struct wire_reg sys_input_view[CH_BLOCK_SIZE] = {
+#include "reg_store/modbus_view.def"
 };
+#undef MODBUS_SYS16
+#undef MODBUS_SYS32
+#undef MODBUS_VC16
+#undef MODBUS_VC32
+#undef SYS_INPUT_16
+#undef SYS_INPUT_32
+#undef SYS_HOLDING_16
+#undef SYS_HOLDING_32
+
+#define SYS_INPUT_16(name, offset)
+#define SYS_INPUT_32(name, offset)
+#define SYS_HOLDING_16(name, offset) \
+	[offset] = { SYS_VIEW_HANDLE_##name, 0, 0, true },
+#define SYS_HOLDING_32(name, offset) \
+	[offset] = { SYS_VIEW_HANDLE_##name, 0, 0, true }, \
+	[(offset) + 1] = { SYS_VIEW_HANDLE_##name, 0, 1, true },
+#define MODBUS_SYS16(name, bank, offset) SYS_##bank##_16(name, offset)
+#define MODBUS_SYS32(name, bank, offset) SYS_##bank##_32(name, offset)
+#define MODBUS_VC16(name, bank, offset)
+#define MODBUS_VC32(name, bank, offset)
+static const struct wire_reg sys_holding_view[CH_BLOCK_SIZE] = {
+#include "reg_store/modbus_view.def"
+};
+#undef MODBUS_SYS16
+#undef MODBUS_SYS32
+#undef MODBUS_VC16
+#undef MODBUS_VC32
+#undef SYS_INPUT_16
+#undef SYS_INPUT_32
+#undef SYS_HOLDING_16
+#undef SYS_HOLDING_32
 
 #define VC_INPUT_16(name, offset) \
 	[offset] = { NULL, REG_VC_ORD_##name, 0, true },
@@ -246,9 +280,7 @@ static enum reg_status read_wire(const struct wire_reg *wire, uint8_t ch,
 		*reg = 0U;
 		return REG_OK;
 	}
-	desc = channel
-		? &vc_catalog_channel_regs[wire->ordinal * VC_MAX_CHANNELS + ch]
-		: wire->handle;
+	desc = channel ? reg_vc_channel_handle(ch, wire->ordinal) : wire->handle;
 	if (desc == NULL) {
 		*reg = 0U;
 		return REG_OK;
@@ -304,9 +336,7 @@ static enum reg_status write_wire(const struct wire_reg *wire, uint8_t ch,
 	if (!wire->mapped) {
 		return REG_INVALID_VALUE;
 	}
-	desc = channel
-		? &vc_catalog_channel_regs[wire->ordinal * VC_MAX_CHANNELS + ch]
-		: wire->handle;
+	desc = channel ? reg_vc_channel_handle(ch, wire->ordinal) : wire->handle;
 	if (desc == NULL) {
 		return REG_UNSUPPORTED;
 	}

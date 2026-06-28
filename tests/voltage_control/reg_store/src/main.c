@@ -10,6 +10,7 @@
 #include "reg_store/reg_schema.h"
 
 #ifdef CONFIG_VC_RUNTIME
+#include "modbus_adapter/modbus_adapter.h"
 #include "voltage_control/vc.h"
 #endif
 
@@ -140,18 +141,106 @@ ZTEST(reg_store, test_owner_write_commits_only_valid_values)
 }
 
 #ifdef CONFIG_VC_RUNTIME
-ZTEST(reg_store, test_sixteen_channel_catalog_is_statically_composed)
+K_THREAD_STACK_DEFINE(post_destroy_writer_stack, 1024);
+static struct k_thread post_destroy_writer_thread;
+static struct k_sem post_destroy_writer_done;
+static enum reg_status post_destroy_writer_status;
+
+static void post_destroy_writer(void *p1, void *p2, void *p3)
+{
+	union reg_value value = { .u16 = 1U };
+
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+	post_destroy_writer_status = reg_write(REG_VC_GLOBAL_ID(
+		REG_VC_GLOBAL_FIELD_STARTUP_CHANNEL_POLICY), value, K_NO_WAIT);
+	k_sem_give(&post_destroy_writer_done);
+}
+
+ZTEST(reg_store, test_vc_catalog_is_unavailable_after_destroy)
 {
 	struct vc_ctx *ctx = vc_init();
 	union reg_value value = {};
+	int completed;
 
 	zassert_not_null(ctx);
+	vc_destroy(ctx);
+	zassert_equal(reg_read(REG_VC_GLOBAL_SUPPORTED_CHANNELS_ID, &value),
+		      REG_BUSY);
+
+	k_sem_init(&post_destroy_writer_done, 0, 1);
+	(void)k_thread_create(&post_destroy_writer_thread,
+		post_destroy_writer_stack,
+		K_THREAD_STACK_SIZEOF(post_destroy_writer_stack),
+		post_destroy_writer, NULL, NULL, NULL,
+		K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
+	completed = k_sem_take(&post_destroy_writer_done, K_MSEC(100));
+	if (completed != 0) {
+		k_thread_abort(&post_destroy_writer_thread);
+	}
+	zassert_equal(completed, 0, "catalog write blocked after destroy");
+	zassert_equal(post_destroy_writer_status, REG_BUSY);
+}
+
+ZTEST(reg_store, test_vc_singleton_rejects_second_create)
+{
+	struct vc_ctx *first = vc_init();
+	struct vc_ctx *second;
+
+	zassert_not_null(first);
+	second = vc_init();
+	zassert_is_null(second);
+	vc_destroy(first);
+}
+
+ZTEST(reg_store, test_fixed_vc_globals_are_directly_bound)
+{
+	const enum reg_vc_global_ordinal fixed_ordinals[] = {
+		REG_VC_GLOBAL_ORD_VARIANT_ID,
+		REG_VC_GLOBAL_ORD_CAPABILITY_FLAGS,
+		REG_VC_GLOBAL_ORD_SUPPORTED_CHANNELS,
+		REG_VC_GLOBAL_ORD_ACTIVE_CHANNEL_MASK,
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE(fixed_ordinals); i++) {
+		reg_handle_t handle = reg_vc_global_handle(fixed_ordinals[i]);
+
+		zassert_not_null(handle);
+		zassert_not_null(handle->value, "fixed ordinal %u is callback-only",
+				 fixed_ordinals[i]);
+	}
+}
+
+ZTEST(reg_store, test_sixteen_channel_catalog_is_statically_composed)
+{
+	struct vc_ctx *ctx = vc_init();
+	struct vc_mb_adapter *mb;
+	reg_handle_t handle;
+	union reg_value value = {};
+	uint16_t word;
+
+	zassert_not_null(ctx);
+	mb = vc_mb_adapter_create();
+	zassert_not_null(mb);
+	handle = reg_vc_channel_handle(15, REG_VC_ORD_CFG_TARGET_VOLTAGE);
+	zassert_not_null(handle);
+	zassert_equal(handle->id,
+		REG_VC_ID(15, REG_VC_FIELD_CFG_TARGET_VOLTAGE));
 	zassert_not_null(reg_describe(
 		REG_VC_ID(15, REG_VC_FIELD_STATUS_BITS)));
 	zassert_equal(reg_read(REG_VC_GLOBAL_ID(
 			       REG_VC_GLOBAL_FIELD_SUPPORTED_CHANNELS),
 			       &value), REG_OK);
 	zassert_equal(value.u16, 16U);
+	zassert_equal(vc_mb_input_rd(mb,
+		CH_BLOCK_BASE(15) + CH_CAPABILITY_FLAGS, &word), VC_MB_OK);
+	zassert_not_equal(word, 0U);
+	zassert_equal(vc_mb_holding_wr(mb,
+		CH_BLOCK_BASE(15) + CH_CFG_TARGET_VOLTAGE, 1234U), VC_MB_OK);
+	zassert_equal(vc_mb_holding_rd(mb,
+		CH_BLOCK_BASE(15) + CH_CFG_TARGET_VOLTAGE, &word), VC_MB_OK);
+	zassert_equal(word, 1234U);
 	vc_destroy(ctx);
 }
 #endif
