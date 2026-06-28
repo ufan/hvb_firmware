@@ -1220,16 +1220,16 @@ static int cmd_watch(const struct shell *sh, size_t argc, char **argv)
 /* ------------------------------------------------------------------ */
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_cal,
-	SHELL_CMD(unlock, NULL, "2-step calibration unlock", cmd_cal_unlock),
-	SHELL_CMD(exit, NULL, "Exit calibration mode", cmd_cal_exit),
-	SHELL_CMD_ARG(output, NULL, "Cal output <ch> <on|off>", cmd_cal_output, 3, 0),
-	SHELL_CMD_ARG(dac, NULL, "Raw DAC write <ch> <code>", cmd_cal_dac, 3, 0),
-	SHELL_CMD_ARG(sample, NULL, "Trigger ADC sample <ch>", cmd_cal_sample, 2, 0),
 	SHELL_CMD_ARG(commit, NULL, "Commit calibration <ch>", cmd_cal_commit, 2, 0),
-	SHELL_CMD_ARG(max_dac, NULL, "Set max DAC limit <ch> <limit>", cmd_cal_max_dac, 3, 0),
 	SHELL_CMD_ARG(config, NULL, "Show cal config <ch>", cmd_cal_config, 2, 0),
+	SHELL_CMD_ARG(dac, NULL, "Raw DAC write <ch> <code>", cmd_cal_dac, 3, 0),
+	SHELL_CMD(exit, NULL, "Exit calibration mode", cmd_cal_exit),
+	SHELL_CMD_ARG(max_dac, NULL, "Set max DAC limit <ch> <limit>", cmd_cal_max_dac, 3, 0),
+	SHELL_CMD_ARG(output, NULL, "Cal output <ch> <on|off>", cmd_cal_output, 3, 0),
+	SHELL_CMD_ARG(sample, NULL, "Trigger ADC sample <ch>", cmd_cal_sample, 2, 0),
 	SHELL_CMD_ARG(set, NULL, "Set cal field <ch> <field> <value>", cmd_cal_set, 4, 0),
 	SHELL_CMD(status, NULL, "Cal session status (all channels)", cmd_cal_status),
+	SHELL_CMD(unlock, NULL, "2-step calibration unlock", cmd_cal_unlock),
 	SHELL_SUBCMD_SET_END
 );
 
