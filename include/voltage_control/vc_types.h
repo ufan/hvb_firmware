@@ -115,6 +115,7 @@ enum vc_cal_field {
 	VC_CAL_FIELD_MEASURED_V_B,
 	VC_CAL_FIELD_MEASURED_I_K,
 	VC_CAL_FIELD_MEASURED_I_B,
+	VC_CAL_FIELD_MAX_DAC,
 };
 
 struct vc_channel_snapshot {

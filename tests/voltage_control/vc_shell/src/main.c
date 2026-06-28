@@ -110,6 +110,18 @@ ZTEST(vc_shell, test_cal_unlock_enters_cal_mode)
 	k_msleep(50);
 }
 
+ZTEST(vc_shell, test_cal_set_max_dac_field)
+{
+	const struct shell *sh = shell_backend_dummy_get_ptr();
+
+	(void)shell_execute_cmd(sh, "vc cal unlock");
+	k_msleep(50);
+	expect_command_result("vc cal set 0 max_dac 1000", 0);
+	/* cleanup */
+	(void)shell_execute_cmd(sh, "vc cal exit");
+	k_msleep(50);
+}
+
 ZTEST(vc_shell, test_mode_cal_is_rejected)
 {
 	expect_command_result("vc mode cal", -EINVAL);

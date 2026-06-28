@@ -371,6 +371,7 @@ static const struct cal_field_entry cal_fields[] = {
 	{"v_cal_b",   VC_CAL_FIELD_MEASURED_V_B},
 	{"i_cal_k",   VC_CAL_FIELD_MEASURED_I_K},
 	{"i_cal_b",   VC_CAL_FIELD_MEASURED_I_B},
+	{"max_dac",   VC_CAL_FIELD_MAX_DAC},
 };
 
 static int lookup_cal_field(const struct shell *sh, const char *name,
@@ -461,6 +462,8 @@ static reg_id_t cal_config_id(uint8_t ch, enum vc_cal_field field)
 		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_K);
 	case VC_CAL_FIELD_MEASURED_I_B:
 		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_B);
+	case VC_CAL_FIELD_MAX_DAC:
+		return REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT);
 	default: return 0U;
 	}
 }
