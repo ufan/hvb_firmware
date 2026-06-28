@@ -161,6 +161,31 @@ ZTEST(vc_shell, test_cal_watch_is_registered)
 	k_msleep(50);
 }
 
+ZTEST(vc_shell, test_cal_sample_shows_raw_adc)
+{
+	const struct shell *sh = shell_backend_dummy_get_ptr();
+	const char *output;
+	size_t size;
+
+	(void)shell_execute_cmd(sh, "vc cal unlock");
+	k_msleep(50);
+	(void)shell_execute_cmd(sh, "vc cal output 0 on");
+	k_msleep(50);
+	(void)shell_execute_cmd(sh, "vc cal dac 0 500");
+	k_msleep(50);
+
+	shell_backend_dummy_clear_output(sh);
+	zassert_equal(shell_execute_cmd(sh, "vc cal sample 0"), 0);
+	k_msleep(100);
+	output = shell_backend_dummy_get_output(sh, &size);
+	zassert_not_null(strstr(output, "raw_v="), "missing raw_v: %s", output);
+
+	(void)shell_execute_cmd(sh, "vc cal output 0 off");
+	k_msleep(50);
+	(void)shell_execute_cmd(sh, "vc cal exit");
+	k_msleep(50);
+}
+
 static void *vc_shell_setup(void)
 {
 	const struct shell *shell = shell_backend_dummy_get_ptr();

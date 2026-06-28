@@ -985,8 +985,13 @@ static int cmd_cal_output(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "expected: on, off");
 		return -EINVAL;
 	}
-	return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_OUTPUT_ENABLE),
-			     enable ? 1U : 0U);
+	int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_OUTPUT_ENABLE),
+				enable ? 1U : 0U);
+
+	if (ret == 0 && enable) {
+		shell_print(sh, "hint: vc cal dac %d <code>", ch);
+	}
+	return ret;
 }
 
 static int cmd_cal_dac(const struct shell *sh, size_t argc, char **argv)
@@ -1001,7 +1006,12 @@ static int cmd_cal_dac(const struct shell *sh, size_t argc, char **argv)
 	}
 	uint16_t code = (uint16_t)strtoul(argv[2], NULL, 0);
 
-	return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_DAC_CODE), code);
+	int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_DAC_CODE), code);
+
+	if (ret == 0) {
+		shell_print(sh, "hint: vc cal sample %d", ch);
+	}
+	return ret;
 }
 
 static int cmd_cal_sample(const struct shell *sh, size_t argc, char **argv)
@@ -1014,8 +1024,30 @@ static int cmd_cal_sample(const struct shell *sh, size_t argc, char **argv)
 	if (parse_channel(sh, argv[1], &ch) < 0) {
 		return -EINVAL;
 	}
-	return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_SAMPLE_CMD),
-			     CAL_COMMAND_EXECUTE);
+	int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_SAMPLE_CMD),
+				CAL_COMMAND_EXECUTE);
+
+	if (ret) {
+		return ret;
+	}
+	k_msleep(20);
+
+	struct vc_channel_snapshot snap;
+
+	if (read_channel_snapshot(ch, &snap) < 0) {
+		return -EIO;
+	}
+	if (snap.channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
+		shell_print(sh, "  dac=%u", snap.raw_dac_readback);
+	}
+	if (snap.channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
+		shell_print(sh, "  raw_v=%d", snap.raw_adc_voltage);
+	}
+	if (snap.channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
+		shell_print(sh, "  raw_i=%d", snap.raw_adc_current);
+	}
+	shell_print(sh, "hint: vc cal set %d <field> <val>  or  vc cal commit %d", ch, ch);
+	return 0;
 }
 
 static int cmd_cal_commit(const struct shell *sh, size_t argc, char **argv)
@@ -1028,8 +1060,13 @@ static int cmd_cal_commit(const struct shell *sh, size_t argc, char **argv)
 	if (parse_channel(sh, argv[1], &ch) < 0) {
 		return -EINVAL;
 	}
-	return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_COMMIT_CMD),
-			     CAL_COMMAND_EXECUTE);
+	int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_COMMIT_CMD),
+				CAL_COMMAND_EXECUTE);
+
+	if (ret == 0) {
+		shell_print(sh, "hint: vc cal exit  (or continue with next channel)");
+	}
+	return ret;
 }
 
 static int cmd_cal_max_dac(const struct shell *sh, size_t argc, char **argv)
