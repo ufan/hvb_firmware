@@ -285,7 +285,6 @@ static int parse_mode(const char *s, enum vc_operating_mode *out)
 {
 	if (strcmp(s, "normal") == 0) { *out = VC_OPERATING_MODE_NORMAL; return 0; }
 	if (strcmp(s, "auto") == 0)   { *out = VC_OPERATING_MODE_AUTOMATIC; return 0; }
-	if (strcmp(s, "cal") == 0)    { *out = VC_OPERATING_MODE_CALIBRATION; return 0; }
 	return -EINVAL;
 }
 
@@ -622,7 +621,7 @@ static int cmd_mode(const struct shell *sh, size_t argc, char **argv)
 	enum vc_operating_mode m;
 
 	if (parse_mode(argv[1], &m) < 0) {
-		shell_error(sh, "usage: vc mode <normal|auto|cal>");
+		shell_error(sh, "usage: vc mode <normal|auto>  (use: vc cal unlock to enter calibration)");
 		return -EINVAL;
 	}
 	return write_command(sh,
@@ -921,15 +920,28 @@ static int cmd_cal_unlock(const struct shell *sh, size_t argc, char **argv)
 	int ret = write_command(sh,
 		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK),
 		CAL_UNLOCK_STEP1);
-
 	if (ret) {
 		return ret;
 	}
 	ret = write_command(sh,
 		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK),
 		CAL_UNLOCK_STEP2);
+	if (ret) {
+		return ret;
+	}
+	ret = write_command(sh,
+		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE),
+		(uint16_t)VC_OPERATING_MODE_CALIBRATION);
 	if (ret == 0) {
-		shell_print(sh, "calibration unlocked");
+		shell_print(sh, "Calibration session started.");
+		shell_print(sh, "  vc cal status              -- session overview");
+		shell_print(sh, "  vc cal max_dac <ch> <lim>  -- set safety DAC cap first");
+		shell_print(sh, "  vc cal output <ch> on      -- enable output");
+		shell_print(sh, "  vc cal dac <ch> <code>     -- set raw DAC code");
+		shell_print(sh, "  vc cal sample <ch>         -- read raw ADC (blocking)");
+		shell_print(sh, "  vc cal set <ch> <fld> <v>  -- adjust cal coefficients");
+		shell_print(sh, "  vc cal commit <ch>         -- save to NVS");
+		shell_print(sh, "  vc cal exit                -- end session");
 	}
 	return ret;
 }
@@ -1190,7 +1202,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_sys,
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc,
 	SHELL_CMD(status, NULL, "System + channel snapshot", cmd_status),
-	SHELL_CMD_ARG(mode, NULL, "Set mode <normal|auto|cal>", cmd_mode, 2, 0),
+	SHELL_CMD_ARG(mode, NULL, "Set mode <normal|auto>", cmd_mode, 2, 0),
 	SHELL_CMD_ARG(param, NULL, "All param <save|load|reset>", cmd_param, 2, 0),
 	SHELL_CMD(sys, &sub_vc_sys, "System commands", NULL),
 	SHELL_CMD_ARG(ch, NULL, "Channel <n> <subcmd> [args]", cmd_ch, 3, 2),

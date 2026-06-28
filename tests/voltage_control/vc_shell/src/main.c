@@ -83,6 +83,38 @@ ZTEST(vc_shell, test_sys_reset_is_not_registered)
 	expect_command_result("vc sys reset", SHELL_CMD_HELP_PRINTED);
 }
 
+ZTEST(vc_shell, test_cal_unlock_enters_cal_mode)
+{
+	const struct shell *sh = shell_backend_dummy_get_ptr();
+	const char *output;
+	size_t size;
+
+	shell_backend_dummy_clear_output(sh);
+	zassert_equal(shell_execute_cmd(sh, "vc cal unlock"), 0,
+		      "vc cal unlock failed");
+	k_msleep(50);
+	output = shell_backend_dummy_get_output(sh, &size);
+	zassert_not_null(strstr(output, "Calibration session started"),
+			 "missing session start banner: %s", output);
+
+	/* verify mode changed to CAL */
+	shell_backend_dummy_clear_output(sh);
+	zassert_equal(shell_execute_cmd(sh, "vc sys status"), 0);
+	k_msleep(50);
+	output = shell_backend_dummy_get_output(sh, &size);
+	zassert_not_null(strstr(output, "Mode:        CAL"),
+			 "mode not CAL: %s", output);
+
+	/* cleanup */
+	(void)shell_execute_cmd(sh, "vc cal exit");
+	k_msleep(50);
+}
+
+ZTEST(vc_shell, test_mode_cal_is_rejected)
+{
+	expect_command_result("vc mode cal", -EINVAL);
+}
+
 static void *vc_shell_setup(void)
 {
 	const struct shell *shell = shell_backend_dummy_get_ptr();
