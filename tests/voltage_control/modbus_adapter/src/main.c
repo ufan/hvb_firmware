@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include <zephyr/ztest.h>
+#include <zephyr/sys/atomic.h>
 
 #if defined(CONFIG_SETTINGS)
 #include <zephyr/settings/settings.h>
@@ -427,10 +428,98 @@ ZTEST(modbus_adapter, test_param_action_storage_returns_device_failure)
 }
 
 #if defined(CONFIG_SETTINGS)
+K_THREAD_STACK_DEFINE(persistence_load_stack, 1024);
+K_THREAD_STACK_DEFINE(persistence_write_stack, 1024);
+static struct k_thread persistence_load_thread;
+static struct k_thread persistence_write_thread;
+static struct k_sem persistence_entered;
+static struct k_sem persistence_release;
+static struct k_sem persistence_load_done;
+static struct k_sem persistence_write_done;
+static atomic_t persistence_observer_enabled;
+static enum reg_status persistence_load_status;
+static enum reg_status persistence_write_status;
+
+void modbus_adapter_test_persistence_observer(void)
+{
+	if (atomic_get(&persistence_observer_enabled) == 0) {
+		return;
+	}
+
+	k_sem_give(&persistence_entered);
+	(void)k_sem_take(&persistence_release, K_FOREVER);
+}
+
+static void persistence_load_entry(void *p1, void *p2, void *p3)
+{
+	union reg_value value = { .u16 = 1U };
+
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+	persistence_load_status = reg_write(
+		REG_MODBUS_ID(REG_MODBUS_FIELD_CONFIG_LOAD), value, K_NO_WAIT);
+	k_sem_give(&persistence_load_done);
+}
+
+static void persistence_write_entry(void *p1, void *p2, void *p3)
+{
+	union reg_value value = { .u16 = 42U };
+
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+	persistence_write_status = reg_write(
+		REG_MODBUS_ID(REG_MODBUS_FIELD_ACTIVE_SLAVE_ADDRESS),
+		value, K_NO_WAIT);
+	k_sem_give(&persistence_write_done);
+}
+
 struct settings_read_ctx {
 	struct mb_adapter_config cfg;
 	bool found;
 };
+
+ZTEST(modbus_adapter, test_settings_io_holds_adapter_owner_lock)
+{
+	struct vc_ctx *ctx = make_ctx();
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
+	int completed_while_settings_blocked;
+
+	zassert_not_null(ctx);
+	zassert_not_null(mb);
+	k_sem_init(&persistence_entered, 0, 1);
+	k_sem_init(&persistence_release, 0, 1);
+	k_sem_init(&persistence_load_done, 0, 1);
+	k_sem_init(&persistence_write_done, 0, 1);
+	atomic_set(&persistence_observer_enabled, 1);
+
+	(void)k_thread_create(&persistence_load_thread, persistence_load_stack,
+		K_THREAD_STACK_SIZEOF(persistence_load_stack),
+		persistence_load_entry, NULL, NULL, NULL,
+		K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
+	zassert_equal(k_sem_take(&persistence_entered, K_SECONDS(1)), 0);
+
+	(void)k_thread_create(&persistence_write_thread, persistence_write_stack,
+		K_THREAD_STACK_SIZEOF(persistence_write_stack),
+		persistence_write_entry, NULL, NULL, NULL,
+		K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
+	completed_while_settings_blocked =
+		k_sem_take(&persistence_write_done, K_MSEC(50));
+
+	k_sem_give(&persistence_release);
+	zassert_equal(k_sem_take(&persistence_load_done, K_SECONDS(1)), 0);
+	if (completed_while_settings_blocked != 0) {
+		zassert_equal(k_sem_take(&persistence_write_done, K_SECONDS(1)), 0);
+	}
+	atomic_clear(&persistence_observer_enabled);
+	destroy_ctx(ctx);
+
+	zassert_not_equal(completed_while_settings_blocked, 0,
+			  "owner write completed during settings I/O");
+	zassert_equal(persistence_load_status, REG_OK);
+	zassert_equal(persistence_write_status, REG_OK);
+}
 
 static int read_mb_config(const char *name, size_t len,
 			  settings_read_cb read_cb, void *cb_arg, void *param)

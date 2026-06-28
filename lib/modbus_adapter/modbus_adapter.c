@@ -25,6 +25,15 @@
 #include <zephyr/settings/settings.h>
 #endif
 
+#if defined(CONFIG_ZTEST)
+__weak void modbus_adapter_test_persistence_observer(void)
+{
+}
+#define MODBUS_PERSISTENCE_OBSERVE() modbus_adapter_test_persistence_observer()
+#else
+#define MODBUS_PERSISTENCE_OBSERVE() do { } while (false)
+#endif
+
 #ifndef CONFIG_VC_MODBUS_UNIT_ID
 #define CONFIG_VC_MODBUS_UNIT_ID 1
 #endif
@@ -272,6 +281,7 @@ static enum vc_mb_result write_sys_holding(struct vc_mb_adapter *a,
 
 static int adapter_save_config(const struct mb_adapter_config *cfg)
 {
+	MODBUS_PERSISTENCE_OBSERVE();
 	return settings_save_one("mb/cfg", cfg, sizeof(*cfg));
 }
 
@@ -304,7 +314,10 @@ static int adapter_load_config(struct mb_adapter_config *cfg)
 		.len = sizeof(*cfg),
 		.found = false,
 	};
-	int rc = settings_load_subtree_direct("mb/cfg", adapter_settings_loader,
+	int rc;
+
+	MODBUS_PERSISTENCE_OBSERVE();
+	rc = settings_load_subtree_direct("mb/cfg", adapter_settings_loader,
 					      &ctx);
 
 	if (rc < 0) {
@@ -388,11 +401,12 @@ static enum vc_mb_result handle_sys_param_action(struct vc_mb_adapter *a,
 	{
 		struct mb_adapter_config candidate;
 
+		k_mutex_lock(&a->lock, K_FOREVER);
 		if (adapter_load_config(&candidate) < 0 ||
 		    !adapter_config_valid(&candidate)) {
+			k_mutex_unlock(&a->lock);
 			return VC_MB_DEVICE_FAILURE;
 		}
-		k_mutex_lock(&a->lock, K_FOREVER);
 		a->boot_cfg = candidate;
 		k_mutex_unlock(&a->lock);
 		break;
@@ -402,10 +416,11 @@ static enum vc_mb_result handle_sys_param_action(struct vc_mb_adapter *a,
 #if defined(CONFIG_SETTINGS)
 		struct mb_adapter_config defaults = adapter_default_config();
 
+		k_mutex_lock(&a->lock, K_FOREVER);
 		if (adapter_save_config(&defaults) < 0) {
+			k_mutex_unlock(&a->lock);
 			return VC_MB_DEVICE_FAILURE;
 		}
-		k_mutex_lock(&a->lock, K_FOREVER);
 		a->boot_cfg = defaults;
 		k_mutex_unlock(&a->lock);
 #endif
@@ -684,15 +699,18 @@ static int modbus_adapter_config_load(void)
 		return -ENODEV;
 	}
 	struct mb_adapter_config candidate;
-	int ret = adapter_load_config(&candidate);
+	int ret;
 
+	k_mutex_lock(&mb->lock, K_FOREVER);
+	ret = adapter_load_config(&candidate);
 	if (ret < 0) {
+		k_mutex_unlock(&mb->lock);
 		return ret;
 	}
 	if (!adapter_config_valid(&candidate)) {
+		k_mutex_unlock(&mb->lock);
 		return -EINVAL;
 	}
-	k_mutex_lock(&mb->lock, K_FOREVER);
 	ret = modbus_adapter_apply_config(&candidate);
 	if (ret == 0) {
 		mb->boot_cfg = candidate;
