@@ -502,6 +502,16 @@ static const struct reg_owner vc_catalog_owner = {
 #define VC_CONTROLLER_NODE DT_NODELABEL(vc_controller)
 #define VC_REGS_PER_CHANNEL REG_VC_ORD_COUNT
 
+BUILD_ASSERT(DT_CHILD_NUM_STATUS_OKAY(VC_CONTROLLER_NODE) <=
+	     VC_PROTOCOL_MAX_CHANNELS,
+	     "VC channel count exceeds protocol limit");
+
+#define VC_ASSERT_CONTIGUOUS_CHANNEL(node_id) \
+	BUILD_ASSERT(DT_REG_ADDR(node_id) == DT_NODE_CHILD_IDX(node_id), \
+		     "VC channel reg values must be contiguous from zero");
+DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, VC_ASSERT_CONTIGUOUS_CHANNEL)
+#undef VC_ASSERT_CONTIGUOUS_CHANNEL
+
 #define VC_CH(node_id) \
 	(vc_controller_canonical_state.channels[DT_REG_ADDR(node_id)])
 #define VC_VALUE_STATUS_BITS(node_id) (&VC_CH(node_id).status_bits)
@@ -599,6 +609,25 @@ const STRUCT_SECTION_ITERABLE_ARRAY(reg_descriptor, vc_catalog_global_regs,
 };
 #undef VC_GLOBAL_REG
 #undef VC_GLOBAL_DESC_INIT
+
+reg_handle_t reg_vc_channel_handle(uint8_t channel,
+				   enum reg_vc_ordinal ordinal)
+{
+	if (channel >= VC_MAX_CHANNELS || ordinal >= REG_VC_ORD_COUNT) {
+		return NULL;
+	}
+
+	return &vc_catalog_channel_regs[ordinal * VC_MAX_CHANNELS + channel];
+}
+
+reg_handle_t reg_vc_global_handle(enum reg_vc_global_ordinal ordinal)
+{
+	if (ordinal >= REG_VC_GLOBAL_ORD_COUNT) {
+		return NULL;
+	}
+
+	return &vc_catalog_global_regs[ordinal];
+}
 
 static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 						  const struct vc_runtime_command *cmd)

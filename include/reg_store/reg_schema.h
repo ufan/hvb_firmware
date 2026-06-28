@@ -85,4 +85,8 @@ enum reg_modbus_field {
 #define REG_VC_STATUS_BITS_ID(channel) \
 	REG_VC_ID((channel), REG_VC_FIELD_STATUS_BITS)
 
+reg_handle_t reg_vc_channel_handle(uint8_t channel,
+				   enum reg_vc_ordinal ordinal);
+reg_handle_t reg_vc_global_handle(enum reg_vc_global_ordinal ordinal);
+
 #endif /* REG_STORE_REG_SCHEMA_H */

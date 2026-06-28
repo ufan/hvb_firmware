@@ -132,7 +132,6 @@ struct wire_reg {
 	bool mapped;
 };
 
-extern const struct reg_descriptor vc_catalog_channel_regs[];
 extern const struct reg_descriptor vc_catalog_global_regs[];
 extern const struct reg_descriptor modbus_protocol_major_reg;
 extern const struct reg_descriptor modbus_protocol_minor_reg;
@@ -246,9 +245,7 @@ static enum reg_status read_wire(const struct wire_reg *wire, uint8_t ch,
 		*reg = 0U;
 		return REG_OK;
 	}
-	desc = channel
-		? &vc_catalog_channel_regs[wire->ordinal * VC_MAX_CHANNELS + ch]
-		: wire->handle;
+	desc = channel ? reg_vc_channel_handle(ch, wire->ordinal) : wire->handle;
 	if (desc == NULL) {
 		*reg = 0U;
 		return REG_OK;
@@ -304,9 +301,7 @@ static enum reg_status write_wire(const struct wire_reg *wire, uint8_t ch,
 	if (!wire->mapped) {
 		return REG_INVALID_VALUE;
 	}
-	desc = channel
-		? &vc_catalog_channel_regs[wire->ordinal * VC_MAX_CHANNELS + ch]
-		: wire->handle;
+	desc = channel ? reg_vc_channel_handle(ch, wire->ordinal) : wire->handle;
 	if (desc == NULL) {
 		return REG_UNSUPPORTED;
 	}

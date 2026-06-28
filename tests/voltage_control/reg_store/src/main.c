@@ -10,6 +10,7 @@
 #include "reg_store/reg_schema.h"
 
 #ifdef CONFIG_VC_RUNTIME
+#include "modbus_adapter/modbus_adapter.h"
 #include "voltage_control/vc.h"
 #endif
 
@@ -196,15 +197,32 @@ ZTEST(reg_store, test_vc_singleton_rejects_second_create)
 ZTEST(reg_store, test_sixteen_channel_catalog_is_statically_composed)
 {
 	struct vc_ctx *ctx = vc_init();
+	struct vc_mb_adapter *mb;
+	reg_handle_t handle;
 	union reg_value value = {};
+	uint16_t word;
 
 	zassert_not_null(ctx);
+	mb = vc_mb_adapter_create();
+	zassert_not_null(mb);
+	handle = reg_vc_channel_handle(15, REG_VC_ORD_CFG_TARGET_VOLTAGE);
+	zassert_not_null(handle);
+	zassert_equal(handle->id,
+		REG_VC_ID(15, REG_VC_FIELD_CFG_TARGET_VOLTAGE));
 	zassert_not_null(reg_describe(
 		REG_VC_ID(15, REG_VC_FIELD_STATUS_BITS)));
 	zassert_equal(reg_read(REG_VC_GLOBAL_ID(
 			       REG_VC_GLOBAL_FIELD_SUPPORTED_CHANNELS),
 			       &value), REG_OK);
 	zassert_equal(value.u16, 16U);
+	zassert_equal(vc_mb_input_rd(mb,
+		CH_BLOCK_BASE(15) + CH_CAPABILITY_FLAGS, &word), VC_MB_OK);
+	zassert_not_equal(word, 0U);
+	zassert_equal(vc_mb_holding_wr(mb,
+		CH_BLOCK_BASE(15) + CH_CFG_TARGET_VOLTAGE, 1234U), VC_MB_OK);
+	zassert_equal(vc_mb_holding_rd(mb,
+		CH_BLOCK_BASE(15) + CH_CFG_TARGET_VOLTAGE, &word), VC_MB_OK);
+	zassert_equal(word, 1234U);
 	vc_destroy(ctx);
 }
 #endif
