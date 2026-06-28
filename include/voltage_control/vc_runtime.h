@@ -82,29 +82,6 @@ enum vc_status vc_runtime_set_channel_field(struct vc_runtime *runtime,
 					    uint16_t value,
 					    k_timeout_t timeout);
 
-/* Read the last published system snapshot (lock-free copy from snapshot_lock). */
-enum vc_status vc_runtime_get_published_system_snapshot(
-	struct vc_runtime *runtime,
-	struct vc_system_snapshot *snap);
-/* Read the last published channel snapshot for the given channel. */
-enum vc_status vc_runtime_get_published_channel_snapshot(
-	struct vc_runtime *runtime,
-	uint8_t channel,
-	struct vc_channel_snapshot *snap);
-/* Read the last published system config. */
-enum vc_status vc_runtime_get_published_system_config(
-	struct vc_runtime *runtime,
-	struct vc_system_config *cfg);
-/* Read the last published channel config for the given channel. */
-enum vc_status vc_runtime_get_published_channel_config(
-	struct vc_runtime *runtime,
-	uint8_t channel,
-	struct vc_channel_config *cfg);
-/* Read the last published channel calibration config for the given channel. */
-enum vc_status vc_runtime_get_published_channel_cal_config(
-	struct vc_runtime *runtime,
-	uint8_t channel,
-	struct vc_channel_cal_config *cal);
 /* Convenience: submit a set-channel-cal-field command. */
 enum vc_status vc_runtime_set_channel_cal_field(struct vc_runtime *runtime,
 						uint8_t channel,

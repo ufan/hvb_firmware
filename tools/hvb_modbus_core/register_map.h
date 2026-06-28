@@ -7,7 +7,7 @@
 
 namespace hvb::reg {
 
-inline constexpr uint16_t MAX_CHANNELS    = 4;
+inline constexpr uint16_t MAX_CHANNELS = VC_PROTOCOL_MAX_CHANNELS;
 
 // channel absolute = SYS_BLOCK_BASE + offset, or CH_BLOCK_BASE(ch) + localOffset
 inline constexpr uint16_t sysAddr(uint16_t off) {

@@ -6,7 +6,7 @@
 
 using namespace hvb;
 
-static constexpr int MAX_ADDR = 280;
+static constexpr int MAX_ADDR = EXT_BLOCK_BASE + EXT_BLOCK_SIZE;
 
 static void initBoard(uint16_t* input, uint16_t* holding) {
     memset(input, 0, MAX_ADDR * sizeof(uint16_t));

@@ -1,3 +1,13 @@
 tests:
   voltage_control.reg_store:
     platform_allow: native_posix
+  voltage_control.reg_store_16ch:
+    platform_allow: native_posix
+    extra_args:
+      - EXTRA_DTC_OVERLAY_FILE=boards/native_posix_16.overlay
+    extra_configs:
+      - CONFIG_VC_RUNTIME=y
+      - CONFIG_VC_RUNTIME_COMMAND_QUEUE_DEPTH=2
+      - CONFIG_VC_RUNTIME_THREAD_STACK_SIZE=2048
+      - CONFIG_VC_RUNTIME_THREAD_PRIORITY=5
+      - CONFIG_VC_RUNTIME_TICK_INTERVAL_MS=1000

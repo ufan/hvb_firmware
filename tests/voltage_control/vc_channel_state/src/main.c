@@ -437,13 +437,11 @@ ZTEST(vc_channel_state, test_run_consumes_meas_buffer)
 {
 	struct vc_channel_buffer meas = {
 		.channel_id = 0,
-		.raw_voltage = 1500,
-		.voltage_timestamp_ms = 100,
-		.raw_current = 300,
-		.current_timestamp_ms = 100,
 	};
 	struct vc_channel run_ch;
 
+	vc_channel_buffer_publish_voltage(&meas, 1500, 100);
+	vc_channel_buffer_publish_current(&meas, 300, 100);
 	vc_channel_init(&run_ch, NULL, 0, FULL_CAPS, &meas, NULL, NULL);
 
 	vc_channel_run(&run_ch, 100, &default_sys);

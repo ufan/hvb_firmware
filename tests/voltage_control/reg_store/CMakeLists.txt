@@ -8,4 +8,5 @@ project(voltage_control_reg_store)
 
 FILE(GLOB app_sources src/*.c)
 target_sources(app PRIVATE ${app_sources})
+target_sources(app PRIVATE ../vc/src/vc_channel_stub.c)
 target_include_directories(app PRIVATE ${HVB_FIRMWARE_ROOT}/include)

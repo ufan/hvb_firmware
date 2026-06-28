@@ -131,8 +131,8 @@ static void hvb_vc_poll_handler(struct k_work *work)
 	}
 
 	if (data->adc_phase == ADC_PHASE_VOLTAGE) {
-		data->meas->raw_voltage = raw;
-		data->meas->voltage_timestamp_ms = k_uptime_get_32();
+		vc_channel_buffer_publish_voltage(data->meas, raw,
+					  k_uptime_get_32());
 
 		if (cfg->capabilities & CH_CAP_CURRENT_MEASUREMENT) {
 			data->adc_phase = ADC_PHASE_CURRENT;
@@ -142,8 +142,8 @@ static void hvb_vc_poll_handler(struct k_work *work)
 
 		hvb_vc_notify_meas(data);
 	} else {
-		data->meas->raw_current = raw;
-		data->meas->current_timestamp_ms = k_uptime_get_32();
+		vc_channel_buffer_publish_current(data->meas, raw,
+					  k_uptime_get_32());
 
 		hvb_vc_notify_meas(data);
 	}

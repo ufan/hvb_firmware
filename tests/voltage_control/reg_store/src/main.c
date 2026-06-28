@@ -5,95 +5,121 @@
 
 #include <zephyr/ztest.h>
 
-#include "reg_store/reg_store.h"
+#include "reg_store/reg_catalog.h"
+#include "reg_store/reg_map.h"
+#include "reg_store/reg_schema.h"
+
+#ifdef CONFIG_VC_RUNTIME
+#include "voltage_control/vc.h"
+#endif
+
+static uint16_t mutable_value = 7U;
+static const uint16_t fixed_value = 42U;
+
+static enum reg_status test_write(const struct reg_descriptor *desc,
+				  union reg_value value,
+				  k_timeout_t timeout)
+{
+	ARG_UNUSED(timeout);
+	if (value.u16 > 100U) {
+		return REG_INVALID_VALUE;
+	}
+	*(uint16_t *)desc->value = value.u16;
+	return REG_OK;
+}
+
+static const struct reg_owner test_owner = {
+	.write = test_write,
+};
+
+REG_DESCRIPTOR_DEFINE(test_fixed_reg,
+	REG_ID(1, 0, 1), REG_U16, REG_RO, REG_FIXED,
+	&fixed_value, NULL);
+REG_DESCRIPTOR_DEFINE(test_mutable_reg,
+	REG_ID(1, 0, 2), REG_U16, REG_RW, REG_CONFIG,
+	&mutable_value, &test_owner);
+REG_DESCRIPTOR_DEFINE(test_command_reg,
+	REG_ID(1, 0, 3), REG_U16, REG_WO, REG_COMMAND,
+	NULL, &test_owner);
 
 ZTEST_SUITE(reg_store, NULL, NULL, NULL, NULL, NULL);
 
-ZTEST(reg_store, test_write_read_input)
+ZTEST(reg_store, test_structured_register_id)
 {
-	uint16_t val = 0;
+	reg_id_t id = REG_ID(0x12, 0x34, 0x5678);
 
-	reg_store_write_input(0, 0xABCD);
-	zassert_true(reg_store_read_input(0, &val));
-	zassert_equal(val, 0xABCD);
+	zassert_equal(REG_ID_MODULE(id), 0x12);
+	zassert_equal(REG_ID_INSTANCE(id), 0x34);
+	zassert_equal(REG_ID_FIELD(id), 0x5678);
 }
 
-ZTEST(reg_store, test_write_read_holding)
+ZTEST(reg_store, test_semantic_ids_are_protocol_neutral_and_stable)
 {
-	uint16_t val = 0;
-
-	reg_store_write_holding(5, 0x1234);
-	zassert_true(reg_store_read_holding(5, &val));
-	zassert_equal(val, 0x1234);
+	zassert_equal(REG_ID_MODULE(REG_SYS_PROTOCOL_MAJOR_ID), REG_MODULE_SYSTEM);
+	zassert_equal(REG_ID_INSTANCE(REG_SYS_PROTOCOL_MAJOR_ID), 0U);
+	zassert_equal(REG_ID_FIELD(REG_SYS_PROTOCOL_MAJOR_ID),
+		      REG_SYS_FIELD_PROTOCOL_MAJOR);
+	zassert_equal(REG_ID_MODULE(REG_VC_STATUS_BITS_ID(15)),
+		      REG_MODULE_VOLTAGE_CONTROL);
+	zassert_equal(REG_ID_INSTANCE(REG_VC_STATUS_BITS_ID(15)), 15U);
+	zassert_equal(REG_ID_FIELD(REG_VC_STATUS_BITS_ID(15)),
+		      REG_VC_FIELD_STATUS_BITS);
 }
 
-/*
- * Wire addresses for unconfigured channel slots (ch2..15) must be rejected.
- * Wire addresses past the extension block must also be rejected.
- */
-ZTEST(reg_store, test_out_of_range_read_returns_false)
+ZTEST(reg_store, test_modbus_v3_view_keeps_fixed_wire_layout)
 {
-	uint16_t val = 0xFFFF;
-
-	/* ch2 wire addr — only 2 channels configured in this test build */
-	zassert_false(reg_store_read_input(CH_BLOCK_BASE(2), &val));
-	zassert_false(reg_store_read_holding(CH_BLOCK_BASE(2), &val));
-	/* past end of extension block */
-	zassert_false(reg_store_read_input(EXT_BLOCK_BASE + EXT_BLOCK_SIZE, &val));
-	zassert_false(reg_store_read_holding(EXT_BLOCK_BASE + EXT_BLOCK_SIZE, &val));
-	zassert_equal(val, 0xFFFF, "out must not be modified on false return");
-}
-
-ZTEST(reg_store, test_out_of_range_write_is_noop)
-{
-	uint16_t val = 0;
-	uint16_t last_ext = EXT_BLOCK_BASE + EXT_BLOCK_SIZE - 1U;
-
-	reg_store_write_input(last_ext, 0x5555);
-	reg_store_write_input(EXT_BLOCK_BASE + EXT_BLOCK_SIZE, 0xDEAD);  /* noop */
-	zassert_true(reg_store_read_input(last_ext, &val));
-	zassert_equal(val, 0x5555);
-}
-
-/*
- * Verify compact channel mapping: configured channel slots are accessible at
- * their protocol wire addresses; unconfigured slots are rejected; the extension
- * block is accessible at its fixed protocol wire address (680) regardless of
- * how many channels are configured; channel and extension blocks are independent.
- */
-ZTEST(reg_store, test_compact_ch_mapping)
-{
-	uint16_t val = 0;
-
-	/* ch0 and ch1 wire addresses are accessible */
-	reg_store_write_input(CH_BLOCK_BASE(0), 0xAAAA);
-	reg_store_write_input(CH_BLOCK_BASE(1) + CH_BLOCK_SIZE - 1, 0xBBBB);
-	zassert_true(reg_store_read_input(CH_BLOCK_BASE(0), &val));
-	zassert_equal(val, 0xAAAA);
-	zassert_true(reg_store_read_input(CH_BLOCK_BASE(1) + CH_BLOCK_SIZE - 1, &val));
-	zassert_equal(val, 0xBBBB);
-
-	/* ch2 wire address is rejected (only 2 channels in this test build) */
-	zassert_false(reg_store_read_input(CH_BLOCK_BASE(2), &val));
-
-	/* Extension block is accessible at its protocol wire address (always 680) */
+	zassert_equal(SYS_PROTOCOL_MAJOR, 0U);
+	zassert_equal(SYS_OPERATING_MODE, 0U);
+	zassert_equal(CH_BLOCK_BASE(15), 640U);
+	zassert_equal(CH_MEASURED_VOLTAGE, 10U);
+	zassert_equal(CH_CFG_TARGET_VOLTAGE, 3U);
 	zassert_equal(EXT_BLOCK_BASE, 680U);
-	reg_store_write_input(EXT_BLOCK_BASE, 0x1111);
-	zassert_true(reg_store_read_input(EXT_BLOCK_BASE, &val));
-	zassert_equal(val, 0x1111);
-
-	reg_store_write_input(EXT_BLOCK_BASE + EXT_BLOCK_SIZE - 1U, 0x2222);
-	zassert_true(reg_store_read_input(EXT_BLOCK_BASE + EXT_BLOCK_SIZE - 1U, &val));
-	zassert_equal(val, 0x2222);
-
-	/* ch0 and ext block are independent — no aliasing */
-	zassert_true(reg_store_read_input(CH_BLOCK_BASE(0), &val));
-	zassert_equal(val, 0xAAAA);
 }
 
-ZTEST(reg_store, test_null_out_returns_false)
+ZTEST(reg_store, test_catalog_reads_fixed_and_mutable_values)
 {
-	reg_store_write_input(0, 42);
-	zassert_false(reg_store_read_input(0, NULL));
-	zassert_false(reg_store_read_holding(0, NULL));
+	union reg_value value = {};
+
+	zassert_equal(reg_read(REG_ID(1, 0, 1), &value), REG_OK);
+	zassert_equal(value.u16, 42U);
+	zassert_equal(reg_read(REG_ID(1, 0, 2), &value), REG_OK);
+	zassert_equal(value.u16, 7U);
 }
+
+ZTEST(reg_store, test_catalog_enforces_access_and_missing_ids)
+{
+	union reg_value value = { .u16 = 9U };
+
+	zassert_equal(reg_write(REG_ID(1, 0, 1), value, K_NO_WAIT),
+		      REG_READ_ONLY);
+	zassert_equal(reg_read(REG_ID(1, 0, 3), &value), REG_WRITE_ONLY);
+	zassert_equal(reg_read(REG_ID(9, 9, 9), &value), REG_NOT_FOUND);
+}
+
+ZTEST(reg_store, test_owner_write_commits_only_valid_values)
+{
+	union reg_value value = { .u16 = 99U };
+
+	zassert_equal(reg_write(REG_ID(1, 0, 2), value, K_MSEC(1)), REG_OK);
+	zassert_equal(mutable_value, 99U);
+	value.u16 = 101U;
+	zassert_equal(reg_write(REG_ID(1, 0, 2), value, K_MSEC(1)),
+		      REG_INVALID_VALUE);
+	zassert_equal(mutable_value, 99U);
+}
+
+#ifdef CONFIG_VC_RUNTIME
+ZTEST(reg_store, test_sixteen_channel_catalog_is_statically_composed)
+{
+	struct vc_ctx *ctx = vc_init();
+	union reg_value value = {};
+
+	zassert_not_null(ctx);
+	zassert_not_null(reg_describe(
+		REG_VC_ID(15, REG_VC_FIELD_STATUS_BITS)));
+	zassert_equal(reg_read(REG_SYS_ID(REG_SYS_FIELD_SUPPORTED_CHANNELS),
+			       &value), REG_OK);
+	zassert_equal(value.u16, 16U);
+	vc_destroy(ctx);
+}
+#endif

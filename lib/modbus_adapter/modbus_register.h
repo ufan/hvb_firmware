@@ -3,9 +3,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * Register-level read/write interface for the VC domain.
- * Read functions draw from the central reg_store; write functions
- * dispatch to the VC domain and write back on success.
+ * Modbus register view over the protocol-neutral Register Catalog.
+ * Writes are validated and committed by the owning module.
  */
 
 #ifndef MODBUS_ADAPTER_MODBUS_REGISTER_H
@@ -17,7 +16,7 @@
 
 struct vc_ctx;
 
-/* Read functions — no ctx needed, data comes from reg_store. */
+/* Read functions — no ctx needed, data comes from the Register Catalog. */
 enum vc_status vc_reg_read_sys_input(uint16_t off, uint16_t *reg);
 enum vc_status vc_reg_read_sys_holding(uint16_t off, uint16_t *reg);
 enum vc_status vc_reg_read_ch_input(uint8_t ch, uint16_t off, uint16_t *reg);
