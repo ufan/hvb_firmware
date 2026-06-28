@@ -41,6 +41,7 @@ static struct vc_channel_cal_config default_cal_config(void)
 		.output_calib_k = 10000,
 		.measured_voltage_calib_k = 10000,
 		.measured_current_calib_k = 10000,
+		.max_raw_dac_limit = VC_DEFAULT_MAX_RAW_DAC,
 	};
 }
 
@@ -320,7 +321,6 @@ void vc_channel_init(struct vc_channel *ch,
 	ch->wake_user_data = wake_user_data;
 	ch->config = vc_channel_default_config();
 	ch->cal_config = default_cal_config();
-	ch->cal_max_raw_dac_limit = VC_DEFAULT_MAX_RAW_DAC;
 	smf_set_initial(SMF_CTX(ch), &vc_channel_states[VC_CHANNEL_SMF_DISABLED_SAFE]);
 
 	if (dev != NULL && dev->api != NULL) {
@@ -516,7 +516,6 @@ void vc_channel_get_snapshot(const struct vc_channel *ch,
 	snap->raw_adc_current = ch->raw_adc_current;
 	snap->raw_dac_readback = ch->raw_dac_readback;
 	snap->cal_output_enabled = ch->cal_output_enabled;
-	snap->cal_max_raw_dac_limit = ch->cal_max_raw_dac_limit;
 }
 
 enum vc_status vc_channel_output_action(struct vc_channel *ch,
@@ -700,7 +699,6 @@ void vc_channel_reset_calibration(struct vc_channel *ch, bool entering)
 	ch->measured_current = 0;
 	ch->raw_dac_readback = 0;
 	ch->cal_output_enabled = 0;
-	ch->cal_max_raw_dac_limit = VC_DEFAULT_MAX_RAW_DAC;
 	ch->raw_adc_voltage = 0;
 	ch->raw_adc_current = 0;
 	ch->cal_sample_status = VC_CAL_SAMPLE_NONE;
@@ -742,7 +740,7 @@ enum vc_status vc_channel_cal_set_raw_dac(struct vc_channel *ch, uint16_t code)
 	if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
 		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
-	if (code > ch->cal_max_raw_dac_limit) {
+	if (code > ch->cal_config.max_raw_dac_limit) {
 		return VC_ERR_INVALID_VALUE;
 	}
 	if (code != 0 && has_hard_safety_fault(ch)) {
@@ -768,7 +766,7 @@ enum vc_status vc_channel_cal_set_max_raw_dac(struct vc_channel *ch,
 	if (limit < ch->raw_dac_readback) {
 		return VC_ERR_UNSAFE_STATE;
 	}
-	ch->cal_max_raw_dac_limit = limit;
+	ch->cal_config.max_raw_dac_limit = limit;
 	return VC_OK;
 }
 

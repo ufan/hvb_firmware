@@ -294,7 +294,7 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 	case REG_VC_FIELD_CAL_OUTPUT_ENABLE: value->u16 = ch->cal_output_enabled; break;
 	case REG_VC_FIELD_CAL_DAC_CODE: value->u16 = ch->raw_dac_readback; break;
 	case REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT:
-		value->u16 = ch->cal_max_raw_dac_limit; break;
+		value->u16 = ch->cal_config.max_raw_dac_limit; break;
 	default:
 		k_mutex_unlock(&runtime->lock);
 		vc_catalog_release();
@@ -558,7 +558,7 @@ DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, VC_ASSERT_CONTIGUOUS_CHANNEL)
 #define VC_VALUE_CAL_SAMPLE_CMD(node_id) NULL
 #define VC_VALUE_CAL_COMMIT_CMD(node_id) NULL
 #define VC_VALUE_CAL_MAX_RAW_DAC_LIMIT(node_id) \
-	(&VC_CH(node_id).cal_max_raw_dac_limit)
+	(&VC_CH(node_id).cal_config.max_raw_dac_limit)
 
 #define VC_NODE_DESCRIPTOR(node_id, field_, type_, access_, category_) \
 	VC_DESC_INIT(DT_REG_ADDR(node_id), field_, type_, access_, category_, \

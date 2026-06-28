@@ -600,7 +600,7 @@ ZTEST(vc_domain, test_calibration_entry_clears_raw_outputs)
 		zassert_equal(ctrl->channels[0].cal_sample_status, VC_CAL_SAMPLE_NONE);
 		zassert_equal(snap.raw_adc_voltage, 0);
 		zassert_equal(snap.raw_adc_current, 0);
-		zassert_equal(snap.cal_max_raw_dac_limit, 0xFFFF);
+		zassert_equal(ctrl->channels[ch].cal_config.max_raw_dac_limit, 0xFFFF);
 	}
 }
 
@@ -683,9 +683,7 @@ ZTEST(vc_domain, test_calibration_raw_dac_limit_validation)
 	zassert_equal(vc_controller_channel_cal_raw_dac(ctrl, 0, 0), VC_OK);
 	zassert_equal(vc_controller_channel_cal_max_raw_dac(ctrl, 0, 0),
 		      VC_OK);
-	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap),
-		      VC_OK);
-	zassert_equal(snap.cal_max_raw_dac_limit, 0);
+	zassert_equal(ctrl->channels[0].cal_config.max_raw_dac_limit, 0);
 	zassert_equal(vc_controller_channel_cal_raw_dac(ctrl, 0, 1),
 		      VC_ERR_INVALID_VALUE);
 	zassert_equal(vc_controller_channel_cal_raw_dac(ctrl, 0, 0), VC_OK);
@@ -765,15 +763,13 @@ ZTEST(vc_domain, test_calibration_exit_clears_raw_output)
 		      VC_OK);
 	zassert_equal(snap.raw_dac_readback, 0);
 	zassert_equal(snap.cal_output_enabled, 0);
-	zassert_equal(snap.cal_max_raw_dac_limit, 0xFFFF);
+	zassert_equal(ctrl->channels[0].cal_config.max_raw_dac_limit, 0xFFFF);
 	zassert_equal(snap.raw_adc_voltage, 0);
 	zassert_equal(snap.raw_adc_current, 0);
 	zassert_equal(ctrl->channels[0].cal_sample_status, VC_CAL_SAMPLE_NONE);
 
 	enter_calibration_mode(ctrl);
-	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap),
-		      VC_OK);
-	zassert_equal(snap.cal_max_raw_dac_limit, 0xFFFF);
+	zassert_equal(ctrl->channels[0].cal_config.max_raw_dac_limit, 0xFFFF);
 }
 
 ZTEST(vc_domain, test_controller_init_returns_non_null)
