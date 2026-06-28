@@ -53,6 +53,14 @@ static atomic_t catalog_lifecycle = ATOMIC_INIT(VC_CATALOG_STOPPED);
 static atomic_t catalog_active_operations;
 K_SEM_DEFINE(catalog_quiesced, 0, 1);
 
+static const uint16_t vc_variant_id = 1U;
+static const uint16_t vc_capability_flags =
+	SYS_CAP_AUTOMATIC_MODE | SYS_CAP_CALIBRATION_MODE |
+	(IS_ENABLED(CONFIG_SYS_STATUS) ? SYS_CAP_ENV_SENSOR : 0U);
+static const uint16_t vc_supported_channels = VC_MAX_CHANNELS;
+static const uint16_t vc_active_channel_mask =
+	(uint16_t)((1UL << VC_MAX_CHANNELS) - 1UL);
+
 static void vc_catalog_release(void)
 {
 	if (atomic_dec(&catalog_active_operations) == 1 &&
@@ -188,20 +196,6 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 			return status;
 		}
 		switch (field) {
-		case REG_VC_GLOBAL_FIELD_VARIANT_ID: value->u16 = 1U; break;
-		case REG_VC_GLOBAL_FIELD_CAPABILITY_FLAGS:
-			value->u16 = SYS_CAP_AUTOMATIC_MODE |
-				     SYS_CAP_CALIBRATION_MODE;
-			if (IS_ENABLED(CONFIG_SYS_STATUS)) {
-				value->u16 |= SYS_CAP_ENV_SENSOR;
-			}
-			break;
-		case REG_VC_GLOBAL_FIELD_SUPPORTED_CHANNELS:
-			value->u16 = (uint16_t)ctrl->channel_count;
-			break;
-		case REG_VC_GLOBAL_FIELD_ACTIVE_CHANNEL_MASK:
-			value->u16 = (uint16_t)((1U << ctrl->channel_count) - 1U);
-			break;
 		case REG_VC_GLOBAL_FIELD_ACTIVE_OPERATING_MODE:
 			value->u16 = (uint16_t)ctrl->operating_mode;
 			break;
@@ -581,10 +575,10 @@ const STRUCT_SECTION_ITERABLE_ARRAY(reg_descriptor, vc_catalog_channel_regs,
 #undef VC_REG32
 #undef VC_NODE_DESCRIPTOR
 
-#define VC_GLOBAL_VALUE_VARIANT_ID NULL
-#define VC_GLOBAL_VALUE_CAPABILITY_FLAGS NULL
-#define VC_GLOBAL_VALUE_SUPPORTED_CHANNELS NULL
-#define VC_GLOBAL_VALUE_ACTIVE_CHANNEL_MASK NULL
+#define VC_GLOBAL_VALUE_VARIANT_ID (&vc_variant_id)
+#define VC_GLOBAL_VALUE_CAPABILITY_FLAGS (&vc_capability_flags)
+#define VC_GLOBAL_VALUE_SUPPORTED_CHANNELS (&vc_supported_channels)
+#define VC_GLOBAL_VALUE_ACTIVE_CHANNEL_MASK (&vc_active_channel_mask)
 #define VC_GLOBAL_VALUE_ACTIVE_OPERATING_MODE NULL
 #define VC_GLOBAL_VALUE_STATUS NULL
 #define VC_GLOBAL_VALUE_FAULT_CAUSE NULL

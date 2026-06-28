@@ -194,6 +194,24 @@ ZTEST(reg_store, test_vc_singleton_rejects_second_create)
 	vc_destroy(first);
 }
 
+ZTEST(reg_store, test_fixed_vc_globals_are_directly_bound)
+{
+	const enum reg_vc_global_ordinal fixed_ordinals[] = {
+		REG_VC_GLOBAL_ORD_VARIANT_ID,
+		REG_VC_GLOBAL_ORD_CAPABILITY_FLAGS,
+		REG_VC_GLOBAL_ORD_SUPPORTED_CHANNELS,
+		REG_VC_GLOBAL_ORD_ACTIVE_CHANNEL_MASK,
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE(fixed_ordinals); i++) {
+		reg_handle_t handle = reg_vc_global_handle(fixed_ordinals[i]);
+
+		zassert_not_null(handle);
+		zassert_not_null(handle->value, "fixed ordinal %u is callback-only",
+				 fixed_ordinals[i]);
+	}
+}
+
 ZTEST(reg_store, test_sixteen_channel_catalog_is_statically_composed)
 {
 	struct vc_ctx *ctx = vc_init();
