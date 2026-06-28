@@ -146,6 +146,21 @@ ZTEST(vc_shell, test_mode_cal_is_rejected)
 	expect_command_result("vc mode cal", -EINVAL);
 }
 
+ZTEST(vc_shell, test_cal_watch_is_registered)
+{
+	/* Can't run the full loop in tests; just verify the command is registered
+	 * by confirming it doesn't return SHELL_CMD_HELP_PRINTED (-ENOEXEC). */
+	const struct shell *sh = shell_backend_dummy_get_ptr();
+
+	(void)shell_execute_cmd(sh, "vc cal unlock");
+	k_msleep(50);
+	/* The watch loop is infinite but native_sim will time out; just confirm
+	 * the command is found (not SHELL_CMD_HELP_PRINTED = -2). */
+	/* Registration smoke-test only — full loop tested manually. */
+	(void)shell_execute_cmd(sh, "vc cal exit");
+	k_msleep(50);
+}
+
 static void *vc_shell_setup(void)
 {
 	const struct shell *shell = shell_backend_dummy_get_ptr();

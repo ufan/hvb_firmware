@@ -1215,6 +1215,82 @@ static int cmd_watch(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+static int cmd_cal_watch(const struct shell *sh, size_t argc, char **argv)
+{
+	CTX_CHECK(sh);
+
+	struct vc_system_snapshot sys;
+
+	if (read_system_snapshot(&sys) < 0) {
+		return -EIO;
+	}
+
+	int8_t watch_ch = -1;
+	int interval_ms = 1000;
+
+	if (argc >= 2) {
+		unsigned long v = strtoul(argv[1], NULL, 10);
+
+		if (v < sys.supported_channel_count) {
+			watch_ch = (int8_t)v;
+			if (argc >= 3) {
+				interval_ms = (int)strtoul(argv[2], NULL, 10);
+			}
+		} else {
+			interval_ms = (int)v;
+		}
+	}
+	if (interval_ms < 100) {
+		interval_ms = 100;
+	}
+
+	shell_print(sh, "cal watch%s  interval=%dms  (any key to stop)",
+		    watch_ch >= 0 ? "" : " all", interval_ms);
+
+	uint8_t from = watch_ch >= 0 ? (uint8_t)watch_ch : 0;
+	uint8_t to   = watch_ch >= 0 ? (uint8_t)watch_ch + 1
+				     : sys.supported_channel_count;
+
+	while (true) {
+		for (uint8_t i = from; i < to; i++) {
+			struct vc_channel_snapshot snap;
+
+			if (read_channel_snapshot(i, &snap) < 0) {
+				return -EIO;
+			}
+			if (!(snap.channel_capability_flags &
+			      (CH_CAP_RAW_OUTPUT_DRIVE |
+			       CH_CAP_VOLTAGE_MEASUREMENT |
+			       CH_CAP_CURRENT_MEASUREMENT))) {
+				continue;
+			}
+			shell_fprintf(sh, SHELL_NORMAL, "CH%d:", i);
+			if (snap.channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
+				shell_fprintf(sh, SHELL_NORMAL, " dac=%u out=%s",
+					      snap.raw_dac_readback,
+					      snap.cal_output_enabled ? "ON" : "OFF");
+			}
+			if (snap.channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
+				shell_fprintf(sh, SHELL_NORMAL, " raw_v=%d",
+					      snap.raw_adc_voltage);
+			}
+			if (snap.channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
+				shell_fprintf(sh, SHELL_NORMAL, " raw_i=%d",
+					      snap.raw_adc_current);
+			}
+			shell_fprintf(sh, SHELL_NORMAL, "\n");
+		}
+		for (int i = 0; i < interval_ms / 50; i++) {
+			k_msleep(50);
+			if (watch_has_key(sh)) {
+				shell_print(sh, "stopped");
+				return 0;
+			}
+		}
+	}
+	return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* Shell command registration                                          */
 /* ------------------------------------------------------------------ */
@@ -1230,6 +1306,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_cal,
 	SHELL_CMD_ARG(set, NULL, "Set cal field <ch> <field> <value>", cmd_cal_set, 4, 0),
 	SHELL_CMD(status, NULL, "Cal session status (all channels)", cmd_cal_status),
 	SHELL_CMD(unlock, NULL, "2-step calibration unlock", cmd_cal_unlock),
+	SHELL_CMD_ARG(watch, NULL, "Cal raw monitor [ch] [interval_ms]", cmd_cal_watch, 1, 2),
 	SHELL_SUBCMD_SET_END
 );
 
