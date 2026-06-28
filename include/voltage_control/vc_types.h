@@ -111,6 +111,7 @@ struct vc_channel_cal_config {
 	int16_t  measured_voltage_calib_b;                     /* mV offset */
 	uint16_t measured_current_calib_k;                     /* ×10⁻⁴ gain (10000 = 1.0×) */
 	int16_t  measured_current_calib_b;                     /* raw ADC counts offset */
+	uint16_t max_raw_dac_limit;                            /* safety cap on DAC code in cal mode */
 };
 
 /* Cal field selector for SET_CHANNEL_CAL_FIELD command */
@@ -140,7 +141,6 @@ struct vc_channel_snapshot {
 	/* cal session state — for FC03 holding readback, not FC04 input */
 	uint16_t raw_dac_readback;
 	uint16_t cal_output_enabled;
-	uint16_t cal_max_raw_dac_limit;
 	/* cal_sample_status removed — CH_CAL_SAMPLE_STATUS deleted in v3 */
 };
 

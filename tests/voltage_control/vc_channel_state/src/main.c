@@ -93,7 +93,7 @@ ZTEST(vc_channel_state, test_snapshot_defaults)
 	zassert_equal(snap.fault_history_cause, 0);
 	zassert_equal(snap.status_bits, 0);
 	zassert_equal(snap.channel_capability_flags, FULL_CAPS);
-	zassert_equal(snap.cal_max_raw_dac_limit, 0xFFFF);
+	zassert_equal(ch.cal_config.max_raw_dac_limit, 0xFFFF);
 }
 
 /* ---- Output action ---- */
@@ -421,7 +421,7 @@ ZTEST(vc_channel_state, test_reset_calibration_entering)
 
 	zassert_equal(ch.raw_dac_readback, 0);
 	zassert_equal(ch.cal_output_enabled, 0);
-	zassert_equal(ch.cal_max_raw_dac_limit, 0xFFFF);
+	zassert_equal(ch.cal_config.max_raw_dac_limit, 0xFFFF);
 	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_CALIBRATION_OUTPUT);
 }
 

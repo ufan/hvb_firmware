@@ -55,7 +55,6 @@ struct vc_channel {
 	uint32_t last_fault_timestamp;
 	enum vc_output_action last_protection_output_action;
 
-	uint16_t cal_max_raw_dac_limit;
 	uint16_t raw_dac_readback;
 	uint16_t cal_output_enabled;
 	enum vc_cal_sample_status cal_sample_status;

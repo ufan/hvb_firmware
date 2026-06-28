@@ -101,8 +101,6 @@ static int read_channel_snapshot(uint8_t ch, struct vc_channel_snapshot *s)
 				 s->raw_dac_readback, u16);
 		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_OUTPUT_ENABLE),
 				 s->cal_output_enabled, u16);
-		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT),
-				 s->cal_max_raw_dac_limit, u16);
 	}
 	return 0;
 }
@@ -180,6 +178,8 @@ static int read_cal_config(uint8_t ch, struct vc_channel_cal_config *c,
 				 c->output_calib_k, u16);
 		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_B),
 				 c->output_calib_b, s16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT),
+				 c->max_raw_dac_limit, u16);
 	}
 	if (*caps & CH_CAP_VOLTAGE_MEASUREMENT) {
 		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_K),
@@ -572,6 +572,7 @@ static void print_cal_config(const struct shell *sh, uint8_t ch,
 	if (caps & CH_CAP_RAW_OUTPUT_DRIVE) {
 		shell_print(sh, "  out_cal:  k=%d b=%d",
 			    c->output_calib_k, c->output_calib_b);
+		shell_print(sh, "  max_dac:  %u", c->max_raw_dac_limit);
 	}
 	if (caps & CH_CAP_VOLTAGE_MEASUREMENT) {
 		shell_print(sh, "  v_cal:    k=%d b=%d",
