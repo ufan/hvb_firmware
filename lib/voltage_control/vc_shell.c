@@ -61,6 +61,10 @@ static int read_system_snapshot(struct vc_system_snapshot *s)
 		 s->system_status, u16);
 	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_FAULT_CAUSE),
 		 s->system_fault_cause, u16);
+	uint16_t watchdog_s = 0;
+	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_WATCHDOG_REMAINING_S),
+		 watchdog_s, u16);
+	s->cal_watchdog_remaining_ms = (uint32_t)watchdog_s * 1000U;
 	return 0;
 }
 

@@ -202,6 +202,9 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 			break;
 		case REG_VC_GLOBAL_FIELD_STATUS: value->u16 = 0U; break;
 		case REG_VC_GLOBAL_FIELD_FAULT_CAUSE: value->u16 = 0U; break;
+		case REG_VC_GLOBAL_FIELD_CAL_WATCHDOG_REMAINING_S:
+			value->u16 = (uint16_t)((ctrl->cal_watchdog_ms + 999U) / 1000U);
+			break;
 		case REG_VC_GLOBAL_FIELD_OPERATING_MODE:
 			value->u16 = (uint16_t)ctrl->sys_cfg.operating_mode;
 			break;
@@ -592,6 +595,7 @@ const STRUCT_SECTION_ITERABLE_ARRAY(reg_descriptor, vc_catalog_channel_regs,
 #define VC_GLOBAL_VALUE_PARAM_ACTION NULL
 #define VC_GLOBAL_VALUE_CAL_UNLOCK NULL
 #define VC_GLOBAL_VALUE_CAL_EXIT NULL
+#define VC_GLOBAL_VALUE_CAL_WATCHDOG_REMAINING_S NULL
 
 #define VC_GLOBAL_DESC_INIT(field_, type_, access_, category_) { \
 	.id = REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_##field_), \
