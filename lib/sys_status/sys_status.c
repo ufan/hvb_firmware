@@ -95,6 +95,10 @@ static void read_environment(void)
 
 	ret = sensor_sample_fetch(sht31_dev);
 	if (ret < 0) {
+		k_sleep(K_MSEC(50));
+		ret = sensor_sample_fetch(sht31_dev);
+	}
+	if (ret < 0) {
 		LOG_WRN("SHT3x fetch failed: %d", ret);
 		atomic_set(&env_temperature, SYS_STATUS_TEMP_SENTINEL);
 		atomic_set(&env_humidity, SYS_STATUS_HUMID_SENTINEL);
@@ -153,8 +157,12 @@ static int sht31_pre_init(void)
 
 	uint8_t cmd[2] = { SHT3XD_CMD_BREAK >> 8, SHT3XD_CMD_BREAK & 0xFF };
 
-	i2c_write(i2c, cmd, sizeof(cmd), SHT3XD_I2C_ADDR);
-	k_busy_wait(1000);
+	int ret = i2c_write(i2c, cmd, sizeof(cmd), SHT3XD_I2C_ADDR);
+
+	if (ret < 0) {
+		LOG_WRN("SHT3x BREAK failed: %d", ret);
+	}
+	k_busy_wait(2000);
 	return 0;
 }
 

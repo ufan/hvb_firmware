@@ -34,8 +34,12 @@ static int sht31_pre_init(void)
 	}
 	uint8_t cmd[2] = { SHT3XD_CMD_BREAK >> 8, SHT3XD_CMD_BREAK & 0xFF };
 
-	i2c_write(i2c, cmd, sizeof(cmd), SHT3XD_I2C_ADDR);
-	k_busy_wait(1000);
+	int ret = i2c_write(i2c, cmd, sizeof(cmd), SHT3XD_I2C_ADDR);
+
+	if (ret < 0) {
+		printk("SHT3x BREAK failed: %d\n", ret);
+	}
+	k_busy_wait(2000);
 	return 0;
 }
 
