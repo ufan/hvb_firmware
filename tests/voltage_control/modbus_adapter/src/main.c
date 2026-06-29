@@ -178,6 +178,34 @@ ZTEST(modbus_adapter, test_invalid_address_returns_illegal_address)
 	destroy_ctx(ctx);
 }
 
+ZTEST(modbus_adapter, test_wo_channel_holding_read_returns_zero)
+{
+	/* Write-only command registers (OUTPUT_ACTION, FAULT_CMD, PARAM_ACTION)
+	 * must not raise exception 0x02 when FC03-read; they return 0 silently.
+	 * This prevents log spam during normal TUI/CLI polling cycles. */
+	struct vc_ctx *ctx = make_ctx();
+	struct vc_mb_adapter *mb = vc_mb_adapter_create();
+	uint16_t reg;
+
+	zassert_not_null(ctx);
+	reg = 0xFFFFu;
+	zassert_equal(vc_mb_holding_rd(mb, CH_BLOCK_BASE(0) + CH_OUTPUT_ACTION,
+				       &reg), VC_MB_OK);
+	zassert_equal(reg, 0u);
+
+	reg = 0xFFFFu;
+	zassert_equal(vc_mb_holding_rd(mb, CH_BLOCK_BASE(0) + CH_FAULT_CMD,
+				       &reg), VC_MB_OK);
+	zassert_equal(reg, 0u);
+
+	reg = 0xFFFFu;
+	zassert_equal(vc_mb_holding_rd(mb, CH_BLOCK_BASE(0) + CH_PARAM_ACTION,
+				       &reg), VC_MB_OK);
+	zassert_equal(reg, 0u);
+
+	destroy_ctx(ctx);
+}
+
 /* ---- System holding read/write round-trip ---- */
 
 #if !defined(CONFIG_SETTINGS)

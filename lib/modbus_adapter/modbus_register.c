@@ -292,6 +292,10 @@ static enum reg_status read_wire(const struct wire_reg *wire, uint8_t ch,
 		return REG_OK;
 	}
 	status = reg_read_descriptor(desc, &value);
+	if (status == REG_WRITE_ONLY) {
+		*reg = 0U;
+		return REG_OK;
+	}
 	if (status != REG_OK) {
 		return status;
 	}
