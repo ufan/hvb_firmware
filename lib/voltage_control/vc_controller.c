@@ -7,6 +7,8 @@
 #include "reg_store/reg_map.h"
 #include <string.h>
 #include <errno.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(vc_controller, LOG_LEVEL_WRN);
 
 #ifdef CONFIG_VC_CHANNEL_CONTROLLER
 #include <zephyr/sys/iterable_sections.h>
@@ -145,6 +147,7 @@ void vc_controller_tick(struct vc_controller *ctrl, uint32_t dt_ms)
 {
 	if (ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
 		if (dt_ms >= ctrl->cal_watchdog_ms) {
+			LOG_WRN("calibration watchdog expired, session terminated");
 			(void)vc_controller_cal_exit(ctrl);
 		} else {
 			ctrl->cal_watchdog_ms -= dt_ms;
@@ -314,6 +317,7 @@ void vc_controller_get_system_snapshot(
 	snap->supported_channel_count = (uint16_t)ctrl->channel_count;
 	snap->active_channel_mask = VC_CHANNEL_MASK(ctrl->channel_count);
 	snap->active_operating_mode = ctrl->operating_mode;
+	snap->cal_watchdog_remaining_ms = ctrl->cal_watchdog_ms;
 }
 
 enum vc_status vc_controller_get_channel_snapshot(

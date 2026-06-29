@@ -1148,7 +1148,10 @@ static int cmd_cal_status(const struct shell *sh, size_t argc, char **argv)
 	if (read_system_snapshot(&sys) < 0) {
 		return -EIO;
 	}
-	shell_print(sh, "Cal status  mode=%s", mode_str(sys.active_operating_mode));
+	uint32_t remaining_s = (sys.cal_watchdog_remaining_ms + 999U) / 1000U;
+
+	shell_print(sh, "Cal status  mode=%s  timeout_in=%us",
+		    mode_str(sys.active_operating_mode), remaining_s);
 	for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
 		struct vc_channel_snapshot snap;
 

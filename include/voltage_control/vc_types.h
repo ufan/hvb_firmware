@@ -148,6 +148,7 @@ struct vc_system_snapshot {
 	enum vc_operating_mode active_operating_mode;
 	uint16_t system_status;
 	uint16_t system_fault_cause;
+	uint32_t cal_watchdog_remaining_ms;
 };
 
 enum vc_config_field {
