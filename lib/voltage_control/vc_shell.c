@@ -1134,7 +1134,13 @@ static int cmd_cal(const struct shell *sh, size_t argc, char **argv)
 			shell_error(sh, "usage: vc cal %d dac <code>", ch);
 			return -EINVAL;
 		}
-		uint16_t code = (uint16_t)strtoul(argv[3], NULL, 0);
+		unsigned long raw = strtoul(argv[3], NULL, 0);
+
+		if (raw > UINT16_MAX) {
+			shell_error(sh, "dac code out of range (0–65535)");
+			return -EINVAL;
+		}
+		uint16_t code = (uint16_t)raw;
 		int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_DAC_CODE), code);
 
 		if (ret == 0) {
