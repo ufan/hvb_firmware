@@ -467,6 +467,22 @@ static reg_id_t cal_config_id(uint8_t ch, enum vc_cal_field field)
 	}
 }
 
+static const char *reg_status_name(enum reg_status s)
+{
+	switch (s) {
+	case REG_OK:               return "ok";
+	case REG_NOT_FOUND:        return "not_found";
+	case REG_INVALID_ARGUMENT: return "invalid_argument";
+	case REG_INVALID_VALUE:    return "invalid_value";
+	case REG_READ_ONLY:        return "read_only";
+	case REG_WRITE_ONLY:       return "write_only";
+	case REG_UNSUPPORTED:      return "unsupported";
+	case REG_BUSY:             return "busy";
+	case REG_IO_ERROR:         return "io_error";
+	default:                   return "unknown";
+	}
+}
+
 static int write_register(const struct shell *sh, reg_id_t id, uint16_t input,
 			  k_timeout_t timeout)
 {
@@ -475,7 +491,7 @@ static int write_register(const struct shell *sh, reg_id_t id, uint16_t input,
 					       : reg_write(id, value, timeout);
 
 	if (status != REG_OK) {
-		shell_error(sh, "error: %d", status);
+		shell_error(sh, "error: %s", reg_status_name(status));
 		return -EIO;
 	}
 	return 0;
@@ -1160,6 +1176,8 @@ static int cmd_cal(const struct shell *sh, size_t argc, char **argv)
 
 		if (ret == 0) {
 			shell_print(sh, "hint: vc cal exit  (or continue with next channel)");
+		} else {
+			shell_print(sh, "hint: vc cal %d output off  +  vc cal %d dac 0", ch, ch);
 		}
 		return ret;
 	}
