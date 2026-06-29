@@ -11,7 +11,6 @@
 
 #include "voltage_control/vc_shell.h"
 #include "voltage_control/vc.h"
-#include "voltage_control/vc_runtime.h"
 #include "reg_store/reg_catalog.h"
 #include "reg_store/reg_map.h"
 #include "reg_store/reg_schema.h"
@@ -44,8 +43,6 @@ void vc_shell_init(void)
 static int read_system_snapshot(struct vc_system_snapshot *s)
 {
 	memset(s, 0, sizeof(*s));
-	s->cal_watchdog_remaining_ms =
-		(uint32_t)vc_runtime_peek_cal_watchdog_s() * 1000U;
 	VC_SHELL_READ_REG(REG_MODBUS_ID(REG_MODBUS_FIELD_PROTOCOL_MAJOR),
 		 s->protocol_major, u16);
 	VC_SHELL_READ_REG(REG_MODBUS_ID(REG_MODBUS_FIELD_PROTOCOL_MINOR),
@@ -64,6 +61,10 @@ static int read_system_snapshot(struct vc_system_snapshot *s)
 		 s->system_status, u16);
 	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_FAULT_CAUSE),
 		 s->system_fault_cause, u16);
+	uint16_t watchdog_s = 0;
+	VC_SHELL_READ_REG(REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_WATCHDOG_REMAINING_S),
+		 watchdog_s, u16);
+	s->cal_watchdog_remaining_ms = (uint32_t)watchdog_s * 1000U;
 	return 0;
 }
 
