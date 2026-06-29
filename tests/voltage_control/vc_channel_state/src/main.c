@@ -75,7 +75,7 @@ ZTEST(vc_channel_state, test_default_config)
 	zassert_equal(cfg.recovery_policy_mode, VC_RECOVERY_MANUAL_LATCH);
 
 	zassert_equal(vc_channel_get_cal_config(&ch, &cal), VC_OK);
-	zassert_equal(cal.output_calib_k, 10000);
+	zassert_equal(cal.output_calib_k, 32768);
 	zassert_equal(cal.output_calib_b, 0);
 	zassert_equal(cal.measured_voltage_calib_k, 10000);
 	zassert_equal(cal.measured_current_calib_k, 10000);
@@ -93,7 +93,6 @@ ZTEST(vc_channel_state, test_snapshot_defaults)
 	zassert_equal(snap.fault_history_cause, 0);
 	zassert_equal(snap.status_bits, 0);
 	zassert_equal(snap.channel_capability_flags, FULL_CAPS);
-	zassert_equal(ch.cal_config.max_raw_dac_limit, 0xFFFF);
 }
 
 /* ---- Output action ---- */
@@ -388,13 +387,6 @@ ZTEST(vc_channel_state, test_cal_set_raw_dac_requires_output_enabled)
 	zassert_equal(ch.raw_dac_readback, 100);
 }
 
-ZTEST(vc_channel_state, test_cal_max_raw_dac_limit)
-{
-	vc_channel_cal_set_max_raw_dac(&ch, 50);
-	vc_channel_cal_set_output_enable(&ch, true);
-	zassert_equal(vc_channel_cal_set_raw_dac(&ch, 51), VC_ERR_INVALID_VALUE);
-	zassert_equal(vc_channel_cal_set_raw_dac(&ch, 50), VC_OK);
-}
 
 ZTEST(vc_channel_state, test_cal_sample_captures_raw)
 {
@@ -430,7 +422,6 @@ ZTEST(vc_channel_state, test_reset_calibration_entering)
 
 	zassert_equal(ch.raw_dac_readback, 0);
 	zassert_equal(ch.cal_output_enabled, 0);
-	zassert_equal(ch.cal_config.max_raw_dac_limit, 0xFFFF);
 	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_CALIBRATION_OUTPUT);
 }
 
@@ -512,7 +503,7 @@ ZTEST(vc_channel_state, test_apply_hw_calls_driver)
 	struct vc_stub_data *stub = dev->data;
 
 	zassert_true(stub->last_enable, "hw should be enabled");
-	zassert_equal(stub->last_output_code, 5000, "hw should have DAC code 5000");
+	zassert_equal(stub->last_output_code, 16384, "hw should have DAC code 16384");
 }
 
 ZTEST(vc_channel_state, test_apply_hw_disable_immediate_hv_on_dac_zero)

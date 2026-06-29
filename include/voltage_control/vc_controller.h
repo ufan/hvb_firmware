@@ -82,8 +82,6 @@ enum vc_status vc_controller_channel_cal_sample(
 	struct vc_controller *ctrl, uint8_t ch);
 enum vc_status vc_controller_channel_cal_commit(
 	struct vc_controller *ctrl, uint8_t ch);
-enum vc_status vc_controller_channel_cal_max_raw_dac(
-	struct vc_controller *ctrl, uint8_t ch, uint16_t limit);
 
 void vc_controller_set_storage_backend(
 	struct vc_controller *ctrl, const struct vc_storage_backend *backend);

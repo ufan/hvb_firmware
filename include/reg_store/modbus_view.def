@@ -92,5 +92,4 @@ MODBUS_VC16(CAL_OUTPUT_ENABLE,       HOLDING, 30)
 MODBUS_VC16(CAL_DAC_CODE,            HOLDING, 31)
 MODBUS_VC16(CAL_SAMPLE_CMD,          HOLDING, 32)
 MODBUS_VC16(CAL_COMMIT_CMD,          HOLDING, 33)
-MODBUS_VC16(CAL_MAX_RAW_DAC_LIMIT,   HOLDING, 34)
-/* 35..39 reserved for future calibration command fields */
+/* 34..39 reserved for future calibration command fields */

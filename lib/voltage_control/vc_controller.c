@@ -582,22 +582,6 @@ enum vc_status vc_controller_channel_cal_commit(
 	return VC_OK;
 }
 
-enum vc_status vc_controller_channel_cal_max_raw_dac(
-	struct vc_controller *ctrl, uint8_t ch, uint16_t limit)
-{
-	if (!channel_valid(ctrl, ch)) {
-		return VC_ERR_UNSUPPORTED_CHANNEL;
-	}
-	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
-		return VC_ERR_INVALID_COMMAND;
-	}
-	enum vc_status st = vc_channel_cal_set_max_raw_dac(&ctrl->channels[ch], limit);
-
-	if (st == VC_OK) {
-		cal_watchdog_reset(ctrl);
-	}
-	return st;
-}
 
 /* ---- Start sampling ---- */
 

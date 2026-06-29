@@ -104,7 +104,6 @@ struct vc_channel_cal_config {
 	int16_t  measured_voltage_calib_b;                     /* mV offset */
 	uint16_t measured_current_calib_k;                     /* ×10⁻⁴ gain (10000 = 1.0×) */
 	int16_t  measured_current_calib_b;                     /* raw ADC counts offset */
-	uint16_t max_raw_dac_limit;                            /* safety cap on DAC code in cal mode */
 };
 
 /* Cal field selector for SET_CHANNEL_CAL_FIELD command */
@@ -115,7 +114,6 @@ enum vc_cal_field {
 	VC_CAL_FIELD_MEASURED_V_B,
 	VC_CAL_FIELD_MEASURED_I_K,
 	VC_CAL_FIELD_MEASURED_I_B,
-	VC_CAL_FIELD_MAX_DAC,
 };
 
 struct vc_channel_snapshot {

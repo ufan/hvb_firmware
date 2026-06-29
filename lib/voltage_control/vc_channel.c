@@ -35,10 +35,9 @@ struct vc_channel_config vc_channel_default_config(void)
 static struct vc_channel_cal_config default_cal_config(void)
 {
 	return (struct vc_channel_cal_config){
-		.output_calib_k = 10000,
-		.measured_voltage_calib_k = 10000,
-		.measured_current_calib_k = 10000,
-		.max_raw_dac_limit = CONFIG_VC_CAL_MAX_RAW_DAC,
+		.output_calib_k = CONFIG_VC_DEFAULT_OUTPUT_CAL_K,
+		.measured_voltage_calib_k = CONFIG_VC_DEFAULT_MEASURED_V_CAL_K,
+		.measured_current_calib_k = CONFIG_VC_DEFAULT_MEASURED_I_CAL_K,
 	};
 }
 
@@ -786,7 +785,7 @@ enum vc_status vc_channel_cal_set_raw_dac(struct vc_channel *ch, uint16_t code)
 	if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
 		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
-	if (code > ch->cal_config.max_raw_dac_limit) {
+	if (code > CONFIG_VC_CAL_MAX_RAW_DAC) {
 		return VC_ERR_INVALID_VALUE;
 	}
 	if (code != 0 && has_hard_safety_fault(ch)) {
@@ -797,22 +796,6 @@ enum vc_status vc_channel_cal_set_raw_dac(struct vc_channel *ch, uint16_t code)
 	}
 	ch->raw_dac_readback = code;
 	apply_hw(ch);
-	return VC_OK;
-}
-
-enum vc_status vc_channel_cal_set_max_raw_dac(struct vc_channel *ch,
-					      uint16_t limit)
-{
-	if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
-		return VC_ERR_UNSUPPORTED_CAPABILITY;
-	}
-	if (limit > CONFIG_VC_CAL_MAX_RAW_DAC) {
-		return VC_ERR_INVALID_VALUE;
-	}
-	if (limit < ch->raw_dac_readback) {
-		return VC_ERR_UNSAFE_STATE;
-	}
-	ch->cal_config.max_raw_dac_limit = limit;
 	return VC_OK;
 }
 

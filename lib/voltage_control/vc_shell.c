@@ -182,8 +182,6 @@ static int read_cal_config(uint8_t ch, struct vc_channel_cal_config *c,
 				 c->output_calib_k, u16);
 		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_B),
 				 c->output_calib_b, s16);
-		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT),
-				 c->max_raw_dac_limit, u16);
 	}
 	if (*caps & CH_CAP_VOLTAGE_MEASUREMENT) {
 		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_K),
@@ -375,7 +373,6 @@ static const struct cal_field_entry cal_fields[] = {
 	{"v_cal_b",   VC_CAL_FIELD_MEASURED_V_B},
 	{"i_cal_k",   VC_CAL_FIELD_MEASURED_I_K},
 	{"i_cal_b",   VC_CAL_FIELD_MEASURED_I_B},
-	{"max_dac",   VC_CAL_FIELD_MAX_DAC},
 };
 
 static int lookup_cal_field(const struct shell *sh, const char *name,
@@ -466,8 +463,6 @@ static reg_id_t cal_config_id(uint8_t ch, enum vc_cal_field field)
 		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_K);
 	case VC_CAL_FIELD_MEASURED_I_B:
 		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_B);
-	case VC_CAL_FIELD_MAX_DAC:
-		return REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT);
 	default: return 0U;
 	}
 }
@@ -578,7 +573,6 @@ static void print_cal_config(const struct shell *sh, uint8_t ch,
 	if (caps & CH_CAP_RAW_OUTPUT_DRIVE) {
 		shell_print(sh, "  out_cal:  k=%d b=%d",
 			    c->output_calib_k, c->output_calib_b);
-		shell_print(sh, "  max_dac:  %u", c->max_raw_dac_limit);
 	}
 	if (caps & CH_CAP_VOLTAGE_MEASUREMENT) {
 		shell_print(sh, "  v_cal:    k=%d b=%d",
@@ -952,8 +946,7 @@ static int cmd_cal(const struct shell *sh, size_t argc, char **argv)
 		if (ret == 0) {
 			shell_print(sh, "Calibration session started.");
 			shell_print(sh, "  vc cal status              -- session overview");
-			shell_print(sh, "  vc cal <ch> max_dac <lim>  -- set safety DAC cap first");
-			shell_print(sh, "  vc cal <ch> output on      -- enable output");
+				shell_print(sh, "  vc cal <ch> output on      -- enable output");
 			shell_print(sh, "  vc cal <ch> dac <code>     -- set raw DAC code");
 			shell_print(sh, "  vc cal <ch> sample         -- read raw ADC (blocking)");
 			shell_print(sh, "  vc cal <ch> set <fld> <v>  -- adjust cal coefficients");
@@ -1090,7 +1083,7 @@ static int cmd_cal(const struct shell *sh, size_t argc, char **argv)
 		return -EINVAL;
 	}
 	if (argc < 3) {
-		shell_error(sh, "usage: vc cal %d <output|dac|sample|commit|config|max_dac|set>", ch);
+		shell_error(sh, "usage: vc cal %d <output|dac|sample|commit|config|set>", ch);
 		return -EINVAL;
 	}
 
@@ -1182,16 +1175,6 @@ static int cmd_cal(const struct shell *sh, size_t argc, char **argv)
 		return 0;
 	}
 
-	if (strcmp(sub, "max_dac") == 0) {
-		if (argc < 4) {
-			shell_error(sh, "usage: vc cal %d max_dac <limit>", ch);
-			return -EINVAL;
-		}
-		uint16_t limit = (uint16_t)strtoul(argv[3], NULL, 0);
-
-		return write_command(sh,
-			REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT), limit);
-	}
 
 	if (strcmp(sub, "set") == 0) {
 		if (argc < 5) {
@@ -1217,7 +1200,7 @@ static int cmd_cal(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	shell_error(sh, "unknown cal subcommand: %s", sub);
-	shell_print(sh, "subcommands: output dac sample commit config max_dac set");
+	shell_print(sh, "subcommands: output dac sample commit config set");
 	return -EINVAL;
 }
 

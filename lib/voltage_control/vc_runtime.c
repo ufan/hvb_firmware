@@ -134,7 +134,6 @@ static bool vc_catalog_supported(uint16_t field, uint16_t caps)
 	case REG_VC_FIELD_OUTPUT_CAL_B:
 	case REG_VC_FIELD_CAL_OUTPUT_ENABLE:
 	case REG_VC_FIELD_CAL_DAC_CODE:
-	case REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT:
 		return (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0U;
 	case REG_VC_FIELD_AUTO_DERATE_STEP:
 		return (caps & (CH_CAP_RAW_OUTPUT_DRIVE |
@@ -296,8 +295,6 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 		value->s16 = ch->cal_config.measured_current_calib_b; break;
 	case REG_VC_FIELD_CAL_OUTPUT_ENABLE: value->u16 = ch->cal_output_enabled; break;
 	case REG_VC_FIELD_CAL_DAC_CODE: value->u16 = ch->raw_dac_readback; break;
-	case REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT:
-		value->u16 = ch->cal_config.max_raw_dac_limit; break;
 	default:
 		k_mutex_unlock(&runtime->lock);
 		vc_catalog_release();
@@ -471,10 +468,6 @@ static enum reg_status vc_catalog_write(const struct reg_descriptor *desc,
 		}
 		cmd.type = VC_RUNTIME_CMD_CALIBRATION_COMMIT;
 		break;
-	case REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT:
-		cmd.type = VC_RUNTIME_CMD_CALIBRATION_MAX_RAW_DAC;
-		cmd.payload.calibration_max_raw_dac = value.u16;
-		break;
 	default:
 		VC_CATALOG_WRITE_RETURN(REG_UNSUPPORTED);
 	}
@@ -560,8 +553,6 @@ DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, VC_ASSERT_CONTIGUOUS_CHANNEL)
 #define VC_VALUE_CAL_DAC_CODE(node_id) (&VC_CH(node_id).raw_dac_readback)
 #define VC_VALUE_CAL_SAMPLE_CMD(node_id) NULL
 #define VC_VALUE_CAL_COMMIT_CMD(node_id) NULL
-#define VC_VALUE_CAL_MAX_RAW_DAC_LIMIT(node_id) \
-	(&VC_CH(node_id).cal_config.max_raw_dac_limit)
 
 #define VC_NODE_DESCRIPTOR(node_id, field_, type_, access_, category_) \
 	VC_DESC_INIT(DT_REG_ADDR(node_id), field_, type_, access_, category_, \
@@ -655,9 +646,6 @@ static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 		return vc_controller_channel_cal_sample(ctrl, cmd->channel);
 	case VC_RUNTIME_CMD_CALIBRATION_COMMIT:
 		return vc_controller_channel_cal_commit(ctrl, cmd->channel);
-	case VC_RUNTIME_CMD_CALIBRATION_MAX_RAW_DAC:
-		return vc_controller_channel_cal_max_raw_dac(ctrl, cmd->channel,
-							    cmd->payload.calibration_max_raw_dac);
 	case VC_RUNTIME_CMD_CALIBRATION_EXIT:
 		return vc_controller_cal_exit(ctrl);
 	case VC_RUNTIME_CMD_SYSTEM_PARAM_ACTION:

@@ -51,10 +51,32 @@ config VC_CAL_MAX_RAW_DAC
 	default 65535
 	range 1 65535
 	help
-	  Absolute upper bound for the calibration DAC code, determined by the
-	  hardware DAC resolution. Used as the factory default for the per-channel
-	  max_raw_dac_limit and as the validation ceiling when that limit is updated
-	  via vc cal <ch> max_dac. 65535 = full 16-bit range.
+	  Absolute upper bound for the calibration DAC code, set by the hardware
+	  DAC resolution. Applied at build time; not adjustable at runtime.
+	  65535 = full 16-bit range.
+
+config VC_DEFAULT_OUTPUT_CAL_K
+	int "Default output calibration gain (×10⁻⁴, unit: 1/(100 mV))"
+	default 32768
+	range 1 65535
+	help
+	  Factory default for output_calib_k. The DAC drive formula is
+	  raw = (target × k) / 10000 + b. At k=32768 a target of 20000 (2000 V)
+	  maps to DAC code 65536, filling the full 16-bit range.
+
+config VC_DEFAULT_MEASURED_V_CAL_K
+	int "Default measured-voltage calibration gain (×10⁻⁴, unit: 1/(100 mV))"
+	default 10000
+	range 1 65535
+	help
+	  Factory default for measured_voltage_calib_k (unity gain = 10000).
+
+config VC_DEFAULT_MEASURED_I_CAL_K
+	int "Default measured-current calibration gain (×10⁻⁴, unit: 1/(10000 nA))"
+	default 10000
+	range 1 65535
+	help
+	  Factory default for measured_current_calib_k (unity gain = 10000).
 
 config VC_MAX_TARGET_VOLTAGE
 	int "Maximum configurable target voltage (×100 mV)"
@@ -76,7 +98,7 @@ config VC_DEFAULT_CURRENT_LIMIT
 
 config VC_DEFAULT_RAMP_STEP
 	int "Default output ramp step size"
-	default 50000
+	default 150
 	range 1 65535
 	help
 	  Factory default for ramp_up_step and ramp_down_step. Unit matches the

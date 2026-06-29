@@ -193,7 +193,6 @@ ZTEST(reg_store, test_channel_holding_wire_offsets_are_unique)
 	zassert_equal(used[CH_CAL_DAC_CODE]++,             0, "offset %u reused", CH_CAL_DAC_CODE);
 	zassert_equal(used[CH_CAL_SAMPLE_CMD]++,           0, "offset %u reused", CH_CAL_SAMPLE_CMD);
 	zassert_equal(used[CH_CAL_COMMIT_CMD]++,           0, "offset %u reused", CH_CAL_COMMIT_CMD);
-	zassert_equal(used[CH_CAL_MAX_RAW_DAC_LIMIT]++,    0, "offset %u reused", CH_CAL_MAX_RAW_DAC_LIMIT);
 }
 
 ZTEST(reg_store, test_catalog_reads_fixed_and_mutable_values)

@@ -36,7 +36,7 @@ static bool is_ch_cal_input_reg(uint16_t off)
 
 static bool is_ch_cal_holding_reg(uint16_t off)
 {
-	return off >= CH_CAL_OUTPUT_ENABLE && off <= CH_CAL_MAX_RAW_DAC_LIMIT;
+	return off >= CH_CAL_OUTPUT_ENABLE && off <= CH_CAL_COMMIT_CMD;
 }
 
 static bool is_ch_calibration_coefficient_reg(uint16_t off)
@@ -101,7 +101,6 @@ static bool ch_holding_supported(uint16_t caps, uint16_t off)
 	case CH_OUTPUT_CAL_B:
 	case CH_CAL_OUTPUT_ENABLE:
 	case CH_CAL_DAC_CODE:
-	case CH_CAL_MAX_RAW_DAC_LIMIT:
 		return caps_all(caps, CH_CAP_RAW_OUTPUT_DRIVE);
 	case CH_MEASURED_V_CAL_K:
 	case CH_MEASURED_V_CAL_B:
@@ -489,8 +488,6 @@ enum reg_status vc_reg_write_ch_holding(uint8_t ch, uint16_t off, uint16_t val,
 			if (val != CAL_COMMAND_EXECUTE) {
 				return REG_INVALID_VALUE;
 			}
-			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
-		case CH_CAL_MAX_RAW_DAC_LIMIT:
 			return write_wire(&ch_holding_view[off], ch, true, val, timeout);
 		default:
 			return REG_UNSUPPORTED;
