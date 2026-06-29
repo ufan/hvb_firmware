@@ -108,6 +108,66 @@ vc cal exit
 
 Returns to the previous operating mode. All calibration state (`cal_unlocked`, DAC code, output enable) is cleared. Alternatively: `vc mode normal` or `vc mode auto`.
 
+## Parameter Persistence Commands
+
+Calibration coefficients (cal config) and operational parameters (op-config: target voltage, ramp, limits) are stored separately in NVS and managed by different commands.
+
+### What each command affects
+
+| Command | Op-config | Cal config |
+|---------|-----------|------------|
+| `vc ch <ch> param save` | Save to NVS | — (not saved; use `vc cal <ch> commit`) |
+| `vc ch <ch> param load` | Load from NVS (no-op if not saved) | Load from NVS (no-op if not saved) |
+| `vc ch <ch> param reset` | Reset to firmware defaults | Load from NVS (no-op if not saved) |
+| `vc cal <ch> commit` | — | Save to NVS |
+
+`vc param <save|load|reset>` applies the same action to all channels at once plus the system config.
+
+### Reloading cal from NVS into RAM
+
+After a `vc cal <ch> commit`, the coefficients are in NVS. On the next boot they load automatically. To reload them into a running session without rebooting:
+
+```
+vc ch <ch> param load
+```
+
+This loads both op-config and cal from NVS. If op-config has never been saved, that half is a no-op and only cal is reloaded.
+
+### Resetting cal to firmware defaults
+
+There is no single command that resets cal coefficients to their firmware defaults while leaving NVS intact. Use one of:
+
+**Option A — Manual reset in cal mode** (preferred, non-destructive to op-config):
+
+```
+vc cal unlock
+vc cal <ch> set out_cal_k 32768
+vc cal <ch> set out_cal_b 0
+vc cal <ch> set v_cal_k 10000
+vc cal <ch> set v_cal_b 0
+vc cal <ch> set i_cal_k 10000
+vc cal <ch> set i_cal_b 0
+vc cal <ch> commit
+vc cal exit
+```
+
+**Option B — Full factory reset** (wipes all NVS including op-config):
+
+```
+vc param reset
+```
+
+Erases all NVS keys and resets both cal and op-config to firmware defaults in RAM. Coefficients revert to defaults on the next `vc ch <ch> param load` or reboot (NVS is empty, so the fallback is firmware defaults).
+
+### Saving op-config
+
+Operational parameters (configured target voltage, ramp step, current limit, etc.) are not saved automatically. To persist them after changing via Modbus or shell:
+
+```
+vc ch <ch> param save    # save one channel
+vc param save            # save all channels + system config
+```
+
 ## Quick Reference
 
 | Step | Command |
