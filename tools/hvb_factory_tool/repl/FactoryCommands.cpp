@@ -1,7 +1,9 @@
 #include "FactoryCommands.h"
 #include "register_map.h"
+#include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <thread>
 
 namespace hvb::factory {
 
@@ -12,7 +14,7 @@ static void requireConnected(FactorySession& s, std::ostream& out, std::function
 
 static void requireCalChannel(FactorySession& s, std::ostream& out, std::function<void()> fn) {
     if (!s.isConnected()) { out << "Error: not connected\n"; return; }
-    if (s.activeChannel() < 0) { out << "Error: no active channel (use 'ch 0' or 'ch 1')\n"; return; }
+    if (s.activeChannel() < 0) { out << "Error: no active channel (use 'cal ch <n>')\n"; return; }
     fn();
 }
 
@@ -62,11 +64,16 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
         [&session](std::ostream& out) {
             requireConnected(session, out, [&] {
                 auto info = session.client().readSystemInfo();
+                char fw[12];
+                std::snprintf(fw, sizeof(fw), "0x%04X", info.fwVersion);
                 out << "Protocol: " << info.protoMajor << "." << info.protoMinor << "\n"
                     << "Variant:  " << info.variantId << "\n"
+                    << "FW:       " << fw << "\n"
+                    << "Channels: " << info.supportedChannels << "\n"
                     << "Mode:     " << opModeName(info.activeOpMode) << "\n"
                     << "Uptime:   " << info.uptimeSec << " s\n"
-                    << "Cap:      " << info.sysCapFlags
+                    << "Temp:     " << (info.boardTempRaw * 0.1) << " C\n"
+                    << "Cap:      0x" << std::hex << info.sysCapFlags << std::dec
                     << (info.sysCapFlags & SysCap::CALIBRATION_MODE ? " [Cal]" : " [No Cal]") << "\n";
             });
         },
@@ -78,30 +85,27 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
     calMenu->Insert("unlock",
         [&session](std::ostream& out) {
             requireConnected(session, out, [&] {
-                static int step = 0;
-                uint16_t val = (step == 0) ? CAL_UNLOCK_STEP1 : CAL_UNLOCK_STEP2;
-                if (session.client().unlockCalibrationStep(val)) {
-                    out << "Unlock step " << (step + 1) << " OK (0x"
-                        << std::hex << val << std::dec << ")\n";
-                    step = (step + 1) % 2;
-                } else {
-                    out << "Error: " << session.lastError() << "\n";
-                    step = 0;
+                if (!session.client().unlockCalibrationStep(CAL_UNLOCK_STEP1)) {
+                    out << "Error (step 1): " << session.lastError() << "\n"; return;
                 }
+                if (!session.client().unlockCalibrationStep(CAL_UNLOCK_STEP2)) {
+                    out << "Error (step 2): " << session.lastError() << "\n"; return;
+                }
+                if (!session.client().enterCalibrationMode()) {
+                    out << "Error (enter): " << session.lastError() << "\n"; return;
+                }
+                out << "Calibration session started\n"
+                    << "  ch <n>          select active channel\n"
+                    << "  limit <max>     set DAC safety cap first\n"
+                    << "  enable          enable cal output\n"
+                    << "  dac <code>      set raw DAC code\n"
+                    << "  sample          sample ADC (reads + displays result)\n"
+                    << "  coeff out|meas-v|meas-i <k> <b>  set coefficients\n"
+                    << "  commit          save coefficients to NVS\n"
+                    << "  exit-cal        end session\n";
             });
         },
-        "Send unlock step (alternates step 1/2)");
-
-    calMenu->Insert("enter",
-        [&session](std::ostream& out) {
-            requireConnected(session, out, [&] {
-                if (session.client().enterCalibrationMode())
-                    out << "Entered Calibration Mode\n";
-                else
-                    out << "Error: " << session.lastError() << "\n";
-            });
-        },
-        "Enter Calibration Mode");
+        "Unlock + enter calibration mode (atomic)");
 
     calMenu->Insert("exit-cal",
         [&session](std::ostream& out) {
@@ -119,13 +123,13 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
         [&session](std::ostream& out) {
             requireConnected(session, out, [&] {
                 auto si = session.client().readSystemInfo();
-                out << "Mode: " << opModeName(si.activeOpMode) << "\n";
-                for (int ch = 0; ch < 2; ++ch) {
+                out << "Mode: " << opModeName(si.activeOpMode)
+                    << "  Channels: " << si.supportedChannels << "\n";
+                for (int ch = 0; ch < si.supportedChannels; ++ch) {
                     auto snap = session.client().readCalibrationSnapshot(ch);
                     out << "  CH" << ch
                         << " out=" << (snap.outputEnabled ? "ON" : "OFF")
                         << " dac=" << snap.rawDacCode
-                        << " readback=" << snap.rawDacCode
                         << " adc_v=" << snap.rawAdcVoltage
                         << " adc_i=" << snap.rawAdcCurrent
                         << " limit=" << snap.maxRawDacLimit << "\n";
@@ -137,7 +141,8 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
     calMenu->Insert("safe",
         [&session](std::ostream& out) {
             requireConnected(session, out, [&] {
-                for (int ch = 0; ch < 2; ++ch) {
+                auto si = session.client().readSystemInfo();
+                for (int ch = 0; ch < si.supportedChannels; ++ch) {
                     session.client().writeRawDacCode(ch, 0);
                     session.client().writeCalibrationOutputEnable(ch, false);
                 }
@@ -149,11 +154,13 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
 
     calMenu->Insert("ch",
         [&session](std::ostream& out, int ch) {
-            if (ch < 0 || ch > 1) { out << "Error: channel must be 0 or 1\n"; return; }
+            if (ch < 0 || ch >= static_cast<int>(VC_PROTOCOL_MAX_CHANNELS)) {
+                out << "Error: channel must be 0-" << (VC_PROTOCOL_MAX_CHANNELS - 1) << "\n"; return;
+            }
             session.setActiveChannel(ch);
             out << "Active channel: " << ch << "\n";
         },
-        "Select active channel", {"0|1"});
+        "Select active channel", {"ch"});
 
     calMenu->Insert("enable",
         [&session](std::ostream& out) {
@@ -193,12 +200,18 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
         [&session](std::ostream& out) {
             requireCalChannel(session, out, [&] {
                 int ch = session.activeChannel();
-                if (session.client().sendCalibrationSampleCommand(ch))
-                    out << "CH" << ch << " sample triggered\n";
-                else out << "Error: " << session.lastError() << "\n";
+                if (!session.client().sendCalibrationSampleCommand(ch)) {
+                    out << "Error: " << session.lastError() << "\n"; return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                auto snap = session.client().readCalibrationSnapshot(ch);
+                out << "CH" << ch << " sample:\n"
+                    << "  dac=" << snap.rawDacCode << "\n"
+                    << "  adc_v=" << snap.rawAdcVoltage << "\n"
+                    << "  adc_i=" << snap.rawAdcCurrent << "\n";
             });
         },
-        "Trigger raw ADC sample");
+        "Sample ADC and display raw result");
 
     calMenu->Insert("read",
         [&session](std::ostream& out) {
@@ -207,7 +220,7 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                 auto snap = session.client().readCalibrationSnapshot(ch);
                 out << "CH" << ch << " snapshot:\n"
                     << "  Output:    " << (snap.outputEnabled ? "ON" : "OFF") << "\n"
-                    << "  DAC code:  " << snap.rawDacCode << "  readback: " << snap.rawDacCode << "\n"
+                    << "  DAC code:  " << snap.rawDacCode << "\n"
                     << "  Max limit: " << snap.maxRawDacLimit << "\n"
                     << "  ADC V:     " << snap.rawAdcVoltage << "\n"
                     << "  ADC I:     " << snap.rawAdcCurrent << "\n";
