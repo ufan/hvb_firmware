@@ -20,13 +20,26 @@ static std::atomic<bool>    g_connected{false};
 static int g_pollInterval = 2;
 static std::mutex           g_scanMutex;
 
-static void doScan(hvb::tui::ScannedData& data) {
+/* Full scan — used at connect time and on manual Refresh.
+   Reads capabilities, config, and cal coefficients (slow path). */
+static void doFullScan(hvb::tui::ScannedData& data) {
     data.sysInfo = g_client.readSystemInfo();
     int n = data.numChannels();
     for (int ch = 0; ch < n; ++ch) data.chInfo[ch]   = g_client.readChannelInfo(ch);
     data.sysCfg  = g_client.readSystemConfig();
     for (int ch = 0; ch < n; ++ch) data.chCfg[ch]    = g_client.readChannelConfig(ch, data.chInfo[ch].chCapFlags);
     for (int ch = 0; ch < n; ++ch) data.chCalCfg[ch] = g_client.readChannelCalConfig(ch, data.chInfo[ch].chCapFlags);
+}
+
+/* Poll scan — runs every poll interval.
+   Reads only dynamic data (system status + per-channel measurements).
+   Capabilities are hardware-fixed and already cached in chInfo[ch].chCapFlags
+   from the last full scan; they are passed in to skip the FC04 offset-9 read. */
+static void doPollScan(hvb::tui::ScannedData& data) {
+    data.sysInfo = g_client.readSystemInfo();
+    int n = data.numChannels();
+    for (int ch = 0; ch < n; ++ch)
+        data.chInfo[ch] = g_client.readChannelInfo(ch, data.chInfo[ch].chCapFlags);
 }
 
 static void rebuildChannelTitles(std::vector<std::string>& titles, int numChannels) {
@@ -68,7 +81,7 @@ int main(int argc, char** argv) {
     std::thread pollThread([&] {
         while (running) {
             if (g_connected) {
-                { std::lock_guard<std::mutex> lk(g_scanMutex); doScan(data); }
+                { std::lock_guard<std::mutex> lk(g_scanMutex); doPollScan(data); }
                 data.valid = g_client.isConnected();
                 if (running) screen.PostEvent(Event::Custom);
             }
@@ -97,7 +110,7 @@ int main(int argc, char** argv) {
             bool ok = g_client.connect(modalPort, baud, slave, timeoutArg);
             g_connected = ok;
             if (ok) {
-                { std::lock_guard<std::mutex> lk(g_scanMutex); doScan(data); }
+                { std::lock_guard<std::mutex> lk(g_scanMutex); doFullScan(data); }
                 data.valid = true;
                 rebuildChannelTitles(tabTitles, data.numChannels());
                 int maxTab = static_cast<int>(tabTitles.size()) - 1;
@@ -143,7 +156,7 @@ int main(int argc, char** argv) {
     });
     auto bRefresh = hvb::tui::ActionButton("Refresh", [&] {
         if (g_connected) {
-            { std::lock_guard<std::mutex> lk(g_scanMutex); doScan(data); }
+            { std::lock_guard<std::mutex> lk(g_scanMutex); doFullScan(data); }
             rebuildChannelTitles(tabTitles, data.numChannels());
             data.valid = true;
         }
@@ -223,7 +236,7 @@ int main(int argc, char** argv) {
             bool ok = g_client.connect(portArg, baudArg, slaveArg, timeoutArg);
             g_connected = ok;
             if (ok) {
-                { std::lock_guard<std::mutex> lk(g_scanMutex); doScan(data); }
+                { std::lock_guard<std::mutex> lk(g_scanMutex); doFullScan(data); }
                 data.valid = true;
                 rebuildChannelTitles(tabTitles, data.numChannels());
             }

@@ -28,7 +28,7 @@ public:
 
     // High-level reads (raw LSB values)
     SystemInfo        readSystemInfo();
-    ChannelInfo       readChannelInfo(int ch);
+    ChannelInfo       readChannelInfo(int ch, uint16_t caps = 0);
     SystemConfig      readSystemConfig();
     ChannelConfig     readChannelConfig(int ch, uint16_t caps = 0);
     ChannelCalConfig  readChannelCalConfig(int ch, uint16_t caps = 0);

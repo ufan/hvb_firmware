@@ -178,27 +178,44 @@ SystemInfo HvbModbusClient::readSystemInfo() {
     return info;
 }
 
-ChannelInfo HvbModbusClient::readChannelInfo(int ch) {
+ChannelInfo HvbModbusClient::readChannelInfo(int ch, uint16_t caps) {
     ChannelInfo info;
     if (!checkConnected()) return info;
 
     uint16_t base = reg::chAddr(ch, 0);
 
-    /* Offsets 0-9 are always accessible on every channel variant. */
-    uint16_t buf[10] = {};
-    if (!readRegsInternal(false, base, 10, buf)) return info;
+    if (caps == 0) {
+        /* Full read — fetch capability flags from device (connect / Refresh). */
+        uint16_t buf[10] = {};
+        if (!readRegsInternal(false, base, 10, buf)) return info;
 
-    info.status                       = buf[CH_STATUS_BITS];
-    info.activeFault                  = buf[CH_ACTIVE_FAULT_CAUSE];
-    info.faultHistory                 = buf[CH_FAULT_HISTORY_CAUSE];
-    info.lastProtOutputAction         = buf[CH_LAST_PROT_OUT_ACTION];
-    info.retryCount                   = static_cast<int>(buf[CH_AUTO_RETRY_COUNT]);
-    info.cooldownSec                  = static_cast<int>(buf[CH_AUTO_COOLDOWN_REMAINING]);
-    info.lastFaultTimestamp           = reg::uint32FromRegs(buf[CH_LAST_FAULT_TIMESTAMP_HI],
-                                                            buf[CH_LAST_FAULT_TIMESTAMP_LO]);
-    info.operationalTargetVoltageRaw  = static_cast<int16_t>(buf[CH_OPER_TARGET_VOLTAGE]);
-    uint16_t caps = buf[CH_CAPABILITY_FLAGS];
-    info.chCapFlags = caps;
+        info.status                      = buf[CH_STATUS_BITS];
+        info.activeFault                 = buf[CH_ACTIVE_FAULT_CAUSE];
+        info.faultHistory                = buf[CH_FAULT_HISTORY_CAUSE];
+        info.lastProtOutputAction        = buf[CH_LAST_PROT_OUT_ACTION];
+        info.retryCount                  = static_cast<int>(buf[CH_AUTO_RETRY_COUNT]);
+        info.cooldownSec                 = static_cast<int>(buf[CH_AUTO_COOLDOWN_REMAINING]);
+        info.lastFaultTimestamp          = reg::uint32FromRegs(buf[CH_LAST_FAULT_TIMESTAMP_HI],
+                                                               buf[CH_LAST_FAULT_TIMESTAMP_LO]);
+        info.operationalTargetVoltageRaw = static_cast<int16_t>(buf[CH_OPER_TARGET_VOLTAGE]);
+        caps = buf[CH_CAPABILITY_FLAGS];
+        info.chCapFlags = caps;
+    } else {
+        /* Poll read — caps are fixed hardware; use cached value, skip offset 9. */
+        uint16_t buf[9] = {};
+        if (!readRegsInternal(false, base, 9, buf)) return info;
+
+        info.status                      = buf[CH_STATUS_BITS];
+        info.activeFault                 = buf[CH_ACTIVE_FAULT_CAUSE];
+        info.faultHistory                = buf[CH_FAULT_HISTORY_CAUSE];
+        info.lastProtOutputAction        = buf[CH_LAST_PROT_OUT_ACTION];
+        info.retryCount                  = static_cast<int>(buf[CH_AUTO_RETRY_COUNT]);
+        info.cooldownSec                 = static_cast<int>(buf[CH_AUTO_COOLDOWN_REMAINING]);
+        info.lastFaultTimestamp          = reg::uint32FromRegs(buf[CH_LAST_FAULT_TIMESTAMP_HI],
+                                                               buf[CH_LAST_FAULT_TIMESTAMP_LO]);
+        info.operationalTargetVoltageRaw = static_cast<int16_t>(buf[CH_OPER_TARGET_VOLTAGE]);
+        info.chCapFlags = caps;
+    }
 
     /* Measured voltage / current — conditional on channel capabilities.
        Reading offsets 10-11 without the matching cap causes the firmware
