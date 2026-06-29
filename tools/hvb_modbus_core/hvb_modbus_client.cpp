@@ -183,8 +183,10 @@ ChannelInfo HvbModbusClient::readChannelInfo(int ch) {
     if (!checkConnected()) return info;
 
     uint16_t base = reg::chAddr(ch, 0);
-    uint16_t buf[16] = {};  // offsets 0..15 (16/17 reserved in v3)
-    if (!readRegsInternal(false, base, 16, buf)) return info;
+
+    /* Batch 1: offsets 0-11 — always-accessible input registers */
+    uint16_t buf[12] = {};
+    if (!readRegsInternal(false, base, 12, buf)) return info;
 
     info.voltageRaw                   = static_cast<int16_t>(buf[CH_MEASURED_VOLTAGE]);
     info.currentRaw                   = static_cast<int16_t>(buf[CH_MEASURED_CURRENT]);
@@ -198,11 +200,10 @@ ChannelInfo HvbModbusClient::readChannelInfo(int ch) {
     info.lastFaultTimestamp           = reg::uint32FromRegs(buf[CH_LAST_FAULT_TIMESTAMP_HI],
                                                             buf[CH_LAST_FAULT_TIMESTAMP_LO]);
     info.chCapFlags                   = buf[CH_CAPABILITY_FLAGS];
-    info.rawAdcVoltage               = reg::int32FromRegs(buf[CH_RAW_ADC_VOLTAGE_HI],
-                                                           buf[CH_RAW_ADC_VOLTAGE_LO]);
-    info.rawAdcCurrent               = reg::int32FromRegs(buf[CH_RAW_ADC_CURRENT_HI],
-                                                           buf[CH_RAW_ADC_CURRENT_LO]);
-    /* v3: CH_CAL_SAMPLE_STATUS and CH_RAW_DAC_READBACK removed from FC04 input regs */
+
+    /* rawAdcVoltage / rawAdcCurrent are calibration-only and belong
+       in readCalibrationSnapshot(); they are never requested here to
+       avoid Modbus Exception 0x02 in Normal/Automatic modes. */
     return info;
 }
 

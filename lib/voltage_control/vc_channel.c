@@ -14,6 +14,7 @@
 
 static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT] = {
 	[VC_CHANNEL_SMF_DISABLED_SAFE]      = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
+	[VC_CHANNEL_SMF_DISABLED_HV_ON]     = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
 	[VC_CHANNEL_SMF_ENABLED_HOLDING]    = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
 	[VC_CHANNEL_SMF_RAMPING]            = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
 	[VC_CHANNEL_SMF_FAULT_LATCHED]      = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
@@ -105,6 +106,9 @@ static void apply_hw(struct vc_channel *ch)
 	} else if (ch->output_enabled) {
 		enable = true;
 		code = raw_drive_from_target(ch, ch->operational_target_voltage);
+	} else if (vc_channel_get_smf_state(ch) == VC_CHANNEL_SMF_DISABLED_HV_ON) {
+		enable = true;
+		code = 0;
 	} else {
 		enable = false;
 		code = 0;
@@ -154,7 +158,8 @@ static bool is_valid_host_output_action(enum vc_output_action action)
 	return action == VC_OUTPUT_ACTION_NONE ||
 	       action == VC_OUTPUT_ACTION_ENABLE ||
 	       action == VC_OUTPUT_ACTION_DISABLE_GRACEFUL ||
-	       action == VC_OUTPUT_ACTION_DISABLE_IMMEDIATE;
+	       action == VC_OUTPUT_ACTION_DISABLE_IMMEDIATE ||
+	       action == VC_OUTPUT_ACTION_DISABLE_FORCE;
 }
 
 static bool is_valid_channel_fault_command(enum vc_channel_fault_command cmd)
@@ -174,7 +179,7 @@ static bool is_valid_protection_output_action(enum vc_output_action action)
 	case VC_OUTPUT_ACTION_NONE:
 	case VC_OUTPUT_ACTION_DISABLE_GRACEFUL:
 	case VC_OUTPUT_ACTION_DISABLE_IMMEDIATE:
-	case VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO:
+	case VC_OUTPUT_ACTION_DISABLE_FORCE:
 		return true;
 	default:
 		return false;
@@ -217,19 +222,26 @@ static void apply_protection_action(struct vc_channel *ch,
 	ch->last_protection_output_action = action;
 
 	switch (action) {
-	case VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO:
-		ch->operational_target_voltage = 0;
-		ch->output_enabled = false;
+	case VC_OUTPUT_ACTION_DISABLE_GRACEFUL:
+		ch->config.configured_target_voltage = 0;
+		ch->ramp_to_disable = true;
+		ch->output_enabled = true;
+		ch->ramping = true;
+		set_smf_state(ch, VC_CHANNEL_SMF_RAMPING);
 		break;
 	case VC_OUTPUT_ACTION_DISABLE_IMMEDIATE:
 		ch->output_enabled = false;
 		ch->ramping = false;
-		ch->raw_dac_readback = 0;
+		ch->ramp_to_disable = false;
 		ch->operational_target_voltage = 0;
+		set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_HV_ON);
 		break;
-	case VC_OUTPUT_ACTION_DISABLE_GRACEFUL:
+	case VC_OUTPUT_ACTION_DISABLE_FORCE:
 		ch->output_enabled = false;
+		ch->ramping = false;
+		ch->ramp_to_disable = false;
 		ch->operational_target_voltage = 0;
+		set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
 		break;
 	default:
 		break;
@@ -532,19 +544,28 @@ enum vc_status vc_channel_output_action(struct vc_channel *ch,
 		}
 		ch->output_enabled = true;
 		ch->ramping = true;
+		ch->ramp_to_disable = false;
 		set_smf_state(ch, VC_CHANNEL_SMF_RAMPING);
 		break;
 	case VC_OUTPUT_ACTION_DISABLE_GRACEFUL:
-		ch->output_enabled = false;
-		ch->ramping = false;
-		ch->operational_target_voltage = 0;
+		ch->config.configured_target_voltage = 0;
+		ch->ramp_to_disable = true;
+		ch->output_enabled = true;
+		ch->ramping = true;
 		ch->cooldown_remaining_ms = 0;
-		set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
+		set_smf_state(ch, VC_CHANNEL_SMF_RAMPING);
 		break;
 	case VC_OUTPUT_ACTION_DISABLE_IMMEDIATE:
 		ch->output_enabled = false;
 		ch->ramping = false;
-		ch->raw_dac_readback = 0;
+		ch->ramp_to_disable = false;
+		ch->operational_target_voltage = 0;
+		set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_HV_ON);
+		break;
+	case VC_OUTPUT_ACTION_DISABLE_FORCE:
+		ch->output_enabled = false;
+		ch->ramping = false;
+		ch->ramp_to_disable = false;
 		ch->operational_target_voltage = 0;
 		set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
 		break;
@@ -635,7 +656,15 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 	if (current == target) {
 		if (ch->ramping) {
 			ch->ramping = false;
-			set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
+			if (ch->ramp_to_disable) {
+				ch->ramp_to_disable = false;
+				ch->output_enabled = false;
+				set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
+				apply_hw(ch);
+				update_status_bits(ch);
+			} else {
+				set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
+			}
 		}
 		return;
 	}
@@ -653,7 +682,13 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 	if (step == 0 || interval == 0) {
 		ch->operational_target_voltage = target;
 		ch->ramping = false;
-		set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
+		if (ch->ramp_to_disable) {
+			ch->ramp_to_disable = false;
+			ch->output_enabled = false;
+			set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
+		} else {
+			set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
+		}
 		apply_hw(ch);
 		update_status_bits(ch);
 		return;
@@ -680,7 +715,13 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 	ch->operational_target_voltage = current;
 	if (current == target) {
 		ch->ramping = false;
-		set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
+		if (ch->ramp_to_disable) {
+			ch->ramp_to_disable = false;
+			ch->output_enabled = false;
+			set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
+		} else {
+			set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
+		}
 	}
 	apply_hw(ch);
 	update_status_bits(ch);

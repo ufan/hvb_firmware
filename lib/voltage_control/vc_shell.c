@@ -238,7 +238,7 @@ static const char *action_str(enum vc_output_action a)
 	case VC_OUTPUT_ACTION_ENABLE:            return "ENABLE";
 	case VC_OUTPUT_ACTION_DISABLE_GRACEFUL:  return "GRACEFUL";
 	case VC_OUTPUT_ACTION_DISABLE_IMMEDIATE: return "IMMEDIATE";
-	case VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO:  return "FORCE_ZERO";
+	case VC_OUTPUT_ACTION_DISABLE_FORCE:     return "FORCE";
 	default:                                 return "?";
 	}
 }
@@ -834,10 +834,12 @@ static int cmd_ch(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	if (strcmp(sub, "disable") == 0) {
-		enum vc_output_action action = VC_OUTPUT_ACTION_DISABLE_IMMEDIATE;
+		enum vc_output_action action = VC_OUTPUT_ACTION_DISABLE_GRACEFUL;
 
-		if (argc > 3 && strcmp(argv[3], "graceful") == 0) {
-			action = VC_OUTPUT_ACTION_DISABLE_GRACEFUL;
+		if (argc > 3 && strcmp(argv[3], "imd") == 0) {
+			action = VC_OUTPUT_ACTION_DISABLE_IMMEDIATE;
+		} else if (argc > 3 && strcmp(argv[3], "frc") == 0) {
+			action = VC_OUTPUT_ACTION_DISABLE_FORCE;
 		}
 		return write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_ACTION),
 				     (uint16_t)action);

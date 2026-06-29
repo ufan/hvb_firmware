@@ -18,6 +18,7 @@ typedef void (*vc_wake_fn_t)(void *user_data);
 
 enum vc_channel_smf_state {
 	VC_CHANNEL_SMF_DISABLED_SAFE,
+	VC_CHANNEL_SMF_DISABLED_HV_ON,
 	VC_CHANNEL_SMF_ENABLED_HOLDING,
 	VC_CHANNEL_SMF_RAMPING,
 	VC_CHANNEL_SMF_FAULT_LATCHED,
@@ -42,6 +43,7 @@ struct vc_channel {
 
 	bool output_enabled;
 	bool ramping;
+	bool ramp_to_disable;
 	uint32_t ramp_accum_ms;
 	uint32_t cooldown_remaining_ms;
 	int16_t operational_target_voltage;

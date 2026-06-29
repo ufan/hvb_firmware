@@ -215,7 +215,7 @@ ZTEST(vc_domain, test_idempotent_output_actions)
 				VC_OUTPUT_ACTION_DISABLE_IMMEDIATE), VC_OK);
 	zassert_false(ctrl->channels[0].output_enabled);
 	zassert_equal(vc_channel_get_smf_state(&ctrl->channels[0]),
-		      VC_CHANNEL_SMF_DISABLED_SAFE);
+		      VC_CHANNEL_SMF_DISABLED_HV_ON);
 }
 
 /* ---- Tick / ramp ---- */
@@ -926,7 +926,7 @@ ZTEST(vc_domain, test_output_action_host_context_invalid)
 	make_fresh();
 
 	zassert_equal(vc_controller_channel_output_action(ctrl, 0,
-			 VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO),
+			 (enum vc_output_action)99),
 		      VC_ERR_INVALID_COMMAND);
 }
 
@@ -1110,7 +1110,7 @@ ZTEST(vc_domain, test_current_protection_skipped_during_ramping)
 	cfg.configured_target_voltage = 5000;
 	cfg.current_limit_threshold = 100;
 	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.current_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
+	cfg.current_protection_output_action = VC_OUTPUT_ACTION_DISABLE_FORCE;
 	cfg.ramp_up_step = 100;
 	cfg.ramp_up_interval = 1;
 	vc_channel_set_config(&ctrl->channels[0], &cfg);

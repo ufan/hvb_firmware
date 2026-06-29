@@ -114,6 +114,17 @@ ZTEST(vc_channel_state, test_output_action_disable_immediate)
 		      VC_OK);
 	zassert_false(ch.output_enabled);
 	zassert_equal(ch.operational_target_voltage, 0);
+	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_DISABLED_HV_ON);
+}
+
+ZTEST(vc_channel_state, test_output_action_disable_force)
+{
+	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE);
+
+	zassert_equal(vc_channel_output_action(&ch, VC_OUTPUT_ACTION_DISABLE_FORCE),
+		      VC_OK);
+	zassert_false(ch.output_enabled);
+	zassert_equal(ch.operational_target_voltage, 0);
 	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_DISABLED_SAFE);
 }
 
@@ -126,7 +137,7 @@ ZTEST(vc_channel_state, test_output_action_rejected_with_active_fault)
 
 ZTEST(vc_channel_state, test_output_action_invalid_host_action)
 {
-	zassert_equal(vc_channel_output_action(&ch, VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO),
+	zassert_equal(vc_channel_output_action(&ch, (enum vc_output_action)99),
 		      VC_ERR_INVALID_COMMAND);
 }
 
@@ -188,7 +199,7 @@ ZTEST(vc_channel_state, test_current_protection_triggers_fault)
 	cfg.configured_target_voltage = 5000;
 	cfg.current_limit_threshold = 100;
 	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.current_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
+	cfg.current_protection_output_action = VC_OUTPUT_ACTION_DISABLE_FORCE;
 	cfg.ramp_up_step = 0;
 	vc_channel_set_config(&ch, &cfg);
 	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE);
@@ -504,7 +515,7 @@ ZTEST(vc_channel_state, test_apply_hw_calls_driver)
 	zassert_equal(stub->last_output_code, 5000, "hw should have DAC code 5000");
 }
 
-ZTEST(vc_channel_state, test_apply_hw_disable_zeros_output)
+ZTEST(vc_channel_state, test_apply_hw_disable_immediate_hv_on_dac_zero)
 {
 	const struct device *dev = DEVICE_DT_GET(DT_NODELABEL(vc_ch0));
 	struct vc_channel hw_ch;
@@ -515,8 +526,23 @@ ZTEST(vc_channel_state, test_apply_hw_disable_zeros_output)
 
 	struct vc_stub_data *stub = dev->data;
 
-	zassert_false(stub->last_enable);
-	zassert_equal(stub->last_output_code, 0);
+	zassert_true(stub->last_enable, "HV must stay on after disable_immediate");
+	zassert_equal(stub->last_output_code, 0, "DAC must be zero after disable_immediate");
+}
+
+ZTEST(vc_channel_state, test_apply_hw_disable_force_hv_off)
+{
+	const struct device *dev = DEVICE_DT_GET(DT_NODELABEL(vc_ch0));
+	struct vc_channel hw_ch;
+
+	vc_channel_init(&hw_ch, dev, 0, FULL_CAPS, NULL, NULL, NULL);
+	vc_channel_output_action(&hw_ch, VC_OUTPUT_ACTION_ENABLE);
+	vc_channel_output_action(&hw_ch, VC_OUTPUT_ACTION_DISABLE_FORCE);
+
+	struct vc_stub_data *stub = dev->data;
+
+	zassert_false(stub->last_enable, "HV must be off after disable_force");
+	zassert_equal(stub->last_output_code, 0, "DAC must be zero after disable_force");
 }
 
 ZTEST(vc_channel_state, test_current_protection_skipped_during_ramping)
@@ -527,7 +553,7 @@ ZTEST(vc_channel_state, test_current_protection_skipped_during_ramping)
 	cfg.configured_target_voltage = 5000;
 	cfg.current_limit_threshold = 100;
 	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
-	cfg.current_protection_output_action = VC_OUTPUT_ACTION_FORCE_OUTPUT_ZERO;
+	cfg.current_protection_output_action = VC_OUTPUT_ACTION_DISABLE_FORCE;
 	cfg.ramp_up_step = 100;
 	cfg.ramp_up_interval = 1;
 	vc_channel_set_config(&ch, &cfg);
