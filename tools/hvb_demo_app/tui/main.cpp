@@ -18,6 +18,7 @@ static hvb::HvbModbusClient g_client;
 static hvb::ConfigManager   g_cfg;
 static std::atomic<bool>    g_connected{false};
 static int g_pollInterval = 2;
+static std::mutex           g_scanMutex;
 
 static void doScan(hvb::tui::ScannedData& data) {
     data.sysInfo = g_client.readSystemInfo();
@@ -67,7 +68,7 @@ int main(int argc, char** argv) {
     std::thread pollThread([&] {
         while (running) {
             if (g_connected) {
-                doScan(data);
+                { std::lock_guard<std::mutex> lk(g_scanMutex); doScan(data); }
                 data.valid = g_client.isConnected();
                 if (running) screen.PostEvent(Event::Custom);
             }
@@ -96,7 +97,7 @@ int main(int argc, char** argv) {
             bool ok = g_client.connect(modalPort, baud, slave, timeoutArg);
             g_connected = ok;
             if (ok) {
-                doScan(data);
+                { std::lock_guard<std::mutex> lk(g_scanMutex); doScan(data); }
                 data.valid = true;
                 rebuildChannelTitles(tabTitles, data.numChannels());
                 int maxTab = static_cast<int>(tabTitles.size()) - 1;
@@ -142,7 +143,7 @@ int main(int argc, char** argv) {
     });
     auto bRefresh = hvb::tui::ActionButton("Refresh", [&] {
         if (g_connected) {
-            doScan(data);
+            { std::lock_guard<std::mutex> lk(g_scanMutex); doScan(data); }
             rebuildChannelTitles(tabTitles, data.numChannels());
             data.valid = true;
         }
@@ -222,7 +223,7 @@ int main(int argc, char** argv) {
             bool ok = g_client.connect(portArg, baudArg, slaveArg, timeoutArg);
             g_connected = ok;
             if (ok) {
-                doScan(data);
+                { std::lock_guard<std::mutex> lk(g_scanMutex); doScan(data); }
                 data.valid = true;
                 rebuildChannelTitles(tabTitles, data.numChannels());
             }
