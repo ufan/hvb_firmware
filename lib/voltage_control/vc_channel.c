@@ -221,9 +221,12 @@ static void apply_protection_action(struct vc_channel *ch,
 {
 	ch->last_protection_output_action = action;
 
+	if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
+		action = VC_OUTPUT_ACTION_DISABLE_FORCE;
+	}
+
 	switch (action) {
 	case VC_OUTPUT_ACTION_DISABLE_GRACEFUL:
-		ch->config.configured_target_voltage = 0;
 		ch->ramp_to_disable = true;
 		ch->output_enabled = true;
 		ch->ramping = true;
@@ -537,6 +540,13 @@ enum vc_status vc_channel_output_action(struct vc_channel *ch,
 		return VC_ERR_INVALID_COMMAND;
 	}
 
+	if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
+		if (action == VC_OUTPUT_ACTION_DISABLE_GRACEFUL ||
+		    action == VC_OUTPUT_ACTION_DISABLE_IMMEDIATE) {
+			action = VC_OUTPUT_ACTION_DISABLE_FORCE;
+		}
+	}
+
 	switch (action) {
 	case VC_OUTPUT_ACTION_ENABLE:
 		if (ch->active_fault_cause != 0) {
@@ -548,7 +558,6 @@ enum vc_status vc_channel_output_action(struct vc_channel *ch,
 		set_smf_state(ch, VC_CHANNEL_SMF_RAMPING);
 		break;
 	case VC_OUTPUT_ACTION_DISABLE_GRACEFUL:
-		ch->config.configured_target_voltage = 0;
 		ch->ramp_to_disable = true;
 		ch->output_enabled = true;
 		ch->ramping = true;
@@ -650,7 +659,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 		return;
 	}
 
-	target = cfg->configured_target_voltage;
+	target = ch->ramp_to_disable ? 0 : cfg->configured_target_voltage;
 	current = ch->operational_target_voltage;
 
 	if (current == target) {
