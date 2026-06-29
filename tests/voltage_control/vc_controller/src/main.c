@@ -293,3 +293,28 @@ ZTEST(vc_controller, test_cal_watchdog_resets_on_cal_activity)
 	zassert_equal(vc_controller_get_operating_mode(ctrl),
 		      VC_OPERATING_MODE_NORMAL);
 }
+
+ZTEST(vc_controller, test_cal_watchdog_resets_on_heartbeat)
+{
+	enter_cal(ctrl);
+
+	vc_controller_tick(ctrl, 25000);
+	vc_controller_cal_heartbeat(ctrl);
+	vc_controller_tick(ctrl, 5000);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_CALIBRATION,
+		      "heartbeat should reset watchdog; session ended prematurely");
+
+	vc_controller_tick(ctrl, 25000);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_NORMAL);
+}
+
+ZTEST(vc_controller, test_cal_heartbeat_noop_outside_cal)
+{
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_NORMAL);
+	vc_controller_cal_heartbeat(ctrl);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_NORMAL, "heartbeat should be no-op outside cal");
+}

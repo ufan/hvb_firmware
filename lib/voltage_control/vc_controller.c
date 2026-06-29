@@ -31,6 +31,13 @@ static void cal_watchdog_reset(struct vc_controller *ctrl)
 	ctrl->cal_watchdog_ms = VC_CAL_WATCHDOG_MS;
 }
 
+void vc_controller_cal_heartbeat(struct vc_controller *ctrl)
+{
+	if (ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
+		cal_watchdog_reset(ctrl);
+	}
+}
+
 #define VC_DEFAULT_SYSTEM_CAPS \
 	(SYS_CAP_AUTOMATIC_MODE | SYS_CAP_CALIBRATION_MODE)
 #define VC_CHANNEL_MASK(c) ((1U << (c)) - 1)

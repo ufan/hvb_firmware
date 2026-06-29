@@ -191,6 +191,7 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 		if (desc->value != NULL) {
 			enum reg_status status = reg_read_bound_value(desc, value);
 
+			vc_controller_cal_heartbeat(ctrl);
 			k_mutex_unlock(&runtime->lock);
 			vc_catalog_release();
 			return status;
@@ -212,6 +213,7 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 			vc_catalog_release();
 			return REG_WRITE_ONLY;
 		}
+		vc_controller_cal_heartbeat(ctrl);
 		k_mutex_unlock(&runtime->lock);
 		vc_catalog_release();
 		return REG_OK;
@@ -219,6 +221,7 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 	if (desc->value != NULL) {
 		enum reg_status status = reg_read_bound_value(desc, value);
 
+		vc_controller_cal_heartbeat(ctrl);
 		k_mutex_unlock(&runtime->lock);
 		vc_catalog_release();
 		return status;
@@ -301,6 +304,7 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 		return REG_WRITE_ONLY;
 	}
 
+	vc_controller_cal_heartbeat(ctrl);
 	k_mutex_unlock(&runtime->lock);
 	vc_catalog_release();
 	return REG_OK;

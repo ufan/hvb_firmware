@@ -34,6 +34,7 @@ enum vc_operating_mode vc_controller_get_operating_mode(
 enum vc_status vc_controller_calibration_unlock(
 	struct vc_controller *ctrl, uint16_t value);
 enum vc_status vc_controller_cal_exit(struct vc_controller *ctrl);
+void vc_controller_cal_heartbeat(struct vc_controller *ctrl);
 
 enum vc_status vc_controller_channel_set_field(
 	struct vc_controller *ctrl, uint8_t ch,
