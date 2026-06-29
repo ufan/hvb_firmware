@@ -7,10 +7,6 @@
 #include "reg_store/reg_map.h"
 #include <string.h>
 
-#define VC_DEFAULT_MAX_RAW_DAC      0xFFFF
-#define VC_DEFAULT_MAX_VOLTAGE_RAW  20000
-#define VC_DEFAULT_MIN_VOLTAGE_RAW  0
-#define VC_DEFAULT_MAX_CURRENT_RAW  32767
 
 static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT] = {
 	[VC_CHANNEL_SMF_DISABLED_SAFE]      = SMF_CREATE_STATE(NULL, NULL, NULL, NULL, NULL),
@@ -25,13 +21,13 @@ static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT] = {
 struct vc_channel_config vc_channel_default_config(void)
 {
 	return (struct vc_channel_config){
-		.ramp_up_step = 50000,
-		.ramp_up_interval = 10,
-		.ramp_down_step = 50000,
-		.ramp_down_interval = 10,
-		.current_limit_threshold = VC_DEFAULT_MAX_CURRENT_RAW,
+		.ramp_up_step = CONFIG_VC_DEFAULT_RAMP_STEP,
+		.ramp_up_interval = 1,
+		.ramp_down_step = CONFIG_VC_DEFAULT_RAMP_STEP,
+		.ramp_down_interval = 1,
+		.current_limit_threshold = CONFIG_VC_DEFAULT_CURRENT_LIMIT,
 		.recovery_policy_mode = VC_RECOVERY_MANUAL_LATCH,
-		.current_safe_band_pct = 10,
+		.current_safe_band_pct = CONFIG_VC_DEFAULT_CURRENT_SAFE_BAND_PCT,
 		.current_protection_output_action = VC_OUTPUT_ACTION_DISABLE_IMMEDIATE,
 	};
 }
@@ -42,7 +38,7 @@ static struct vc_channel_cal_config default_cal_config(void)
 		.output_calib_k = 10000,
 		.measured_voltage_calib_k = 10000,
 		.measured_current_calib_k = 10000,
-		.max_raw_dac_limit = VC_DEFAULT_MAX_RAW_DAC,
+		.max_raw_dac_limit = CONFIG_VC_CAL_MAX_RAW_DAC,
 	};
 }
 
@@ -393,8 +389,8 @@ enum vc_status vc_channel_set_config(struct vc_channel *ch,
 	if (st != VC_OK) {
 		return st;
 	}
-	if (cfg->configured_target_voltage > VC_DEFAULT_MAX_VOLTAGE_RAW ||
-	    cfg->configured_target_voltage < VC_DEFAULT_MIN_VOLTAGE_RAW) {
+	if (cfg->configured_target_voltage > CONFIG_VC_MAX_TARGET_VOLTAGE ||
+	    cfg->configured_target_voltage < 0) {
 		return VC_ERR_INVALID_VALUE;
 	}
 	if (cfg->current_limit_threshold < 0) {
@@ -420,8 +416,8 @@ enum vc_status vc_channel_set_field(struct vc_channel *ch,
 		if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
 			return VC_ERR_UNSUPPORTED_CAPABILITY;
 		}
-		if ((int16_t)value > VC_DEFAULT_MAX_VOLTAGE_RAW ||
-		    (int16_t)value < VC_DEFAULT_MIN_VOLTAGE_RAW) {
+		if ((int16_t)value > CONFIG_VC_MAX_TARGET_VOLTAGE ||
+		    (int16_t)value < 0) {
 			return VC_ERR_INVALID_VALUE;
 		}
 		ch->config.configured_target_voltage = (int16_t)value;
@@ -705,7 +701,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 		return;
 	}
 
-	interval_ms = (uint32_t)interval * 100;
+	interval_ms = (uint32_t)interval * 1000;
 	ch->ramp_accum_ms += dt_ms;
 
 	while (ch->ramp_accum_ms >= interval_ms && current != target) {
@@ -810,7 +806,7 @@ enum vc_status vc_channel_cal_set_max_raw_dac(struct vc_channel *ch,
 	if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
 		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
-	if (limit > VC_DEFAULT_MAX_RAW_DAC) {
+	if (limit > CONFIG_VC_CAL_MAX_RAW_DAC) {
 		return VC_ERR_INVALID_VALUE;
 	}
 	if (limit < ch->raw_dac_readback) {

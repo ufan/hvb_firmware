@@ -266,7 +266,7 @@ ZTEST(vc_channel_state, test_tick_ramp_gradual)
 	vc_channel_set_config(&ch, &cfg);
 	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE);
 
-	vc_channel_tick_ramp(&ch, 100, &default_sys);
+	vc_channel_tick_ramp(&ch, 1000, &default_sys);
 
 	zassert_equal(ch.operational_target_voltage, 100);
 	zassert_true(ch.ramping);

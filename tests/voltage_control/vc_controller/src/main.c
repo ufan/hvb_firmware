@@ -195,9 +195,9 @@ ZTEST(vc_controller, test_channel_param_reset_restores_operational_defaults)
 
 	zassert_equal(vc_controller_get_channel_config(ctrl, 0, &cfg), VC_OK);
 	zassert_equal(cfg.ramp_up_step, 50000);
-	zassert_equal(cfg.ramp_up_interval, 10);
+	zassert_equal(cfg.ramp_up_interval, 1);
 	zassert_equal(cfg.ramp_down_step, 50000);
-	zassert_equal(cfg.ramp_down_interval, 10);
+	zassert_equal(cfg.ramp_down_interval, 1);
 }
 
 ZTEST(vc_controller, test_start_sampling)

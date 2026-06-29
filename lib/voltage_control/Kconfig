@@ -46,6 +46,51 @@ config VC_RUNTIME_TICK_INTERVAL_MS
 	help
 	  Runtime policy tick interval in milliseconds.
 
+config VC_CAL_MAX_RAW_DAC
+	int "Calibration DAC ceiling (raw counts)"
+	default 65535
+	range 1 65535
+	help
+	  Absolute upper bound for the calibration DAC code, determined by the
+	  hardware DAC resolution. Used as the factory default for the per-channel
+	  max_raw_dac_limit and as the validation ceiling when that limit is updated
+	  via vc cal <ch> max_dac. 65535 = full 16-bit range.
+
+config VC_MAX_TARGET_VOLTAGE
+	int "Maximum configurable target voltage (×100 mV)"
+	default 20000
+	range 1 32767
+	help
+	  Upper bound accepted for the per-channel configured_target_voltage field
+	  in normal and automatic modes. Unit is ×100 mV (e.g. 20000 = 2000 V).
+	  The field is signed 16-bit so 32767 is the absolute type ceiling.
+
+config VC_DEFAULT_CURRENT_LIMIT
+	int "Default current limit threshold (nA)"
+	default 32767
+	range 1 32767
+	help
+	  Factory default for the per-channel current_limit_threshold field.
+	  Unit is nA. Set to the highest value the hardware variant can measure
+	  to effectively disable the limit out of the box.
+
+config VC_DEFAULT_RAMP_STEP
+	int "Default output ramp step size"
+	default 50000
+	range 1 65535
+	help
+	  Factory default for ramp_up_step and ramp_down_step. Unit matches the
+	  configured_target_voltage field (×100 mV per ramp interval).
+
+config VC_DEFAULT_CURRENT_SAFE_BAND_PCT
+	int "Default current safe-band percentage"
+	default 10
+	range 0 100
+	help
+	  Factory default for current_safe_band_pct. Current protection is
+	  suppressed while the output is within this percentage of the limit,
+	  to avoid false trips during normal transients.
+
 config VC_CAL_WATCHDOG_TIMEOUT_S
 	int "VC calibration inactivity watchdog timeout"
 	default 300

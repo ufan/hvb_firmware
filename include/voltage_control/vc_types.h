@@ -82,9 +82,9 @@ struct vc_system_config {
 struct vc_channel_config {
 	int16_t configured_target_voltage;                    /* mV */
 	uint16_t ramp_up_step;                                 /* mV per interval */
-	uint16_t ramp_up_interval;                             /* ×100 ms */
+	uint16_t ramp_up_interval;                             /* seconds */
 	uint16_t ramp_down_step;                               /* mV per interval */
-	uint16_t ramp_down_interval;                           /* ×100 ms */
+	uint16_t ramp_down_interval;                           /* seconds */
 	enum vc_recovery_policy_mode recovery_policy_mode;
 	uint16_t auto_retry_delay;                             /* seconds */
 	uint16_t auto_retry_max_count;
