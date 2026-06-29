@@ -44,6 +44,7 @@ struct vc_channel {
 	bool output_enabled;
 	bool ramping;
 	bool ramp_to_disable;
+	int16_t graceful_ramp_dest;   /* runtime-only, not a register */
 	uint32_t ramp_accum_ms;
 	uint32_t cooldown_remaining_ms;
 	int16_t operational_target_voltage;

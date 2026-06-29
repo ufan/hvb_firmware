@@ -227,6 +227,7 @@ static void apply_protection_action(struct vc_channel *ch,
 
 	switch (action) {
 	case VC_OUTPUT_ACTION_DISABLE_GRACEFUL:
+		ch->graceful_ramp_dest = 0;
 		ch->ramp_to_disable = true;
 		ch->output_enabled = true;
 		ch->ramping = true;
@@ -558,6 +559,7 @@ enum vc_status vc_channel_output_action(struct vc_channel *ch,
 		set_smf_state(ch, VC_CHANNEL_SMF_RAMPING);
 		break;
 	case VC_OUTPUT_ACTION_DISABLE_GRACEFUL:
+		ch->graceful_ramp_dest = 0;
 		ch->ramp_to_disable = true;
 		ch->output_enabled = true;
 		ch->ramping = true;
@@ -659,7 +661,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 		return;
 	}
 
-	target = ch->ramp_to_disable ? 0 : cfg->configured_target_voltage;
+	target = ch->ramp_to_disable ? ch->graceful_ramp_dest : cfg->configured_target_voltage;
 	current = ch->operational_target_voltage;
 
 	if (current == target) {

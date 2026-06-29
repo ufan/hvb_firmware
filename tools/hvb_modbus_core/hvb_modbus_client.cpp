@@ -184,13 +184,10 @@ ChannelInfo HvbModbusClient::readChannelInfo(int ch) {
 
     uint16_t base = reg::chAddr(ch, 0);
 
-    /* Batch 1: offsets 0-11 — always-accessible input registers */
-    uint16_t buf[12] = {};
-    if (!readRegsInternal(false, base, 12, buf)) return info;
+    /* Offsets 0-9 are always accessible on every channel variant. */
+    uint16_t buf[10] = {};
+    if (!readRegsInternal(false, base, 10, buf)) return info;
 
-    info.voltageRaw                   = static_cast<int16_t>(buf[CH_MEASURED_VOLTAGE]);
-    info.currentRaw                   = static_cast<int16_t>(buf[CH_MEASURED_CURRENT]);
-    info.operationalTargetVoltageRaw  = static_cast<int16_t>(buf[CH_OPER_TARGET_VOLTAGE]);
     info.status                       = buf[CH_STATUS_BITS];
     info.activeFault                  = buf[CH_ACTIVE_FAULT_CAUSE];
     info.faultHistory                 = buf[CH_FAULT_HISTORY_CAUSE];
@@ -199,11 +196,37 @@ ChannelInfo HvbModbusClient::readChannelInfo(int ch) {
     info.cooldownSec                  = static_cast<int>(buf[CH_AUTO_COOLDOWN_REMAINING]);
     info.lastFaultTimestamp           = reg::uint32FromRegs(buf[CH_LAST_FAULT_TIMESTAMP_HI],
                                                             buf[CH_LAST_FAULT_TIMESTAMP_LO]);
-    info.chCapFlags                   = buf[CH_CAPABILITY_FLAGS];
+    info.operationalTargetVoltageRaw  = static_cast<int16_t>(buf[CH_OPER_TARGET_VOLTAGE]);
+    uint16_t caps = buf[CH_CAPABILITY_FLAGS];
+    info.chCapFlags = caps;
 
-    /* rawAdcVoltage / rawAdcCurrent are calibration-only and belong
-       in readCalibrationSnapshot(); they are never requested here to
-       avoid Modbus Exception 0x02 in Normal/Automatic modes. */
+    /* Measured voltage / current — conditional on channel capabilities.
+       Reading offsets 10-11 without the matching cap causes the firmware
+       to reject the entire batch with Exception 0x02. */
+    bool hasV = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+    bool hasI = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
+
+    if (hasV && hasI) {
+        uint16_t m[2] = {};
+        if (readRegsInternal(false, base + CH_MEASURED_VOLTAGE, 2, m)) {
+            info.voltageRaw = static_cast<int16_t>(m[0]);
+            info.currentRaw = static_cast<int16_t>(m[1]);
+        }
+    } else {
+        if (hasV) {
+            uint16_t v = 0;
+            if (readRegsInternal(false, base + CH_MEASURED_VOLTAGE, 1, &v))
+                info.voltageRaw = static_cast<int16_t>(v);
+        }
+        if (hasI) {
+            uint16_t c = 0;
+            if (readRegsInternal(false, base + CH_MEASURED_CURRENT, 1, &c))
+                info.currentRaw = static_cast<int16_t>(c);
+        }
+    }
+
+    /* rawAdcVoltage / rawAdcCurrent are calibration-mode-gated and belong
+       in readCalibrationSnapshot(); not requested here. */
     return info;
 }
 

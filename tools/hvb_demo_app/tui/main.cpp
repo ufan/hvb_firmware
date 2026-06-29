@@ -134,7 +134,6 @@ int main(int argc, char** argv) {
         if (!g_connected && !connecting) showModal = true;
     });
     auto bDisconnect = hvb::tui::ActionButton("Disconnect", [&] {
-        g_client.disconnect();
         g_connected = false;
         data.valid  = false;
         tabTitles   = {"Monitor", "System"};
