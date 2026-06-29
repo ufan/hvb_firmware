@@ -146,7 +146,7 @@ if VC_SHELL
 
 config VC_SHELL_WATCH_DEFAULT_INTERVAL_MS
 	int "Default watch interval (ms)"
-	default 500
+	default 1000
 	range 100 10000
 	help
 	  Default polling interval in milliseconds for the vc watch command.
