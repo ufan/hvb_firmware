@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
     hvb::tui::ScannedData data;
     std::atomic<bool> running{true};
 
-    hvb::tui::AppState appState{g_client, g_connected, data, statusMsg, statusMutex, screen};
+    hvb::tui::AppState appState{g_client, g_connected, data, statusMsg, statusMutex, g_scanMutex, screen};
 
     // ---- Poll thread ----
     std::thread pollThread([&] {

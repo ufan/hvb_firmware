@@ -23,6 +23,7 @@ struct AppState {
     ScannedData&              data;
     std::string&              statusMsg;
     std::mutex&               statusMutex;  // guards statusMsg cross-thread writes
+    std::mutex&               scanMutex;    // serialises all Modbus transactions
     ftxui::ScreenInteractive& screen;
 };
 
@@ -32,7 +33,8 @@ inline void writeAsync(AppState& s, const std::string& label, std::function<bool
     { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Writing " + label + "..."; }
     s.screen.PostEvent(Event::Custom);
     std::thread([&s, label, fn = std::move(fn)]() mutable {
-        bool ok = fn();
+        bool ok;
+        { std::lock_guard<std::mutex> lk(s.scanMutex); ok = fn(); }
         { std::lock_guard<std::mutex> lk(s.statusMutex);
           s.statusMsg = ok ? ("OK: " + label) : ("Error: " + s.client.lastError()); }
         s.screen.PostEvent(Event::Custom);
