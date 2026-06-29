@@ -48,7 +48,7 @@ config VC_RUNTIME_TICK_INTERVAL_MS
 
 config VC_CAL_WATCHDOG_TIMEOUT_S
 	int "VC calibration inactivity watchdog timeout"
-	default 30
+	default 300
 	range 1 3600
 	help
 	  Time in seconds before inactive calibration mode automatically exits.
