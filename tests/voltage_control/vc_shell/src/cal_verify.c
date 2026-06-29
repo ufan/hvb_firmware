@@ -61,28 +61,28 @@ ZTEST(cal_verify, test_full_cal_sequence)
 	zassert_equal(ret, 0, "vc cal status failed: %d", ret);
 
 	/* --- 4. max_dac via dedicated command --- */
-	printk("\n--- 4. vc cal max_dac 0 2000 ---\n");
-	ret = run("vc cal max_dac 0 2000");
+	printk("\n--- 4. vc cal 0 max_dac 2000 ---\n");
+	ret = run("vc cal 0 max_dac 2000");
 	zassert_equal(ret, 0, "vc cal max_dac failed: %d", ret);
 
 	/* --- 5. max_dac via vc cal set (new in this branch) --- */
-	printk("\n--- 5. vc cal set 0 max_dac 2000 (new) ---\n");
-	ret = run("vc cal set 0 max_dac 2000");
+	printk("\n--- 5. vc cal 0 set max_dac 2000 (new) ---\n");
+	ret = run("vc cal 0 set max_dac 2000");
 	zassert_equal(ret, 0, "vc cal set max_dac failed: %d", ret);
 
 	/* --- 6. enable output (should print hint) --- */
-	printk("\n--- 6. vc cal output 0 on (expect hint: vc cal dac) ---\n");
-	ret = run("vc cal output 0 on");
+	printk("\n--- 6. vc cal 0 output on (expect hint: vc cal dac) ---\n");
+	ret = run("vc cal 0 output on");
 	zassert_equal(ret, 0, "vc cal output on failed: %d", ret);
 
 	/* --- 7. set DAC code (should print hint) --- */
-	printk("\n--- 7. vc cal dac 0 500 (expect hint: vc cal sample) ---\n");
-	ret = run("vc cal dac 0 500");
+	printk("\n--- 7. vc cal 0 dac 500 (expect hint: vc cal sample) ---\n");
+	ret = run("vc cal 0 dac 500");
 	zassert_equal(ret, 0, "vc cal dac failed: %d", ret);
 
 	/* --- 8. sample (blocking: should print dac/raw_v/raw_i + hint) --- */
-	printk("\n--- 8. vc cal sample 0 (blocking, expect raw values) ---\n");
-	ret = run("vc cal sample 0");
+	printk("\n--- 8. vc cal 0 sample (blocking, expect raw values) ---\n");
+	ret = run("vc cal 0 sample");
 	zassert_equal(ret, 0, "vc cal sample failed: %d", ret);
 
 	/* --- 9. cal status after DAC set --- */
@@ -91,26 +91,26 @@ ZTEST(cal_verify, test_full_cal_sequence)
 	zassert_equal(ret, 0, "vc cal status failed: %d", ret);
 
 	/* --- 10. set a coefficient --- */
-	printk("\n--- 10. vc cal set 0 out_cal_k 10000 ---\n");
-	ret = run("vc cal set 0 out_cal_k 10000");
+	printk("\n--- 10. vc cal 0 set out_cal_k 10000 ---\n");
+	ret = run("vc cal 0 set out_cal_k 10000");
 	zassert_equal(ret, 0, "vc cal set out_cal_k failed: %d", ret);
 
 	/* --- 11. cal config to verify stored values --- */
-	printk("\n--- 11. vc cal config 0 ---\n");
-	ret = run("vc cal config 0");
+	printk("\n--- 11. vc cal 0 config ---\n");
+	ret = run("vc cal 0 config");
 	zassert_equal(ret, 0, "vc cal config failed: %d", ret);
 
 	/* --- 12. commit requires output off + dac=0 first --- */
-	printk("\n--- 12. vc cal output 0 off ---\n");
-	ret = run("vc cal output 0 off");
+	printk("\n--- 12. vc cal 0 output off ---\n");
+	ret = run("vc cal 0 output off");
 	zassert_equal(ret, 0, "vc cal output off failed: %d", ret);
 
-	ret = run("vc cal dac 0 0");
+	ret = run("vc cal 0 dac 0");
 	zassert_equal(ret, 0, "vc cal dac 0 failed: %d", ret);
 
 	/* --- 13. commit (expect hint: vc cal exit) --- */
-	printk("\n--- 13. vc cal commit 0 (expect hint: vc cal exit) ---\n");
-	ret = run("vc cal commit 0");
+	printk("\n--- 13. vc cal 0 commit (expect hint: vc cal exit) ---\n");
+	ret = run("vc cal 0 commit");
 	zassert_equal(ret, 0, "vc cal commit failed: %d", ret);
 
 	/* --- 14. exit --- */

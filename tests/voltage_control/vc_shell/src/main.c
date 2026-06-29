@@ -66,7 +66,7 @@ ZTEST(vc_shell, test_partial_capability_config_omits_output_fields)
 
 ZTEST(vc_shell, test_partial_capability_cal_config_reads_current_only)
 {
-	const char *output = execute_and_get_output("vc cal config 1");
+	const char *output = execute_and_get_output("vc cal 1 config");
 
 	zassert_not_null(strstr(output, "i_cal:"), "output: %s", output);
 	zassert_is_null(strstr(output, "out_cal:"));
@@ -116,7 +116,7 @@ ZTEST(vc_shell, test_cal_set_max_dac_field)
 
 	(void)shell_execute_cmd(sh, "vc cal unlock");
 	k_msleep(50);
-	expect_command_result("vc cal set 0 max_dac 1000", 0);
+	expect_command_result("vc cal 0 set max_dac 1000", 0);
 	/* cleanup */
 	(void)shell_execute_cmd(sh, "vc cal exit");
 	k_msleep(50);
@@ -169,18 +169,18 @@ ZTEST(vc_shell, test_cal_sample_shows_raw_adc)
 
 	(void)shell_execute_cmd(sh, "vc cal unlock");
 	k_msleep(50);
-	(void)shell_execute_cmd(sh, "vc cal output 0 on");
+	(void)shell_execute_cmd(sh, "vc cal 0 output on");
 	k_msleep(50);
-	(void)shell_execute_cmd(sh, "vc cal dac 0 500");
+	(void)shell_execute_cmd(sh, "vc cal 0 dac 500");
 	k_msleep(50);
 
 	shell_backend_dummy_clear_output(sh);
-	zassert_equal(shell_execute_cmd(sh, "vc cal sample 0"), 0);
+	zassert_equal(shell_execute_cmd(sh, "vc cal 0 sample"), 0);
 	k_msleep(100);
 	output = shell_backend_dummy_get_output(sh, &size);
 	zassert_not_null(strstr(output, "raw_v="), "missing raw_v: %s", output);
 
-	(void)shell_execute_cmd(sh, "vc cal output 0 off");
+	(void)shell_execute_cmd(sh, "vc cal 0 output off");
 	k_msleep(50);
 	(void)shell_execute_cmd(sh, "vc cal exit");
 	k_msleep(50);

@@ -913,268 +913,308 @@ static int cmd_ch(const struct shell *sh, size_t argc, char **argv)
 }
 
 /* ------------------------------------------------------------------ */
-/* Calibration subcommands                                             */
+/* Calibration — monolithic dispatcher (vc cal <subcmd|ch> ...)        */
 /* ------------------------------------------------------------------ */
 
-static int cmd_cal_unlock(const struct shell *sh, size_t argc, char **argv)
+static bool watch_has_key(const struct shell *sh);
+
+static int cmd_cal(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc);
-	ARG_UNUSED(argv);
 	CTX_CHECK(sh);
 
-	int ret = write_command(sh,
-		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK),
-		CAL_UNLOCK_STEP1);
-	if (ret) {
+	if (argc < 2) {
+		shell_error(sh, "usage: vc cal <unlock|exit|status|watch|<ch> <subcmd>>");
+		return -EINVAL;
+	}
+
+	/* ---- Global (no-channel) sub-commands ---- */
+
+	if (strcmp(argv[1], "unlock") == 0) {
+		int ret = write_command(sh,
+			REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK),
+			CAL_UNLOCK_STEP1);
+		if (ret) {
+			return ret;
+		}
+		ret = write_command(sh,
+			REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK),
+			CAL_UNLOCK_STEP2);
+		if (ret) {
+			return ret;
+		}
+		ret = write_command(sh,
+			REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE),
+			(uint16_t)VC_OPERATING_MODE_CALIBRATION);
+		if (ret == 0) {
+			shell_print(sh, "Calibration session started.");
+			shell_print(sh, "  vc cal status              -- session overview");
+			shell_print(sh, "  vc cal <ch> max_dac <lim>  -- set safety DAC cap first");
+			shell_print(sh, "  vc cal <ch> output on      -- enable output");
+			shell_print(sh, "  vc cal <ch> dac <code>     -- set raw DAC code");
+			shell_print(sh, "  vc cal <ch> sample         -- read raw ADC (blocking)");
+			shell_print(sh, "  vc cal <ch> set <fld> <v>  -- adjust cal coefficients");
+			shell_print(sh, "  vc cal <ch> commit         -- save to NVS");
+			shell_print(sh, "  vc cal exit                -- end session");
+		}
 		return ret;
 	}
-	ret = write_command(sh,
-		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_UNLOCK),
-		CAL_UNLOCK_STEP2);
-	if (ret) {
+
+	if (strcmp(argv[1], "exit") == 0) {
+		int ret = write_command(sh,
+			REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_EXIT), 1U);
+
+		if (ret == 0) {
+			shell_print(sh, "exited calibration mode");
+		}
 		return ret;
 	}
-	ret = write_command(sh,
-		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_OPERATING_MODE),
-		(uint16_t)VC_OPERATING_MODE_CALIBRATION);
-	if (ret == 0) {
-		shell_print(sh, "Calibration session started.");
-		shell_print(sh, "  vc cal status              -- session overview");
-		shell_print(sh, "  vc cal max_dac <ch> <lim>  -- set safety DAC cap first");
-		shell_print(sh, "  vc cal output <ch> on      -- enable output");
-		shell_print(sh, "  vc cal dac <ch> <code>     -- set raw DAC code");
-		shell_print(sh, "  vc cal sample <ch>         -- read raw ADC (blocking)");
-		shell_print(sh, "  vc cal set <ch> <fld> <v>  -- adjust cal coefficients");
-		shell_print(sh, "  vc cal commit <ch>         -- save to NVS");
-		shell_print(sh, "  vc cal exit                -- end session");
-	}
-	return ret;
-}
 
-static int cmd_cal_exit(const struct shell *sh, size_t argc, char **argv)
-{
-	ARG_UNUSED(argc);
-	ARG_UNUSED(argv);
-	CTX_CHECK(sh);
+	if (strcmp(argv[1], "status") == 0) {
+		struct vc_system_snapshot sys;
 
-	int ret = write_command(sh,
-		REG_VC_GLOBAL_ID(REG_VC_GLOBAL_FIELD_CAL_EXIT), 1U);
-
-	if (ret == 0) {
-		shell_print(sh, "exited calibration mode");
-	}
-	return ret;
-}
-
-static int cmd_cal_output(const struct shell *sh, size_t argc, char **argv)
-{
-	ARG_UNUSED(argc);
-	CTX_CHECK(sh);
-
-	uint8_t ch;
-
-	if (parse_channel(sh, argv[1], &ch) < 0) {
-		return -EINVAL;
-	}
-
-	bool enable;
-
-	if (strcmp(argv[2], "on") == 0) {
-		enable = true;
-	} else if (strcmp(argv[2], "off") == 0) {
-		enable = false;
-	} else {
-		shell_error(sh, "expected: on, off");
-		return -EINVAL;
-	}
-	int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_OUTPUT_ENABLE),
-				enable ? 1U : 0U);
-
-	if (ret == 0 && enable) {
-		shell_print(sh, "hint: vc cal dac %d <code>", ch);
-	}
-	return ret;
-}
-
-static int cmd_cal_dac(const struct shell *sh, size_t argc, char **argv)
-{
-	ARG_UNUSED(argc);
-	CTX_CHECK(sh);
-
-	uint8_t ch;
-
-	if (parse_channel(sh, argv[1], &ch) < 0) {
-		return -EINVAL;
-	}
-	uint16_t code = (uint16_t)strtoul(argv[2], NULL, 0);
-
-	int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_DAC_CODE), code);
-
-	if (ret == 0) {
-		shell_print(sh, "hint: vc cal sample %d", ch);
-	}
-	return ret;
-}
-
-static int cmd_cal_sample(const struct shell *sh, size_t argc, char **argv)
-{
-	ARG_UNUSED(argc);
-	CTX_CHECK(sh);
-
-	uint8_t ch;
-
-	if (parse_channel(sh, argv[1], &ch) < 0) {
-		return -EINVAL;
-	}
-	int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_SAMPLE_CMD),
-				CAL_COMMAND_EXECUTE);
-
-	if (ret) {
-		return ret;
-	}
-	k_msleep(20);
-
-	struct vc_channel_snapshot snap;
-
-	if (read_channel_snapshot(ch, &snap) < 0) {
-		return -EIO;
-	}
-	if (snap.channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
-		shell_print(sh, "  dac=%u", snap.raw_dac_readback);
-	}
-	if (snap.channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
-		shell_print(sh, "  raw_v=%d", snap.raw_adc_voltage);
-	}
-	if (snap.channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
-		shell_print(sh, "  raw_i=%d", snap.raw_adc_current);
-	}
-	shell_print(sh, "hint: vc cal set %d <field> <val>  or  vc cal commit %d", ch, ch);
-	return 0;
-}
-
-static int cmd_cal_commit(const struct shell *sh, size_t argc, char **argv)
-{
-	ARG_UNUSED(argc);
-	CTX_CHECK(sh);
-
-	uint8_t ch;
-
-	if (parse_channel(sh, argv[1], &ch) < 0) {
-		return -EINVAL;
-	}
-	int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_COMMIT_CMD),
-				CAL_COMMAND_EXECUTE);
-
-	if (ret == 0) {
-		shell_print(sh, "hint: vc cal exit  (or continue with next channel)");
-	}
-	return ret;
-}
-
-static int cmd_cal_max_dac(const struct shell *sh, size_t argc, char **argv)
-{
-	ARG_UNUSED(argc);
-	CTX_CHECK(sh);
-
-	uint8_t ch;
-
-	if (parse_channel(sh, argv[1], &ch) < 0) {
-		return -EINVAL;
-	}
-	uint16_t limit = (uint16_t)strtoul(argv[2], NULL, 0);
-
-	return write_command(sh,
-		REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT), limit);
-}
-
-static int cmd_cal_config(const struct shell *sh, size_t argc, char **argv)
-{
-	ARG_UNUSED(argc);
-	CTX_CHECK(sh);
-
-	uint8_t ch;
-
-	if (parse_channel(sh, argv[1], &ch) != 0) {
-		return -EINVAL;
-	}
-
-	struct vc_channel_cal_config cal;
-	uint16_t caps;
-
-	if (read_cal_config(ch, &cal, &caps) < 0) {
-		return -EIO;
-	}
-	print_cal_config(sh, ch, &cal, caps);
-	return 0;
-}
-
-static int cmd_cal_set(const struct shell *sh, size_t argc, char **argv)
-{
-	ARG_UNUSED(argc);
-	CTX_CHECK(sh);
-
-	uint8_t ch;
-
-	if (parse_channel(sh, argv[1], &ch) != 0) {
-		return -EINVAL;
-	}
-
-	enum vc_cal_field field;
-
-	if (lookup_cal_field(sh, argv[2], &field) != 0) {
-		return -EINVAL;
-	}
-
-	char *end;
-	long val = strtol(argv[3], &end, 10);
-
-	if (*end != '\0') {
-		shell_error(sh, "invalid value: %s", argv[3]);
-		return -EINVAL;
-	}
-
-	return write_command(sh, cal_config_id(ch, field),
-			     (uint16_t)(int16_t)val);
-}
-
-static int cmd_cal_status(const struct shell *sh, size_t argc, char **argv)
-{
-	ARG_UNUSED(argc);
-	ARG_UNUSED(argv);
-	CTX_CHECK(sh);
-
-	struct vc_system_snapshot sys;
-
-	if (read_system_snapshot(&sys) < 0) {
-		return -EIO;
-	}
-	uint32_t remaining_s = (sys.cal_watchdog_remaining_ms + 999U) / 1000U;
-
-	shell_print(sh, "Cal status  mode=%s  timeout_in=%us",
-		    mode_str(sys.active_operating_mode), remaining_s);
-	for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
-		struct vc_channel_snapshot snap;
-
-		if (read_channel_snapshot(i, &snap) < 0) {
+		if (read_system_snapshot(&sys) < 0) {
 			return -EIO;
 		}
-		shell_fprintf(sh, SHELL_NORMAL, "  CH%d:", i);
+		uint32_t remaining_s = (sys.cal_watchdog_remaining_ms + 999U) / 1000U;
+
+		shell_print(sh, "Cal status  mode=%s  timeout_in=%us",
+			    mode_str(sys.active_operating_mode), remaining_s);
+		for (uint8_t i = 0; i < sys.supported_channel_count; i++) {
+			struct vc_channel_snapshot snap;
+
+			if (read_channel_snapshot(i, &snap) < 0) {
+				return -EIO;
+			}
+			shell_fprintf(sh, SHELL_NORMAL, "  CH%d:", i);
+			if (snap.channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
+				shell_fprintf(sh, SHELL_NORMAL, " out=%s dac=%u",
+					      snap.cal_output_enabled ? "ON" : "OFF",
+					      snap.raw_dac_readback);
+			}
+			if (snap.channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
+				shell_fprintf(sh, SHELL_NORMAL, " raw_v=%d",
+					      snap.raw_adc_voltage);
+			}
+			if (snap.channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
+				shell_fprintf(sh, SHELL_NORMAL, " raw_i=%d",
+					      snap.raw_adc_current);
+			}
+			shell_fprintf(sh, SHELL_NORMAL, "\n");
+		}
+		return 0;
+	}
+
+	if (strcmp(argv[1], "watch") == 0) {
+		struct vc_system_snapshot sys;
+
+		if (read_system_snapshot(&sys) < 0) {
+			return -EIO;
+		}
+
+		int8_t watch_ch = -1;
+		int interval_ms = 1000;
+
+		if (argc >= 3) {
+			unsigned long v = strtoul(argv[2], NULL, 10);
+
+			if (v < sys.supported_channel_count) {
+				watch_ch = (int8_t)v;
+				if (argc >= 4) {
+					interval_ms = (int)strtoul(argv[3], NULL, 10);
+				}
+			} else {
+				interval_ms = (int)v;
+			}
+		}
+		if (interval_ms < 100) {
+			interval_ms = 100;
+		}
+
+		shell_print(sh, "cal watch%s  interval=%dms  (any key to stop)",
+			    watch_ch >= 0 ? "" : " all", interval_ms);
+
+		uint8_t from = watch_ch >= 0 ? (uint8_t)watch_ch : 0;
+		uint8_t to   = watch_ch >= 0 ? (uint8_t)watch_ch + 1
+					     : sys.supported_channel_count;
+
+		while (true) {
+			for (uint8_t i = from; i < to; i++) {
+				struct vc_channel_snapshot snap;
+
+				if (read_channel_snapshot(i, &snap) < 0) {
+					return -EIO;
+				}
+				if (!(snap.channel_capability_flags &
+				      (CH_CAP_RAW_OUTPUT_DRIVE |
+				       CH_CAP_VOLTAGE_MEASUREMENT |
+				       CH_CAP_CURRENT_MEASUREMENT))) {
+					continue;
+				}
+				shell_fprintf(sh, SHELL_NORMAL, "CH%d:", i);
+				if (snap.channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
+					shell_fprintf(sh, SHELL_NORMAL, " dac=%u out=%s",
+						      snap.raw_dac_readback,
+						      snap.cal_output_enabled ? "ON" : "OFF");
+				}
+				if (snap.channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
+					shell_fprintf(sh, SHELL_NORMAL, " raw_v=%d",
+						      snap.raw_adc_voltage);
+				}
+				if (snap.channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
+					shell_fprintf(sh, SHELL_NORMAL, " raw_i=%d",
+						      snap.raw_adc_current);
+				}
+				shell_fprintf(sh, SHELL_NORMAL, "\n");
+			}
+			for (int i = 0; i < interval_ms / 50; i++) {
+				k_msleep(50);
+				if (watch_has_key(sh)) {
+					shell_print(sh, "stopped");
+					return 0;
+				}
+			}
+		}
+		return 0;
+	}
+
+	/* ---- Per-channel sub-commands: argv[1] = channel number ---- */
+
+	uint8_t ch;
+
+	if (parse_channel(sh, argv[1], &ch) < 0) {
+		shell_error(sh, "usage: vc cal <unlock|exit|status|watch|<ch> <subcmd>>");
+		return -EINVAL;
+	}
+	if (argc < 3) {
+		shell_error(sh, "usage: vc cal %d <output|dac|sample|commit|config|max_dac|set>", ch);
+		return -EINVAL;
+	}
+
+	const char *sub = argv[2];
+
+	if (strcmp(sub, "output") == 0) {
+		if (argc < 4) {
+			shell_error(sh, "usage: vc cal %d output <on|off>", ch);
+			return -EINVAL;
+		}
+		bool enable;
+
+		if (strcmp(argv[3], "on") == 0) {
+			enable = true;
+		} else if (strcmp(argv[3], "off") == 0) {
+			enable = false;
+		} else {
+			shell_error(sh, "expected: on, off");
+			return -EINVAL;
+		}
+		int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_OUTPUT_ENABLE),
+					enable ? 1U : 0U);
+
+		if (ret == 0 && enable) {
+			shell_print(sh, "hint: vc cal %d dac <code>", ch);
+		}
+		return ret;
+	}
+
+	if (strcmp(sub, "dac") == 0) {
+		if (argc < 4) {
+			shell_error(sh, "usage: vc cal %d dac <code>", ch);
+			return -EINVAL;
+		}
+		uint16_t code = (uint16_t)strtoul(argv[3], NULL, 0);
+		int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_DAC_CODE), code);
+
+		if (ret == 0) {
+			shell_print(sh, "hint: vc cal %d sample", ch);
+		}
+		return ret;
+	}
+
+	if (strcmp(sub, "sample") == 0) {
+		int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_SAMPLE_CMD),
+					CAL_COMMAND_EXECUTE);
+
+		if (ret) {
+			return ret;
+		}
+		k_msleep(20);
+
+		struct vc_channel_snapshot snap;
+
+		if (read_channel_snapshot(ch, &snap) < 0) {
+			return -EIO;
+		}
 		if (snap.channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
-			shell_fprintf(sh, SHELL_NORMAL, " out=%s dac=%u",
-				      snap.cal_output_enabled ? "ON" : "OFF",
-				      snap.raw_dac_readback);
+			shell_print(sh, "  dac=%u", snap.raw_dac_readback);
 		}
 		if (snap.channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
-			shell_fprintf(sh, SHELL_NORMAL, " raw_v=%d",
-				      snap.raw_adc_voltage);
+			shell_print(sh, "  raw_v=%d", snap.raw_adc_voltage);
 		}
 		if (snap.channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
-			shell_fprintf(sh, SHELL_NORMAL, " raw_i=%d",
-				      snap.raw_adc_current);
+			shell_print(sh, "  raw_i=%d", snap.raw_adc_current);
 		}
-		shell_fprintf(sh, SHELL_NORMAL, "\n");
+		shell_print(sh, "hint: vc cal %d set <field> <val>  or  vc cal %d commit", ch, ch);
+		return 0;
 	}
-	return 0;
+
+	if (strcmp(sub, "commit") == 0) {
+		int ret = write_command(sh, REG_VC_ID(ch, REG_VC_FIELD_CAL_COMMIT_CMD),
+					CAL_COMMAND_EXECUTE);
+
+		if (ret == 0) {
+			shell_print(sh, "hint: vc cal exit  (or continue with next channel)");
+		}
+		return ret;
+	}
+
+	if (strcmp(sub, "config") == 0) {
+		struct vc_channel_cal_config cal;
+		uint16_t caps;
+
+		if (read_cal_config(ch, &cal, &caps) < 0) {
+			return -EIO;
+		}
+		print_cal_config(sh, ch, &cal, caps);
+		return 0;
+	}
+
+	if (strcmp(sub, "max_dac") == 0) {
+		if (argc < 4) {
+			shell_error(sh, "usage: vc cal %d max_dac <limit>", ch);
+			return -EINVAL;
+		}
+		uint16_t limit = (uint16_t)strtoul(argv[3], NULL, 0);
+
+		return write_command(sh,
+			REG_VC_ID(ch, REG_VC_FIELD_CAL_MAX_RAW_DAC_LIMIT), limit);
+	}
+
+	if (strcmp(sub, "set") == 0) {
+		if (argc < 5) {
+			shell_error(sh, "usage: vc cal %d set <field> <value>", ch);
+			return -EINVAL;
+		}
+
+		enum vc_cal_field field;
+
+		if (lookup_cal_field(sh, argv[3], &field) != 0) {
+			return -EINVAL;
+		}
+
+		char *end;
+		long val = strtol(argv[4], &end, 10);
+
+		if (*end != '\0') {
+			shell_error(sh, "invalid value: %s", argv[4]);
+			return -EINVAL;
+		}
+		return write_command(sh, cal_config_id(ch, field),
+				     (uint16_t)(int16_t)val);
+	}
+
+	shell_error(sh, "unknown cal subcommand: %s", sub);
+	shell_print(sh, "subcommands: output dac sample commit config max_dac set");
+	return -EINVAL;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1257,100 +1297,9 @@ static int cmd_watch(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
-static int cmd_cal_watch(const struct shell *sh, size_t argc, char **argv)
-{
-	CTX_CHECK(sh);
-
-	struct vc_system_snapshot sys;
-
-	if (read_system_snapshot(&sys) < 0) {
-		return -EIO;
-	}
-
-	int8_t watch_ch = -1;
-	int interval_ms = 1000;
-
-	if (argc >= 2) {
-		unsigned long v = strtoul(argv[1], NULL, 10);
-
-		if (v < sys.supported_channel_count) {
-			watch_ch = (int8_t)v;
-			if (argc >= 3) {
-				interval_ms = (int)strtoul(argv[2], NULL, 10);
-			}
-		} else {
-			interval_ms = (int)v;
-		}
-	}
-	if (interval_ms < 100) {
-		interval_ms = 100;
-	}
-
-	shell_print(sh, "cal watch%s  interval=%dms  (any key to stop)",
-		    watch_ch >= 0 ? "" : " all", interval_ms);
-
-	uint8_t from = watch_ch >= 0 ? (uint8_t)watch_ch : 0;
-	uint8_t to   = watch_ch >= 0 ? (uint8_t)watch_ch + 1
-				     : sys.supported_channel_count;
-
-	while (true) {
-		for (uint8_t i = from; i < to; i++) {
-			struct vc_channel_snapshot snap;
-
-			if (read_channel_snapshot(i, &snap) < 0) {
-				return -EIO;
-			}
-			if (!(snap.channel_capability_flags &
-			      (CH_CAP_RAW_OUTPUT_DRIVE |
-			       CH_CAP_VOLTAGE_MEASUREMENT |
-			       CH_CAP_CURRENT_MEASUREMENT))) {
-				continue;
-			}
-			shell_fprintf(sh, SHELL_NORMAL, "CH%d:", i);
-			if (snap.channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
-				shell_fprintf(sh, SHELL_NORMAL, " dac=%u out=%s",
-					      snap.raw_dac_readback,
-					      snap.cal_output_enabled ? "ON" : "OFF");
-			}
-			if (snap.channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
-				shell_fprintf(sh, SHELL_NORMAL, " raw_v=%d",
-					      snap.raw_adc_voltage);
-			}
-			if (snap.channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
-				shell_fprintf(sh, SHELL_NORMAL, " raw_i=%d",
-					      snap.raw_adc_current);
-			}
-			shell_fprintf(sh, SHELL_NORMAL, "\n");
-		}
-		for (int i = 0; i < interval_ms / 50; i++) {
-			k_msleep(50);
-			if (watch_has_key(sh)) {
-				shell_print(sh, "stopped");
-				return 0;
-			}
-		}
-	}
-	return 0;
-}
-
 /* ------------------------------------------------------------------ */
 /* Shell command registration                                          */
 /* ------------------------------------------------------------------ */
-
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_cal,
-	SHELL_CMD_ARG(commit, NULL, "Commit calibration <ch>", cmd_cal_commit, 2, 0),
-	SHELL_CMD_ARG(config, NULL, "Show cal config <ch>", cmd_cal_config, 2, 0),
-	SHELL_CMD_ARG(dac, NULL, "Raw DAC write <ch> <code>", cmd_cal_dac, 3, 0),
-	SHELL_CMD(exit, NULL, "Exit calibration mode", cmd_cal_exit),
-	SHELL_CMD_ARG(max_dac, NULL, "Set max DAC limit <ch> <limit>", cmd_cal_max_dac, 3, 0),
-	SHELL_CMD_ARG(output, NULL, "Cal output <ch> <on|off>", cmd_cal_output, 3, 0),
-	SHELL_CMD_ARG(sample, NULL, "Trigger ADC sample <ch>", cmd_cal_sample, 2, 0),
-	SHELL_CMD_ARG(set, NULL, "Set cal field <ch> <field> <value>", cmd_cal_set, 4, 0),
-	SHELL_CMD(status, NULL, "Cal session status (all channels)", cmd_cal_status),
-	SHELL_CMD(unlock, NULL, "2-step calibration unlock", cmd_cal_unlock),
-	SHELL_CMD_ARG(watch, NULL, "Cal raw monitor [ch] [interval_ms]", cmd_cal_watch, 1, 2),
-	SHELL_SUBCMD_SET_END
-);
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc_sys,
 	SHELL_CMD(status, NULL, "Detailed system snapshot", cmd_sys_status),
@@ -1366,7 +1315,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_vc,
 	SHELL_CMD_ARG(param, NULL, "All param <save|load|reset>", cmd_param, 2, 0),
 	SHELL_CMD(sys, &sub_vc_sys, "System commands", NULL),
 	SHELL_CMD_ARG(ch, NULL, "Channel <n> <subcmd> [args]", cmd_ch, 3, 2),
-	SHELL_CMD(cal, &sub_vc_cal, "Calibration commands", NULL),
+	SHELL_CMD_ARG(cal, NULL, "Cal <unlock|exit|status|watch|<ch> <subcmd>>", cmd_cal, 2, 4),
 	SHELL_CMD_ARG(watch, NULL, "Monitor [ch] [interval_ms]", cmd_watch, 1, 2),
 	SHELL_SUBCMD_SET_END
 );
