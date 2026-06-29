@@ -9,12 +9,14 @@ namespace hvb::factory {
 
 static void requireConnected(FactorySession& s, std::ostream& out, std::function<void()> fn) {
     if (!s.isConnected()) { out << "Error: not connected\n"; return; }
+    std::lock_guard<std::mutex> lk(s.clientMutex());
     fn();
 }
 
 static void requireCalChannel(FactorySession& s, std::ostream& out, std::function<void()> fn) {
     if (!s.isConnected()) { out << "Error: not connected\n"; return; }
     if (s.activeChannel() < 0) { out << "Error: no active channel (use 'cal ch <n>')\n"; return; }
+    std::lock_guard<std::mutex> lk(s.clientMutex());
     fn();
 }
 

@@ -143,7 +143,7 @@ void CalibrationBackend::refreshSnapshot() {
     map["outputEnabled"] = snap.outputEnabled;
     map["rawDacCode"] = snap.rawDacCode;
     map["maxRawDacLimit"] = snap.maxRawDacLimit;
-    map["rawDacReadback"] = snap.rawDacReadback;
+    map["rawDacReadback"] = snap.rawDacCode;
     map["rawAdcVoltage"] = snap.rawAdcVoltage;
     map["rawAdcCurrent"] = snap.rawAdcCurrent;
     emit snapshotUpdated(map);

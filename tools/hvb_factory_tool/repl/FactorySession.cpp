@@ -29,6 +29,7 @@ int FactorySession::activeChannel() const { return m_activeChannel; }
 void FactorySession::setActiveChannel(int ch) { m_activeChannel = ch; }
 WatchMode FactorySession::watchMode() const { return m_watchMode.load(); }
 std::string FactorySession::lastError() const { return m_client.lastError(); }
+std::mutex& FactorySession::clientMutex() { return m_clientMutex; }
 
 void FactorySession::startWatch(WatchMode mode, int intervalMs, std::ostream& out) {
     stopWatch();
@@ -46,7 +47,7 @@ void FactorySession::stopWatch() {
 void FactorySession::watchLoop(WatchMode mode, int intervalMs, std::ostream& out) {
     int ch = m_activeChannel;
     while (m_watchRunning && m_client.isConnected()) {
-        std::lock_guard<std::mutex> lk(m_ioMutex);
+        std::lock_guard<std::mutex> lk(m_clientMutex);
         std::ostringstream ss;
 
         if (mode == WatchMode::Adc || mode == WatchMode::All) {

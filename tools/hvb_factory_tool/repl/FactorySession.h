@@ -31,6 +31,7 @@ public:
     void stopWatch();
 
     std::string lastError() const;
+    std::mutex& clientMutex();
 
 private:
     HvbModbusClient m_client;
@@ -39,7 +40,7 @@ private:
     std::atomic<WatchMode> m_watchMode{WatchMode::Off};
     std::atomic<bool> m_watchRunning{false};
     std::thread m_watchThread;
-    std::mutex m_ioMutex;
+    std::mutex m_clientMutex;
 
     void watchLoop(WatchMode mode, int intervalMs, std::ostream& out);
 };
