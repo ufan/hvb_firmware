@@ -245,54 +245,123 @@ SystemConfig HvbModbusClient::readSystemConfig() {
     return cfg;
 }
 
-ChannelConfig HvbModbusClient::readChannelConfig(int ch) {
+ChannelConfig HvbModbusClient::readChannelConfig(int ch, uint16_t caps) {
     ChannelConfig cfg;
     if (!checkConnected()) return cfg;
 
     uint16_t base = reg::chAddr(ch, 0);
-    // Batch 1: offsets 0-11 — commands + operational + recovery (board limit: 12 regs max)
-    uint16_t buf[12] = {};
-    if (!readRegsInternal(true, base, 12, buf)) return cfg;
 
-    cfg.outputAction         = static_cast<OutputAction>(buf[CH_OUTPUT_ACTION]);
-    cfg.faultCommand         = static_cast<ChannelFaultCommand>(buf[CH_FAULT_CMD]);
-    // buf[2] = CH_PARAM_ACTION (command, skip)
-    cfg.configuredTargetVRaw = static_cast<int16_t>(buf[CH_CFG_TARGET_VOLTAGE]);
-    cfg.rampUpStepRaw        = buf[CH_RAMP_UP_STEP];
-    cfg.rampUpInterval       = buf[CH_RAMP_UP_INTERVAL];
-    cfg.rampDownStepRaw      = buf[CH_RAMP_DOWN_STEP];
-    cfg.rampDownInterval     = buf[CH_RAMP_DOWN_INTERVAL];
-    cfg.recoveryPolicyMode   = static_cast<RecoveryPolicy>(buf[CH_RECOVERY_POLICY_MODE]);
-    cfg.autoRetryDelay       = buf[CH_AUTO_RETRY_DELAY];
-    cfg.autoRetryMaxCount    = buf[CH_AUTO_RETRY_MAX_COUNT];
-    cfg.autoRetryWindow      = buf[CH_AUTO_RETRY_WINDOW];
+    /* Acquire capability flags if caller didn't supply them. */
+    if (caps == 0) {
+        if (!readRegsInternal(false, base + CH_CAPABILITY_FLAGS, 1, &caps))
+            caps = 0;
+    }
 
-    // Batch 2: offsets 12-16 — safe-band + current protection + derate
-    uint16_t buf2[5] = {};
-    if (!readRegsInternal(true, base + 12, 5, buf2)) return cfg;
+    bool haveDrive = (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
+    bool haveV     = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+    bool haveI     = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
 
-    cfg.currentSafeBandPct   = buf2[CH_CURRENT_SAFE_BAND_PCT - 12];
-    cfg.iProtMode            = static_cast<ProtectionMode>(buf2[CH_CURRENT_PROTECTION_MODE - 12]);
-    cfg.iProtOutputAction    = static_cast<OutputAction>(buf2[CH_CURRENT_PROT_OUT_ACTION - 12]);
-    cfg.iLimitThresholdRaw   = static_cast<int16_t>(buf2[CH_CURRENT_LIMIT_THRESHOLD - 12]);
-    cfg.derateStepRaw        = buf2[CH_AUTO_DERATE_STEP - 12];
+    /* Offsets 0-2 (commands) + optionally 3-7 (ramp/target, need RAW_OUTPUT_DRIVE) */
+    if (haveDrive) {
+        uint16_t buf[8] = {};
+        if (!readRegsInternal(true, base, 8, buf)) return cfg;
+        cfg.outputAction         = static_cast<OutputAction>(buf[CH_OUTPUT_ACTION]);
+        cfg.faultCommand         = static_cast<ChannelFaultCommand>(buf[CH_FAULT_CMD]);
+        cfg.configuredTargetVRaw = static_cast<int16_t>(buf[CH_CFG_TARGET_VOLTAGE]);
+        cfg.rampUpStepRaw        = buf[CH_RAMP_UP_STEP];
+        cfg.rampUpInterval       = buf[CH_RAMP_UP_INTERVAL];
+        cfg.rampDownStepRaw      = buf[CH_RAMP_DOWN_STEP];
+        cfg.rampDownInterval     = buf[CH_RAMP_DOWN_INTERVAL];
+    } else {
+        uint16_t buf[3] = {};
+        if (!readRegsInternal(true, base, 3, buf)) return cfg;
+        cfg.outputAction = static_cast<OutputAction>(buf[CH_OUTPUT_ACTION]);
+        cfg.faultCommand = static_cast<ChannelFaultCommand>(buf[CH_FAULT_CMD]);
+    }
+
+    /* Offsets 8-12: recovery policy + retry + safe-band (always accessible) */
+    {
+        uint16_t buf[5] = {};
+        if (!readRegsInternal(true, base + CH_RECOVERY_POLICY_MODE, 5, buf)) return cfg;
+        cfg.recoveryPolicyMode = static_cast<RecoveryPolicy>(buf[CH_RECOVERY_POLICY_MODE - CH_RECOVERY_POLICY_MODE]);
+        cfg.autoRetryDelay     = buf[CH_AUTO_RETRY_DELAY - CH_RECOVERY_POLICY_MODE];
+        cfg.autoRetryMaxCount  = buf[CH_AUTO_RETRY_MAX_COUNT - CH_RECOVERY_POLICY_MODE];
+        cfg.autoRetryWindow    = buf[CH_AUTO_RETRY_WINDOW - CH_RECOVERY_POLICY_MODE];
+        cfg.currentSafeBandPct = buf[CH_CURRENT_SAFE_BAND_PCT - CH_RECOVERY_POLICY_MODE];
+    }
+
+    /* Offsets 13-15: current protection (need CURRENT_MEASUREMENT) */
+    if (haveI) {
+        uint16_t buf[3] = {};
+        if (readRegsInternal(true, base + CH_CURRENT_PROTECTION_MODE, 3, buf)) {
+            cfg.iProtMode          = static_cast<ProtectionMode>(buf[0]);
+            cfg.iProtOutputAction  = static_cast<OutputAction>(buf[1]);
+            cfg.iLimitThresholdRaw = static_cast<int16_t>(buf[2]);
+        }
+    }
+
+    /* Offset 16: auto-derate step (need RAW_OUTPUT_DRIVE + VOLTAGE_MEASUREMENT) */
+    if (haveDrive && haveV) {
+        uint16_t d = 0;
+        if (readRegsInternal(true, base + CH_AUTO_DERATE_STEP, 1, &d))
+            cfg.derateStepRaw = d;
+    }
+
     return cfg;
 }
 
-ChannelCalConfig HvbModbusClient::readChannelCalConfig(int ch) {
+ChannelCalConfig HvbModbusClient::readChannelCalConfig(int ch, uint16_t caps) {
     ChannelCalConfig cfg;
     if (!checkConnected()) return cfg;
 
-    // Cal coefficients: offsets 20-25 (6 regs), readable in any mode
-    uint16_t buf[6] = {};
-    if (!readRegsInternal(true, reg::chAddr(ch, CH_OUTPUT_CAL_K), 6, buf)) return cfg;
+    uint16_t base = reg::chAddr(ch, 0);
 
-    cfg.outCalK   = buf[0];
-    cfg.outCalB   = static_cast<int16_t>(buf[1]);
-    cfg.measVCalK = buf[2];
-    cfg.measVCalB = static_cast<int16_t>(buf[3]);
-    cfg.measICalK = buf[4];
-    cfg.measICalB = static_cast<int16_t>(buf[5]);
+    /* Acquire capability flags if caller didn't supply them. */
+    if (caps == 0) {
+        if (!readRegsInternal(false, base + CH_CAPABILITY_FLAGS, 1, &caps))
+            caps = 0;
+    }
+
+    bool haveDrive = (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
+    bool haveV     = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+    bool haveI     = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
+
+    /* Offsets 20-25: calibration coefficients. Each pair is gated by a
+       different capability; read contiguous supported blocks. */
+    if (haveDrive && haveV && haveI) {
+        uint16_t buf[6] = {};
+        if (readRegsInternal(true, base + CH_OUTPUT_CAL_K, 6, buf)) {
+            cfg.outCalK   = buf[0];
+            cfg.outCalB   = static_cast<int16_t>(buf[1]);
+            cfg.measVCalK = buf[2];
+            cfg.measVCalB = static_cast<int16_t>(buf[3]);
+            cfg.measICalK = buf[4];
+            cfg.measICalB = static_cast<int16_t>(buf[5]);
+        }
+    } else {
+        if (haveDrive) {
+            uint16_t buf[2] = {};
+            if (readRegsInternal(true, base + CH_OUTPUT_CAL_K, 2, buf)) {
+                cfg.outCalK = buf[0];
+                cfg.outCalB = static_cast<int16_t>(buf[1]);
+            }
+        }
+        if (haveV) {
+            uint16_t buf[2] = {};
+            if (readRegsInternal(true, base + CH_MEASURED_V_CAL_K, 2, buf)) {
+                cfg.measVCalK = buf[0];
+                cfg.measVCalB = static_cast<int16_t>(buf[1]);
+            }
+        }
+        if (haveI) {
+            uint16_t buf[2] = {};
+            if (readRegsInternal(true, base + CH_MEASURED_I_CAL_K, 2, buf)) {
+                cfg.measICalK = buf[0];
+                cfg.measICalB = static_cast<int16_t>(buf[1]);
+            }
+        }
+    }
+
     return cfg;
 }
 

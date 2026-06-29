@@ -30,8 +30,8 @@ public:
     SystemInfo        readSystemInfo();
     ChannelInfo       readChannelInfo(int ch);
     SystemConfig      readSystemConfig();
-    ChannelConfig     readChannelConfig(int ch);
-    ChannelCalConfig  readChannelCalConfig(int ch);
+    ChannelConfig     readChannelConfig(int ch, uint16_t caps = 0);
+    ChannelCalConfig  readChannelCalConfig(int ch, uint16_t caps = 0);
 
     // High-level writes — system
     bool writeOperatingMode(OpMode mode);

@@ -24,8 +24,8 @@ static void doScan(hvb::tui::ScannedData& data) {
     int n = data.numChannels();
     for (int ch = 0; ch < n; ++ch) data.chInfo[ch]   = g_client.readChannelInfo(ch);
     data.sysCfg  = g_client.readSystemConfig();
-    for (int ch = 0; ch < n; ++ch) data.chCfg[ch]    = g_client.readChannelConfig(ch);
-    for (int ch = 0; ch < n; ++ch) data.chCalCfg[ch] = g_client.readChannelCalConfig(ch);
+    for (int ch = 0; ch < n; ++ch) data.chCfg[ch]    = g_client.readChannelConfig(ch, data.chInfo[ch].chCapFlags);
+    for (int ch = 0; ch < n; ++ch) data.chCalCfg[ch] = g_client.readChannelCalConfig(ch, data.chInfo[ch].chCapFlags);
 }
 
 static void rebuildChannelTitles(std::vector<std::string>& titles, int numChannels) {
