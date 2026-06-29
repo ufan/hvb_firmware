@@ -51,6 +51,19 @@
 #define SYS_CAP_CALIBRATION_MODE       0x0004
 
 /* ------------------------------------------------------------------ */
+/* Poll category tags  (4th field in modbus_view.def entries)          */
+/* ------------------------------------------------------------------ */
+
+/* REALTIME: live measurements, status, faults — poll fast (~100 ms)  */
+#define VC_POLL_REALTIME  0
+/* CONFIG: operational parameters — poll slow or on demand             */
+#define VC_POLL_CONFIG    1
+/* FIXED: version, variant, capabilities — read once at connect        */
+#define VC_POLL_FIXED     2
+/* COMMAND: write-only triggers — do not poll                          */
+#define VC_POLL_COMMAND   3
+
+/* ------------------------------------------------------------------ */
 /* Block base addresses  (wire addresses, protocol-fixed)              */
 /* ------------------------------------------------------------------ */
 
@@ -65,12 +78,12 @@
 /* ------------------------------------------------------------------ */
 
 enum {
-#define MODBUS_SYS16(name, bank, offset) \
+#define MODBUS_SYS16(name, bank, offset, poll_cat) \
 	SYS_##name = offset,
-#define MODBUS_SYS32(name, bank, offset) \
+#define MODBUS_SYS32(name, bank, offset, poll_cat) \
 	SYS_##name##_HI = offset, SYS_##name##_LO = (offset) + 1,
-#define MODBUS_VC16(name, bank, offset)
-#define MODBUS_VC32(name, bank, offset)
+#define MODBUS_VC16(name, bank, offset, poll_cat)
+#define MODBUS_VC32(name, bank, offset, poll_cat)
 #include "reg_store/modbus_view.def"
 #undef MODBUS_SYS16
 #undef MODBUS_SYS32
@@ -91,11 +104,11 @@ enum {
 /* ------------------------------------------------------------------ */
 
 enum {
-#define MODBUS_SYS16(name, bank, offset)
-#define MODBUS_SYS32(name, bank, offset)
-#define MODBUS_VC16(name, bank, offset) \
+#define MODBUS_SYS16(name, bank, offset, poll_cat)
+#define MODBUS_SYS32(name, bank, offset, poll_cat)
+#define MODBUS_VC16(name, bank, offset, poll_cat) \
 	CH_##name = offset,
-#define MODBUS_VC32(name, bank, offset) \
+#define MODBUS_VC32(name, bank, offset, poll_cat) \
 	CH_##name##_HI = offset, CH_##name##_LO = (offset) + 1,
 #include "reg_store/modbus_view.def"
 #undef MODBUS_SYS16
