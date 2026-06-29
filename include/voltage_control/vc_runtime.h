@@ -88,4 +88,8 @@ enum vc_status vc_runtime_set_channel_cal_field(struct vc_runtime *runtime,
 						uint16_t value,
 						k_timeout_t timeout);
 
+/* Peek at remaining calibration watchdog time without resetting it.
+ * Uses the catalog singleton. Returns 0 when not in calibration mode. */
+uint16_t vc_runtime_peek_cal_watchdog_s(void);
+
 #endif

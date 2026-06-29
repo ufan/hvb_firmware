@@ -152,6 +152,17 @@ static bool vc_catalog_supported(uint16_t field, uint16_t caps)
 	}
 }
 
+uint16_t vc_runtime_peek_cal_watchdog_s(void)
+{
+	if (catalog_runtime == NULL) {
+		return 0;
+	}
+	k_mutex_lock(&catalog_runtime->lock, K_FOREVER);
+	uint16_t s = (uint16_t)((catalog_runtime->ctrl->cal_watchdog_ms + 999U) / 1000U);
+	k_mutex_unlock(&catalog_runtime->lock);
+	return s;
+}
+
 static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 				       union reg_value *value)
 {
