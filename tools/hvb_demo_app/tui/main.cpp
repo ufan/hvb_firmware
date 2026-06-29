@@ -17,7 +17,7 @@ using namespace ftxui;
 static hvb::HvbModbusClient g_client;
 static hvb::ConfigManager   g_cfg;
 static std::atomic<bool>    g_connected{false};
-static int g_pollInterval = 2;
+static int g_pollInterval = 1;
 static std::mutex           g_scanMutex;
 
 /* Full scan — used at connect time and on manual Refresh.
@@ -32,14 +32,20 @@ static void doFullScan(hvb::tui::ScannedData& data) {
 }
 
 /* Poll scan — runs every poll interval.
-   Reads only dynamic data (system status + per-channel measurements).
-   Capabilities are hardware-fixed and already cached in chInfo[ch].chCapFlags
-   from the last full scan; they are passed in to skip the FC04 offset-9 read. */
+   Reads only dynamic registers (runtime_state + measurements).
+   Static fields (protocol version, variant, caps, supported channels, fw version)
+   are cached from the last full scan and never re-read.
+   Only channels in the active mask are polled. */
 static void doPollScan(hvb::tui::ScannedData& data) {
-    data.sysInfo = g_client.readSystemInfo();
+    /* Merge dynamic system fields into the cached sysInfo */
+    g_client.readSystemStatus(data.sysInfo);
+
+    uint16_t activeMask = data.sysInfo.activeChMask;
     int n = data.numChannels();
-    for (int ch = 0; ch < n; ++ch)
-        data.chInfo[ch] = g_client.readChannelInfo(ch, data.chInfo[ch].chCapFlags);
+    for (int ch = 0; ch < n; ++ch) {
+        if ((activeMask & (1u << ch)) == 0) continue;
+        g_client.readChannelStatus(ch, data.chInfo[ch].chCapFlags, data.chInfo[ch]);
+    }
 }
 
 static void rebuildChannelTitles(std::vector<std::string>& titles, int numChannels) {
@@ -51,6 +57,7 @@ static void rebuildChannelTitles(std::vector<std::string>& titles, int numChanne
 int main(int argc, char** argv) {
     g_cfg.load();
 
+    // refactor: use cli11    
     std::string portArg;
     int baudArg = 115200, slaveArg = 1, timeoutArg = 500;
     for (int i = 1; i < argc; ++i) {
@@ -75,6 +82,7 @@ int main(int argc, char** argv) {
     hvb::tui::ScannedData data;
     std::atomic<bool> running{true};
 
+    // todo: dedicated state machine library (fsm)?
     hvb::tui::AppState appState{g_client, g_connected, data, statusMsg, statusMutex, g_scanMutex, screen};
 
     // ---- Poll thread ----

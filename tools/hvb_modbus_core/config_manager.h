@@ -15,7 +15,7 @@ public:
     int baudRate = 115200;
     int slaveId = 1;
     int timeoutMs = 500;
-    int pollIntervalMs = 2000;
+    int pollIntervalMs = 1000;
 
     bool hasConnectionSettings() const;
     void setFromArgs(const std::string& p, int baud, int id, int timeout);

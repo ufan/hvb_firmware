@@ -33,6 +33,11 @@ public:
     ChannelConfig     readChannelConfig(int ch, uint16_t caps = 0);
     ChannelCalConfig  readChannelCalConfig(int ch, uint16_t caps = 0);
 
+    // Lightweight poll helpers — read only dynamic registers,
+    // merging into a cached struct populated by a prior full scan.
+    void readSystemStatus(SystemInfo& info);
+    void readChannelStatus(int ch, uint16_t caps, ChannelInfo& info);
+
     // High-level writes — system
     bool writeOperatingMode(OpMode mode);
     bool writeStartupChannelPolicy(uint16_t policy);

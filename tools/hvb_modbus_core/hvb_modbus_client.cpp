@@ -152,6 +152,73 @@ bool HvbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uin
 }
 
 // ============================================================================
+//  Lightweight poll helpers — read only dynamic registers
+// ============================================================================
+
+void HvbModbusClient::readSystemStatus(SystemInfo& info) {
+    if (!checkConnected()) return;
+
+    /* Read the dynamic tail of the system input block:
+       offsets 6..14 (9 registers) in one batch.
+       Static fields at 10-11 (FW_VERSION) are read but discarded. */
+    uint16_t buf[9] = {};
+    if (!readRegsInternal(false, reg::sysAddr(SYS_BOARD_TEMPERATURE), 9, buf)) return;
+
+    info.boardTempRaw     = static_cast<int16_t>(buf[SYS_BOARD_TEMPERATURE   - SYS_BOARD_TEMPERATURE]);
+    info.boardHumidityRaw = buf[SYS_BOARD_HUMIDITY    - SYS_BOARD_TEMPERATURE];
+    info.uptimeSec        = reg::uint32FromRegs(buf[SYS_UPTIME_HI - SYS_BOARD_TEMPERATURE],
+                                                buf[SYS_UPTIME_LO - SYS_BOARD_TEMPERATURE]);
+    info.activeOpMode     = static_cast<OpMode>(buf[SYS_ACTIVE_OPERATING_MODE - SYS_BOARD_TEMPERATURE]);
+    info.sysStatus        = buf[SYS_STATUS              - SYS_BOARD_TEMPERATURE];
+    info.faultCause       = buf[SYS_FAULT_CAUSE         - SYS_BOARD_TEMPERATURE];
+}
+
+void HvbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info) {
+    if (!checkConnected()) return;
+
+    uint16_t base = reg::chAddr(ch, 0);
+
+    /* Read 9 runtime_state registers in one batch (offsets 0..8).
+       Capability flags (offset 9) are hardware-fixed — use cached caps. */
+    uint16_t buf[9] = {};
+    if (!readRegsInternal(false, base, 9, buf)) return;
+
+    info.status                      = buf[CH_STATUS_BITS];
+    info.activeFault                 = buf[CH_ACTIVE_FAULT_CAUSE];
+    info.faultHistory                = buf[CH_FAULT_HISTORY_CAUSE];
+    info.lastProtOutputAction        = buf[CH_LAST_PROT_OUT_ACTION];
+    info.retryCount                  = static_cast<int>(buf[CH_AUTO_RETRY_COUNT]);
+    info.cooldownSec                 = static_cast<int>(buf[CH_AUTO_COOLDOWN_REMAINING]);
+    info.lastFaultTimestamp          = reg::uint32FromRegs(buf[CH_LAST_FAULT_TIMESTAMP_HI],
+                                                           buf[CH_LAST_FAULT_TIMESTAMP_LO]);
+    info.operationalTargetVoltageRaw = static_cast<int16_t>(buf[CH_OPER_TARGET_VOLTAGE]);
+    info.chCapFlags = caps;
+
+    /* Measured voltage / current — conditional on channel capabilities. */
+    bool hasV = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+    bool hasI = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
+
+    if (hasV && hasI) {
+        uint16_t m[2] = {};
+        if (readRegsInternal(false, base + CH_MEASURED_VOLTAGE, 2, m)) {
+            info.voltageRaw = static_cast<int16_t>(m[0]);
+            info.currentRaw = static_cast<int16_t>(m[1]);
+        }
+    } else {
+        if (hasV) {
+            uint16_t v = 0;
+            if (readRegsInternal(false, base + CH_MEASURED_VOLTAGE, 1, &v))
+                info.voltageRaw = static_cast<int16_t>(v);
+        }
+        if (hasI) {
+            uint16_t c = 0;
+            if (readRegsInternal(false, base + CH_MEASURED_CURRENT, 1, &c))
+                info.currentRaw = static_cast<int16_t>(c);
+        }
+    }
+}
+
+// ============================================================================
 //  High-level reads — all single UINT16, no INT32 packing
 // ============================================================================
 
