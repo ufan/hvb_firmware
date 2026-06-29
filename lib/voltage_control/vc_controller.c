@@ -404,7 +404,12 @@ enum vc_status vc_controller_system_param_action(
 		    ctrl->storage->load_system_config == NULL) {
 			return VC_ERR_STORAGE;
 		}
-		if (ctrl->storage->load_system_config(&cfg) < 0) {
+		int ret = ctrl->storage->load_system_config(&cfg);
+
+		if (ret == -ENOENT) {
+			return VC_OK;
+		}
+		if (ret < 0) {
 			return VC_ERR_STORAGE;
 		}
 		return vc_controller_set_system_config(ctrl, &cfg);
@@ -450,15 +455,19 @@ enum vc_status vc_controller_channel_param_action(
 			return VC_ERR_STORAGE;
 		}
 		vc_channel_get_config(&ctrl->channels[ch], &cfg);
-		if (ctrl->storage->load_channel_config(ch, &cfg) < 0) {
+		int cfg_ret = ctrl->storage->load_channel_config(ch, &cfg);
+
+		if (cfg_ret < 0 && cfg_ret != -ENOENT) {
 			return VC_ERR_STORAGE;
 		}
-		enum vc_status st = vc_channel_set_config(&ctrl->channels[ch], &cfg);
+		if (cfg_ret == 0) {
+			enum vc_status st = vc_channel_set_config(&ctrl->channels[ch], &cfg);
 
-		if (st != VC_OK) {
-			return st;
+			if (st != VC_OK) {
+				return st;
+			}
 		}
-		/* Load cal from NVS; -ENOENT is OK — channel keeps cal defaults */
+		/* Load cal from NVS; -ENOENT keeps current cal */
 		if (ctrl->storage->load_channel_cal != NULL) {
 			struct vc_channel_cal_config cal;
 
