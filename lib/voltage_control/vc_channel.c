@@ -780,7 +780,7 @@ enum vc_status vc_channel_cal_set_output_enable(struct vc_channel *ch,
 	return VC_OK;
 }
 
-enum vc_status vc_channel_cal_set_raw_dac(struct vc_channel *ch, uint16_t code)
+enum vc_status vc_channel_cal_set_raw_dac(struct vc_channel *ch, uint32_t code)
 {
 	if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
 		return VC_ERR_UNSUPPORTED_CAPABILITY;
@@ -794,7 +794,7 @@ enum vc_status vc_channel_cal_set_raw_dac(struct vc_channel *ch, uint16_t code)
 	if (code != 0 && !ch->cal_output_enabled) {
 		return VC_ERR_UNSAFE_STATE;
 	}
-	ch->raw_dac_readback = code;
+	ch->raw_dac_readback = (uint16_t)code;
 	apply_hw(ch);
 	return VC_OK;
 }

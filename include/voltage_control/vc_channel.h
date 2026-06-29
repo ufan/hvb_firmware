@@ -111,7 +111,7 @@ void vc_channel_get_snapshot(const struct vc_channel *ch,
 
 enum vc_status vc_channel_cal_set_output_enable(struct vc_channel *ch,
 						bool enable);
-enum vc_status vc_channel_cal_set_raw_dac(struct vc_channel *ch, uint16_t code);
+enum vc_status vc_channel_cal_set_raw_dac(struct vc_channel *ch, uint32_t code);
 enum vc_status vc_channel_cal_sample(struct vc_channel *ch);
 enum vc_status vc_channel_cal_commit(struct vc_channel *ch);
 

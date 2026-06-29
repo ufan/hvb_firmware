@@ -532,7 +532,7 @@ enum vc_status vc_controller_channel_cal_output_enable(
 }
 
 enum vc_status vc_controller_channel_cal_raw_dac(
-	struct vc_controller *ctrl, uint8_t ch, uint16_t code)
+	struct vc_controller *ctrl, uint8_t ch, uint32_t code)
 {
 	if (!channel_valid(ctrl, ch)) {
 		return VC_ERR_UNSUPPORTED_CHANNEL;

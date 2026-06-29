@@ -40,7 +40,7 @@ struct vc_runtime_command {
 		enum vc_channel_fault_command fault_command;
 		uint16_t calibration_unlock_value;
 		bool calibration_output_enable;
-		uint16_t calibration_raw_dac;
+		uint32_t calibration_raw_dac;
 		uint16_t calibration_max_raw_dac;
 		enum vc_param_action param_action;
 		struct vc_field_write field_write;
