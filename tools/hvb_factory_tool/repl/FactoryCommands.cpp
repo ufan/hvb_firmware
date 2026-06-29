@@ -77,7 +77,148 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                     << (info.sysCapFlags & SysCap::CALIBRATION_MODE ? " [Cal]" : " [No Cal]") << "\n";
             });
         },
-        "System info dump");
+        "Device info");
+
+    // ---- Active-channel selection (shared by cal and verification commands) ----
+    root->Insert("ch",
+        [&session](std::ostream& out, int ch) {
+            if (ch < 0 || ch >= static_cast<int>(VC_PROTOCOL_MAX_CHANNELS)) {
+                out << "Error: channel must be 0-" << (VC_PROTOCOL_MAX_CHANNELS - 1) << "\n"; return;
+            }
+            session.setActiveChannel(ch);
+            out << "Active channel: " << ch << "\n";
+        },
+        "Select active channel", {"ch"});
+
+    // ---- Post-calibration verification commands ----
+    root->Insert("target",
+        [&session](std::ostream& out, double v) {
+            requireCalChannel(session, out, [&] {
+                int ch = session.activeChannel();
+                auto raw = reg::voltageFromV(v);
+                if (session.client().writeConfiguredTargetVoltage(ch, raw))
+                    out << "CH" << ch << " target = " << v << " V  (raw=" << raw << ")\n";
+                else out << "Error: " << session.lastError() << "\n";
+            });
+        },
+        "Set target voltage on active channel (V)", {"V"});
+
+    root->Insert("output",
+        [&session](std::ostream& out, const std::string& action) {
+            requireCalChannel(session, out, [&] {
+                int ch = session.activeChannel();
+                OutputAction act;
+                if      (action == "on"    || action == "enable")  act = OutputAction::Enable;
+                else if (action == "off"   || action == "disable") act = OutputAction::DisableGraceful;
+                else if (action == "immed")                        act = OutputAction::DisableImmediate;
+                else if (action == "zero")                         act = OutputAction::ForceOutputZero;
+                else { out << "Error: action must be on|off|immed|zero\n"; return; }
+                if (session.client().sendOutputAction(ch, act))
+                    out << "CH" << ch << " output " << action << "\n";
+                else out << "Error: " << session.lastError() << "\n";
+            });
+        },
+        "Output action on active channel", {"on|off|immed|zero"});
+
+    root->Insert("measure",
+        [&session](std::ostream& out) {
+            requireCalChannel(session, out, [&] {
+                int ch = session.activeChannel();
+                auto ci = session.client().readChannelInfo(ch);
+                out << "CH" << ch << ":\n"
+                    << "  Vmeas:  " << std::fixed << std::setprecision(1)
+                    << reg::voltageToV(ci.voltageRaw) << " V  (raw=" << ci.voltageRaw << ")\n"
+                    << "  Imeas:  " << std::fixed << std::setprecision(3)
+                    << (reg::currentToA(ci.currentRaw) * 1e6) << " uA  (raw=" << ci.currentRaw << ")\n"
+                    << "  Target: " << reg::voltageToV(ci.operationalTargetVoltageRaw) << " V\n"
+                    << "  Status: 0x" << std::hex << ci.status << std::dec
+                    << ((ci.status & 0x0002) ? " [ON]" : " [OFF]")
+                    << (ci.activeFault ? " FAULT" : "") << "\n";
+            });
+        },
+        "Read measurements from active channel");
+
+    // ---- System submenu ----
+    auto sysMenu = std::make_unique<cli::Menu>("sys");
+
+    sysMenu->Insert("status",
+        [&session](std::ostream& out) {
+            requireConnected(session, out, [&] {
+                auto si = session.client().readSystemInfo();
+                out << "Mode: " << opModeName(si.activeOpMode)
+                    << "  Channels: " << si.supportedChannels
+                    << "  Uptime: " << si.uptimeSec << " s\n";
+                for (int ch = 0; ch < si.supportedChannels; ++ch) {
+                    auto ci = session.client().readChannelInfo(ch);
+                    out << "  CH" << ch
+                        << "  V=" << std::fixed << std::setprecision(1)
+                        << reg::voltageToV(ci.voltageRaw) << "V"
+                        << "  I=" << std::fixed << std::setprecision(3)
+                        << (reg::currentToA(ci.currentRaw) * 1e6) << "uA"
+                        << "  tgt=" << reg::voltageToV(ci.operationalTargetVoltageRaw) << "V"
+                        << "  status=0x" << std::hex << ci.status << std::dec
+                        << (ci.activeFault ? " FAULT" : "") << "\n";
+                }
+            });
+        },
+        "System + per-channel status overview");
+
+    sysMenu->Insert("mode",
+        [&session](std::ostream& out, const std::string& m) {
+            requireConnected(session, out, [&] {
+                OpMode mode;
+                if      (m == "normal") mode = OpMode::Normal;
+                else if (m == "auto")   mode = OpMode::Automatic;
+                else { out << "Error: mode must be normal|auto\n"; return; }
+                if (session.client().writeOperatingMode(mode))
+                    out << "Mode -> " << m << "\n";
+                else out << "Error: " << session.lastError() << "\n";
+            });
+        },
+        "Set operating mode", {"normal|auto"});
+
+    sysMenu->Insert("save",
+        [&session](std::ostream& out) {
+            requireConnected(session, out, [&] {
+                if (session.client().sendParamAction(-1, ParamAction::Save))
+                    out << "Configuration saved to NVS\n";
+                else out << "Error: " << session.lastError() << "\n";
+            });
+        },
+        "Save all configuration to NVS");
+
+    sysMenu->Insert("load",
+        [&session](std::ostream& out) {
+            requireConnected(session, out, [&] {
+                if (session.client().sendParamAction(-1, ParamAction::Load))
+                    out << "Configuration loaded from NVS\n";
+                else out << "Error: " << session.lastError() << "\n";
+            });
+        },
+        "Load configuration from NVS");
+
+    sysMenu->Insert("factory",
+        [&session](std::ostream& out) {
+            requireConnected(session, out, [&] {
+                if (session.client().sendParamAction(-1, ParamAction::FactoryReset))
+                    out << "Factory reset applied\n";
+                else out << "Error: " << session.lastError() << "\n";
+            });
+        },
+        "Apply factory defaults");
+
+    sysMenu->Insert("reset",
+        [&session](std::ostream& out) {
+            requireConnected(session, out, [&] {
+                out << "Sending software reset...\n";
+                session.client().sendParamAction(-1, ParamAction::SoftwareReset);
+                session.disconnect();
+                out << "Disconnected (reconnect after device restarts)\n";
+            });
+        },
+        "Software reset and disconnect");
+
+    root->Insert(std::move(sysMenu));
 
     // ---- Calibration submenu ----
     auto calMenu = std::make_unique<cli::Menu>("cal");
