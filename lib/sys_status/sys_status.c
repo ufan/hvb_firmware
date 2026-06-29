@@ -129,8 +129,6 @@ static void sys_status_worker(void *p1, void *p2, void *p3)
 		sensor_ticks = 1;
 	}
 
-	read_environment();
-
 	while (true) {
 		k_sem_take(&wake_sem, K_FOREVER);
 
@@ -183,7 +181,8 @@ static int sys_status_init(void)
 
 	k_sem_init(&wake_sem, 0, 1);
 	k_timer_init(&sys_status_timer, sys_status_timer_handler, NULL);
-	k_timer_start(&sys_status_timer, K_NO_WAIT,
+	k_timer_start(&sys_status_timer,
+		      K_MSEC(CONFIG_SYS_STATUS_HEARTBEAT_INTERVAL_MS),
 		      K_MSEC(CONFIG_SYS_STATUS_HEARTBEAT_INTERVAL_MS));
 
 	k_thread_create(&sys_status_thread, sys_status_stack,
