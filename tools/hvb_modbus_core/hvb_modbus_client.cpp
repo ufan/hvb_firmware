@@ -60,6 +60,22 @@ bool HvbModbusClient::connect(const std::string& portName, int baud, int slaveId
         m_impl->errorText = "failed to create RTU client port";
         return false;
     }
+
+    // Probe: verify the board actually responds before claiming success.
+    // Read one well-known input register (PROTOCOL_MAJOR at address 0).
+    uint16_t probe = 0xFFFF;
+    if (!readRegsInternal(false, reg::sysAddr(0), 1, &probe)) {
+        m_impl->errorText = "no response from board — check baud rate, slave ID, and cabling";
+        m_impl->disconnect();
+        return false;
+    }
+    if (probe < 1 || probe > 15) {
+        m_impl->errorText = "unexpected protocol version " + std::to_string(probe)
+                            + " — check baud rate and slave ID";
+        m_impl->disconnect();
+        return false;
+    }
+
     m_impl->connected = true;
     return true;
 }
