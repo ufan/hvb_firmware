@@ -113,13 +113,6 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     auto bFactory = ActionButton("Factory", [&s, &inputs, refreshCh, ch]{
         postWrite(s, inputs, "Factory", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::FactoryReset); }, refreshCh); });
 
-    // ---- Plot toggle checkboxes ----
-    auto cbVset  = Checkbox("Vset",  &inputs.plotVset[ch]);
-    auto cbVop   = Checkbox("Vop",   &inputs.plotVop[ch]);
-    auto cbVmeas = Checkbox("V",     &inputs.plotVmeas[ch]);
-    auto cbImeas = Checkbox("I",     &inputs.plotImeas[ch]);
-    auto cbRow   = Container::Horizontal({cbVset, cbVop, cbVmeas, cbImeas});
-
     auto container = Container::Vertical({
         tgtInp, bEnable, bDisGra, bKill,
         ruStepInp, rdStepInp,
@@ -127,7 +120,6 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         bClrAct, bClrHist,
         recovC, delayInp, maxInp, winInp, derInp, iBandInp,
         bSave, bLoad, bFactory,
-        cbRow,
     });
 
     return Renderer(container, [=, &s]() {
@@ -141,42 +133,23 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
 
         // LiveStatus panel (single row)
         Element liveBar = text(" Not connected ") | dim;
-        Element graphEl = text("");
         if (s.data.valid) {
             const auto& ci = s.data.chInfo[ch];
             Elements liveParts;
-            if (hasVolts) { liveParts.push_back(text("  Vset:")); liveParts.push_back(tgtInp->Render() | size(WIDTH, EQUAL, 8)); liveParts.push_back(text("V")); }
-            if (hasVolts) { liveParts.push_back(text("  Vop:")); liveParts.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | bold); }
-            if (hasVolts) { liveParts.push_back(text("  V:"));  liveParts.push_back(text(fmtVoltage(ci.voltageRaw)) | bold); }
-            if (hasCurr)  { liveParts.push_back(text("  I:"));  liveParts.push_back(text(fmtCurrentNA(ci.currentRaw)) | bold); }
-            liveParts.push_back(text("   Status:"));
+            if (hasVolts) { liveParts.push_back(text("  Vset: ")); liveParts.push_back(tgtInp->Render() | size(WIDTH, EQUAL, 8)); liveParts.push_back(text(" V")); }
+            if (hasVolts) { liveParts.push_back(text("  Vop: ")); liveParts.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | bold); }
+            if (hasVolts) { liveParts.push_back(text("   V: "));  liveParts.push_back(text(fmtVoltage(ci.voltageRaw)) | bold); }
+            if (hasCurr)  { liveParts.push_back(text("   I: "));  liveParts.push_back(text(fmtCurrentNA(ci.currentRaw)) | bold); }
+            liveParts.push_back(text("   Status: "));
             liveParts.push_back(text(statusBadge(ci.status)) | bold);
-            liveParts.push_back(text("   Retries:"));
+            liveParts.push_back(text("   Retries: "));
             liveParts.push_back(text(std::to_string(ci.retryCount)));
             liveBar = hbox(std::move(liveParts));
-
-            // Time-series graph
-            if (s.timeSeries) {
-                uint8_t mask = 0;
-                if (inputs.plotVset[ch])  mask |= 1;
-                if (inputs.plotVop[ch])   mask |= 2;
-                if (inputs.plotVmeas[ch]) mask |= 4;
-                if (inputs.plotImeas[ch]) mask |= 8;
-                graphEl = renderGraph(s.timeSeries[ch], mask, 6) | border;
-            }
         }
         auto livePanel = hbox({
             text(" Live ") | bold | color(Color::Cyan),
             separator(),
             liveBar,
-        });
-
-        // Toggle checkboxes row
-        auto toggleBar = hbox({
-            cbVset->Render(), text("  "),
-            cbVop->Render(), text("  "),
-            cbVmeas->Render(), text("  "),
-            cbImeas->Render(),
         });
 
         // Control panel
@@ -218,9 +191,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         }));
 
         return vbox({
-            livePanel,
-            graphEl,
-            hbox({ toggleBar, filler() }),
+            livePanel | flex,
             hbox({ controlPanel | flex, protPanel | flex }),
             hbox({ recovPanel | flex, persistPanel | flex }),
         });

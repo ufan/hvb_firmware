@@ -29,7 +29,6 @@ struct AppState {
     std::mutex&                              workMutex;    // guards workQueue
     std::condition_variable&                 workCv;       // wakes modbusWorker
     ftxui::ScreenInteractive&               screen;
-    ChannelTimeSeries*                       timeSeries = nullptr;
 };
 
 // Shared config-input state — single source of truth for all tabs.
@@ -59,12 +58,6 @@ struct ConfigInputs {
     std::string retryMax    [MAX_CHANNELS];
     std::string retryWindow [MAX_CHANNELS];
     std::string iBand       [MAX_CHANNELS];
-
-    // Time-series plot toggles (UI state, not synced)
-    bool plotVset  [MAX_CHANNELS]{};
-    bool plotVop   [MAX_CHANNELS]{};
-    bool plotVmeas [MAX_CHANNELS]{};
-    bool plotImeas [MAX_CHANNELS]{};
 };
 
 // Maps a raw OutputAction ordinal to the 4-slot cycler index used by InlineCycler widgets.

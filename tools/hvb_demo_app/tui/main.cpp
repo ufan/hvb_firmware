@@ -74,7 +74,6 @@ int main(int argc, char** argv) {
     std::string statusMsg;
     std::mutex  statusMutex;
     hvb::tui::ScannedData data;
-    hvb::tui::ChannelTimeSeries timeSeriesData[hvb::tui::MAX_CHANNELS];
     std::atomic<bool> running{true};
     std::atomic<int>  pendingChannelCount{-1};
     std::atomic<bool> pendingSync{false};
@@ -82,16 +81,8 @@ int main(int argc, char** argv) {
     std::mutex                        workMutex;
     std::condition_variable           workCv;
 
-    hvb::tui::AppState appState{g_client, g_connected, data, statusMsg, statusMutex, workQueue, workMutex, workCv, screen, timeSeriesData};
+    hvb::tui::AppState appState{g_client, g_connected, data, statusMsg, statusMutex, workQueue, workMutex, workCv, screen};
     hvb::tui::ConfigInputs inputs;
-
-    // Default plot toggles
-    for (int ch = 0; ch < hvb::tui::MAX_CHANNELS; ++ch) {
-        inputs.plotVset[ch]  = true;
-        inputs.plotVop[ch]   = true;
-        inputs.plotVmeas[ch] = true;
-        inputs.plotImeas[ch] = false;
-    }
 
     // ---- Modbus worker thread — serialises all serial I/O ----
     std::thread modbusWorker([&] {
@@ -110,17 +101,6 @@ int main(int argc, char** argv) {
             }
             if (running && g_connected) {
                 doPollScan(data);
-                // Sample time-series
-                int nc = data.numChannels();
-                for (int c = 0; c < nc && c < hvb::tui::MAX_CHANNELS; ++c) {
-                    const auto& ci = data.chInfo[c];
-                    auto vs = hvb::reg::voltageToV(data.chCfg[c].configuredTargetVRaw);
-                    auto vo = hvb::reg::voltageToV(ci.operationalTargetVoltageRaw);
-                    auto vm = hvb::reg::voltageToV(ci.voltageRaw);
-                    auto im = static_cast<float>(hvb::reg::currentToA(ci.currentRaw) * 1e9);
-                    timeSeriesData[c].sample(static_cast<float>(vs), static_cast<float>(vo),
-                                              static_cast<float>(vm), im);
-                }
                 data.valid = g_client.isConnected();
                 if (running) screen.PostEvent(Event::Custom);
             }
