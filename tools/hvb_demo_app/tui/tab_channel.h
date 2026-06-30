@@ -50,8 +50,10 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
 
     auto bEnable  = ActionButton("Enable",    [&s, &inputs, refreshCh, ch]{
         postWrite(s, inputs, "Enable", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::Enable); }, refreshCh); });
-    auto bDisGra  = ActionButton("Dis-Grace", [&s, &inputs, refreshCh, ch]{
-        postWrite(s, inputs, "Dis-Grace", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableGraceful); }, refreshCh); });
+    auto bDisGra  = ActionButton("Disable",   [&s, &inputs, refreshCh, ch]{
+        postWrite(s, inputs, "Disable", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableGraceful); }, refreshCh); });
+    auto bKill    = ActionButton("Kill",      [&s, &inputs, refreshCh, ch]{
+        postWrite(s, inputs, "Kill", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableImmediate); }, refreshCh); });
 
     // ---- Protection ----
     auto onIProt = [&s, &inputs, refreshCh, ch] {
@@ -112,11 +114,11 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         postWrite(s, inputs, "Factory", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::FactoryReset); }, refreshCh); });
 
     auto container = Container::Vertical({
-        tgtInp, bEnable, bDisGra,
+        tgtInp, bEnable, bDisGra, bKill,
         ruStepInp, rdStepInp,
         iModeC, iActC, iThrInp,
-        recovC, delayInp, maxInp, winInp, derInp, iBandInp,
         bClrAct, bClrHist,
+        recovC, delayInp, maxInp, winInp, derInp, iBandInp,
         bSave, bLoad, bFactory,
     });
 
@@ -129,11 +131,12 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         const bool hasVolts = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
         const bool hasCurr  = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
 
-        // LiveStatus panel
+        // LiveStatus panel (single row)
         Element liveBar = text(" Not connected ") | dim;
         if (s.data.valid) {
             const auto& ci = s.data.chInfo[ch];
             Elements liveParts;
+            if (hasVolts) { liveParts.push_back(text("  Vset: ")); liveParts.push_back(tgtInp->Render() | size(WIDTH, EQUAL, 8)); liveParts.push_back(text(" V")); }
             if (hasVolts) { liveParts.push_back(text("  Vop: ")); liveParts.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | bold); }
             if (hasVolts) { liveParts.push_back(text("   V: "));  liveParts.push_back(text(fmtVoltage(ci.voltageRaw)) | bold); }
             if (hasCurr)  { liveParts.push_back(text("   I: "));  liveParts.push_back(text(fmtCurrentNA(ci.currentRaw)) | bold); }
@@ -143,43 +146,54 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
             liveParts.push_back(text(std::to_string(ci.retryCount)));
             liveBar = hbox(std::move(liveParts));
         }
-        auto livePanel = window(text(" CH" + std::to_string(ch) + " Live "), liveBar);
+        auto livePanel = hbox({
+            text(" Live ") | bold | color(Color::Cyan),
+            separator(),
+            liveBar,
+        });
 
         // Control panel
         auto controlPanel = window(text(" Control "), vbox({
-            hbox({ text("Vset: "), tgtInp->Render(), text(" V") }),
-            hasOutEn ? hbox({ bEnable->Render(), text("  "), bDisGra->Render() })
+            emptyElement(),
+            hasOutEn ? hbox({ bEnable->Render(), text("  "), bDisGra->Render(), text("  "), bKill->Render() })
                      : hbox({ text(" (output control not supported) ") | dim }),
-            hbox({ text("Ru: "), ruStepInp->Render(), text(" V/s") }),
-            hbox({ text("Rd: "), rdStepInp->Render(), text(" V/s") }),
+            hbox({ text("Ru: "), ruStepInp->Render(), text(" V/s"),
+                   text("  Rd: "), rdStepInp->Render(), text(" V/s") }),
         }));
 
         // Protection panel
         Element protPanel = text("") | dim;
         if (hasCurr) {
-            protPanel = window(text(" Protection "), hbox({
-                text("Mode: "), iModeC->Render(),
-                text("  Action: "), iActC->Render(),
-                text("  Limit: "), iThrInp->Render(), text(" nA"),
+            protPanel = window(text(" Protection Policy "), vbox({
+                emptyElement(),
+                hbox({ text("Limit: "), iThrInp->Render(), text(" nA"),
+                       text("  "), iModeC->Render(),
+                       text("  "), iActC->Render() }),
+                hbox({ bClrAct->Render(), text("  "), bClrHist->Render() }),
             }));
         }
 
-        // Recovery & Persistence panel (merged)
-        auto recovPanel = window(text(" Recovery & Persist "), vbox({
-            hbox({ text("Policy:"), recovC->Render(),
-                   text("  Dly:"), delayInp->Render(), text("s"),
+        // Recovery panel (compact)
+        auto recovPanel = window(text(" Recovery Policy "), vbox({
+            emptyElement(),
+            hbox({ recovC->Render(),
                    text("  Max:"), maxInp->Render(),
                    text("  Win:"), winInp->Render(), text("s") }),
-            hbox({ text("Derate:"), derInp->Render(), text("LSB"),
-                   text("  Band:"), iBandInp->Render(), text("%"),
-                   text("  "), bClrAct->Render(), text(" "), bClrHist->Render() }),
-            hbox({ bSave->Render(), text(" "), bLoad->Render(), text(" "), bFactory->Render() }),
+            hbox({ text("Dly:"), delayInp->Render(), text("s"),
+                   text("  Derate:"), derInp->Render(), text("LSB"),
+                   text("  Band:"), iBandInp->Render(), text("%") }),
+        }));
+
+        // Persistence / Setting panel
+        auto persistPanel = window(text(" Setting "), vbox({
+            emptyElement(),
+            hbox({ bSave->Render(), text("  "), bLoad->Render(), text("  "), bFactory->Render() }),
         }));
 
         return vbox({
-            livePanel,
-            hbox({ controlPanel, protPanel }),
-            recovPanel,
+            livePanel | flex,
+            hbox({ controlPanel | flex, protPanel | flex }),
+            hbox({ recovPanel | flex, persistPanel | flex }),
         });
     });
 }

@@ -123,7 +123,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
     auto tableContainer = Container::Vertical(rowComps);
 
     static const std::vector<std::string> kHeaders = {
-        "CH", "Vset", "Status", "Vop", "V (V)", "I (nA)",
+        "", "Vset", "Status", "Vop", "V (V)", "I (nA)",
         "Ru", "Rd", "Limit", "Fault",
     };
 
@@ -160,21 +160,21 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
             snprintf(chLabel, sizeof(chLabel), "CH%-2d", ch);
 
             std::vector<Element> cells;
-            cells.push_back(text(chLabel) | center | size(WIDTH, GREATER_THAN, 4));
-            cells.push_back(hasOut ? rows->at(ch).vsetInp->Render() | center | size(WIDTH, EQUAL, 8)
-                                   : text(" -- ") | dim | center | size(WIDTH, EQUAL, 8));
+            cells.push_back(text(chLabel) | center);
+            cells.push_back(hasOut ? rows->at(ch).vsetInp->Render() | center
+                                   : text(" -- ") | dim | center);
             cells.push_back(hasOut ? rows->at(ch).statusBtn->Render() | center
                                    : text(" -- ") | dim | center);
-            cells.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | center | size(WIDTH, GREATER_THAN, 9));
-            cells.push_back(text(fmtVoltage(ci.voltageRaw)) | center | size(WIDTH, GREATER_THAN, 9));
-            cells.push_back(text(fmtCurrentNA(ci.currentRaw)) | center | size(WIDTH, GREATER_THAN, 10));
-            cells.push_back(hasOut ? rows->at(ch).rampUpInp->Render() | center | size(WIDTH, EQUAL, 7)
-                                   : text(" -- ") | dim | center | size(WIDTH, EQUAL, 7));
-            cells.push_back(hasOut ? rows->at(ch).rampDownInp->Render() | center | size(WIDTH, EQUAL, 7)
-                                   : text(" -- ") | dim | center | size(WIDTH, EQUAL, 7));
-            cells.push_back(hasOut ? rows->at(ch).iLimitInp->Render() | center | size(WIDTH, EQUAL, 9)
-                                   : text(" -- ") | dim | center | size(WIDTH, EQUAL, 9));
-            cells.push_back(text(faultStr(ci.activeFault)) | center | size(WIDTH, GREATER_THAN, 6));
+            cells.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | center);
+            cells.push_back(text(fmtVoltage(ci.voltageRaw)) | center);
+            cells.push_back(text(fmtCurrentNA(ci.currentRaw)) | center);
+            cells.push_back(hasOut ? rows->at(ch).rampUpInp->Render() | center
+                                   : text(" -- ") | dim | center);
+            cells.push_back(hasOut ? rows->at(ch).rampDownInp->Render() | center
+                                   : text(" -- ") | dim | center);
+            cells.push_back(hasOut ? rows->at(ch).iLimitInp->Render() | center
+                                   : text(" -- ") | dim | center);
+            cells.push_back(text(faultStr(ci.activeFault)) | center);
 
             grid.push_back(std::move(cells));
         }
@@ -185,7 +185,13 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
         table.SelectRow(0).SeparatorVertical(LIGHT);
         table.SelectRow(0).Border(DOUBLE);
 
-        return table.Render() | size(WIDTH, GREATER_THAN, 90) | flex;
+        for (size_t c = 0; c < kHeaders.size(); ++c)
+            table.SelectColumn(static_cast<int>(c)).Decorate(flex);
+
+        return vbox({
+            table.Render(),
+            filler(),
+        });
     });
 }
 
