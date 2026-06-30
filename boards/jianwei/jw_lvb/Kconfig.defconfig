@@ -6,4 +6,7 @@ config BOARD
 config LVB_VC_CHANNEL
 	default y
 
+config VC_VARIANT_ID
+	default 2
+
 endif # BOARD_JW_LVB

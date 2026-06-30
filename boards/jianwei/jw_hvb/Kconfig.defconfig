@@ -6,4 +6,13 @@ config BOARD
 config HVB_VC_CHANNEL
 	default y
 
+config SENSOR
+	default y
+
+config SYS_STATUS
+	default y
+
+config VC_VARIANT_ID
+	default 1
+
 endif # BOARD_JW_HVB
