@@ -170,7 +170,11 @@ int main(int argc, char** argv) {
     auto doDisconnect = [&] {
         abortConnect = true;
         g_connected = false; data.valid = false;
-        g_client.disconnect();
+        // Enqueue disconnect on the worker thread to serialise with in-flight
+        // Modbus I/O — avoids use-after-free on m_impl->port.
+        { std::lock_guard<std::mutex> lk(workMutex);
+          workQueue.push([&] { g_client.disconnect(); }); }
+        workCv.notify_one();
         tabTitles = {"Monitor"}; activeTab = std::min(activeTab, 0);
         { std::lock_guard<std::mutex> lk(statusMutex); statusMsg = "Disconnected"; }
         screen.PostEvent(Event::Custom);
@@ -338,21 +342,33 @@ int main(int argc, char** argv) {
         if (g_connected.load()) {
             connDotEl = text(" \xe2\x97\x8f ") | color(breathColor()) | bold;
         } else if (connecting.load()) {
-            connDotEl = text(" \xe2\x8f\xb3 ") | color(Color::Yellow);
+            connDotEl = text(" \xe2\x8f\xb3 ") | color(Color::Yellow) | bold;
         } else {
             connDotEl = text(" \xe2\x97\x8b ") | color(Color::GrayDark);
         }
 
         // --- Menu bar ---
+        bool isOnline = g_connected.load();
+        Element centerGroup;
+        if (isOnline) {
+            centerGroup = hbox({
+                connDotEl,
+                text(" " + uptimeTxt + "  |  T: " + std::string(tmpS) + "  H: " + std::string(humS) + " "),
+            });
+        } else {
+            centerGroup = text("");
+        }
         auto menuBarEl = hbox({
-            connDotEl,
             text(" HVB ") | bold,
             separator(),
-            text(" Mode: "), menuModeC->Render(),
+            text(" Mode: "),
+            isOnline || connecting.load()
+                ? menuModeC->Render()
+                : text("[ " + kOpModes[inputs.opModeIdx] + " ]") | dim,
             separator(),
-            text(" Ch: " + chTxt + " "),
+            text(" Channel No: " + chTxt + " "),
             filler(),
-            text(" Up: " + uptimeTxt + "  |  T: " + std::string(tmpS) + "  H: " + std::string(humS) + " "),
+            centerGroup,
             filler(),
             bQuit->Render(),
         });
@@ -376,7 +392,7 @@ int main(int argc, char** argv) {
             text(" " + msg + " ") | (isErr ? color(Color::Red) : color(Color::Green))
                                   | size(WIDTH, GREATER_THAN, 30),
             filler(),
-            text(" FW:" + fwTxt + "  Proto:" + protoTxt + " "),
+            isOnline ? text(" FW:" + fwTxt + "  Proto:" + protoTxt + " ") : text(""),
             filler(),
             connTextEl,
             bConnToggle->Render(), text(" "),
