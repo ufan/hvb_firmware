@@ -1,15 +1,21 @@
 #pragma once
 #include "widgets.h"
+#include <ftxui/dom/table.hpp>
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace hvb::tui {
 
-// Build one row of the Monitor table for channel `ch`.
-// Returns a Renderer wrapping a Container::Horizontal of interactive widgets.
-// Invisible rows (ch >= numChannels) catch all events and render as empty.
-inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
+struct MonitorRow {
+    Component row;  // Container::Horizontal — focus chain
+    Component statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, killBtn;
+};
+
+// Build one row — creates all widgets, returns them in a MonitorRow.
+// Invisible rows (ch >= numChannels) catch all events; table renderer skips them.
+inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     auto refreshCh = [&s, &inputs, ch]() {
         uint16_t caps = s.data.chInfo[ch].chCapFlags;
         s.data.chCfg[ch] = s.client.readChannelConfig(ch, caps);
@@ -41,40 +47,37 @@ inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     }, bopt);
 
     // ---- Vset Input ----
-    auto onVset = [&s, &inputs, ch, refreshCh] {
+    auto vsetInp = CommitInput(&inputs.targetV[ch], "+0.0", [&s, &inputs, ch, refreshCh] {
         try {
             auto raw = reg::voltageFromV(std::stod(inputs.targetV[ch]));
             writeSync(s, inputs, "Target V",
                 [&s, ch, raw] { return s.client.writeConfiguredTargetVoltage(ch, raw); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
-    };
-    auto vsetInp = CommitInput(&inputs.targetV[ch], "+0.0", onVset);
+    });
 
     // ---- Ramp Up Input ----
-    auto onRampUp = [&s, &inputs, ch, refreshCh] {
+    auto rampUpInp = CommitInput(&inputs.ruStep[ch], "0.0", [&s, &inputs, ch, refreshCh] {
         try {
             auto stepRaw = reg::voltageFromV(std::stod(inputs.ruStep[ch]));
             writeSync(s, inputs, "Ramp Up",
                 [&s, ch, stepRaw] { return s.client.writeRampUp(ch, stepRaw, s.data.chCfg[ch].rampUpInterval); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-up value"; }
-    };
-    auto rampUpInp = CommitInput(&inputs.ruStep[ch], "0.0", onRampUp);
+    });
 
     // ---- Ramp Down Input ----
-    auto onRampDown = [&s, &inputs, ch, refreshCh] {
+    auto rampDownInp = CommitInput(&inputs.rdStep[ch], "0.0", [&s, &inputs, ch, refreshCh] {
         try {
             auto stepRaw = reg::voltageFromV(std::stod(inputs.rdStep[ch]));
             writeSync(s, inputs, "Ramp Down",
                 [&s, ch, stepRaw] { return s.client.writeRampDown(ch, stepRaw, s.data.chCfg[ch].rampDownInterval); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-down value"; }
-    };
-    auto rampDownInp = CommitInput(&inputs.rdStep[ch], "0.0", onRampDown);
+    });
 
     // ---- I-limit Input ----
-    auto onILimit = [&s, &inputs, ch, refreshCh] {
+    auto iLimitInp = CommitInput(&inputs.iThr[ch], "0", [&s, &inputs, ch, refreshCh] {
         try {
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
             auto action = static_cast<OutputAction>(inputs.iActIdx[ch]);
@@ -83,10 +86,9 @@ inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
-    };
-    auto iLimitInp = CommitInput(&inputs.iThr[ch], "0", onILimit);
+    });
 
-    // ---- Kill button (DisableImmediate) ----
+    // ---- Kill button (ForceOutputZero) ----
     auto kopt = ButtonOption{};
     kopt.transform = [](const EntryState& es) -> Element {
         auto e = text("Kill");
@@ -104,62 +106,33 @@ inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             refreshCh);
     }, kopt);
 
-    // ---- Horizontal container of all interactive widgets ----
     auto rowWidgets = Container::Horizontal({
         statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, killBtn,
     });
 
-    return Renderer(rowWidgets, [=, &s]() mutable {
-        // Return empty element for invisible rows (ch >= numChannels or not connected)
-        bool show = s.data.valid && ch < s.data.numChannels();
-        if (!show) return emptyElement();
-
-        const auto& ci = s.data.chInfo[ch];
-        const uint16_t caps = ci.chCapFlags;
-        bool hasV = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
-        bool hasI = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
-        bool hasOut = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
-
-        char chLabel[8];
-        snprintf(chLabel, sizeof(chLabel), "CH%-2d", ch);
-
-        auto chT  = text(chLabel)                               | size(WIDTH, EQUAL, 4);
-        auto vmT  = hasV ? text(fmtVoltage(ci.voltageRaw))      | size(WIDTH, EQUAL, 13) : text("--") | size(WIDTH, EQUAL, 13) | dim;
-        auto imT  = hasI ? text(fmtCurrentNA(ci.currentRaw))    | size(WIDTH, EQUAL, 16) : text("--") | size(WIDTH, EQUAL, 16) | dim;
-        auto vtT  = hasV ? text(fmtVoltage(ci.operationalTargetVoltageRaw)) | size(WIDTH, EQUAL, 13) : text("--") | size(WIDTH, EQUAL, 13) | dim;
-        auto fltT = text(faultStr(ci.activeFault)) | size(WIDTH, EQUAL, 12);
-
-        Elements parts;
-        parts.push_back(chT);
-        parts.push_back(vmT);
-        parts.push_back(imT);
-        if (hasOut) parts.push_back(statusBtn->Render() | size(WIDTH, EQUAL, 8));
-        else        parts.push_back(text("  --  ") | size(WIDTH, EQUAL, 8) | dim);
-        parts.push_back(vsetInp->Render()     | size(WIDTH, EQUAL, 13));
-        parts.push_back(vtT);
-        parts.push_back(rampUpInp->Render()   | size(WIDTH, EQUAL, 8));
-        parts.push_back(rampDownInp->Render() | size(WIDTH, EQUAL, 8));
-        if (hasI) parts.push_back(iLimitInp->Render() | size(WIDTH, EQUAL, 13));
-        else      parts.push_back(text("  --   ") | size(WIDTH, EQUAL, 13) | dim);
-        if (hasOut) parts.push_back(killBtn->Render() | size(WIDTH, EQUAL, 5));
-        else        parts.push_back(text(" -- ") | size(WIDTH, EQUAL, 5) | dim);
-        parts.push_back(fltT);
-
-        return hbox(std::move(parts));
-    }) | CatchEvent([&s, ch](Event) {
-        // Swallow all events for invisible rows so focus never lands here.
-        if (!s.data.valid || ch >= s.data.numChannels()) return true;
-        return false;
-    });
+    return MonitorRow{
+        CatchEvent(rowWidgets, [&s, ch](Event) {
+            return !s.data.valid || ch >= s.data.numChannels();
+        }),
+        statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, killBtn,
+    };
 }
 
 inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
-    // Build all 16 rows upfront. Invisible rows catch events + render empty.
-    Components rows;
+    // Pre-build all 16 rows.
+    auto rows = std::make_shared<std::vector<MonitorRow>>();
+    Components rowComps;
     for (int ch = 0; ch < MAX_CHANNELS; ++ch) {
-        rows.push_back(makeMonitorRow(s, inputs, ch));
+        auto r = makeMonitorRow(s, inputs, ch);
+        rowComps.push_back(r.row);
+        rows->push_back(std::move(r));
     }
-    auto tableContainer = Container::Vertical(rows);
+    auto tableContainer = Container::Vertical(rowComps);
+
+    static const std::vector<std::string> kHeaders = {
+        "CH", "Vm (V)", "Im (nA)", "Status", "Vset (V)", "Vt (V)",
+        "Ru", "Rd", "I-lim (nA)", "Kill", "Fault",
+    };
 
     return Renderer(tableContainer, [=, &s]() {
         int n = s.data.numChannels();
@@ -189,27 +162,56 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
         if (n == 0)
             return vbox({ sysbar, text(" Discovering channels... ") | dim | center });
 
-        // Column headers
-        auto colHdr = hbox({
-            text(" CH ")      | size(WIDTH, EQUAL, 4)  | bold,
-            text(" Vm (V)     ") | size(WIDTH, EQUAL, 13) | bold,
-            text(" Im (nA)        ") | size(WIDTH, EQUAL, 16) | bold,
-            text(" Status  ") | size(WIDTH, EQUAL, 8)  | bold,
-            text(" Vset (V)   ") | size(WIDTH, EQUAL, 13) | bold,
-            text(" Vt (V)     ") | size(WIDTH, EQUAL, 13) | bold,
-            text(" Ru      ") | size(WIDTH, EQUAL, 8)  | bold,
-            text(" Rd      ") | size(WIDTH, EQUAL, 8)  | bold,
-            text(" I-lim (nA)  ") | size(WIDTH, EQUAL, 13) | bold,
-            text(" Kill ") | size(WIDTH, EQUAL, 5)  | bold,
-            text(" Fault       ") | size(WIDTH, EQUAL, 12) | bold,
-        });
+        // Build table grid: header row + one data row per active channel.
+        std::vector<std::vector<Element>> grid;
+
+        // Header row
+        {
+            std::vector<Element> hdr;
+            for (const auto& h : kHeaders)
+                hdr.push_back(text(h) | bold);
+            grid.push_back(std::move(hdr));
+        }
+
+        // Data rows
+        for (int ch = 0; ch < n; ++ch) {
+            const auto& ci = s.data.chInfo[ch];
+            const uint16_t caps = ci.chCapFlags;
+            bool hasV = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+            bool hasI = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
+            bool hasOut = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
+
+            char chLabel[8];
+            snprintf(chLabel, sizeof(chLabel), "CH%-2d", ch);
+
+            std::vector<Element> cells;
+            cells.push_back(text(chLabel));
+            cells.push_back(hasV ? text(fmtVoltage(ci.voltageRaw)) : text("--") | dim);
+            cells.push_back(hasI ? text(fmtCurrentNA(ci.currentRaw)) : text("--") | dim);
+            cells.push_back(hasOut ? rows->at(ch).statusBtn->Render() : text(" -- ") | dim);
+            cells.push_back(hasOut ? rows->at(ch).vsetInp->Render() : text(" -- ") | dim);
+            cells.push_back(hasV ? text(fmtVoltage(ci.operationalTargetVoltageRaw)) : text("--") | dim);
+            cells.push_back(hasOut ? rows->at(ch).rampUpInp->Render() : text(" -- ") | dim);
+            cells.push_back(hasOut ? rows->at(ch).rampDownInp->Render() : text(" -- ") | dim);
+            cells.push_back(hasI ? rows->at(ch).iLimitInp->Render() : text(" -- ") | dim);
+            cells.push_back(hasOut ? rows->at(ch).killBtn->Render() : text(" -- ") | dim);
+            cells.push_back(text(faultStr(ci.activeFault)));
+
+            grid.push_back(std::move(cells));
+        }
+
+        auto table = Table(std::move(grid));
+        table.SelectAll().Separator(LIGHT);
+        table.SelectRow(0).Decorate(bold);
+        table.SelectRow(0).SeparatorVertical(LIGHT);
+        table.SelectRow(0).Border(DOUBLE);
+        // Right-align numeric columns
+        table.SelectColumn(1).DecorateCells(align_right);
+        table.SelectColumn(5).DecorateCells(align_right);
 
         return vbox({
             sysbar,
-            separator(),
-            colHdr,
-            separator(),
-            tableContainer->Render(),
+            table.Render(),
         });
     });
 }
