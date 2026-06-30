@@ -124,21 +124,21 @@ inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         auto vmT  = hasV ? text(fmtVoltage(ci.voltageRaw))      | size(WIDTH, EQUAL, 13) : text("--") | size(WIDTH, EQUAL, 13) | dim;
         auto imT  = hasI ? text(fmtCurrentUA(ci.currentRaw))    | size(WIDTH, EQUAL, 16) : text("--") | size(WIDTH, EQUAL, 16) | dim;
         auto vtT  = hasV ? text(fmtVoltage(ci.operationalTargetVoltageRaw)) | size(WIDTH, EQUAL, 13) : text("--") | size(WIDTH, EQUAL, 13) | dim;
-        auto fltT = text(faultStr(ci.activeFault));
+        auto fltT = text(faultStr(ci.activeFault)) | size(WIDTH, EQUAL, 12);
 
         Elements parts;
         parts.push_back(chT);
         parts.push_back(vmT);
         parts.push_back(imT);
-        if (hasOut) parts.push_back(statusBtn->Render());
-        else        parts.push_back(text(" -- ") | size(WIDTH, EQUAL, 8) | dim);
+        if (hasOut) parts.push_back(statusBtn->Render() | size(WIDTH, EQUAL, 8));
+        else        parts.push_back(text("  --  ") | size(WIDTH, EQUAL, 8) | dim);
         parts.push_back(vsetInp->Render()     | size(WIDTH, EQUAL, 13));
         parts.push_back(vtT);
         parts.push_back(rampUpInp->Render()   | size(WIDTH, EQUAL, 8));
         parts.push_back(rampDownInp->Render() | size(WIDTH, EQUAL, 8));
         if (hasI) parts.push_back(iLimitInp->Render() | size(WIDTH, EQUAL, 13));
-        else      parts.push_back(text(" -- ") | size(WIDTH, EQUAL, 13) | dim);
-        if (hasOut) parts.push_back(killBtn->Render());
+        else      parts.push_back(text("  --   ") | size(WIDTH, EQUAL, 13) | dim);
+        if (hasOut) parts.push_back(killBtn->Render() | size(WIDTH, EQUAL, 5));
         else        parts.push_back(text(" -- ") | size(WIDTH, EQUAL, 5) | dim);
         parts.push_back(fltT);
 
@@ -194,11 +194,11 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
             text(" Status  ") | size(WIDTH, EQUAL, 8)  | bold,
             text(" Vset (V)   ") | size(WIDTH, EQUAL, 13) | bold,
             text(" Vt (V)     ") | size(WIDTH, EQUAL, 13) | bold,
-            text(" Ramp^") | size(WIDTH, EQUAL, 8)  | bold,
-            text(" Rampv") | size(WIDTH, EQUAL, 8)  | bold,
+            text(" Ru      ") | size(WIDTH, EQUAL, 8)  | bold,
+            text(" Rd      ") | size(WIDTH, EQUAL, 8)  | bold,
             text(" I-lim (nA)  ") | size(WIDTH, EQUAL, 13) | bold,
-            text(" Kill") | bold,
-            text(" Fault") | bold,
+            text(" Kill ") | size(WIDTH, EQUAL, 5)  | bold,
+            text(" Fault       ") | size(WIDTH, EQUAL, 12) | bold,
         });
 
         return vbox({
