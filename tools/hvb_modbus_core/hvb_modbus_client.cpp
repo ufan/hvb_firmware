@@ -576,10 +576,6 @@ bool HvbModbusClient::sendCalibrationCommitCommand(int ch) {
     return writeRegsInternal(reg::chAddr(ch, CH_CAL_COMMIT_CMD), 1, &v);
 }
 
-bool HvbModbusClient::writeCalibrationMaxDacLimit(int ch, uint16_t limit) {
-    return writeRegsInternal(reg::chAddr(ch, CH_CAL_MAX_RAW_DAC_LIMIT), 1, &limit);
-}
-
 CalibrationSnapshot HvbModbusClient::readCalibrationSnapshot(int ch) {
     CalibrationSnapshot snap;
     if (!checkConnected()) return snap;
@@ -591,13 +587,13 @@ CalibrationSnapshot HvbModbusClient::readCalibrationSnapshot(int ch) {
     snap.rawAdcVoltage  = reg::int32FromRegs(ibuf[0], ibuf[1]);
     snap.rawAdcCurrent  = reg::int32FromRegs(ibuf[2], ibuf[3]);
 
-    uint16_t hbuf[5] = {};
-    if (!readRegsInternal(true, reg::chAddr(ch, CH_CAL_OUTPUT_ENABLE), 5, hbuf)) return snap;
+    /* offsets 30-33: CAL_OUTPUT_ENABLE, CAL_DAC_CODE, CAL_SAMPLE_CMD, CAL_COMMIT_CMD */
+    uint16_t hbuf[4] = {};
+    if (!readRegsInternal(true, reg::chAddr(ch, CH_CAL_OUTPUT_ENABLE), 4, hbuf)) return snap;
 
-    snap.outputEnabled  = hbuf[0] != 0;
-    snap.rawDacCode     = hbuf[1];
+    snap.outputEnabled = hbuf[0] != 0;
+    snap.rawDacCode    = hbuf[1];
     /* v3: rawDacReadback field removed — CAL_DAC_CODE (holding:31) is the readback register */
-    snap.maxRawDacLimit = hbuf[4];
     return snap;
 }
 

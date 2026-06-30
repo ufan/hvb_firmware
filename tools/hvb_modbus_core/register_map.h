@@ -9,6 +9,40 @@ namespace hvb::reg {
 
 inline constexpr uint16_t MAX_CHANNELS = VC_PROTOCOL_MAX_CHANNELS;
 
+// Poll category for each register — drives host-tool polling strategy.
+enum class PollCat : uint8_t {
+    Realtime = VC_POLL_REALTIME, // live measurements, status, faults — poll fast (~100 ms)
+    Config   = VC_POLL_CONFIG,   // operational parameters — poll slow or on demand
+    Fixed    = VC_POLL_FIXED,    // version, capabilities — read once at connect
+    Command  = VC_POLL_COMMAND,  // write-only triggers — do not poll
+};
+
+// Per-register poll category constants: SYS_<NAME>_POLL and CH_<NAME>_POLL.
+// Cast to PollCat for typed comparisons, e.g.:
+//   static_cast<PollCat>(CH_MEASURED_VOLTAGE_POLL) == PollCat::Realtime
+enum {
+#define MODBUS_SYS16(name, bank, offset, poll_cat) SYS_##name##_POLL = VC_POLL_##poll_cat,
+#define MODBUS_SYS32(name, bank, offset, poll_cat) SYS_##name##_POLL = VC_POLL_##poll_cat,
+#define MODBUS_VC16(name, bank, offset, poll_cat)
+#define MODBUS_VC32(name, bank, offset, poll_cat)
+#include "reg_store/modbus_view.def"
+#undef MODBUS_SYS16
+#undef MODBUS_SYS32
+#undef MODBUS_VC16
+#undef MODBUS_VC32
+};
+enum {
+#define MODBUS_SYS16(name, bank, offset, poll_cat)
+#define MODBUS_SYS32(name, bank, offset, poll_cat)
+#define MODBUS_VC16(name, bank, offset, poll_cat) CH_##name##_POLL = VC_POLL_##poll_cat,
+#define MODBUS_VC32(name, bank, offset, poll_cat) CH_##name##_POLL = VC_POLL_##poll_cat,
+#include "reg_store/modbus_view.def"
+#undef MODBUS_SYS16
+#undef MODBUS_SYS32
+#undef MODBUS_VC16
+#undef MODBUS_VC32
+};
+
 // channel absolute = SYS_BLOCK_BASE + offset, or CH_BLOCK_BASE(ch) + localOffset
 inline constexpr uint16_t sysAddr(uint16_t off) {
     return SYS_BLOCK_BASE + off;

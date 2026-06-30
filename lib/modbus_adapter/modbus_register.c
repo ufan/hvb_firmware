@@ -182,10 +182,10 @@ static struct {
 	[(offset) + 1] = { SYS_VIEW_HANDLE_##name, 0, 1, true },
 #define SYS_HOLDING_16(name, offset)
 #define SYS_HOLDING_32(name, offset)
-#define MODBUS_SYS16(name, bank, offset) SYS_##bank##_16(name, offset)
-#define MODBUS_SYS32(name, bank, offset) SYS_##bank##_32(name, offset)
-#define MODBUS_VC16(name, bank, offset)
-#define MODBUS_VC32(name, bank, offset)
+#define MODBUS_SYS16(name, bank, offset, poll_cat) SYS_##bank##_16(name, offset)
+#define MODBUS_SYS32(name, bank, offset, poll_cat) SYS_##bank##_32(name, offset)
+#define MODBUS_VC16(name, bank, offset, poll_cat)
+#define MODBUS_VC32(name, bank, offset, poll_cat)
 static const struct wire_reg sys_input_view[CH_BLOCK_SIZE] = {
 #include "reg_store/modbus_view.def"
 };
@@ -205,10 +205,10 @@ static const struct wire_reg sys_input_view[CH_BLOCK_SIZE] = {
 #define SYS_HOLDING_32(name, offset) \
 	[offset] = { SYS_VIEW_HANDLE_##name, 0, 0, true }, \
 	[(offset) + 1] = { SYS_VIEW_HANDLE_##name, 0, 1, true },
-#define MODBUS_SYS16(name, bank, offset) SYS_##bank##_16(name, offset)
-#define MODBUS_SYS32(name, bank, offset) SYS_##bank##_32(name, offset)
-#define MODBUS_VC16(name, bank, offset)
-#define MODBUS_VC32(name, bank, offset)
+#define MODBUS_SYS16(name, bank, offset, poll_cat) SYS_##bank##_16(name, offset)
+#define MODBUS_SYS32(name, bank, offset, poll_cat) SYS_##bank##_32(name, offset)
+#define MODBUS_VC16(name, bank, offset, poll_cat)
+#define MODBUS_VC32(name, bank, offset, poll_cat)
 static const struct wire_reg sys_holding_view[CH_BLOCK_SIZE] = {
 #include "reg_store/modbus_view.def"
 };
@@ -228,10 +228,10 @@ static const struct wire_reg sys_holding_view[CH_BLOCK_SIZE] = {
 	[(offset) + 1] = { NULL, REG_VC_ORD_##name, 1, true },
 #define VC_HOLDING_16(name, offset)
 #define VC_HOLDING_32(name, offset)
-#define MODBUS_SYS16(name, bank, offset)
-#define MODBUS_SYS32(name, bank, offset)
-#define MODBUS_VC16(name, bank, offset) VC_##bank##_16(name, offset)
-#define MODBUS_VC32(name, bank, offset) VC_##bank##_32(name, offset)
+#define MODBUS_SYS16(name, bank, offset, poll_cat)
+#define MODBUS_SYS32(name, bank, offset, poll_cat)
+#define MODBUS_VC16(name, bank, offset, poll_cat) VC_##bank##_16(name, offset)
+#define MODBUS_VC32(name, bank, offset, poll_cat) VC_##bank##_32(name, offset)
 static const struct wire_reg ch_input_view[CH_BLOCK_SIZE] = {
 #include "reg_store/modbus_view.def"
 };
@@ -251,10 +251,10 @@ static const struct wire_reg ch_input_view[CH_BLOCK_SIZE] = {
 #define VC_HOLDING_32(name, offset) \
 	[offset] = { NULL, REG_VC_ORD_##name, 0, true }, \
 	[(offset) + 1] = { NULL, REG_VC_ORD_##name, 1, true },
-#define MODBUS_SYS16(name, bank, offset)
-#define MODBUS_SYS32(name, bank, offset)
-#define MODBUS_VC16(name, bank, offset) VC_##bank##_16(name, offset)
-#define MODBUS_VC32(name, bank, offset) VC_##bank##_32(name, offset)
+#define MODBUS_SYS16(name, bank, offset, poll_cat)
+#define MODBUS_SYS32(name, bank, offset, poll_cat)
+#define MODBUS_VC16(name, bank, offset, poll_cat) VC_##bank##_16(name, offset)
+#define MODBUS_VC32(name, bank, offset, poll_cat) VC_##bank##_32(name, offset)
 static const struct wire_reg ch_holding_view[CH_BLOCK_SIZE] = {
 #include "reg_store/modbus_view.def"
 };

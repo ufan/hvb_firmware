@@ -180,11 +180,11 @@ struct ChannelCalConfig {
 struct CalibrationSnapshot {
     bool outputEnabled = false;
     uint16_t rawDacCode = 0;
-    uint16_t maxRawDacLimit = 0;
     int32_t rawAdcVoltage = 0;
     int32_t rawAdcCurrent = 0;
     /* v3: rawDacReadback = CAL_DAC_CODE holding reg (FC03), no separate input reg */
     /* v3: cal_sample_status removed */
+    /* max DAC limit is firmware-internal session state, not a Modbus register */
 };
 
 // ============================================================================

@@ -239,7 +239,6 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                 }
                 out << "Calibration session started\n"
                     << "  ch <n>          select active channel\n"
-                    << "  limit <max>     set DAC safety cap first\n"
                     << "  enable          enable cal output\n"
                     << "  dac <code>      set raw DAC code\n"
                     << "  sample          sample ADC (reads + displays result)\n"
@@ -274,8 +273,7 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                         << " out=" << (snap.outputEnabled ? "ON" : "OFF")
                         << " dac=" << snap.rawDacCode
                         << " adc_v=" << snap.rawAdcVoltage
-                        << " adc_i=" << snap.rawAdcCurrent
-                        << " limit=" << snap.maxRawDacLimit << "\n";
+                        << " adc_i=" << snap.rawAdcCurrent << "\n";
                 }
             });
         },
@@ -364,23 +362,11 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                 out << "CH" << ch << " snapshot:\n"
                     << "  Output:    " << (snap.outputEnabled ? "ON" : "OFF") << "\n"
                     << "  DAC code:  " << snap.rawDacCode << "\n"
-                    << "  Max limit: " << snap.maxRawDacLimit << "\n"
                     << "  ADC V:     " << snap.rawAdcVoltage << "\n"
                     << "  ADC I:     " << snap.rawAdcCurrent << "\n";
             });
         },
         "Read calibration snapshot");
-
-    calMenu->Insert("limit",
-        [&session](std::ostream& out, int max) {
-            requireCalChannel(session, out, [&] {
-                int ch = session.activeChannel();
-                if (session.client().writeCalibrationMaxDacLimit(ch, static_cast<uint16_t>(max)))
-                    out << "CH" << ch << " max DAC limit = " << max << "\n";
-                else out << "Error: " << session.lastError() << "\n";
-            });
-        },
-        "Set max raw DAC limit", {"max"});
 
     calMenu->Insert("commit",
         [&session](std::ostream& out) {
