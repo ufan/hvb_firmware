@@ -145,7 +145,7 @@ private:
     QString m_selectedPort;
     int m_baud = 115200;
     int m_slaveId = 1;
-    int m_pollInterval = 2000;
+    int m_pollInterval = 1000;
     QStringList m_ports;
 
     // Worker thread
@@ -162,4 +162,5 @@ private:
     QStringList m_rawLogLines;
     QString m_statusMessage;
     QTimer m_pollTimer;
+    QTimer m_statusClearTimer;
 };

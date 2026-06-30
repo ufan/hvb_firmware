@@ -24,6 +24,11 @@ ModbusBackend::ModbusBackend(QObject* parent)
     m_pollTimer.setInterval(m_pollInterval);
     connect(&m_pollTimer, &QTimer::timeout, this, &ModbusBackend::pollTick);
 
+    // Status auto-clear timer (success messages only)
+    m_statusClearTimer.setSingleShot(true);
+    connect(&m_statusClearTimer, &QTimer::timeout,
+            this, [this] { setStatus(QString()); });
+
     m_thread->start();
 
     // Initial port scan
@@ -113,7 +118,8 @@ void ModbusBackend::refreshAll()
 
 void ModbusBackend::pollTick()
 {
-    refreshAll();
+    if (!m_connected) return;
+    QMetaObject::invokeMethod(m_worker, "doPollStatus", Qt::QueuedConnection);
 }
 
 // ---------------------------------------------------------------------------
@@ -224,8 +230,13 @@ void ModbusBackend::onChConfigReady(int ch, const QVariantMap& cfg)
 
 void ModbusBackend::onOperationComplete(bool ok, const QString& msg)
 {
-    setStatus(msg);
-    if (!ok && msg.startsWith("Error")) return;
+    if (ok) {
+        setStatus(QString("✓ %1").arg(msg));
+        m_statusClearTimer.start(4000);
+    } else {
+        m_statusClearTimer.stop();
+        setStatus(QString("✗ %1").arg(msg));
+    }
 }
 
 void ModbusBackend::onPortsScanned(const QStringList& ports)

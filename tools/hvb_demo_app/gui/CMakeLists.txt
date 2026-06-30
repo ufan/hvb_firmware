@@ -6,17 +6,22 @@ qt_add_executable(hvb_demo_gui
     modbus_worker.cpp modbus_worker.h
 )
 
+set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+
 qt_add_qml_module(hvb_demo_gui
     URI HvbTool
     NO_PLUGIN
     QML_FILES
         qml/Theme.qml
         qml/main.qml
-        qml/ConnectionBar.qml
-        qml/SystemInfoTab.qml
-        qml/SystemConfigTab.qml
+        qml/ConnectionModal.qml
+        qml/SysConfigDialog.qml
+        qml/MonitorTab.qml
         qml/ChannelTab.qml
         qml/RawDebugDialog.qml
+        qml/components/BreathingIndicator.qml
+        qml/components/LabeledValue.qml
+        qml/components/ChannelGraph.qml
         qml/components/ReadOnlyField.qml
         qml/components/EditableField.qml
         qml/components/EnumCombo.qml
@@ -32,6 +37,7 @@ target_link_libraries(hvb_demo_gui PRIVATE
     Qt6::Core
     Qt6::Quick
     Qt6::QuickControls2
+    Qt6::Charts
 )
 
 target_compile_features(hvb_demo_gui PRIVATE cxx_std_17)
