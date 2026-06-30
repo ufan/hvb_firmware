@@ -340,6 +340,9 @@ void vc_channel_init(struct vc_channel *ch,
 		if (api->set_meas_callback) {
 			api->set_meas_callback(dev, vc_channel_meas_ready, ch);
 		}
+		if (api->get_default_cal) {
+			api->get_default_cal(dev, &ch->cal_config);
+		}
 	}
 }
 
