@@ -1,0 +1,53 @@
+# ui: main window
+main_window:
+  - menu_bar:
+      - BoardName: top-left corner
+      - StatusIndicator: green when ok, flash when polling; red for malfunction;yellow for correct port but no board found; dim for unconnected
+      - SysMode: 'Normal' or 'Automatic'
+      - SysUptime: in second
+      - ConnectInterfaceInfo:
+          - Port: default: /dev/ttyUSB0
+          - BaudRate: default: 115200
+          - SlaveID: default: 1
+      - Connect_button: click connect to board
+      - Disconnect_button: click disconnect to board
+      - Quit: click to colse app
+  - tab_container:
+      - Monitor_tab: # Synthetic view of all channels, only key elements are displayed
+        - Channel_table:
+          - Columns:
+              - ChannelLabel: 'CH0'
+              - TargetVoltage: 'Vset', input box
+              - Channel_Button: 'Status'
+              - OperatiingVoltage: 'Vop'
+              - MeasuredVoltage: 'V (V)', unit: V
+              - MeasuredCurrent: 'I(nA)', unit: nA
+              - RampUp: 'Ru', unit: V/s, input box
+              - RampDn: 'Rd', unit: V/s, input box
+              - CurrentLimit: 'Limit', unit: nA, input box
+              - FaultLabel: 'Fault'
+      - CH0_tab:
+          - LiveStatusPanel:
+              - OperatiingVoltage:
+              - MeasuredVoltage:
+              - MeasuredCurrent:
+              - StatusIndicator: on/off/trap
+              - RecoveryRetryCounter:
+          - ContralPanel:
+          - ProtectionPolicyPanel:
+          - RecoveryPolicyPanel:
+          - Persistence: Load, Save, FactoryReset buttons
+      - OtherChannelTabs: each channel should have its own tab; nr of channels read from board capabily register
+  - status_bar:
+      - SysConfig_button:  menu dialog pop up when clicked
+        - WorkingMode: choose box
+        - StartupPolicy: choose box
+        - Persistence: Load, Save, FactoryReset buttons
+      - SysInfo_bar:
+          - Firmware Version
+          - Protocol Version
+          - Board Variant ID
+      - EnvironmentStatus:
+          - Temperature: in degree
+          - Humidity: in %
+      - ErrorBox: for any error message printing
