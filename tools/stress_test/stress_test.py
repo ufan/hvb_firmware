@@ -192,9 +192,14 @@ def ci_cmd_write(instr, channel=0):
     """Single cmd write + self-clear check — CI minimal."""
     base = CH_BLOCK_BASE(channel)
     errors = 0
+    # Values chosen to succeed regardless of board state:
+    #   OUTPUT_ACTION=3 (DISABLE_IMMEDIATE) — safe even with active fault
+    #   FAULT_CMD=1 (CLEAR_ACTIVE) — always accepted
+    #   PARAM_ACTION=1 (SAVE) — always accepted
+    cmd_values = {0: 3, 1: 1, 2: 1}  # off -> value
     for off in [0, 1, 2]:  # OUTPUT_ACTION, FAULT_CMD, PARAM_ACTION
         addr = base + off
-        _, ok = write_reg_fc06(instr, addr, 1)
+        _, ok = write_reg_fc06(instr, addr, cmd_values[off])
         if not ok:
             errors += 1
             continue
