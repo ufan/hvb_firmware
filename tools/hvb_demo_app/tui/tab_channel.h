@@ -30,19 +30,19 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     };
     auto onRampUp = [&s, &inputs, refreshCh, ch] {
         try {
-            auto step = (uint16_t)std::stoul(inputs.ruStep[ch]);
-            auto iv   = (uint16_t)std::stoul(inputs.ruInt[ch]);
+            auto stepRaw = reg::voltageFromV(std::stod(inputs.ruStep[ch]));
+            auto iv = s.data.chCfg[ch].rampUpInterval;
             writeSync(s, inputs, "Ramp Up",
-                [&s, ch, step, iv] { return s.client.writeRampUp(ch, step, iv); },
+                [&s, ch, stepRaw, iv] { return s.client.writeRampUp(ch, stepRaw, iv); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
     };
     auto onRampDown = [&s, &inputs, refreshCh, ch] {
         try {
-            auto step = (uint16_t)std::stoul(inputs.rdStep[ch]);
-            auto iv   = (uint16_t)std::stoul(inputs.rdInt[ch]);
+            auto stepRaw = reg::voltageFromV(std::stod(inputs.rdStep[ch]));
+            auto iv = s.data.chCfg[ch].rampDownInterval;
             writeSync(s, inputs, "Ramp Down",
-                [&s, ch, step, iv] { return s.client.writeRampDown(ch, step, iv); },
+                [&s, ch, stepRaw, iv] { return s.client.writeRampDown(ch, stepRaw, iv); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
     };
@@ -58,7 +58,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         try {
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
             auto action = kIActVals.at(inputs.iActIdx[ch]);
-            auto raw    = static_cast<int16_t>(std::stod(inputs.iThr[ch]) * 1000.0 + 0.5);
+            auto raw    = static_cast<int16_t>(std::stod(inputs.iThr[ch]) + 0.5);
             writeSync(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); },
                 refreshCh);
@@ -84,14 +84,12 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     };
 
     auto tgtInp    = CommitInput(&inputs.targetV[ch],   "+0.0",  onTarget);
-    auto ruStepInp = CommitInput(&inputs.ruStep[ch],    "0",     onRampUp);
-    auto ruIntInp  = CommitInput(&inputs.ruInt[ch],     "0",     onRampUp);
-    auto rdStepInp = CommitInput(&inputs.rdStep[ch],    "0",     onRampDown);
-    auto rdIntInp  = CommitInput(&inputs.rdInt[ch],     "0",     onRampDown);
+    auto ruStepInp = CommitInput(&inputs.ruStep[ch],    "0.0",    onRampUp);
+    auto rdStepInp = CommitInput(&inputs.rdStep[ch],    "0.0",    onRampDown);
     auto derInp    = CommitInput(&inputs.derateStep[ch],"0",     onDerate);
     auto iModeC    = InlineCycler(kProtModes,  &inputs.iModeIdx[ch], onIProt);
     auto iActC     = InlineCycler(kIActNames,  &inputs.iActIdx[ch],  onIProt);
-    auto iThrInp   = CommitInput(&inputs.iThr[ch],    "0.000", onIProt);
+    auto iThrInp   = CommitInput(&inputs.iThr[ch],    "0",    onIProt);
     auto recovC    = InlineCycler(kRecovNames, &inputs.recovIdx[ch], onRecov);
     auto delayInp  = CommitInput(&inputs.retryDelay[ch],  "0",  onRecov);
     auto maxInp    = CommitInput(&inputs.retryMax[ch],    "3",  onRecov);
@@ -117,10 +115,11 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
 
     auto container = Container::Vertical({
         tgtInp, bEnable, bDisImm, bDisGra,
-        ruStepInp, ruIntInp, rdStepInp, rdIntInp, derInp,
+        ruStepInp, rdStepInp,
         iModeC, iActC, iThrInp,
-        recovC, delayInp, maxInp, winInp, iBandInp,
-        bSave, bLoad, bFactory, bClrAct, bClrHist,
+        recovC, delayInp, maxInp, winInp, iBandInp, derInp,
+        bClrAct, bClrHist,
+        bSave, bLoad, bFactory,
     });
 
     return Renderer(container, [=, &s]() {
@@ -140,8 +139,8 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
                 snprintf(lastFault, sizeof(lastFault), "%u s ago", (unsigned)ci.lastFaultTimestamp);
             Elements liveParts;
             if (hasVolts) { liveParts.push_back(text("  Vmeas: ")); liveParts.push_back(text(fmtVoltage(ci.voltageRaw)) | bold); }
-            if (hasCurr)  { liveParts.push_back(text("   Imeas: ")); liveParts.push_back(text(fmtCurrentUA(ci.currentRaw)) | bold); }
-            liveParts.push_back(text("   Op Target: "));
+            if (hasCurr)  { liveParts.push_back(text("   Imeas: ")); liveParts.push_back(text(fmtCurrentNA(ci.currentRaw)) | bold); }
+            liveParts.push_back(text("   Vt: "));
             liveParts.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)));
             liveParts.push_back(text("   Status: "));
             liveParts.push_back(text(statusBadge(ci.status)) | bold);
@@ -151,16 +150,15 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         }
 
         auto outputPanel = window(text(" Output "), vbox({
-            hbox({ text("Target V : "), tgtInp->Render(), text(" V") }),
+            hbox({ text("Vset : "), tgtInp->Render(), text(" V") }),
             hasOutEn
                 ? hbox({ bEnable->Render(), text("  "), bDisImm->Render(), text("  "), bDisGra->Render() })
                 : hbox({ text("  (output control not supported) ") | dim }),
         }));
 
         auto rampPanel = window(text(" Ramping "), vbox({
-            hbox({ text("Ramp Up   : step "), ruStepInp->Render(), text(" LSB  int "), ruIntInp->Render(), text(" x0.1s") }),
-            hbox({ text("Ramp Down : step "), rdStepInp->Render(), text(" LSB  int "), rdIntInp->Render(), text(" x0.1s") }),
-            hbox({ text("Derate Step:      "), derInp->Render(),   text(" LSB") }),
+            hbox({ text("Ramp Up   : "), ruStepInp->Render(), text(" V") }),
+            hbox({ text("Ramp Down : "), rdStepInp->Render(), text(" V") }),
         }));
 
         auto recovPanel = window(text(" Recovery "), vbox({
@@ -168,12 +166,13 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
             hbox({ text("Delay     : "), delayInp->Render(), text(" s"),
                    text("  Max: "), maxInp->Render(),
                    text("  Window: "), winInp->Render(), text(" s") }),
+            hbox({ text("Derate    : "), derInp->Render(),   text(" LSB") }),
             hbox({ text("I Safe Band: "), iBandInp->Render(), text(" % (0-50)") }),
+            hbox({ bClrAct->Render(), text("  "), bClrHist->Render() }),
         }));
 
         auto persistPanel = window(text(" Persistence "), vbox({
             hbox({ bSave->Render(), text("  "), bLoad->Render(), text("  "), bFactory->Render() }),
-            hbox({ bClrAct->Render(), text("  "), bClrHist->Render() }),
         }));
 
         Element calInfo = text(" No data ") | dim;
@@ -195,7 +194,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
             rows.push_back(window(text(" Current Protection "), hbox({
                 text("Mode : "), iModeC->Render(),
                 text("   Action : "), iActC->Render(),
-                text("   Threshold: "), iThrInp->Render(), text(" uA"),
+                text("   Threshold: "), iThrInp->Render(), text(" nA"),
             })));
         }
         rows.push_back(hbox({ calPanel, persistPanel }));

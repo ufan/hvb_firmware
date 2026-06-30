@@ -54,37 +54,37 @@ inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     // ---- Ramp Up Input ----
     auto onRampUp = [&s, &inputs, ch, refreshCh] {
         try {
-            auto step = (uint16_t)std::stoul(inputs.ruStep[ch]);
+            auto stepRaw = reg::voltageFromV(std::stod(inputs.ruStep[ch]));
             writeSync(s, inputs, "Ramp Up",
-                [&s, ch, step] { return s.client.writeRampUp(ch, step, s.data.chCfg[ch].rampUpInterval); },
+                [&s, ch, stepRaw] { return s.client.writeRampUp(ch, stepRaw, s.data.chCfg[ch].rampUpInterval); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-up value"; }
     };
-    auto rampUpInp = CommitInput(&inputs.ruStep[ch], "0", onRampUp);
+    auto rampUpInp = CommitInput(&inputs.ruStep[ch], "0.0", onRampUp);
 
     // ---- Ramp Down Input ----
     auto onRampDown = [&s, &inputs, ch, refreshCh] {
         try {
-            auto step = (uint16_t)std::stoul(inputs.rdStep[ch]);
+            auto stepRaw = reg::voltageFromV(std::stod(inputs.rdStep[ch]));
             writeSync(s, inputs, "Ramp Down",
-                [&s, ch, step] { return s.client.writeRampDown(ch, step, s.data.chCfg[ch].rampDownInterval); },
+                [&s, ch, stepRaw] { return s.client.writeRampDown(ch, stepRaw, s.data.chCfg[ch].rampDownInterval); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-down value"; }
     };
-    auto rampDownInp = CommitInput(&inputs.rdStep[ch], "0", onRampDown);
+    auto rampDownInp = CommitInput(&inputs.rdStep[ch], "0.0", onRampDown);
 
     // ---- I-limit Input ----
     auto onILimit = [&s, &inputs, ch, refreshCh] {
         try {
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
             auto action = static_cast<OutputAction>(inputs.iActIdx[ch]);
-            auto raw    = static_cast<int16_t>(std::stod(inputs.iThr[ch]) * 1000.0 + 0.5);
+            auto raw    = static_cast<int16_t>(std::stod(inputs.iThr[ch]) + 0.5);
             writeSync(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
     };
-    auto iLimitInp = CommitInput(&inputs.iThr[ch], "0.000", onILimit);
+    auto iLimitInp = CommitInput(&inputs.iThr[ch], "0", onILimit);
 
     // ---- Kill button (DisableImmediate) ----
     auto kopt = ButtonOption{};
@@ -125,7 +125,7 @@ inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
 
         auto chT  = text(chLabel)                               | size(WIDTH, EQUAL, 4);
         auto vmT  = hasV ? text(fmtVoltage(ci.voltageRaw))      | size(WIDTH, EQUAL, 13) : text("--") | size(WIDTH, EQUAL, 13) | dim;
-        auto imT  = hasI ? text(fmtCurrentUA(ci.currentRaw))    | size(WIDTH, EQUAL, 16) : text("--") | size(WIDTH, EQUAL, 16) | dim;
+        auto imT  = hasI ? text(fmtCurrentNA(ci.currentRaw))    | size(WIDTH, EQUAL, 16) : text("--") | size(WIDTH, EQUAL, 16) | dim;
         auto vtT  = hasV ? text(fmtVoltage(ci.operationalTargetVoltageRaw)) | size(WIDTH, EQUAL, 13) : text("--") | size(WIDTH, EQUAL, 13) | dim;
         auto fltT = text(faultStr(ci.activeFault)) | size(WIDTH, EQUAL, 12);
 

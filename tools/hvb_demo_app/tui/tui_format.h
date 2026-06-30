@@ -36,6 +36,12 @@ inline std::string fmtCurrentUA(int16_t raw) {
     return buf;
 }
 
+inline std::string fmtCurrentNA(int16_t raw) {
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%+.0f nA", hvb::reg::currentToA(raw) * 1e9);
+    return buf;
+}
+
 inline std::string fmtInterval(uint16_t raw) {
     char buf[24];
     snprintf(buf, sizeof(buf), "%.1f s", hvb::reg::intervalToS(raw));

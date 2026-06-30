@@ -78,12 +78,22 @@ inline void syncDataToInputs(const ScannedData& data, ConfigInputs& cfg) {
             snprintf(buf, sizeof(buf), "%+.1f", v);
             cfg.targetV[ch] = buf;
         }
-        cfg.ruStep[ch] = std::to_string(cc.rampUpStepRaw);
-        cfg.rdStep[ch] = std::to_string(cc.rampDownStepRaw);
+        {
+            double v = reg::voltageToV(cc.rampUpStepRaw);
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f", v);
+            cfg.ruStep[ch] = buf;
+        }
+        {
+            double v = reg::voltageToV(cc.rampDownStepRaw);
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f", v);
+            cfg.rdStep[ch] = buf;
+        }
         {
             double a = reg::currentToA(cc.iLimitThresholdRaw);
             char buf[16];
-            snprintf(buf, sizeof(buf), "%.3f", a * 1e9);
+            snprintf(buf, sizeof(buf), "%.0f", a * 1e9);
             cfg.iThr[ch] = buf;
         }
 
