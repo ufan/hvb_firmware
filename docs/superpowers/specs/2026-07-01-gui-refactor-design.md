@@ -78,28 +78,60 @@ ApplicationWindow (Material dark)
 - `ConnectionModal` and `SysConfigDialog` are `Popup` overlays anchored to window center.
 - Menu bar SysMode toggle writes `backend.writeOperatingMode` immediately.
 - Connect button opens `ConnectionModal` when offline; calls `backend.disconnectFromDevice` when online.
+- **Channel tabs lifecycle**: `Repeater { model: backend.channelCount }` — tabs are created after connect when `channelCount` is populated from the board capability register, and destroyed on disconnect when `channelCount` returns to 0. TabBar resets to Monitor tab on disconnect.
+- **Monitor columns lifecycle**: `activeColumns` computed array is populated after connect from the union of channel capability flags, and cleared to `[]` on disconnect. Both header and data rows are `Repeater`-driven from this array.
 
 ---
 
 ## Monitor Tab (`MonitorTab.qml`)
 
-Table header + `Repeater` over `backend.channelCount`, both using `GridLayout` with 10 identical column widths defined in `Theme.qml`.
+### Dynamic column model
 
-| Column | Type | Behavior |
-|--------|------|----------|
-| CH | label | CH0…CH15 |
-| Vset (V) | TextField | Enter → `backend.writeTargetVoltage` |
-| Status | Button | ON / RAMP / OFF → toggle Enable / DisableGraceful |
-| Vop (V) | read-only | `channelInfoList[i].operationalTargetV` |
-| V (V) | read-only | `channelInfoList[i].voltageV` |
-| I (nA) | read-only | `channelInfoList[i].currentRaw` |
-| Ru | TextField | Enter → `backend.writeRampUp` (V/s) |
-| Rd | TextField | Enter → `backend.writeRampDown` (V/s) |
-| Limit (nA) | TextField | Enter → `backend.writeCurrentProtection` threshold |
-| Fault | read-only | active fault code, red when non-zero |
+The column set is **not fixed**. After connect, a JS computed property `activeColumns` is derived from the union of all channel `chCapFlags` values read from the board capability register. `activeColumns` is an ordered array of column-descriptor objects:
 
-- Columns show `--` when capability flag absent (`CH_CAP_OUTPUT_ENABLE` / `CH_CAP_CURRENT_MEASUREMENT`).
-- Offline: centred "Not connected — click Connect" message replaces table.
+```js
+// always present
+{ key: "ch",    label: "CH",       width: Theme.colCh,    cap: 0 }
+// present if any channel has CH_CAP_OUTPUT_ENABLE (0x0001)
+{ key: "vset",  label: "Vset (V)", width: Theme.colVset,  cap: 0x0001 }
+{ key: "status",label: "Status",   width: Theme.colStatus, cap: 0x0001 }
+// always present (operational target is always meaningful)
+{ key: "vop",   label: "Vop (V)",  width: Theme.colVop,   cap: 0 }
+// present if any channel has CH_CAP_VOLTAGE_MEASUREMENT (0x0004)
+{ key: "v",     label: "V (V)",    width: Theme.colV,     cap: 0x0004 }
+// present if any channel has CH_CAP_CURRENT_MEASUREMENT (0x0008)
+{ key: "i",     label: "I (nA)",   width: Theme.colI,     cap: 0x0008 }
+// present if any channel has CH_CAP_OUTPUT_ENABLE
+{ key: "ru",    label: "Ru",       width: Theme.colRamp,  cap: 0x0001 }
+{ key: "rd",    label: "Rd",       width: Theme.colRamp,  cap: 0x0001 }
+// present if any channel has CH_CAP_CURRENT_MEASUREMENT
+{ key: "limit", label: "Limit(nA)",width: Theme.colLimit, cap: 0x0008 }
+// always present
+{ key: "fault", label: "Fault",    width: Theme.colFault, cap: 0 }
+```
+
+`activeColumns` is recomputed whenever `backend.channelDataChanged` fires and `backend.channelCount > 0`. It is set to `[]` on disconnect (which clears both the header and all rows).
+
+### Rendering
+
+- **Header row**: `Repeater { model: activeColumns }` → one `Label` per entry, width from `col.width`
+- **Data rows**: outer `Repeater { model: backend.channelCount }`, inner `Repeater { model: activeColumns }` → each cell rendered by a `switch(col.key)` delegate
+- Individual cells show `--` (dim label) when the specific channel's own `chCapFlags` lacks the column's `cap` (handles mixed-capability boards where not all channels share the same flags)
+- Offline / `activeColumns` empty: centred "Not connected — click Connect" message
+
+### Cell behaviours
+
+| key | Type | Write call |
+|-----|------|------------|
+| vset | TextField (V) | `backend.writeTargetVoltage(ch, rawFromV(v))` |
+| status | Button (ON/RAMP/OFF) | toggle Enable / DisableGraceful |
+| vop | read-only | `channelInfoList[i].operationalTargetV` |
+| v | read-only | `channelInfoList[i].voltageV` |
+| i | read-only | `channelInfoList[i].currentRaw` |
+| ru | TextField (V/s) | `backend.writeRampUp(ch, rawFromV(v), existingInterval)` |
+| rd | TextField (V/s) | `backend.writeRampDown(ch, rawFromV(v), existingInterval)` |
+| limit | TextField (nA) | `backend.writeCurrentProtection(ch, existingMode, existingAction, nA)` |
+| fault | read-only label | active fault code, red when non-zero |
 
 ---
 
