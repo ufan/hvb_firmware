@@ -214,6 +214,60 @@ Popup fields: Working Mode (ComboBox: Normal/Automatic → `backend.writeOperati
 
 ---
 
+## Threading and Communication Model
+
+### Register classes
+
+All Modbus I/O is divided into three distinct classes that must not be mixed in the same polling cycle:
+
+| Class | Registers | Trigger | Frequency |
+|-------|-----------|---------|-----------|
+| **Realtime** | ch status, voltage, current, op-target, fault flags, retry count, cooldown; sys uptime, activeOpMode, sysStatus, faultCause, temp, humidity, activeChMask | Automatic periodic poll | Every poll interval (default 1 s) |
+| **Config** | sys config (opMode, startup policy, baud, slave), ch config (ramp, protection, recovery, cal), ch cap flags | On connect (full scan) and after each successful write that modifies config | On demand |
+| **Command** | output action, fault command, param action (save/load/factory/reset) | User action | On demand |
+
+Realtime registers are the only ones polled automatically. Config registers are read once on connect and refreshed after writes. Calibration registers are part of the config class.
+
+### Worker thread
+
+`ModbusWorker` runs in a dedicated `QThread`. **All** Modbus serial I/O executes on this thread. The main (GUI) thread never calls blocking I/O.
+
+```
+Main thread                     Worker thread (ModbusWorker)
+─────────────────               ──────────────────────────────
+QTimer (poll)   ──invoke──►  doPollStatus()     # realtime regs only
+User write cmd  ──invoke──►  doWriteXxx()       # blocking, emits operationComplete
+Connect         ──invoke──►  doConnect()
+                               └─► doFullScan() # config + realtime regs, one-time
+```
+
+`QMetaObject::invokeMethod(..., Qt::QueuedConnection)` is used for all cross-thread calls, so the GUI thread is never blocked.
+
+### Poll separation
+
+The existing `doRefreshSystemInfo` / `doRefreshChannelInfo` slots (which read all registers including config) are **not** called by the periodic poll timer. They are kept for explicit on-demand refreshes only.
+
+A new `doPollStatus()` slot is added to `ModbusWorker` that reads **only** realtime registers:
+- `readSystemStatus()` — uptime, mode, sys status, fault cause, temp, humidity, activeChMask
+- `readChannelStatus(ch, capFlags)` — per active channel: voltage, current, op-target, status, fault flags, retries, cooldown
+
+This mirrors `doPollScan` in the TUI reference implementation.
+
+### Write / command serialisation
+
+Write and command operations are queued to the worker thread via `QueuedConnection`. They execute sequentially; the poll timer's next tick is deferred until any in-flight write completes (Qt event loop serialises queued invocations on the worker thread).
+
+### Result notification
+
+Every write and command operation emits `operationComplete(bool ok, QString msg)`. The backend's `onOperationComplete` slot:
+1. Sets `m_statusMessage` to `"✓ <op>" ` (green) or `"✗ <op>: <error>"` (red)
+2. Starts a 4-second auto-clear timer (success only — errors persist until next operation)
+3. Emits `statusMessageChanged`
+
+The QML `ErrorBox` in the status bar binds to `backend.statusMessage` and colours it green/red based on the `✓`/`✗` prefix. This gives the user explicit, always-visible confirmation of every write result without a modal dialog.
+
+---
+
 ## Implementation Notes
 
 ### Unit conversion for voltage inputs
@@ -224,9 +278,15 @@ Popup fields: Working Mode (ComboBox: Normal/Automatic → `backend.writeOperati
 
 ---
 
-## Backend Change
+## Backend Changes
 
-`modbus_backend.h` line ~148: `int m_pollInterval = 1000;` (was 2000).
+The C++ backend requires targeted changes — the QML layer cannot be rewritten cleanly without these:
+
+1. **`modbus_backend.h`** — `int m_pollInterval = 1000;` (was 2000)
+2. **`modbus_backend.cpp`** — `pollTick()` invokes `doWorker->doPollStatus()` only, not `doRefreshSystemInfo` / `doRefreshChannelInfo`
+3. **`modbus_backend.cpp`** — `onOperationComplete()` adds auto-clear timer for success messages (4 s)
+4. **`modbus_worker.h`** — add `doPollStatus()` slot (realtime registers only)
+5. **`modbus_worker.cpp`** — implement `doPollStatus()`: calls `readSystemStatus()` then per-active-channel `readChannelStatus()`; emits `systemInfoReady` + `channelInfoReady` signals as before
 
 ---
 
