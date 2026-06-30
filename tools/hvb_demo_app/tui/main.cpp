@@ -77,6 +77,8 @@ int main(int argc, char** argv) {
     int  activeTab   = 0;
     bool showModal   = false;
     std::atomic<bool> connecting{false};
+    std::atomic<bool> abortConnect{false};
+    std::chrono::steady_clock::time_point connectStart;
     std::string statusMsg;
     std::mutex  statusMutex;
     hvb::tui::ScannedData data;
@@ -109,7 +111,9 @@ int main(int argc, char** argv) {
 
     auto doConnect = [&] {
         if (modalPort.empty() || connecting) return;
+        abortConnect = false;
         connecting = true;
+        connectStart = std::chrono::steady_clock::now();
         { std::lock_guard<std::mutex> lk(statusMutex); statusMsg = "Connecting to " + modalPort + "..."; }
         screen.PostEvent(Event::Custom);
         std::thread([&] {
@@ -117,7 +121,11 @@ int main(int argc, char** argv) {
             try { baud  = std::stoi(modalBaud);    } catch (...) {}
             try { slave = std::stoi(modalSlaveId); } catch (...) {}
             bool ok = g_client.connect(modalPort, baud, slave, timeoutArg);
-            g_connected = ok;
+            g_connected = ok && !abortConnect;
+            if (abortConnect) {
+                if (ok) g_client.disconnect();
+                ok = false;
+            }
             if (ok) {
                 { std::lock_guard<std::mutex> lk(g_scanMutex); doFullScan(data); }
                 data.valid = true;
@@ -126,10 +134,19 @@ int main(int argc, char** argv) {
                 int maxTab = static_cast<int>(tabTitles.size()) - 1;
                 if (activeTab > maxTab) activeTab = maxTab;
             }
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - connectStart).count();
             { std::lock_guard<std::mutex> lk(statusMutex);
-              statusMsg = ok
-                ? ("Connected " + modalPort + "  (" + std::to_string(data.numChannels()) + " ch)")
-                : ("Error: " + g_client.lastError()); }
+              double sec = elapsed / 1000.0;
+              if (abortConnect)
+                  statusMsg = "Connection aborted";
+              else if (ok)
+                  statusMsg = "Connected " + modalPort + "  (" + std::to_string(data.numChannels()) + " ch)";
+              else {
+                  auto e = g_client.lastError();
+                  statusMsg = "Error: " + (e.empty() ? "connection failed" : e)
+                              + " (after " + std::to_string(static_cast<int>(sec)) + "s)"; }
+            }
             connecting = false;
             showModal  = false;
             screen.PostEvent(Event::Custom);
@@ -141,7 +158,35 @@ int main(int argc, char** argv) {
         Button("Cancel",  [&] { showModal = false; }),
     });
     auto modalForm = Container::Vertical({portInput, baudInput, slaveInput, modalButtons});
-    auto modalRenderer = Renderer(modalForm, [&] {
+    auto bAbort = Button("Abort", [&] {
+        abortConnect = true;
+        showModal = false;
+        connecting = false;
+        { std::lock_guard<std::mutex> lk(statusMutex); statusMsg = "Connection aborted"; }
+    });
+    auto abortContainer = Container::Vertical({bAbort});
+    auto modalRenderer = Renderer(Container::Vertical({modalForm, abortContainer}), [&] {
+        if (connecting) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - connectStart).count();
+            char etime[32];
+            snprintf(etime, sizeof(etime), "%.1f s", elapsed / 1000.0);
+            return vbox({
+                text(" Connecting to HVB ") | bold | center,
+                separator(),
+                text(" " + modalPort + "  @" + modalBaud + "  #" + modalSlaveId + " ") | dim,
+                text(""),
+                text(" Elapsed: " + std::string(etime)) | center,
+                text(""),
+                text(" If this takes too long, check:") | dim,
+                text("   - Board is powered on") | dim,
+                text("   - USB cable is connected") | dim,
+                text("   - Correct port is selected") | dim,
+                text(""),
+                separator(),
+                bAbort->Render() | center,
+            }) | border | size(WIDTH, EQUAL, 50);
+        }
         return vbox({
             text(" Connect to HVB ") | bold | center, separator(),
             hbox({ text("Port    : "), portInput->Render()  }),
@@ -149,7 +194,6 @@ int main(int argc, char** argv) {
             hbox({ text("Slave ID: "), slaveInput->Render() }),
             separator(),
             modalButtons->Render() | center,
-            text(connecting ? "Connecting..." : "") | dim | center,
         }) | border | size(WIDTH, EQUAL, 50);
     });
 
@@ -237,8 +281,12 @@ int main(int argc, char** argv) {
         });
     }) | Modal(modalRenderer, &showModal)
        | CatchEvent([&](Event e) {
-           // Only intercept Escape to close the modal; everything else passes through.
-           if (showModal && e == Event::Escape) { showModal = false; return true; }
+           if (e == Event::Escape) {
+               if (connecting) { abortConnect = true; connecting = false; showModal = false;
+                   { std::lock_guard<std::mutex> lk(statusMutex); statusMsg = "Connection aborted"; }
+                   screen.PostEvent(Event::Custom); return true; }
+               if (showModal) { showModal = false; return true; }
+           }
            return false;
        });
 
