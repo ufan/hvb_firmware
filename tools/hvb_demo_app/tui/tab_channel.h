@@ -164,27 +164,22 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
             }));
         }
 
-        // Recovery panel
-        auto recovPanel = window(text(" Recovery "), vbox({
-            hbox({ text("Policy: "), recovC->Render() }),
-            hbox({ text("Delay: "), delayInp->Render(), text(" s"),
-                   text("  Max: "), maxInp->Render(),
-                   text("  Window: "), winInp->Render(), text(" s") }),
-            hbox({ text("Derate: "), derInp->Render(), text(" LSB"),
-                   text("  SafeBand: "), iBandInp->Render(), text(" %") }),
-            hbox({ bClrAct->Render(), text("  "), bClrHist->Render() }),
-        }));
-
-        // Persistence panel
-        auto persistPanel = window(text(" Persistence "), vbox({
-            hbox({ bSave->Render(), text("  "), bLoad->Render(), text("  "), bFactory->Render() }),
+        // Recovery & Persistence panel (merged)
+        auto recovPanel = window(text(" Recovery & Persist "), vbox({
+            hbox({ text("Policy:"), recovC->Render(),
+                   text("  Dly:"), delayInp->Render(), text("s"),
+                   text("  Max:"), maxInp->Render(),
+                   text("  Win:"), winInp->Render(), text("s") }),
+            hbox({ text("Derate:"), derInp->Render(), text("LSB"),
+                   text("  Band:"), iBandInp->Render(), text("%"),
+                   text("  "), bClrAct->Render(), text(" "), bClrHist->Render() }),
+            hbox({ bSave->Render(), text(" "), bLoad->Render(), text(" "), bFactory->Render() }),
         }));
 
         return vbox({
             livePanel,
             hbox({ controlPanel, protPanel }),
             recovPanel,
-            persistPanel,
         });
     });
 }

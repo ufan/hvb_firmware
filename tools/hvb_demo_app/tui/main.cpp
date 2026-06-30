@@ -220,7 +220,7 @@ int main(int argc, char** argv) {
     static const std::vector<std::string> kOpModes  = {"Normal", "Automatic"};
     static const std::vector<std::string> kStartPol = {"Load NVS Config", "Factory Default"};
 
-    auto bSysCfg = hvb::tui::ActionButton("SysConfig", [&] {
+    auto bSysCfg = hvb::tui::ActionButton("Setting", [&] {
         showSysCfg = !showSysCfg; screen.PostEvent(Event::Custom);
     });
 
@@ -325,19 +325,6 @@ int main(int argc, char** argv) {
             snprintf(humS, sizeof(humS), "%.1f%%", si.boardHumidityRaw * 0.1);
         }
 
-        // --- Menu bar ---
-        auto menuBarEl = hbox({
-            text(" HVB ") | bold,
-            separator(),
-            text(" Mode: "), menuModeC->Render(),
-            separator(),
-            text(" ChannelNr: " + chTxt + " "),
-            filler(),
-            text(" Up:" + uptimeTxt + "  " + std::string(tmpS) + "  " + std::string(humS) + " "),
-            filler(),
-            bQuit->Render(),
-        });
-
         // --- Breathing green: cosine wave 0→1→0 over 2 s ----
         auto breathColor = []() -> Color {
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -346,18 +333,41 @@ int main(int argc, char** argv) {
             return Color::RGB(0, 50 + static_cast<int>(b * 200), 0);
         };
 
-        // --- Connection info group: indicator + port @baud #slave ---
-        Element connInfoEl;
+        // --- Connection indicator (menu bar — breathing) ---
+        Element connDotEl;
         if (g_connected.load()) {
-            Color c = breathColor();
-            connInfoEl = hbox({
-                text(" \xe2\x97\x8f ") | color(c),
-                text(portVal + " @" + baudVal + " #" + slaveVal + " ") | color(c),
-            });
+            connDotEl = text(" \xe2\x97\x8f ") | color(breathColor()) | bold;
         } else if (connecting.load()) {
-            connInfoEl = text(" \xe2\x8f\xb3 Connecting... ") | color(Color::Yellow);
+            connDotEl = text(" \xe2\x8f\xb3 ") | color(Color::Yellow);
         } else {
-            connInfoEl = text(" \xe2\x97\x8b offline ") | color(Color::GrayDark);
+            connDotEl = text(" \xe2\x97\x8b ") | color(Color::GrayDark);
+        }
+
+        // --- Menu bar ---
+        auto menuBarEl = hbox({
+            connDotEl,
+            text(" HVB ") | bold,
+            separator(),
+            text(" Mode: "), menuModeC->Render(),
+            separator(),
+            text(" Ch: " + chTxt + " "),
+            filler(),
+            text(" Up: " + uptimeTxt + "  |  T: " + std::string(tmpS) + "  H: " + std::string(humS) + " "),
+            filler(),
+            bQuit->Render(),
+        });
+
+        // --- Status bar (static colour — no breathing) ---
+        auto connColor = g_connected.load() ? Color::Green
+                       : connecting.load()  ? Color::Yellow
+                       : Color::GrayDark;
+        Element connTextEl;
+        if (g_connected.load()) {
+            connTextEl = text(" " + portVal + " @" + baudVal + " #" + slaveVal + " ") | color(connColor);
+        } else if (connecting.load()) {
+            connTextEl = text(" Connecting... ") | color(Color::Yellow);
+        } else {
+            connTextEl = text(" offline ") | color(Color::GrayDark);
         }
 
         // --- Status bar ---
@@ -368,7 +378,7 @@ int main(int argc, char** argv) {
             filler(),
             text(" FW:" + fwTxt + "  Proto:" + protoTxt + " "),
             filler(),
-            connInfoEl,
+            connTextEl,
             bConnToggle->Render(), text(" "),
             bSysCfg->Render(),
         });

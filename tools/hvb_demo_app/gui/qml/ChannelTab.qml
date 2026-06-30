@@ -133,14 +133,19 @@ ScrollView {
             Label { text: "Recovery Policy"; font.bold: true }
             RowLayout {
                 ComboBox { id: recovPolicyCb; model: ["ManualLatch", "AutoRetry", "AutoDerate", "NeverRetry"]
-                    currentIndex: cfg().recoveryPolicyMode || 0; Layout.preferredWidth: 130 }
-                Label { text: "Delay (s):" }
-                SpinBox { id: recovDelay; from: 0; to: 3600; value: cfg().autoRetryDelay || 0 }
+                    currentIndex: cfg().recoveryPolicyMode || 0; Layout.preferredWidth: 110 }
+                Label { text: "Dly:" }
+                SpinBox { id: recovDelay; from: 0; to: 3600; value: cfg().autoRetryDelay || 0; Layout.preferredWidth: 55 }
                 Label { text: "Max:" }
-                SpinBox { id: recovMax; from: 0; to: 100; value: cfg().autoRetryMaxCount || 0 }
-                Label { text: "Window (s):" }
-                SpinBox { id: recovWin; from: 0; to: 86400; value: cfg().autoRetryWindow || 0 }
+                SpinBox { id: recovMax; from: 0; to: 100; value: cfg().autoRetryMaxCount || 0; Layout.preferredWidth: 50 }
+                Label { text: "Win:" }
+                SpinBox { id: recovWin; from: 0; to: 86400; value: cfg().autoRetryWindow || 0; Layout.preferredWidth: 65 }
                 Button { text: "Set"; onClicked: backend.writeChannelRecovery(channelIndex, recovPolicyCb.currentIndex, recovDelay.value, recovMax.value, recovWin.value) }
+                Item { Layout.preferredWidth: 12 }
+                Button { text: "Save"; onClicked: backend.saveChannel(channelIndex) }
+                Button { text: "Load"; onClicked: backend.loadChannel(channelIndex) }
+                Button { text: "Factory"; onClicked: backend.factoryResetChannel(channelIndex)
+                    palette.button: "#F44336"; palette.buttonText: "white" }
             }
 
             // I protection — only shown if channel has current measurement capability
@@ -200,15 +205,7 @@ ScrollView {
                 Button { text: "Set"; visible: hasCurr; onClicked: backend.writeCalMeasI(channelIndex, parseInt(miCalK.text)||10000, parseInt(miCalB.text)||0) }
             }
 
-            Rectangle { Layout.preferredHeight: 1; Layout.fillWidth: true; color: "#ddd" }
 
-            Row {
-                spacing: 8
-                Button { text: "Save CH"; onClicked: backend.saveChannel(channelIndex) }
-                Button { text: "Load CH"; onClicked: backend.loadChannel(channelIndex) }
-                Button { text: "Factory CH"; onClicked: backend.factoryResetChannel(channelIndex)
-                    palette.button: "#F44336"; palette.buttonText: "white" }
-            }
         }
     }
 }

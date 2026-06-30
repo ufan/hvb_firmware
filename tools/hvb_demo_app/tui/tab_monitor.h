@@ -38,18 +38,24 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     auto bopt = ButtonOption{};
     bopt.transform = [&s, ch](const EntryState& es) -> Element {
         uint16_t st = s.data.valid ? s.data.chInfo[ch].status : 0;
-        bool on = (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0;
-        std::string lbl = on ? "[ ON ]" : "[ OFF ]";
-        auto e = text(lbl);
-        if (on)      e = e | color(Color::Green) | bold;
-        else         e = e | dim;
+        int16_t tv  = s.data.valid ? s.data.chInfo[ch].operationalTargetVoltageRaw : 0;
+        bool ramp   = (st & ChStatus::RAMPING_ACTIVE) != 0;
+        bool on     = (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0 && tv != 0;
+        Element e;
+        if (ramp)      e = text("[ RAMP ]") | color(Color::Yellow) | bold;
+        else if (on)   e = text("[  ON  ]") | color(Color::Green) | bold;
+        else           e = text("[ OFF ]") | dim;
         if (es.focused) e = e | inverted;
         return e;
     };
     auto statusBtn = Button("", [&s, &inputs, ch, refreshCh] {
         if (!s.data.valid) return;
         uint16_t st = s.data.chInfo[ch].status;
-        bool on = (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0;
+        bool ramp = (st & ChStatus::RAMPING_ACTIVE) != 0;
+        if (ramp) return;
+        int16_t tv    = s.data.chInfo[ch].operationalTargetVoltageRaw;
+        bool driveOn  = (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0;
+        bool on       = driveOn && tv != 0;
         OutputAction act = on ? OutputAction::DisableGraceful : OutputAction::Enable;
         postWrite(s, inputs, on ? "Dis-Grace" : "Enable",
             [&s, ch, act] { return s.client.sendOutputAction(ch, act); },
@@ -140,7 +146,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
         {
             std::vector<Element> hdr;
             for (const auto& h : kHeaders)
-                hdr.push_back(text(h) | bold);
+                hdr.push_back(text(h) | bold | center);
             grid.push_back(std::move(hdr));
         }
 
@@ -154,21 +160,21 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
             snprintf(chLabel, sizeof(chLabel), "CH%-2d", ch);
 
             std::vector<Element> cells;
-            cells.push_back(text(chLabel) | size(WIDTH, GREATER_THAN, 4));
-            cells.push_back(hasOut ? rows->at(ch).vsetInp->Render() | size(WIDTH, EQUAL, 8)
-                                   : text(" -- ") | dim | size(WIDTH, EQUAL, 8));
-            cells.push_back(hasOut ? rows->at(ch).statusBtn->Render()
-                                   : text(" -- ") | dim);
-            cells.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | size(WIDTH, GREATER_THAN, 9));
-            cells.push_back(text(fmtVoltage(ci.voltageRaw)) | size(WIDTH, GREATER_THAN, 9));
-            cells.push_back(text(fmtCurrentNA(ci.currentRaw)) | size(WIDTH, GREATER_THAN, 10));
-            cells.push_back(hasOut ? rows->at(ch).rampUpInp->Render() | size(WIDTH, EQUAL, 7)
-                                   : text(" -- ") | dim | size(WIDTH, EQUAL, 7));
-            cells.push_back(hasOut ? rows->at(ch).rampDownInp->Render() | size(WIDTH, EQUAL, 7)
-                                   : text(" -- ") | dim | size(WIDTH, EQUAL, 7));
-            cells.push_back(hasOut ? rows->at(ch).iLimitInp->Render() | size(WIDTH, EQUAL, 9)
-                                   : text(" -- ") | dim | size(WIDTH, EQUAL, 9));
-            cells.push_back(text(faultStr(ci.activeFault)) | size(WIDTH, GREATER_THAN, 6));
+            cells.push_back(text(chLabel) | center | size(WIDTH, GREATER_THAN, 4));
+            cells.push_back(hasOut ? rows->at(ch).vsetInp->Render() | center | size(WIDTH, EQUAL, 8)
+                                   : text(" -- ") | dim | center | size(WIDTH, EQUAL, 8));
+            cells.push_back(hasOut ? rows->at(ch).statusBtn->Render() | center
+                                   : text(" -- ") | dim | center);
+            cells.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | center | size(WIDTH, GREATER_THAN, 9));
+            cells.push_back(text(fmtVoltage(ci.voltageRaw)) | center | size(WIDTH, GREATER_THAN, 9));
+            cells.push_back(text(fmtCurrentNA(ci.currentRaw)) | center | size(WIDTH, GREATER_THAN, 10));
+            cells.push_back(hasOut ? rows->at(ch).rampUpInp->Render() | center | size(WIDTH, EQUAL, 7)
+                                   : text(" -- ") | dim | center | size(WIDTH, EQUAL, 7));
+            cells.push_back(hasOut ? rows->at(ch).rampDownInp->Render() | center | size(WIDTH, EQUAL, 7)
+                                   : text(" -- ") | dim | center | size(WIDTH, EQUAL, 7));
+            cells.push_back(hasOut ? rows->at(ch).iLimitInp->Render() | center | size(WIDTH, EQUAL, 9)
+                                   : text(" -- ") | dim | center | size(WIDTH, EQUAL, 9));
+            cells.push_back(text(faultStr(ci.activeFault)) | center | size(WIDTH, GREATER_THAN, 6));
 
             grid.push_back(std::move(cells));
         }
@@ -179,7 +185,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
         table.SelectRow(0).SeparatorVertical(LIGHT);
         table.SelectRow(0).Border(DOUBLE);
 
-        return table.Render() | flex;
+        return table.Render() | size(WIDTH, GREATER_THAN, 90) | flex;
     });
 }
 

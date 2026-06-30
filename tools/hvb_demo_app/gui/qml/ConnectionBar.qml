@@ -54,11 +54,29 @@ RowLayout {
         currentIndex: 2  // default 2s
     }
 
-    Rectangle {
-        width: 12; height: 12; radius: 6
-        color: backend.connected ? "#4CAF50" : "#F44336"
+    Item { Layout.fillWidth: true }
+
+    Label {
+        text: backend.connected ? "HVB v" + (backend.sysInfo.variantId || "?") : "HVB"
+        font.bold: true
+        font.pixelSize: 13
         Layout.alignment: Qt.AlignVCenter
     }
 
-    Item { Layout.fillWidth: true }
+    Rectangle {
+        id: connDot
+        width: 12; height: 12; radius: 6
+        color: backend.connected ? "#4CAF50" : "#F44336"
+        Layout.alignment: Qt.AlignVCenter
+
+        property real pulse: 1.0
+        opacity: backend.connected ? pulse : 1.0
+
+        Timer {
+            interval: 800
+            running: backend.connected
+            repeat: true
+            onTriggered: connDot.pulse = (connDot.pulse > 0.6) ? 0.3 : 1.0
+        }
+    }
 }
