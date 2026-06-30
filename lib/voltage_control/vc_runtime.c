@@ -653,6 +653,20 @@ static enum vc_status vc_runtime_cal_sample_fresh(struct vc_runtime *runtime,
 		vc_channel_buffer_read(channel->meas, &raw_voltage, &voltage_ts_before,
 				       &raw_current, &current_ts_before);
 
+		/*
+		 * If a measurement kind has never been published
+		 * (timestamp still at init value 0), don't require
+		 * it — the hardware may genuinely read 0 (e.g. no
+		 * load on current sense).  Only wait for kinds that
+		 * have produced at least one valid reading.
+		 */
+		if (current_ts_before == 0) {
+			want_current = false;
+		}
+		if (voltage_ts_before == 0) {
+			want_voltage = false;
+		}
+
 		for (;;) {
 			vc_channel_buffer_read(channel->meas, &raw_voltage, &voltage_ts,
 					       &raw_current, &current_ts);

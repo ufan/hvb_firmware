@@ -23,7 +23,7 @@ LOG_MODULE_REGISTER(hvb_vc_channel, LOG_LEVEL_INF);
 
 #define HVB_VC_WORKQ_STACK_SIZE 2048
 #define HVB_VC_WORKQ_PRIORITY   CONFIG_SYSTEM_WORKQUEUE_PRIORITY
-#define HVB_VC_DRDY_TIMEOUT_MS  420
+#define HVB_VC_DRDY_TIMEOUT_MS  600
 
 static K_THREAD_STACK_DEFINE(hvb_vc_workq_stack, HVB_VC_WORKQ_STACK_SIZE);
 static struct k_work_q hvb_vc_workq;
@@ -134,13 +134,16 @@ static void hvb_vc_poll_handler(struct k_work *work)
 		vc_channel_buffer_publish_voltage(data->meas, raw,
 					  k_uptime_get_32());
 
+		/* Wake any cal_sample_fresh waiter even if current phase follows.
+		 * The waiter re-checks timestamps so it won't accept a half-cycle
+		 * as "fresh" when both V and I are required. */
+		hvb_vc_notify_meas(data);
+
 		if (cfg->capabilities & CH_CAP_CURRENT_MEASUREMENT) {
 			data->adc_phase = ADC_PHASE_CURRENT;
 			hvb_vc_submit_read(data, ADC_CH_CURRENT);
 			return;
 		}
-
-		hvb_vc_notify_meas(data);
 	} else {
 		vc_channel_buffer_publish_current(data->meas, raw,
 					  k_uptime_get_32());

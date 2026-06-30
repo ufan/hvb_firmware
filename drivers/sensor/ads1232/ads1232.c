@@ -86,18 +86,31 @@ static int32_t ads1232_bitbang_read(const struct ads1232_config *cfg)
 
 	for (int i = 0; i < 24; i++) {
 		gpio_pin_set_dt(&cfg->sclk, 1);
-		k_busy_wait(1); // todo: shorten the busy wait
+		k_busy_wait(1);
 		val = (val << 1) |
 		      gpio_pin_get_raw(cfg->drdy.port, cfg->drdy.pin);
 		gpio_pin_set_dt(&cfg->sclk, 0);
 		k_busy_wait(1);
 	}
 
-	/* 25th SCLK to force DRDY/DOUT high (Figure 7-10) */
-	gpio_pin_set_dt(&cfg->sclk, 1);
-	k_busy_wait(1);
-	gpio_pin_set_dt(&cfg->sclk, 0);
-	k_busy_wait(1);
+	/* 25th SCLK to force DRDY/DOUT high (Figure 7-10).
+	 * Some isolators may drop an occasional SCLK edge; keep
+	 * pulsing until DRDY actually rises (up to 5 pulses).
+	 *
+	 * IMPORTANT: stop as soon as DRDY goes HIGH (logical inactive with
+	 * GPIO_ACTIVE_LOW → gpio_pin_get_dt returns 0).  Sending a 26th SCLK
+	 * while DRDY is high triggers offset calibration (§7.4.1), which
+	 * takes 801 ms at 10 SPS and causes permanent DRDY timeouts.
+	 */
+	for (int i = 0; i < 5; i++) {
+		gpio_pin_set_dt(&cfg->sclk, 1);
+		k_busy_wait(1);
+		gpio_pin_set_dt(&cfg->sclk, 0);
+		k_busy_wait(1);
+		if (!gpio_pin_get_dt(&cfg->drdy)) {
+			break;
+		}
+	}
 
 	/* Sign-extend 24-bit two's complement to 32-bit */
 	if (val & BIT(23)) {
@@ -259,7 +272,37 @@ static int ads1232_read_async(const struct device *dev,
 		k_poll_signal_reset(async);
 	}
 
+	/*
+	 * If DRDY is already low, a previous edge was missed (e.g. at
+	 * startup or after an A0 channel change).  Read and discard the
+	 * stale data so the 25th SCLK resets DRDY to high.  The ADC then
+	 * starts a fresh conversion on the channel we just selected; the
+	 * next DRDY falling edge fires the ISR normally.  Without this
+	 * recovery the edge-triggered ISR never fires and the system
+	 * deadlocks in a 420 ms timeout loop.
+	 *
+	 * Note: with GPIO_ACTIVE_LOW, gpio_pin_get_dt() returns 1 when the
+	 * physical pin is LOW (= DRDY asserted / data ready).
+	 */
+	if (gpio_pin_get_dt(&cfg->drdy)) {
+		(void)ads1232_bitbang_read(cfg);
+	}
+
 	gpio_pin_interrupt_configure_dt(&cfg->drdy, GPIO_INT_EDGE_TO_ACTIVE);
+
+	/*
+	 * Race guard: DRDY might have fallen in the ~1µs window between the
+	 * stale check above and arming the interrupt.  If it is already LOW
+	 * now, the edge-triggered ISR will never fire.  Drive recovery the
+	 * same way the ISR would: disable the interrupt and submit async_work
+	 * directly.  If the ISR already fired and submitted async_work, the
+	 * second k_work_submit is a harmless no-op (work already pending).
+	 */
+	if (gpio_pin_get_dt(&cfg->drdy)) {
+		gpio_pin_interrupt_configure_dt(&cfg->drdy, GPIO_INT_DISABLE);
+		k_work_submit(&data->async_work);
+	}
+
 	k_mutex_unlock(&data->lock);
 
 	return 0;
