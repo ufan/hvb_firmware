@@ -17,3 +17,5 @@ build_*/
 .superpowers/
 twister-out*
 tools/bin
+reports
+__pycache__
