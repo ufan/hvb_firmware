@@ -1,3 +1,4 @@
 # SPDX-License-Identifier: Apache-2.0
 
 rsource "hvb_vc_channel/Kconfig"
+rsource "lvb_vc_channel/Kconfig"

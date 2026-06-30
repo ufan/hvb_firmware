@@ -612,3 +612,67 @@ ZTEST(vc_channel_state, test_meas_callback_registered_with_hw)
 	stub->meas_cb(0, stub->meas_cb_user_data);
 	zassert_equal(wake_count, 1, "meas callback should invoke wake_fn");
 }
+
+/* ---- vc_channel_no_dac: on/off-only channel (LVB topology) ---- */
+
+#define LVB_CAPS (CH_CAP_OUTPUT_ENABLE | \
+		  CH_CAP_VOLTAGE_MEASUREMENT | \
+		  CH_CAP_CURRENT_MEASUREMENT)
+
+static struct vc_channel no_dac_ch;
+
+static void before_each_no_dac(void *fixture)
+{
+	ARG_UNUSED(fixture);
+	vc_channel_init(&no_dac_ch, NULL, 1, LVB_CAPS, NULL, NULL, NULL);
+}
+
+ZTEST_SUITE(vc_channel_no_dac, NULL, NULL, before_each_no_dac, NULL, NULL);
+
+ZTEST(vc_channel_no_dac, test_cal_output_enable_rejected)
+{
+	zassert_equal(vc_channel_cal_set_output_enable(&no_dac_ch, true),
+		      VC_ERR_UNSUPPORTED_CAPABILITY);
+}
+
+ZTEST(vc_channel_no_dac, test_output_enable_action_accepted)
+{
+	zassert_equal(vc_channel_output_action(&no_dac_ch, VC_OUTPUT_ACTION_ENABLE),
+		      VC_OK);
+	zassert_true(no_dac_ch.output_enabled);
+}
+
+ZTEST(vc_channel_no_dac, test_disable_immediate_accepted)
+{
+	vc_channel_output_action(&no_dac_ch, VC_OUTPUT_ACTION_ENABLE);
+	zassert_equal(vc_channel_output_action(&no_dac_ch,
+					       VC_OUTPUT_ACTION_DISABLE_IMMEDIATE),
+		      VC_OK);
+	zassert_false(no_dac_ch.output_enabled);
+}
+
+ZTEST(vc_channel_no_dac, test_voltage_measurement_consumed)
+{
+	struct vc_channel_snapshot snap;
+
+	vc_channel_consume_voltage(&no_dac_ch, 3500);
+	vc_channel_get_snapshot(&no_dac_ch, &snap);
+	zassert_equal(snap.measured_voltage, 3500);
+}
+
+ZTEST(vc_channel_no_dac, test_current_measurement_consumed)
+{
+	struct vc_channel_snapshot snap;
+
+	vc_channel_consume_current(&no_dac_ch, 200);
+	vc_channel_get_snapshot(&no_dac_ch, &snap);
+	zassert_equal(snap.measured_current, 200);
+}
+
+ZTEST(vc_channel_no_dac, test_capabilities_reported)
+{
+	struct vc_channel_snapshot snap;
+
+	vc_channel_get_snapshot(&no_dac_ch, &snap);
+	zassert_equal(snap.channel_capability_flags, LVB_CAPS);
+}

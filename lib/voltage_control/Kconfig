@@ -1,5 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
+config VC_VARIANT_ID
+	int "Voltage-control variant identifier reported over Modbus"
+	default 1
+	range 1 255
+	help
+	  Numeric identifier for the hardware variant (1 = HVB, 2 = LVB).
+	  Reported in the VARIANT_ID Modbus register so host tools can adapt
+	  their behaviour to the connected board type.
+
 config VC_CHANNEL_CONTROLLER
 	bool "VC channel controller DTS aggregation"
 	default y

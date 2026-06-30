@@ -1,0 +1,3 @@
+config BOARD_JW_LVB
+	bool "Jianwei Low Voltage Board"
+	select SOC_STM32F103XE

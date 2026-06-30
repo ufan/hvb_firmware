@@ -25,7 +25,7 @@ LOG_MODULE_REGISTER(vc_controller, LOG_LEVEL_WRN);
 DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, MEAS_ENTRY)
 #endif
 
-#define VC_VARIANT_ID 1
+#define VC_VARIANT_ID CONFIG_VC_VARIANT_ID
 #define VC_CAL_WATCHDOG_MS (CONFIG_VC_CAL_WATCHDOG_TIMEOUT_S * 1000U)
 
 static void cal_watchdog_reset(struct vc_controller *ctrl)

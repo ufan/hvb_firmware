@@ -1,0 +1,319 @@
+/*
+ * Copyright (c) 2026 Jianwei
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <st/f1/stm32f103Xe.dtsi>
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/pinctrl/stm32f1-pinctrl.h>
+#include <zephyr/dt-bindings/adc/stm32_adc.h>
+#include <zephyr/dt-bindings/adc/stm32f1_adc.h>
+#include <dt-bindings/voltage_control/capabilities.h>
+
+/ {
+	model = "Jianwei Low Voltage Board";
+	compatible = "jianwei,jw-lvb";
+
+	chosen {
+		zephyr,console    = &usart3;
+		zephyr,shell-uart = &usart3;
+		zephyr,sram       = &sram0;
+		zephyr,flash      = &flash0;
+		zephyr,watchdog0  = &iwdg;
+	};
+
+	vc_controller: vc-controller {
+		compatible = "jianwei,vc-controller";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "okay";
+
+		/* 10-channel 12 V isolated outputs — no DAC, V/I measurement only */
+
+		vc_ch0: channel@0 {
+			compatible = "jianwei,lvb-vc-channel";
+			reg = <0>;
+			label = "LV1";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE |
+					 CH_CAP_VOLTAGE_MEASUREMENT |
+					 CH_CAP_CURRENT_MEASUREMENT)>;
+			enable-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+			io-channels = <&adc1 7>, <&adc1 6>;
+			io-channel-names = "voltage", "current";
+			calib-current-b = <(-1822)>;
+		};
+
+		vc_ch1: channel@1 {
+			compatible = "jianwei,lvb-vc-channel";
+			reg = <1>;
+			label = "LV2";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE |
+					 CH_CAP_VOLTAGE_MEASUREMENT |
+					 CH_CAP_CURRENT_MEASUREMENT)>;
+			enable-gpios = <&gpioe 8 GPIO_ACTIVE_HIGH>;
+			io-channels = <&adc1 15>, <&adc1 14>;
+			io-channel-names = "voltage", "current";
+			calib-current-b = <(-1682)>;
+		};
+
+		vc_ch2: channel@2 {
+			compatible = "jianwei,lvb-vc-channel";
+			reg = <2>;
+			label = "LV3";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE |
+					 CH_CAP_VOLTAGE_MEASUREMENT |
+					 CH_CAP_CURRENT_MEASUREMENT)>;
+			enable-gpios = <&gpiof 14 GPIO_ACTIVE_HIGH>;
+			io-channels = <&adc1 5>, <&adc1 4>;
+			io-channel-names = "voltage", "current";
+			calib-current-b = <(-1640)>;
+		};
+
+		vc_ch3: channel@3 {
+			compatible = "jianwei,lvb-vc-channel";
+			reg = <3>;
+			label = "LV4";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE |
+					 CH_CAP_VOLTAGE_MEASUREMENT |
+					 CH_CAP_CURRENT_MEASUREMENT)>;
+			enable-gpios = <&gpioe 11 GPIO_ACTIVE_HIGH>;
+			io-channels = <&adc1 8>, <&adc1 9>;
+			io-channel-names = "voltage", "current";
+			calib-current-b = <(-1730)>;
+		};
+
+		vc_ch4: channel@4 {
+			compatible = "jianwei,lvb-vc-channel";
+			reg = <4>;
+			label = "LV5";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE |
+					 CH_CAP_VOLTAGE_MEASUREMENT |
+					 CH_CAP_CURRENT_MEASUREMENT)>;
+			enable-gpios = <&gpioe 6 GPIO_ACTIVE_HIGH>;
+			io-channels = <&adc1 11>, <&adc1 10>;
+			io-channel-names = "voltage", "current";
+			calib-current-b = <(-1715)>;
+		};
+
+		vc_ch5: channel@5 {
+			compatible = "jianwei,lvb-vc-channel";
+			reg = <5>;
+			label = "LV6";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE |
+					 CH_CAP_VOLTAGE_MEASUREMENT |
+					 CH_CAP_CURRENT_MEASUREMENT)>;
+			enable-gpios = <&gpioa 12 GPIO_ACTIVE_HIGH>;
+			io-channels = <&adc1 3>, <&adc1 2>;
+			io-channel-names = "voltage", "current";
+			calib-current-b = <(-1707)>;
+		};
+
+		vc_ch6: channel@6 {
+			compatible = "jianwei,lvb-vc-channel";
+			reg = <6>;
+			label = "LV7";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE |
+					 CH_CAP_VOLTAGE_MEASUREMENT |
+					 CH_CAP_CURRENT_MEASUREMENT)>;
+			enable-gpios = <&gpioe 5 GPIO_ACTIVE_HIGH>;
+			io-channels = <&adc3 4>, <&adc3 5>;
+			io-channel-names = "voltage", "current";
+			calib-current-b = <(-1812)>;
+		};
+
+		vc_ch7: channel@7 {
+			compatible = "jianwei,lvb-vc-channel";
+			reg = <7>;
+			label = "LV8";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE |
+					 CH_CAP_VOLTAGE_MEASUREMENT |
+					 CH_CAP_CURRENT_MEASUREMENT)>;
+			enable-gpios = <&gpioe 2 GPIO_ACTIVE_HIGH>;
+			io-channels = <&adc1 1>, <&adc1 13>;
+			io-channel-names = "voltage", "current";
+			calib-current-b = <(-1717)>;
+		};
+
+		vc_ch8: channel@8 {
+			compatible = "jianwei,lvb-vc-channel";
+			reg = <8>;
+			label = "LV9";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE |
+					 CH_CAP_VOLTAGE_MEASUREMENT |
+					 CH_CAP_CURRENT_MEASUREMENT)>;
+			enable-gpios = <&gpioe 4 GPIO_ACTIVE_HIGH>;
+			io-channels = <&adc3 6>, <&adc3 7>;
+			io-channel-names = "voltage", "current";
+			calib-current-b = <(-1670)>;
+		};
+
+		vc_ch9: channel@9 {
+			compatible = "jianwei,lvb-vc-channel";
+			reg = <9>;
+			label = "LV10";
+			capabilities = <(CH_CAP_OUTPUT_ENABLE |
+					 CH_CAP_VOLTAGE_MEASUREMENT |
+					 CH_CAP_CURRENT_MEASUREMENT)>;
+			enable-gpios = <&gpioe 3 GPIO_ACTIVE_HIGH>;
+			io-channels = <&adc1 12>, <&adc3 8>;
+			io-channel-names = "voltage", "current";
+			calib-current-b = <(-1662)>;
+		};
+	};
+};
+
+/* ---- Clock ---- */
+
+&clk_hse {
+	clock-frequency = <DT_FREQ_M(8)>;
+	status = "okay";
+};
+
+&pll {
+	mul = <9>;
+	clocks = <&clk_hse>;
+	status = "okay";
+};
+
+&rcc {
+	clocks = <&pll>;
+	clock-frequency = <DT_FREQ_M(72)>;
+	ahb-prescaler = <1>;
+	apb1-prescaler = <2>;
+	apb2-prescaler = <1>;
+	adc-prescaler = <6>;
+};
+
+/* ---- GPIO ports ---- */
+
+&gpioa { status = "okay"; };
+&gpiob { status = "okay"; };
+&gpioc { status = "okay"; };
+&gpioe { status = "okay"; };
+&gpiof { status = "okay"; };
+&gpiog { status = "okay"; };
+
+/* ---- USART3 — console / debug shell (PB10/PB11, no remap) ---- */
+
+&usart3 {
+	pinctrl-0 = <&usart3_tx_pb10 &usart3_rx_pb11>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+/* ---- USART1 — Modbus RTU (PA9/PA10), DE on PG3 (active-low) ---- */
+
+&usart1 {
+	pinctrl-0 = <&usart1_tx_pa9 &usart1_rx_pa10>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+
+	modbus0 {
+		compatible = "zephyr,modbus-serial";
+		status = "okay";
+		de-gpios = <&gpiog 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+	};
+};
+
+/* ---- ADC1 — 12-channel internal ADC ---- */
+
+&adc1 {
+	pinctrl-0 = <
+		&adc1_in1_pa1  &adc1_in2_pa2  &adc1_in3_pa3
+		&adc1_in4_pa4  &adc1_in5_pa5  &adc1_in6_pa6
+		&adc1_in7_pa7  &adc1_in8_pb0  &adc1_in9_pb1
+		&adc1_in10_pc0 &adc1_in11_pc1 &adc1_in12_pc2
+		&adc1_in13_pc3 &adc1_in14_pc4 &adc1_in15_pc5
+	>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+/* ---- ADC3 — 5-channel (PF6–PF10, ADC3-only) ---- */
+
+&adc3 {
+	pinctrl-0 = <
+		&adc3_in4_pf6 &adc3_in5_pf7
+		&adc3_in6_pf8 &adc3_in7_pf9 &adc3_in8_pf10
+	>;
+	pinctrl-names = "default";
+	/* ADC3 uses the generic st,stm32-adc compatible — these are required */
+	st,adc-clock-source = <SYNC>;
+	st,adc-prescaler = <6>;
+	resolutions = <STM32F1_ADC_RES(12)>;
+	sampling-times = <2 8 14 29 42 56 72 240>;
+	st,adc-sequencer = <FULLY_CONFIGURABLE>;
+	status = "okay";
+};
+
+/* ---- Watchdog ---- */
+
+&iwdg {
+	status = "okay";
+};
+
+/* ---- NVS storage — last 8 KB of 512 KB flash (4 × 2 KB pages) ---- */
+
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		storage_partition: partition@7e000 {
+			label = "storage";
+			reg = <0x0007e000 DT_SIZE_K(8)>;
+		};
+	};
+};
+
+/* ---- Pinctrl ---- */
+
+&pinctrl {
+	/* USART1 (Modbus RTU, no remap) */
+	usart1_tx_pa9: usart1_tx_pa9 {
+		pinmux = <STM32F1_PINMUX('A', 9, ALTERNATE, NO_REMAP)>;
+	};
+	usart1_rx_pa10: usart1_rx_pa10 {
+		pinmux = <STM32F1_PINMUX('A', 10, GPIO_IN, NO_REMAP)>;
+		bias-pull-up;
+	};
+
+	/* USART3 (console, no remap — PB10/PB11) */
+	usart3_tx_pb10: usart3_tx_pb10 {
+		pinmux = <STM32F1_PINMUX('B', 10, ALTERNATE, NO_REMAP)>;
+	};
+	usart3_rx_pb11: usart3_rx_pb11 {
+		pinmux = <STM32F1_PINMUX('B', 11, GPIO_IN, NO_REMAP)>;
+		bias-pull-up;
+	};
+
+	/* ADC1 analog inputs */
+	adc1_in1_pa1:  adc1_in1_pa1  { pinmux = <STM32F1_PINMUX('A', 1,  ANALOG, NO_REMAP)>; };
+	adc1_in2_pa2:  adc1_in2_pa2  { pinmux = <STM32F1_PINMUX('A', 2,  ANALOG, NO_REMAP)>; };
+	adc1_in3_pa3:  adc1_in3_pa3  { pinmux = <STM32F1_PINMUX('A', 3,  ANALOG, NO_REMAP)>; };
+	adc1_in4_pa4:  adc1_in4_pa4  { pinmux = <STM32F1_PINMUX('A', 4,  ANALOG, NO_REMAP)>; };
+	adc1_in5_pa5:  adc1_in5_pa5  { pinmux = <STM32F1_PINMUX('A', 5,  ANALOG, NO_REMAP)>; };
+	adc1_in6_pa6:  adc1_in6_pa6  { pinmux = <STM32F1_PINMUX('A', 6,  ANALOG, NO_REMAP)>; };
+	adc1_in7_pa7:  adc1_in7_pa7  { pinmux = <STM32F1_PINMUX('A', 7,  ANALOG, NO_REMAP)>; };
+	adc1_in8_pb0:  adc1_in8_pb0  { pinmux = <STM32F1_PINMUX('B', 0,  ANALOG, NO_REMAP)>; };
+	adc1_in9_pb1:  adc1_in9_pb1  { pinmux = <STM32F1_PINMUX('B', 1,  ANALOG, NO_REMAP)>; };
+	adc1_in10_pc0: adc1_in10_pc0 { pinmux = <STM32F1_PINMUX('C', 0,  ANALOG, NO_REMAP)>; };
+	adc1_in11_pc1: adc1_in11_pc1 { pinmux = <STM32F1_PINMUX('C', 1,  ANALOG, NO_REMAP)>; };
+	adc1_in12_pc2: adc1_in12_pc2 { pinmux = <STM32F1_PINMUX('C', 2,  ANALOG, NO_REMAP)>; };
+	adc1_in13_pc3: adc1_in13_pc3 { pinmux = <STM32F1_PINMUX('C', 3,  ANALOG, NO_REMAP)>; };
+	adc1_in14_pc4: adc1_in14_pc4 { pinmux = <STM32F1_PINMUX('C', 4,  ANALOG, NO_REMAP)>; };
+	adc1_in15_pc5: adc1_in15_pc5 { pinmux = <STM32F1_PINMUX('C', 5,  ANALOG, NO_REMAP)>; };
+
+	/* ADC3 analog inputs (PF6–PF10, ADC3-exclusive channels) */
+	adc3_in4_pf6:  adc3_in4_pf6  { pinmux = <STM32F1_PINMUX('F', 6,  ANALOG, NO_REMAP)>; };
+	adc3_in5_pf7:  adc3_in5_pf7  { pinmux = <STM32F1_PINMUX('F', 7,  ANALOG, NO_REMAP)>; };
+	adc3_in6_pf8:  adc3_in6_pf8  { pinmux = <STM32F1_PINMUX('F', 8,  ANALOG, NO_REMAP)>; };
+	adc3_in7_pf9:  adc3_in7_pf9  { pinmux = <STM32F1_PINMUX('F', 9,  ANALOG, NO_REMAP)>; };
+	adc3_in8_pf10: adc3_in8_pf10 { pinmux = <STM32F1_PINMUX('F', 10, ANALOG, NO_REMAP)>; };
+};

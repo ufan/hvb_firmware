@@ -1,0 +1,53 @@
+# Copyright (c) 2026 Jianwei
+# SPDX-License-Identifier: Apache-2.0
+
+description: LVB Virtual Voltage Channel (child of vc-controller)
+
+compatible: "jianwei,lvb-vc-channel"
+
+properties:
+  reg:
+    type: array
+    required: true
+    description: Channel index (0-based).
+  label:
+    type: string
+    required: true
+    description: Human-readable channel name.
+  capabilities:
+    type: int
+    required: true
+    description: Bitmask of CH_CAP_* flags.
+  enable-gpios:
+    type: phandle-array
+    required: true
+    description: GPIO that enables channel output (active-high).
+  io-channels:
+    type: phandle-array
+    required: true
+    description: ADC channel references; must match io-channel-names order.
+  io-channel-names:
+    type: string-array
+    required: true
+    description: Must contain "voltage" and "current" (in that order).
+  calib-current-b:
+    type: int
+    required: false
+    default: 0
+    description: >
+      Initial value for measured_current_calib_b (int16_t). Represents the
+      ADC reading at zero current (negated: if zero-current raw = 1822,
+      set -1822). Loaded as the channel's default measured_current_calib_b
+      at first boot; can be refined via the calibration workflow.
+  sample-rate-ms:
+    type: int
+    required: false
+    description: >
+      Per-sample timer interval in ms. Overrides
+      CONFIG_LVB_VC_DEFAULT_SAMPLE_RATE_MS for this specific channel.
+  oversample-count:
+    type: int
+    required: false
+    description: >
+      Number of ADC samples averaged before one measurement is reported.
+      Overrides CONFIG_LVB_VC_OVERSAMPLE_COUNT for this specific channel.
