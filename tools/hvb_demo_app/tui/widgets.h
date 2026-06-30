@@ -169,9 +169,12 @@ inline Component CommitInput(std::string* val,
 // Button-backed inline dropdown.
 // Renders as "[current ▾]". Space/←/→ cycles; Enter commits.
 // Uses Button so it participates in FTXUI's Tab-focus chain.
+// autoCommit=true: commits on every cycle event (click/Space/Arrow), not just Enter.
+// Use for cyclers that should take effect immediately (e.g. mode selector in menu bar).
 inline Component InlineCycler(std::vector<std::string> opts,
                                int* sel,
-                               std::function<void()> onCommit) {
+                               std::function<void()> onCommit,
+                               bool autoCommit = false) {
     auto optsPtr = std::make_shared<std::vector<std::string>>(std::move(opts));
     auto bopt    = ButtonOption{};
     bopt.transform = [sel, optsPtr](const EntryState& es) -> Element {
@@ -181,14 +184,21 @@ inline Component InlineCycler(std::vector<std::string> opts,
         return e;
     };
     // onClick: cycle forward (mouse-click support)
-    auto btn = Button("", [sel, optsPtr] { *sel = (*sel + 1) % static_cast<int>(optsPtr->size()); }, bopt);
-    return CatchEvent(btn, [sel, optsPtr, onCommit](Event e) {
+    auto btn = Button("", [sel, optsPtr, onCommit, autoCommit] {
+        *sel = (*sel + 1) % static_cast<int>(optsPtr->size());
+        if (autoCommit) onCommit();
+    }, bopt);
+    return CatchEvent(btn, [sel, optsPtr, onCommit, autoCommit](Event e) {
         int n = static_cast<int>(optsPtr->size());
         if (e == Event::Character(' ') || e == Event::ArrowRight) {
-            *sel = (*sel + 1) % n; return true;
+            *sel = (*sel + 1) % n;
+            if (autoCommit) onCommit();
+            return true;
         }
         if (e == Event::ArrowLeft) {
-            *sel = (*sel - 1 + n) % n; return true;
+            *sel = (*sel - 1 + n) % n;
+            if (autoCommit) onCommit();
+            return true;
         }
         if (e == Event::Return) { onCommit(); return true; }
         return false;

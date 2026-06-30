@@ -16,6 +16,10 @@ struct MonitorRow {
 // Build one row — creates all widgets, returns them in a MonitorRow.
 inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     auto refreshCh = [&s, &inputs, ch]() {
+        // Read live status first so the button label updates immediately after toggle.
+        // doPollScan skips inactive channels (not in activeChMask), so without this
+        // call a just-disabled channel would stay showing "ON" until the next full scan.
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
         s.data.chCfg[ch] = s.client.readChannelConfig(ch, s.data.chInfo[ch].chCapFlags);
         syncDataToInputs(s.data, inputs);
     };
@@ -94,7 +98,8 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     });
 
     return MonitorRow{
-        CatchEvent(rowWidgets, [&s, ch](Event) {
+        CatchEvent(rowWidgets, [&s, ch](Event e) {
+            if (e.is_mouse()) return false;  // let mouse events pass; parent checks bounds
             return !s.data.valid || ch >= s.data.numChannels();
         }),
         statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp,
@@ -135,7 +140,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
         {
             std::vector<Element> hdr;
             for (const auto& h : kHeaders)
-                hdr.push_back(text(h) | bold | flex_shrink);
+                hdr.push_back(text(h) | bold);
             grid.push_back(std::move(hdr));
         }
 
@@ -149,21 +154,21 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
             snprintf(chLabel, sizeof(chLabel), "CH%-2d", ch);
 
             std::vector<Element> cells;
-            cells.push_back(text(chLabel));                                   // CH
-            cells.push_back(hasOut ? rows->at(ch).vsetInp->Render() | flex_shrink  // Vset
+            cells.push_back(text(chLabel) | size(WIDTH, GREATER_THAN, 4));
+            cells.push_back(hasOut ? rows->at(ch).vsetInp->Render() | size(WIDTH, EQUAL, 8)
+                                   : text(" -- ") | dim | size(WIDTH, EQUAL, 8));
+            cells.push_back(hasOut ? rows->at(ch).statusBtn->Render()
                                    : text(" -- ") | dim);
-            cells.push_back(hasOut ? rows->at(ch).statusBtn->Render() | flex_shrink  // Status
-                                   : text(" -- ") | dim);
-            cells.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | flex_shrink);  // Vop
-            cells.push_back(text(fmtVoltage(ci.voltageRaw)) | flex_shrink);                 // V (V)
-            cells.push_back(text(fmtCurrentNA(ci.currentRaw)) | flex_shrink);               // I (nA)
-            cells.push_back(hasOut ? rows->at(ch).rampUpInp->Render() | flex_shrink         // Ru
-                                   : text(" -- ") | dim);
-            cells.push_back(hasOut ? rows->at(ch).rampDownInp->Render() | flex_shrink       // Rd
-                                   : text(" -- ") | dim);
-            cells.push_back(hasOut ? rows->at(ch).iLimitInp->Render() | flex_shrink         // Limit
-                                   : text(" -- ") | dim);
-            cells.push_back(text(faultStr(ci.activeFault)) | flex_shrink);                  // Fault
+            cells.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | size(WIDTH, GREATER_THAN, 9));
+            cells.push_back(text(fmtVoltage(ci.voltageRaw)) | size(WIDTH, GREATER_THAN, 9));
+            cells.push_back(text(fmtCurrentNA(ci.currentRaw)) | size(WIDTH, GREATER_THAN, 10));
+            cells.push_back(hasOut ? rows->at(ch).rampUpInp->Render() | size(WIDTH, EQUAL, 7)
+                                   : text(" -- ") | dim | size(WIDTH, EQUAL, 7));
+            cells.push_back(hasOut ? rows->at(ch).rampDownInp->Render() | size(WIDTH, EQUAL, 7)
+                                   : text(" -- ") | dim | size(WIDTH, EQUAL, 7));
+            cells.push_back(hasOut ? rows->at(ch).iLimitInp->Render() | size(WIDTH, EQUAL, 9)
+                                   : text(" -- ") | dim | size(WIDTH, EQUAL, 9));
+            cells.push_back(text(faultStr(ci.activeFault)) | size(WIDTH, GREATER_THAN, 6));
 
             grid.push_back(std::move(cells));
         }
