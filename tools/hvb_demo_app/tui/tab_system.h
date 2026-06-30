@@ -11,7 +11,7 @@ inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
     static const std::vector<std::string> kStartupPolicy = {"Load NVS Config", "Factory Default"};
 
     auto onOpMode  = [&s, &inputs] {
-        writeSync(s, inputs, "OpMode",
+        postWrite(s, inputs, "OpMode",
             [&s, &inputs] { return s.client.writeOperatingMode(static_cast<OpMode>(inputs.opModeIdx)); },
             [&s, &inputs] {
                 s.data.sysCfg = s.client.readSystemConfig();
@@ -19,19 +19,19 @@ inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
             });
     };
     auto onBaud    = [&s, &inputs] {
-        writeSync(s, inputs, "BaudRate",
+        postWrite(s, inputs, "BaudRate",
             [&s, &inputs] { return s.client.writeBaudRateCode((uint16_t)inputs.baudIdx); },
             [&s, &inputs] { s.data.sysCfg = s.client.readSystemConfig(); });
     };
     auto onSlave   = [&s, &inputs] {
         try { uint16_t a = (uint16_t)std::stoul(inputs.slaveAddr);
-              writeSync(s, inputs, "SlaveAddr",
+              postWrite(s, inputs, "SlaveAddr",
                   [&s, a] { return s.client.writeSlaveAddress(a); },
                   [&s, &inputs] { s.data.sysCfg = s.client.readSystemConfig(); });
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid slave address"; }
     };
     auto onStartup = [&s, &inputs] {
-        writeSync(s, inputs, "StartupPolicy",
+        postWrite(s, inputs, "StartupPolicy",
             [&s, &inputs] { return s.client.writeStartupChannelPolicy((uint16_t)inputs.startupIdx); },
             [&s, &inputs] { s.data.sysCfg = s.client.readSystemConfig(); });
     };
@@ -42,15 +42,15 @@ inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
     auto slaveInp     = CommitInput(&inputs.slaveAddr, "1", onSlave);
 
     auto bSave    = ActionButton("Save",    [&s, &inputs]{
-        writeSync(s, inputs, "Save", [&s]{ return s.client.sendParamAction(-1, ParamAction::Save); },
+        postWrite(s, inputs, "Save", [&s]{ return s.client.sendParamAction(-1, ParamAction::Save); },
                   [&s, &inputs]{ s.data.sysCfg = s.client.readSystemConfig(); syncDataToInputs(s.data, inputs); });
     });
     auto bLoad    = ActionButton("Load",    [&s, &inputs]{
-        writeSync(s, inputs, "Load", [&s]{ return s.client.sendParamAction(-1, ParamAction::Load); },
+        postWrite(s, inputs, "Load", [&s]{ return s.client.sendParamAction(-1, ParamAction::Load); },
                   [&s, &inputs]{ s.data.sysCfg = s.client.readSystemConfig(); syncDataToInputs(s.data, inputs); });
     });
     auto bFactory = ActionButton("Factory", [&s, &inputs]{
-        writeSync(s, inputs, "Factory", [&s]{ return s.client.sendParamAction(-1, ParamAction::FactoryReset); },
+        postWrite(s, inputs, "Factory", [&s]{ return s.client.sendParamAction(-1, ParamAction::FactoryReset); },
                   [&s, &inputs]{ s.data.sysCfg = s.client.readSystemConfig(); syncDataToInputs(s.data, inputs); });
     });
 

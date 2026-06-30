@@ -16,9 +16,7 @@ struct MonitorRow {
 // Build one row — creates all widgets, returns them in a MonitorRow.
 inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     auto refreshCh = [&s, &inputs, ch]() {
-        uint16_t caps = s.data.chInfo[ch].chCapFlags;
-        s.data.chCfg[ch] = s.client.readChannelConfig(ch, caps);
-        s.data.chCalCfg[ch] = s.client.readChannelCalConfig(ch, caps);
+        s.data.chCfg[ch] = s.client.readChannelConfig(ch, s.data.chInfo[ch].chCapFlags);
         syncDataToInputs(s.data, inputs);
     };
 
@@ -26,7 +24,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     auto vsetInp = CommitInput(&inputs.targetV[ch], "+0.0", [&s, &inputs, ch, refreshCh] {
         try {
             auto raw = reg::voltageFromV(std::stod(inputs.targetV[ch]));
-            writeSync(s, inputs, "Target V",
+            postWrite(s, inputs, "Target V",
                 [&s, ch, raw] { return s.client.writeConfiguredTargetVoltage(ch, raw); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
@@ -49,7 +47,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         uint16_t st = s.data.chInfo[ch].status;
         bool on = (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0;
         OutputAction act = on ? OutputAction::DisableGraceful : OutputAction::Enable;
-        writeSync(s, inputs, on ? "Dis-Grace" : "Enable",
+        postWrite(s, inputs, on ? "Dis-Grace" : "Enable",
             [&s, ch, act] { return s.client.sendOutputAction(ch, act); },
             refreshCh);
     }, bopt);
@@ -58,7 +56,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     auto rampUpInp = CommitInput(&inputs.ruStep[ch], "0.0", [&s, &inputs, ch, refreshCh] {
         try {
             auto stepRaw = reg::voltageFromV(std::stod(inputs.ruStep[ch]));
-            writeSync(s, inputs, "Ramp Up",
+            postWrite(s, inputs, "Ramp Up",
                 [&s, ch, stepRaw] { return s.client.writeRampUp(ch, stepRaw, s.data.chCfg[ch].rampUpInterval); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-up value"; }
@@ -68,7 +66,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     auto rampDownInp = CommitInput(&inputs.rdStep[ch], "0.0", [&s, &inputs, ch, refreshCh] {
         try {
             auto stepRaw = reg::voltageFromV(std::stod(inputs.rdStep[ch]));
-            writeSync(s, inputs, "Ramp Down",
+            postWrite(s, inputs, "Ramp Down",
                 [&s, ch, stepRaw] { return s.client.writeRampDown(ch, stepRaw, s.data.chCfg[ch].rampDownInterval); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-down value"; }
@@ -77,10 +75,15 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     // ---- I-limit Input ----
     auto iLimitInp = CommitInput(&inputs.iThr[ch], "0", [&s, &inputs, ch, refreshCh] {
         try {
+            static constexpr OutputAction kIActVals[] = {
+                OutputAction::None, OutputAction::DisableGraceful,
+                OutputAction::DisableImmediate, OutputAction::ForceOutputZero
+            };
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
-            auto action = static_cast<OutputAction>(inputs.iActIdx[ch]);
+            int  iIdx   = inputs.iActIdx[ch];
+            auto action = kIActVals[iIdx >= 0 && iIdx < 4 ? iIdx : 0];
             auto raw    = static_cast<int16_t>(std::stod(inputs.iThr[ch]) + 0.5);
-            writeSync(s, inputs, "I Limit",
+            postWrite(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); },
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }

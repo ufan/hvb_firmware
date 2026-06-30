@@ -8,7 +8,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <mutex>
+#include <queue>
 #include <thread>
 
 using namespace ftxui;
@@ -17,7 +19,6 @@ static hvb::HvbModbusClient g_client;
 static hvb::ConfigManager   g_cfg;
 static std::atomic<bool>    g_connected{false};
 static int g_pollInterval = 1;
-static std::mutex           g_scanMutex;
 
 /* Full scan — used at connect time and on manual Refresh. */
 static void doFullScan(hvb::tui::ScannedData& data) {
@@ -74,20 +75,40 @@ int main(int argc, char** argv) {
     std::mutex  statusMutex;
     hvb::tui::ScannedData data;
     std::atomic<bool> running{true};
+    std::atomic<int>  pendingChannelCount{-1};
+    std::atomic<bool> pendingSync{false};
+    std::queue<std::function<void()>> workQueue;
+    std::mutex                        workMutex;
+    std::condition_variable           workCv;
 
-    hvb::tui::AppState appState{g_client, g_connected, data, statusMsg, statusMutex, g_scanMutex, screen};
+    hvb::tui::AppState appState{g_client, g_connected, data, statusMsg, statusMutex, workQueue, workMutex, workCv, screen};
     hvb::tui::ConfigInputs inputs;
 
-    // ---- Poll thread ----
-    std::thread pollThread([&] {
+    // ---- Modbus worker thread — serialises all serial I/O; never blocks the UI ----
+    std::thread modbusWorker([&] {
         while (running) {
-            if (g_connected) {
-                { std::lock_guard<std::mutex> lk(g_scanMutex); doPollScan(data); }
+            {
+                std::unique_lock<std::mutex> lk(workMutex);
+                workCv.wait_for(lk, std::chrono::seconds(g_pollInterval),
+                    [&] { return !workQueue.empty() || !running; });
+            }
+            // Drain all queued work items (writes, full scans) before polling
+            for (;;) {
+                std::function<void()> item;
+                {
+                    std::lock_guard<std::mutex> lk(workMutex);
+                    if (workQueue.empty()) break;
+                    item = std::move(workQueue.front());
+                    workQueue.pop();
+                }
+                item();
+            }
+            // Periodic status poll
+            if (running && g_connected) {
+                doPollScan(data);
                 data.valid = g_client.isConnected();
                 if (running) screen.PostEvent(Event::Custom);
             }
-            for (int i = 0; i < g_pollInterval * 10 && running; ++i)
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     });
 
@@ -117,13 +138,24 @@ int main(int argc, char** argv) {
                 if (ok) g_client.disconnect();
                 ok = false;
             }
+            if (!running) {  // Quit pressed while connecting — locals are being destroyed
+                if (ok) g_client.disconnect();
+                connecting = false;
+                return;
+            }
             if (ok) {
-                { std::lock_guard<std::mutex> lk(g_scanMutex); doFullScan(data); }
-                data.valid = true;
-                hvb::tui::syncDataToInputs(data, inputs);
-                rebuildChannelTitles(tabTitles, data.numChannels());
-                int maxTab = static_cast<int>(tabTitles.size()) - 1;
-                if (activeTab > maxTab) activeTab = maxTab;
+                // Post full scan + UI sync to worker — all Modbus I/O stays on one thread.
+                {
+                    std::lock_guard<std::mutex> lk(workMutex);
+                    workQueue.push([&] {
+                        doFullScan(data);
+                        data.valid = true;
+                        pendingChannelCount.store(data.numChannels(), std::memory_order_release);
+                        pendingSync.store(true, std::memory_order_release);
+                        screen.PostEvent(Event::Custom);
+                    });
+                }
+                workCv.notify_one();
             }
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - connectStart).count();
@@ -146,12 +178,14 @@ int main(int argc, char** argv) {
     // ---- Menu bar buttons ----
     auto bConnect    = hvb::tui::ActionButton("Connect",    [&] { if (!g_connected && !connecting) doConnect(); });
     auto bDisconnect = hvb::tui::ActionButton("Disconnect", [&] {
+        abortConnect = true;  // cancel any in-flight connect thread
         g_connected = false; data.valid = false;
+        g_client.disconnect();
         tabTitles = {"Monitor"}; activeTab = std::min(activeTab, 0);
         { std::lock_guard<std::mutex> lk(statusMutex); statusMsg = "Disconnected"; }
     });
     auto bQuit = hvb::tui::ActionButton("Quit", [&] {
-        running = false; screen.ExitLoopClosure()();
+        running = false; workCv.notify_all(); screen.ExitLoopClosure()();
     });
 
     // ---- SysConfig popup ----
@@ -161,18 +195,18 @@ int main(int argc, char** argv) {
     auto bSysCfg = hvb::tui::ActionButton("SysConfig", [&] { showSysCfg = !showSysCfg; screen.PostEvent(Event::Custom); });
 
     auto scOpMode  = hvb::tui::InlineCycler(kOpModes, &inputs.opModeIdx, [&]{
-        hvb::tui::writeSync(appState, inputs, "OpMode",
+        hvb::tui::postWrite(appState, inputs, "OpMode",
             [&]{ return g_client.writeOperatingMode(static_cast<hvb::OpMode>(inputs.opModeIdx)); },
             [&]{ data.sysCfg = g_client.readSystemConfig(); });
     });
     auto scStartup = hvb::tui::InlineCycler(kStartPol, &inputs.startupIdx, [&]{
-        hvb::tui::writeSync(appState, inputs, "StartupPol",
+        hvb::tui::postWrite(appState, inputs, "StartupPol",
             [&]{ return g_client.writeStartupChannelPolicy((uint16_t)inputs.startupIdx); },
             [&]{ data.sysCfg = g_client.readSystemConfig(); });
     });
-    auto scSave    = Button("Save",    [&]{ hvb::tui::writeSync(appState, inputs, "Save", [&]{ return g_client.sendParamAction(-1, hvb::ParamAction::Save); }, [&]{ data.sysCfg = g_client.readSystemConfig(); }); });
-    auto scLoad    = Button("Load",    [&]{ hvb::tui::writeSync(appState, inputs, "Load", [&]{ return g_client.sendParamAction(-1, hvb::ParamAction::Load); }, [&]{ data.sysCfg = g_client.readSystemConfig(); }); });
-    auto scFactory = Button("Factory", [&]{ hvb::tui::writeSync(appState, inputs, "Factory", [&]{ return g_client.sendParamAction(-1, hvb::ParamAction::FactoryReset); }, [&]{ data.sysCfg = g_client.readSystemConfig(); }); });
+    auto scSave    = Button("Save",    [&]{ hvb::tui::postWrite(appState, inputs, "Save", [&]{ return g_client.sendParamAction(-1, hvb::ParamAction::Save); }, [&]{ data.sysCfg = g_client.readSystemConfig(); }); });
+    auto scLoad    = Button("Load",    [&]{ hvb::tui::postWrite(appState, inputs, "Load", [&]{ return g_client.sendParamAction(-1, hvb::ParamAction::Load); }, [&]{ data.sysCfg = g_client.readSystemConfig(); }); });
+    auto scFactory = Button("Factory", [&]{ hvb::tui::postWrite(appState, inputs, "Factory", [&]{ return g_client.sendParamAction(-1, hvb::ParamAction::FactoryReset); }, [&]{ data.sysCfg = g_client.readSystemConfig(); }); });
     auto scClose   = Button("Close", [&]{ showSysCfg = false; screen.PostEvent(Event::Custom); });
 
     auto sysCfgForm = Container::Vertical({scOpMode, scStartup, scSave, scLoad, scFactory, scClose});
@@ -218,6 +252,16 @@ int main(int argc, char** argv) {
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
     auto root = Renderer(mainContainer, [&] {
+        // Apply any pending post-connect state update on the UI thread to avoid races
+        // on tabTitles, activeTab, and inputs (bound to FTXUI widgets by raw pointer).
+        if (pendingSync.exchange(false, std::memory_order_acq_rel)) {
+            int nc = pendingChannelCount.load(std::memory_order_acquire);
+            rebuildChannelTitles(tabTitles, nc);
+            int maxTab = static_cast<int>(tabTitles.size()) - 1;
+            if (activeTab > maxTab) activeTab = maxTab;
+            hvb::tui::syncDataToInputs(data, inputs);
+        }
+
         std::string msg;
         { std::lock_guard<std::mutex> lk(statusMutex); msg = statusMsg; }
 
@@ -298,26 +342,13 @@ int main(int argc, char** argv) {
         return false;
     });
 
-    // Auto-connect if port given on command line
-    if (!portArg.empty()) {
-        std::thread([&] {
-            bool ok = g_client.connect(portArg, baudArg, slaveArg, timeoutArg);
-            g_connected = ok;
-            if (ok) {
-                { std::lock_guard<std::mutex> lk(g_scanMutex); doFullScan(data); }
-                data.valid = true;
-                hvb::tui::syncDataToInputs(data, inputs);
-                rebuildChannelTitles(tabTitles, data.numChannels());
-            }
-            { std::lock_guard<std::mutex> lk(statusMutex);
-              statusMsg = ok ? "" : "Error: " + g_client.lastError(); }
-            screen.PostEvent(Event::Custom);
-        }).detach();
-    }
+    // Auto-connect if port given on command line — reuse doConnect so all guards apply.
+    if (!portArg.empty()) doConnect();
 
     screen.Loop(root);
     running = false;
-    if (pollThread.joinable()) pollThread.join();
+    workCv.notify_all();
+    if (modbusWorker.joinable()) modbusWorker.join();
     g_client.disconnect();
     return 0;
 }

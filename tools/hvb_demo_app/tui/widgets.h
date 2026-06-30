@@ -6,9 +6,11 @@
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <string>
 #include <thread>
 #include <vector>
@@ -18,13 +20,15 @@ namespace hvb::tui {
 using namespace ftxui;
 
 struct AppState {
-    hvb::HvbModbusClient&     client;
-    std::atomic<bool>&        connected;
-    ScannedData&              data;
-    std::string&              statusMsg;
-    std::mutex&               statusMutex;  // guards statusMsg cross-thread writes
-    std::mutex&               scanMutex;    // serialises all Modbus transactions
-    ftxui::ScreenInteractive& screen;
+    hvb::HvbModbusClient&                    client;
+    std::atomic<bool>&                       connected;
+    ScannedData&                             data;
+    std::string&                             statusMsg;
+    std::mutex&                              statusMutex;  // guards statusMsg
+    std::queue<std::function<void()>>&       workQueue;    // Modbus worker queue
+    std::mutex&                              workMutex;    // guards workQueue
+    std::condition_variable&                 workCv;       // wakes modbusWorker
+    ftxui::ScreenInteractive&               screen;
 };
 
 // Shared config-input state — single source of truth for all tabs.
@@ -56,13 +60,24 @@ struct ConfigInputs {
     std::string iBand       [MAX_CHANNELS];
 };
 
+// Maps a raw OutputAction ordinal to the 4-slot cycler index used by InlineCycler widgets.
+// kIActVals = {None(0), DisGraceful(1), DisImm(2), ForceZero(3)} — Enable is excluded.
+inline int outputActionToIdx(OutputAction a) {
+    switch (a) {
+    case OutputAction::DisableGraceful:  return 1;
+    case OutputAction::DisableImmediate: return 2;
+    case OutputAction::ForceOutputZero:  return 3;
+    default:                             return 0;
+    }
+}
+
 inline void syncDataToInputs(const ScannedData& data, ConfigInputs& cfg) {
     if (!data.valid) return;
 
     // System fields
     const auto& sc = data.sysCfg;
     cfg.slaveAddr  = std::to_string(sc.slaveAddr);
-    cfg.opModeIdx  = static_cast<int>(sc.operatingMode);
+    cfg.opModeIdx  = std::min(static_cast<int>(sc.operatingMode), 1);  // kOpModes has 2 entries
     cfg.baudIdx    = static_cast<int>(sc.baudRateCode);
     cfg.startupIdx = static_cast<int>(sc.startupChannelPolicy);
 
@@ -102,7 +117,7 @@ inline void syncDataToInputs(const ScannedData& data, ConfigInputs& cfg) {
         cfg.rdInt[ch]      = std::to_string(cc.rampDownInterval);
         cfg.derateStep[ch] = std::to_string(cc.derateStepRaw);
         cfg.iModeIdx[ch]   = static_cast<int>(cc.iProtMode);
-        cfg.iActIdx[ch]    = static_cast<int>(cc.iProtOutputAction);
+        cfg.iActIdx[ch]    = outputActionToIdx(cc.iProtOutputAction);
         cfg.recovIdx[ch]   = static_cast<int>(cc.recoveryPolicyMode);
         cfg.retryDelay[ch]  = std::to_string(cc.autoRetryDelay);
         cfg.retryMax[ch]    = std::to_string(cc.autoRetryMaxCount);
@@ -111,26 +126,31 @@ inline void syncDataToInputs(const ScannedData& data, ConfigInputs& cfg) {
     }
 }
 
-// Blocking write — acquires scanMutex, runs writeFn, reads back config on success.
-inline void writeSync(AppState& s, ConfigInputs& inputs,
+// Non-blocking write — enqueues a work item on the Modbus worker thread and
+// returns immediately so the FTXUI event loop is never stalled.
+inline void postWrite(AppState& s, ConfigInputs& inputs,
                       const std::string& label,
                       std::function<bool()> writeFn,
                       std::function<void()> refreshFn) {
+    // Show "Writing..." before the worker starts — UI thread is free to render it.
     { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Writing " + label + "..."; }
     s.screen.PostEvent(Event::Custom);
 
-    bool ok;
-    { std::lock_guard<std::mutex> lk(s.scanMutex); ok = writeFn(); }
+    std::function<void()> item = [&s, &inputs, label, writeFn, refreshFn] {
+        bool ok = writeFn();
+        if (ok) refreshFn();
+        if (ok) {
+            syncDataToInputs(s.data, inputs);
+            { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "OK: " + label; }
+        } else {
+            { std::lock_guard<std::mutex> lk(s.statusMutex);
+              s.statusMsg = "Error: " + s.client.lastError(); }
+        }
+        s.screen.PostEvent(Event::Custom);
+    };
 
-    if (ok) {
-        refreshFn();
-        syncDataToInputs(s.data, inputs);
-        { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "OK: " + label; }
-    } else {
-        { std::lock_guard<std::mutex> lk(s.statusMutex);
-          s.statusMsg = "Error: " + s.client.lastError(); }
-    }
-    s.screen.PostEvent(Event::Custom);
+    { std::lock_guard<std::mutex> lk(s.workMutex); s.workQueue.push(std::move(item)); }
+    s.workCv.notify_one();
 }
 
 

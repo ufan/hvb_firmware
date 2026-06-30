@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "register_map.h"
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -15,7 +16,7 @@ struct ScannedData {
     hvb::SystemConfig     sysCfg{};
     hvb::ChannelConfig    chCfg[MAX_CHANNELS]{};
     hvb::ChannelCalConfig chCalCfg[MAX_CHANNELS]{};
-    bool valid = false;
+    std::atomic<bool> valid{false};
 
     // Number of channels to iterate over — 0 before first sysInfo read.
     int numChannels() const {

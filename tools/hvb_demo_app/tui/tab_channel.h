@@ -23,7 +23,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     auto onTarget = [&s, &inputs, refreshCh, ch] {
         try {
             auto raw = reg::voltageFromV(std::stod(inputs.targetV[ch]));
-            writeSync(s, inputs, "Target V",
+            postWrite(s, inputs, "Target V",
                 [&s, ch, raw] { return s.client.writeConfiguredTargetVoltage(ch, raw); }, refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
     };
@@ -31,7 +31,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         try {
             auto stepRaw = reg::voltageFromV(std::stod(inputs.ruStep[ch]));
             auto iv = s.data.chCfg[ch].rampUpInterval;
-            writeSync(s, inputs, "Ramp Up",
+            postWrite(s, inputs, "Ramp Up",
                 [&s, ch, stepRaw, iv] { return s.client.writeRampUp(ch, stepRaw, iv); }, refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
     };
@@ -39,7 +39,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         try {
             auto stepRaw = reg::voltageFromV(std::stod(inputs.rdStep[ch]));
             auto iv = s.data.chCfg[ch].rampDownInterval;
-            writeSync(s, inputs, "Ramp Down",
+            postWrite(s, inputs, "Ramp Down",
                 [&s, ch, stepRaw, iv] { return s.client.writeRampDown(ch, stepRaw, iv); }, refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
     };
@@ -49,9 +49,9 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     auto rdStepInp = CommitInput(&inputs.rdStep[ch],    "0.0",  onRampDown);
 
     auto bEnable  = ActionButton("Enable",    [&s, &inputs, refreshCh, ch]{
-        writeSync(s, inputs, "Enable", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::Enable); }, refreshCh); });
+        postWrite(s, inputs, "Enable", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::Enable); }, refreshCh); });
     auto bDisGra  = ActionButton("Dis-Grace", [&s, &inputs, refreshCh, ch]{
-        writeSync(s, inputs, "Dis-Grace", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableGraceful); }, refreshCh); });
+        postWrite(s, inputs, "Dis-Grace", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableGraceful); }, refreshCh); });
 
     // ---- Protection ----
     auto onIProt = [&s, &inputs, refreshCh, ch] {
@@ -59,7 +59,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
             auto action = kIActVals.at(inputs.iActIdx[ch]);
             auto raw    = static_cast<int16_t>(std::stod(inputs.iThr[ch]) + 0.5);
-            writeSync(s, inputs, "I Limit",
+            postWrite(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); }, refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
     };
@@ -73,21 +73,21 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
             auto pol = static_cast<RecoveryPolicy>(inputs.recovIdx[ch]);
             int d = std::stoi(inputs.retryDelay[ch]), m = std::stoi(inputs.retryMax[ch]),
                 w = std::stoi(inputs.retryWindow[ch]);
-            writeSync(s, inputs, "Recovery",
+            postWrite(s, inputs, "Recovery",
                 [&s, ch, pol, d, m, w] { return s.client.writeChannelRecovery(ch, pol, d, m, w); }, refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid recovery value"; }
     };
     auto onDerate = [&s, &inputs, refreshCh, ch] {
         try {
             auto step = (uint16_t)std::stoul(inputs.derateStep[ch]);
-            writeSync(s, inputs, "Derate",
+            postWrite(s, inputs, "Derate",
                 [&s, ch, step] { return s.client.writeDerateStep(ch, step); }, refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid derate step"; }
     };
     auto onBand = [&s, &inputs, refreshCh, ch] {
         try {
             uint16_t pct = (uint16_t)std::stoul(inputs.iBand[ch]);
-            writeSync(s, inputs, "SafeBand",
+            postWrite(s, inputs, "SafeBand",
                 [&s, ch, pct] { return s.client.writeChannelSafeBand(ch, pct); }, refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid safe-band value"; }
     };
@@ -99,17 +99,17 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     auto iBandInp = CommitInput(&inputs.iBand[ch],       "10", onBand);
 
     auto bClrAct  = ActionButton("ClrActive", [&s, &inputs, refreshCh, ch]{
-        writeSync(s, inputs, "ClrActive", [&s, ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearActiveFaultBlock); }, refreshCh); });
+        postWrite(s, inputs, "ClrActive", [&s, ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearActiveFaultBlock); }, refreshCh); });
     auto bClrHist = ActionButton("ClrHist",   [&s, &inputs, refreshCh, ch]{
-        writeSync(s, inputs, "ClrHist", [&s, ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearFaultHistory); }, refreshCh); });
+        postWrite(s, inputs, "ClrHist", [&s, ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearFaultHistory); }, refreshCh); });
 
     // ---- Persistence ----
     auto bSave    = ActionButton("Save",    [&s, &inputs, refreshCh, ch]{
-        writeSync(s, inputs, "Save", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::Save); }, refreshCh); });
+        postWrite(s, inputs, "Save", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::Save); }, refreshCh); });
     auto bLoad    = ActionButton("Load",    [&s, &inputs, refreshCh, ch]{
-        writeSync(s, inputs, "Load", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::Load); }, refreshCh); });
+        postWrite(s, inputs, "Load", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::Load); }, refreshCh); });
     auto bFactory = ActionButton("Factory", [&s, &inputs, refreshCh, ch]{
-        writeSync(s, inputs, "Factory", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::FactoryReset); }, refreshCh); });
+        postWrite(s, inputs, "Factory", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::FactoryReset); }, refreshCh); });
 
     auto container = Container::Vertical({
         tgtInp, bEnable, bDisGra,
