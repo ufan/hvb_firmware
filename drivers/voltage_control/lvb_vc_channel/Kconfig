@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config LVB_VC_CHANNEL
+	bool "LVB virtual voltage channel provider"
+	default y
+	depends on DT_HAS_JIANWEI_LVB_VC_CHANNEL_ENABLED
+	select ADC_STM32
+	help
+	  Virtual voltage channel provider for Jianwei LVB boards.
+	  Uses synchronous ADC reads via adc_read_dt() with software
+	  oversampling for noise reduction.
+
+config LVB_VC_DEFAULT_SAMPLE_RATE_MS
+	int "LVB ADC sample interval in milliseconds (per-sample timer period)"
+	default 30
+	range 1 1000
+	depends on LVB_VC_CHANNEL
+	help
+	  Timer period for one ADC acquisition per channel.  The effective
+	  measurement report period is this value multiplied by
+	  LVB_VC_OVERSAMPLE_COUNT (default: 30 ms x 5 = 150 ms).
+	  Can be overridden per-channel via the sample-rate-ms DTS property.
+
+config LVB_VC_OVERSAMPLE_COUNT
+	int "LVB ADC oversampling count (samples averaged before one report)"
+	default 5
+	range 1 20
+	depends on LVB_VC_CHANNEL
+	help
+	  Number of raw ADC samples averaged together before a single
+	  measurement result is published to the vc_channel framework.
+	  Can be overridden per-channel via the oversample-count DTS property.
