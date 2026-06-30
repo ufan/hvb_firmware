@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
 
     // refactor: use cli11    
     std::string portArg;
-    int baudArg = 115200, slaveArg = 1, timeoutArg = 500;
+    int baudArg = 115200, slaveArg = 1, timeoutArg = 3000;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if      (a == "-p" && i+1 < argc) portArg        = argv[++i];
