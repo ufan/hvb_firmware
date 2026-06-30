@@ -6,149 +6,143 @@
 
 namespace hvb::tui {
 
-inline Component makeMonitorTab(AppState& s) {
-    static const std::vector<std::string> kProtModes = {"Disabled","FlagOnly","Apply-Action"};
-    static const std::vector<std::string> kIActNames = {"None","Dis-Graceful","Dis-Immed","ForceZero"};
-    static const std::vector<OutputAction> kIActVals = {
-        OutputAction::None, OutputAction::DisableGraceful,
-        OutputAction::DisableImmediate, OutputAction::ForceOutputZero
+// Build one row of the Monitor table for channel `ch`.
+// Returns a Renderer wrapping a Container::Horizontal of interactive widgets.
+// Invisible rows (ch >= numChannels) catch all events and render as empty.
+inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
+    auto refreshCh = [&s, &inputs, ch]() {
+        uint16_t caps = s.data.chInfo[ch].chCapFlags;
+        s.data.chCfg[ch] = s.client.readChannelConfig(ch, caps);
+        s.data.chCalCfg[ch] = s.client.readChannelCalConfig(ch, caps);
+        syncDataToInputs(s.data, inputs);
     };
 
-    struct St {
-        int selectedRow = 0;
-        std::vector<std::string> rowLabels; // channel indices as strings {"0","1",...}
-        std::string targetV[MAX_CHANNELS];
-        std::string ruStep[MAX_CHANNELS], ruInt[MAX_CHANNELS];
-        std::string rdStep[MAX_CHANNELS], rdInt[MAX_CHANNELS];
-        std::string iThr[MAX_CHANNELS];
-        int iModeIdx[MAX_CHANNELS]{}, iActIdx[MAX_CHANNELS]{};
+    // ---- Status toggle button ----
+    auto bopt = ButtonOption{};
+    bopt.transform = [&s, ch](const EntryState& es) -> Element {
+        uint16_t st = s.data.valid ? s.data.chInfo[ch].status : 0;
+        bool on = (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0;
+        std::string lbl = on ? "[ ON ]" : "[ OFF ]";
+        auto e = text(lbl);
+        if (on)      e = e | color(Color::Green) | bold;
+        else         e = e | dim;
+        if (es.focused) e = e | inverted;
+        return e;
     };
-    auto st = std::make_shared<St>();
+    auto statusBtn = Button("", [&s, &inputs, ch, refreshCh] {
+        if (!s.data.valid) return;
+        uint16_t st = s.data.chInfo[ch].status;
+        bool on = (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0;
+        OutputAction act = on ? OutputAction::DisableImmediate : OutputAction::Enable;
+        std::string lbl = on ? "Disable" : "Enable";
+        writeSync(s, inputs, lbl,
+            [&s, ch, act] { return s.client.sendOutputAction(ch, act); },
+            refreshCh);
+    }, bopt);
 
-    // ---- Row selection menu: click a row to select it ----
-    // EntryState.label holds the channel index as a decimal string.
-    MenuOption rowOpt = MenuOption::Vertical();
-    rowOpt.entries_option.transform = [&s](const EntryState& e) -> Element {
-        int ch = -1;
-        try { ch = std::stoi(e.label); } catch (...) {}
-        if (ch < 0 || !s.data.valid || ch >= s.data.numChannels())
-            return text("");
+    // ---- Vset Input ----
+    auto onVset = [&s, &inputs, ch, refreshCh] {
+        try {
+            auto raw = reg::voltageFromV(std::stod(inputs.targetV[ch]));
+            writeSync(s, inputs, "Target V",
+                [&s, ch, raw] { return s.client.writeConfiguredTargetVoltage(ch, raw); },
+                refreshCh);
+        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
+    };
+    auto vsetInp = CommitInput(&inputs.targetV[ch], "+0.0", onVset);
+
+    // ---- Ramp Up Input ----
+    auto onRampUp = [&s, &inputs, ch, refreshCh] {
+        try {
+            auto step = (uint16_t)std::stoul(inputs.ruStep[ch]);
+            writeSync(s, inputs, "Ramp Up",
+                [&s, ch, step] { return s.client.writeRampUp(ch, step, s.data.chCfg[ch].rampUpInterval); },
+                refreshCh);
+        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-up value"; }
+    };
+    auto rampUpInp = CommitInput(&inputs.ruStep[ch], "0", onRampUp);
+
+    // ---- Ramp Down Input ----
+    auto onRampDown = [&s, &inputs, ch, refreshCh] {
+        try {
+            auto step = (uint16_t)std::stoul(inputs.rdStep[ch]);
+            writeSync(s, inputs, "Ramp Down",
+                [&s, ch, step] { return s.client.writeRampDown(ch, step, s.data.chCfg[ch].rampDownInterval); },
+                refreshCh);
+        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-down value"; }
+    };
+    auto rampDownInp = CommitInput(&inputs.rdStep[ch], "0", onRampDown);
+
+    // ---- I-limit Input ----
+    auto onILimit = [&s, &inputs, ch, refreshCh] {
+        try {
+            auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
+            auto action = static_cast<OutputAction>(inputs.iActIdx[ch]);
+            auto raw    = static_cast<int16_t>(std::stod(inputs.iThr[ch]) * 1000.0 + 0.5);
+            writeSync(s, inputs, "I Limit",
+                [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); },
+                refreshCh);
+        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
+    };
+    auto iLimitInp = CommitInput(&inputs.iThr[ch], "0.000", onILimit);
+
+    // ---- Horizontal container of all interactive widgets ----
+    auto rowWidgets = Container::Horizontal({
+        statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp,
+    });
+
+    return Renderer(rowWidgets, [=, &s]() mutable {
+        // Return empty element for invisible rows (ch >= numChannels or not connected)
+        bool show = s.data.valid && ch < s.data.numChannels();
+        if (!show) return emptyElement();
 
         const auto& ci = s.data.chInfo[ch];
-        const auto& cc = s.data.chCfg[ch];
+        const uint16_t caps = ci.chCapFlags;
+        bool hasV = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+        bool hasI = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
+        bool hasOut = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
 
-        // Fixed-width columns to align with the header row
-        auto row = hbox({
-            text(e.active ? " \xe2\x96\xb6 " : "   ") | size(WIDTH, EQUAL, 3),
-            text(std::to_string(ch))                   | size(WIDTH, EQUAL, 4),
-            text(fmtVoltage(ci.voltageRaw))            | size(WIDTH, EQUAL, 13),
-            text(fmtCurrentUA(ci.currentRaw))          | size(WIDTH, EQUAL, 16),
-            text(statusBadge(ci.status))               | size(WIDTH, EQUAL, 9),
-            text(std::to_string(cc.rampUpStepRaw))     | size(WIDTH, EQUAL, 8),
-            text(std::to_string(cc.rampDownStepRaw))   | size(WIDTH, EQUAL, 8),
-            text(protCompact(cc.iProtMode, cc.iProtOutputAction)) | size(WIDTH, EQUAL, 14),
-            text(fmtVoltage(cc.configuredTargetVRaw))  | size(WIDTH, EQUAL, 13),
-            text(faultStr(ci.activeFault)),
-        });
-        if (e.active)               row = row | color(Color::Cyan) | bold;
-        if (e.focused && !e.active) row = row | inverted;
-        return row;
-    };
-    auto rowMenu = Menu(&st->rowLabels, &st->selectedRow, rowOpt);
+        char chLabel[8];
+        snprintf(chLabel, sizeof(chLabel), "CH%-2d", ch);
 
-    // ---- Per-channel action panels (all built upfront, panelTab switches active) ----
-    auto makePanel = [&s, st, &kProtModes, &kIActNames, &kIActVals](int ch) -> Component {
-        auto onTarget = [&s, st, ch] {
-            try {
-                auto raw = hvb::reg::voltageFromV(std::stod(st->targetV[ch]));
-                writeAsync(s, "Target V", [&s, ch, raw] {
-                    return s.client.writeConfiguredTargetVoltage(ch, raw);
-                });
-            } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
-        };
-        auto onRampUp = [&s, st, ch] {
-            try {
-                auto step = (uint16_t)std::stoul(st->ruStep[ch]);
-                auto iv   = (uint16_t)std::stoul(st->ruInt[ch]);
-                writeAsync(s, "Ramp Up", [&s, ch, step, iv] {
-                    return s.client.writeRampUp(ch, step, iv);
-                });
-            } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-up value"; }
-        };
-        auto onRampDown = [&s, st, ch] {
-            try {
-                auto step = (uint16_t)std::stoul(st->rdStep[ch]);
-                auto iv   = (uint16_t)std::stoul(st->rdInt[ch]);
-                writeAsync(s, "Ramp Down", [&s, ch, step, iv] {
-                    return s.client.writeRampDown(ch, step, iv);
-                });
-            } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-down value"; }
-        };
-        auto onIProt = [&s, st, ch, &kIActVals] {
-            try {
-                auto mode   = static_cast<ProtectionMode>(st->iModeIdx[ch]);
-                auto action = kIActVals.at(st->iActIdx[ch]);
-                auto raw    = static_cast<int16_t>(std::stod(st->iThr[ch]) * 1000.0 + 0.5);
-                writeAsync(s, "I Limit", [&s, ch, mode, action, raw] {
-                    return s.client.writeCurrentProtection(ch, mode, action, raw);
-                });
-            } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
-        };
+        auto chT  = text(chLabel)                               | size(WIDTH, EQUAL, 4);
+        auto vmT  = hasV ? text(fmtVoltage(ci.voltageRaw))      | size(WIDTH, EQUAL, 13) : text("--") | size(WIDTH, EQUAL, 13) | dim;
+        auto imT  = hasI ? text(fmtCurrentUA(ci.currentRaw))    | size(WIDTH, EQUAL, 16) : text("--") | size(WIDTH, EQUAL, 16) | dim;
+        auto vtT  = hasV ? text(fmtVoltage(ci.operationalTargetVoltageRaw)) | size(WIDTH, EQUAL, 13) : text("--") | size(WIDTH, EQUAL, 13) | dim;
+        auto fltT = text(faultStr(ci.activeFault));
 
-        auto tgtInp    = CommitInput(&st->targetV[ch],  "+0.0",  onTarget);
-        auto ruStepInp = CommitInput(&st->ruStep[ch],   "0",     onRampUp);
-        auto ruIntInp  = CommitInput(&st->ruInt[ch],    "0",     onRampUp);
-        auto rdStepInp = CommitInput(&st->rdStep[ch],   "0",     onRampDown);
-        auto rdIntInp  = CommitInput(&st->rdInt[ch],    "0",     onRampDown);
-        auto iModeC    = InlineCycler(kProtModes, &st->iModeIdx[ch], onIProt);
-        auto iActC     = InlineCycler(kIActNames, &st->iActIdx[ch],  onIProt);
-        auto iThrInp   = CommitInput(&st->iThr[ch],     "0.000", onIProt);
+        Elements parts;
+        parts.push_back(chT);
+        parts.push_back(vmT);
+        parts.push_back(imT);
+        if (hasOut) parts.push_back(statusBtn->Render());
+        else        parts.push_back(text(" -- ") | size(WIDTH, EQUAL, 8) | dim);
+        parts.push_back(vsetInp->Render()     | size(WIDTH, EQUAL, 13));
+        parts.push_back(vtT);
+        parts.push_back(rampUpInp->Render()   | size(WIDTH, EQUAL, 8));
+        parts.push_back(rampDownInp->Render() | size(WIDTH, EQUAL, 8));
+        if (hasI) parts.push_back(iLimitInp->Render() | size(WIDTH, EQUAL, 13));
+        else      parts.push_back(text(" -- ") | size(WIDTH, EQUAL, 13) | dim);
+        parts.push_back(fltT);
 
-        auto bEnable  = ActionButton("Enable",    [&s,ch]{ writeAsync(s,"Enable",    [&s,ch]{ return s.client.sendOutputAction(ch, OutputAction::Enable); }); });
-        auto bDisImm  = ActionButton("Dis-Immed", [&s,ch]{ writeAsync(s,"Dis-Immed", [&s,ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableImmediate); }); });
-        auto bDisGra  = ActionButton("Dis-Grace", [&s,ch]{ writeAsync(s,"Dis-Grace", [&s,ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableGraceful); }); });
-        auto bClrAct  = ActionButton("ClrActive", [&s,ch]{ writeAsync(s,"ClrActive", [&s,ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearActiveFaultBlock); }); });
-        auto bClrHist = ActionButton("ClrHist",   [&s,ch]{ writeAsync(s,"ClrHist",   [&s,ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearFaultHistory); }); });
+        return hbox(std::move(parts));
+    }) | CatchEvent([&s, ch](Event) {
+        // Swallow all events for invisible rows so focus never lands here.
+        if (!s.data.valid || ch >= s.data.numChannels()) return true;
+        return false;
+    });
+}
 
-        auto container = Container::Vertical({
-            tgtInp, ruStepInp, ruIntInp, rdStepInp, rdIntInp,
-            iModeC, iActC, iThrInp,
-            bEnable, bDisImm, bDisGra, bClrAct, bClrHist,
-        });
+inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
+    // Build all 16 rows upfront. Invisible rows catch events + render empty.
+    Components rows;
+    for (int ch = 0; ch < MAX_CHANNELS; ++ch) {
+        rows.push_back(makeMonitorRow(s, inputs, ch));
+    }
+    auto tableContainer = Container::Vertical(rows);
 
-        return Renderer(container, [=, ch]() {
-            return window(text(" CH" + std::to_string(ch) + " ") | bold, vbox({
-                hbox({ text("  Target    : "), tgtInp->Render(), text(" V") }),
-                hbox({ text("  Ramp Up   : step "), ruStepInp->Render(),
-                       text(" LSB  interval "), ruIntInp->Render(), text(" \xc3\x970.1 s") }),
-                hbox({ text("  Ramp Down : step "), rdStepInp->Render(),
-                       text(" LSB  interval "), rdIntInp->Render(), text(" \xc3\x970.1 s") }),
-                hbox({ text("  I Limit   : "), iModeC->Render(), text("  "), iActC->Render(),
-                       text("  threshold "), iThrInp->Render(), text(" \xc2\xb5\x41") }),
-                separator(),
-                hbox({ text("  "), bEnable->Render(), text("  "), bDisImm->Render(),
-                       text("  "), bDisGra->Render(), text("    "),
-                       bClrAct->Render(), text("  "), bClrHist->Render() }),
-            }));
-        });
-    };
-
-    Components panels;
-    for (int ch = 0; ch < MAX_CHANNELS; ++ch) panels.push_back(makePanel(ch));
-    auto panelTab = Container::Tab(panels, &st->selectedRow);
-
-    auto mainContainer = Container::Vertical({rowMenu, panelTab});
-
-    return Renderer(mainContainer, [=, &s, st]() {
-        // Keep rowLabels in sync with connected channel count.
+    return Renderer(tableContainer, [=, &s]() {
         int n = s.data.numChannels();
-        if ((int)st->rowLabels.size() != n) {
-            st->rowLabels.clear();
-            for (int i = 0; i < n; ++i)
-                st->rowLabels.push_back(std::to_string(i));
-            if (n > 0)
-                st->selectedRow = std::min(st->selectedRow, n - 1);
-        }
 
         if (!s.data.valid) {
             return vbox({
@@ -167,7 +161,7 @@ inline Component makeMonitorTab(AppState& s) {
             text("  Ch: " + std::to_string(n)),
             text("  Uptime: " + std::to_string(si.uptimeSec) + " s"),
             text("  Mode: " + std::string(opModeName(si.activeOpMode))),
-            text("  Temp: " + std::string(tmp) + " \xc2\xb0\x43"),
+            text("  Temp: " + std::string(tmp) + " C"),
             text("  Humid: " + std::string(hum) + " %"),
             text("  Fault: " + faultStr(si.faultCause)),
         });
@@ -175,17 +169,17 @@ inline Component makeMonitorTab(AppState& s) {
         if (n == 0)
             return vbox({ sysbar, text(" Discovering channels... ") | dim | center });
 
-        // Column header — widths must match the row menu transform
+        // Column headers
         auto colHdr = hbox({
-            text("   ") | size(WIDTH, EQUAL, 3),
-            text(" CH ") | size(WIDTH, EQUAL, 4) | bold,
-            text(" Vmeas      ") | size(WIDTH, EQUAL, 13) | bold,
-            text(" Imeas         ") | size(WIDTH, EQUAL, 16) | bold,
-            text(" Status  ") | size(WIDTH, EQUAL, 9) | bold,
-            text(" Ramp\xe2\x86\x91 ") | size(WIDTH, EQUAL, 8) | bold,
-            text(" Ramp\xe2\x86\x93 ") | size(WIDTH, EQUAL, 8) | bold,
-            text(" I-Prot       ") | size(WIDTH, EQUAL, 14) | bold,
-            text(" Target V   ") | size(WIDTH, EQUAL, 13) | bold,
+            text(" CH ")      | size(WIDTH, EQUAL, 4)  | bold,
+            text(" Vm (V)     ") | size(WIDTH, EQUAL, 13) | bold,
+            text(" Im (nA)        ") | size(WIDTH, EQUAL, 16) | bold,
+            text(" Status  ") | size(WIDTH, EQUAL, 8)  | bold,
+            text(" Vset (V)   ") | size(WIDTH, EQUAL, 13) | bold,
+            text(" Vt (V)     ") | size(WIDTH, EQUAL, 13) | bold,
+            text(" Ramp^") | size(WIDTH, EQUAL, 8)  | bold,
+            text(" Rampv") | size(WIDTH, EQUAL, 8)  | bold,
+            text(" I-lim (nA)  ") | size(WIDTH, EQUAL, 13) | bold,
             text(" Fault") | bold,
         });
 
@@ -194,9 +188,7 @@ inline Component makeMonitorTab(AppState& s) {
             separator(),
             colHdr,
             separator(),
-            rowMenu->Render(),
-            separator(),
-            panelTab->Render(),
+            tableContainer->Render(),
         });
     });
 }

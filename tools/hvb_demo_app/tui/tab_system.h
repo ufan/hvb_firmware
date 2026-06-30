@@ -5,40 +5,62 @@
 
 namespace hvb::tui {
 
-inline Component makeSystemTab(AppState& s) {
+inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
     static const std::vector<std::string> kOpModes       = {"Normal", "Automatic"};
     static const std::vector<std::string> kBaudNames     = {"115200", "9600"};
     static const std::vector<std::string> kStartupPolicy = {"Load NVS Config", "Factory Default"};
 
-    struct St {
-        std::string slaveAddr;
-        int opModeIdx = 0, baudIdx = 0, startupPolicyIdx = 0;
+    auto onOpMode  = [&s, &inputs] {
+        writeSync(s, inputs, "OpMode",
+            [&s, &inputs] { return s.client.writeOperatingMode(static_cast<OpMode>(inputs.opModeIdx)); },
+            [&s, &inputs] {
+                s.data.sysCfg = s.client.readSystemConfig();
+                s.data.sysCfg.operatingMode = static_cast<OpMode>(inputs.opModeIdx);
+            });
     };
-    auto st = std::make_shared<St>();
-
-    auto onOpMode  = [&s, st] { writeAsync(s, "OpMode",   [&s, st] { return s.client.writeOperatingMode(static_cast<OpMode>(st->opModeIdx)); }); };
-    auto onBaud    = [&s, st] { writeAsync(s, "BaudRate", [&s, st] { return s.client.writeBaudRateCode((uint16_t)st->baudIdx); }); };
-    auto onSlave   = [&s, st] {
-        try { uint16_t a = (uint16_t)std::stoul(st->slaveAddr);
-              writeAsync(s, "SlaveAddr", [&s, a] { return s.client.writeSlaveAddress(a); }); }
-        catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid slave address"; }
+    auto onBaud    = [&s, &inputs] {
+        writeSync(s, inputs, "BaudRate",
+            [&s, &inputs] { return s.client.writeBaudRateCode((uint16_t)inputs.baudIdx); },
+            [&s, &inputs] { s.data.sysCfg = s.client.readSystemConfig(); });
     };
-    auto onStartup = [&s, st] {
-        writeAsync(s, "StartupPolicy", [&s, st] {
-            return s.client.writeStartupChannelPolicy((uint16_t)st->startupPolicyIdx);
-        });
+    auto onSlave   = [&s, &inputs] {
+        try { uint16_t a = (uint16_t)std::stoul(inputs.slaveAddr);
+              writeSync(s, inputs, "SlaveAddr",
+                  [&s, a] { return s.client.writeSlaveAddress(a); },
+                  [&s, &inputs] { s.data.sysCfg = s.client.readSystemConfig(); });
+        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid slave address"; }
+    };
+    auto onStartup = [&s, &inputs] {
+        writeSync(s, inputs, "StartupPolicy",
+            [&s, &inputs] { return s.client.writeStartupChannelPolicy((uint16_t)inputs.startupIdx); },
+            [&s, &inputs] { s.data.sysCfg = s.client.readSystemConfig(); });
     };
 
-    auto opModeC      = InlineCycler(kOpModes,       &st->opModeIdx,       onOpMode);
-    auto baudC        = InlineCycler(kBaudNames,      &st->baudIdx,         onBaud);
-    auto startupC     = InlineCycler(kStartupPolicy,  &st->startupPolicyIdx, onStartup);
-    auto slaveInp     = CommitInput(&st->slaveAddr,   "1", onSlave);
+    auto opModeC      = InlineCycler(kOpModes,       &inputs.opModeIdx,  onOpMode);
+    auto baudC        = InlineCycler(kBaudNames,     &inputs.baudIdx,    onBaud);
+    auto startupC     = InlineCycler(kStartupPolicy, &inputs.startupIdx, onStartup);
+    auto slaveInp     = CommitInput(&inputs.slaveAddr, "1", onSlave);
 
-    auto bSave    = ActionButton("Save",    [&s]{ writeAsync(s,"Save",    [&s]{ return s.client.sendParamAction(-1, ParamAction::Save); }); });
-    auto bLoad    = ActionButton("Load",    [&s]{ writeAsync(s,"Load",    [&s]{ return s.client.sendParamAction(-1, ParamAction::Load); }); });
-    auto bFactory = ActionButton("Factory", [&s]{ writeAsync(s,"Factory", [&s]{ return s.client.sendParamAction(-1, ParamAction::FactoryReset); }); });
-    auto bCalExit = ActionButton("Exit Cal", [&s]{ writeAsync(s,"Exit Cal", [&s]{ return s.client.exitCalibrationMode(); }); });
-    auto bReset   = ActionButton("Reset",   [&s]{ writeAsync(s,"Reset",   [&s]{ return s.client.sendParamAction(-1, ParamAction::SoftwareReset); }); });
+    auto bSave    = ActionButton("Save",    [&s, &inputs]{
+        writeSync(s, inputs, "Save", [&s]{ return s.client.sendParamAction(-1, ParamAction::Save); },
+                  [&s, &inputs]{ s.data.sysCfg = s.client.readSystemConfig(); syncDataToInputs(s.data, inputs); });
+    });
+    auto bLoad    = ActionButton("Load",    [&s, &inputs]{
+        writeSync(s, inputs, "Load", [&s]{ return s.client.sendParamAction(-1, ParamAction::Load); },
+                  [&s, &inputs]{ s.data.sysCfg = s.client.readSystemConfig(); syncDataToInputs(s.data, inputs); });
+    });
+    auto bFactory = ActionButton("Factory", [&s, &inputs]{
+        writeSync(s, inputs, "Factory", [&s]{ return s.client.sendParamAction(-1, ParamAction::FactoryReset); },
+                  [&s, &inputs]{ s.data.sysCfg = s.client.readSystemConfig(); syncDataToInputs(s.data, inputs); });
+    });
+    auto bCalExit = ActionButton("Exit Cal", [&s, &inputs]{
+        writeSync(s, inputs, "Exit Cal", [&s]{ return s.client.exitCalibrationMode(); },
+                  [&s, &inputs]{ s.data.sysCfg = s.client.readSystemConfig(); syncDataToInputs(s.data, inputs); });
+    });
+    auto bReset   = ActionButton("Reset",   [&s, &inputs]{
+        writeSync(s, inputs, "Reset", [&s]{ return s.client.sendParamAction(-1, ParamAction::SoftwareReset); },
+                  [&s, &inputs]{ s.data.sysCfg = s.client.readSystemConfig(); syncDataToInputs(s.data, inputs); });
+    });
 
     auto cfgContainer = Container::Vertical({
         opModeC, baudC, slaveInp, startupC,

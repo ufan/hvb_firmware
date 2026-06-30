@@ -5,7 +5,7 @@
 
 namespace hvb::tui {
 
-inline Component makeChannelTab(AppState& s, int ch) {
+inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     static const std::vector<std::string> kProtModes  = {"Disabled","FlagOnly","Apply-Action"};
     static const std::vector<std::string> kIActNames  = {"None","Dis-Graceful","Dis-Immed","ForceZero"};
     static const std::vector<OutputAction> kIActVals  = {
@@ -14,93 +14,106 @@ inline Component makeChannelTab(AppState& s, int ch) {
     };
     static const std::vector<std::string> kRecovNames = {"ManualLatch","AutoRetry","AutoDerate","NeverRetry"};
 
-    struct St {
-        std::string targetV, iThr;
-        std::string ruStep, ruInt, rdStep, rdInt, derateStep;
-        std::string retryDelay, retryMax, retryWindow, iBand;
-        int iModeIdx = 0, iActIdx = 0;
-        int recovIdx = 0;
+    auto refreshCh = [&s, &inputs, ch]() {
+        s.data.chCfg[ch] = s.client.readChannelConfig(ch, s.data.chInfo[ch].chCapFlags);
+        s.data.chCalCfg[ch] = s.client.readChannelCalConfig(ch, s.data.chInfo[ch].chCapFlags);
+        syncDataToInputs(s.data, inputs);
     };
-    auto st = std::make_shared<St>();
 
-    auto onTarget = [&s, st, ch] {
+    auto onTarget = [&s, &inputs, refreshCh, ch] {
         try {
-            auto raw = hvb::reg::voltageFromV(std::stod(st->targetV));
-            writeAsync(s, "Target V", [&s, ch, raw] {
-                return s.client.writeConfiguredTargetVoltage(ch, raw);
-            });
+            auto raw = reg::voltageFromV(std::stod(inputs.targetV[ch]));
+            writeSync(s, inputs, "Target V",
+                [&s, ch, raw] { return s.client.writeConfiguredTargetVoltage(ch, raw); },
+                refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
     };
-    auto onRampUp = [&s, st, ch] {
+    auto onRampUp = [&s, &inputs, refreshCh, ch] {
         try {
-            auto step = (uint16_t)std::stoul(st->ruStep);
-            auto iv   = (uint16_t)std::stoul(st->ruInt);
-            writeAsync(s, "Ramp Up", [&s, ch, step, iv] { return s.client.writeRampUp(ch, step, iv); });
+            auto step = (uint16_t)std::stoul(inputs.ruStep[ch]);
+            auto iv   = (uint16_t)std::stoul(inputs.ruInt[ch]);
+            writeSync(s, inputs, "Ramp Up",
+                [&s, ch, step, iv] { return s.client.writeRampUp(ch, step, iv); },
+                refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
     };
-    auto onRampDown = [&s, st, ch] {
+    auto onRampDown = [&s, &inputs, refreshCh, ch] {
         try {
-            auto step = (uint16_t)std::stoul(st->rdStep);
-            auto iv   = (uint16_t)std::stoul(st->rdInt);
-            writeAsync(s, "Ramp Down", [&s, ch, step, iv] { return s.client.writeRampDown(ch, step, iv); });
+            auto step = (uint16_t)std::stoul(inputs.rdStep[ch]);
+            auto iv   = (uint16_t)std::stoul(inputs.rdInt[ch]);
+            writeSync(s, inputs, "Ramp Down",
+                [&s, ch, step, iv] { return s.client.writeRampDown(ch, step, iv); },
+                refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
     };
-    auto onDerate = [&s, st, ch] {
+    auto onDerate = [&s, &inputs, refreshCh, ch] {
         try {
-            auto step = (uint16_t)std::stoul(st->derateStep);
-            writeAsync(s, "Derate", [&s, ch, step] { return s.client.writeDerateStep(ch, step); });
+            auto step = (uint16_t)std::stoul(inputs.derateStep[ch]);
+            writeSync(s, inputs, "Derate",
+                [&s, ch, step] { return s.client.writeDerateStep(ch, step); },
+                refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid derate step"; }
     };
-    auto onIProt = [&s, st, ch, &kIActVals] {
+    auto onIProt = [&s, &inputs, refreshCh, ch] {
         try {
-            auto mode   = static_cast<ProtectionMode>(st->iModeIdx);
-            auto action = kIActVals.at(st->iActIdx);
-            auto raw    = static_cast<int16_t>(std::stod(st->iThr) * 1000.0 + 0.5);
-            writeAsync(s, "I Limit", [&s, ch, mode, action, raw] {
-                return s.client.writeCurrentProtection(ch, mode, action, raw);
-            });
+            auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
+            auto action = kIActVals.at(inputs.iActIdx[ch]);
+            auto raw    = static_cast<int16_t>(std::stod(inputs.iThr[ch]) * 1000.0 + 0.5);
+            writeSync(s, inputs, "I Limit",
+                [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); },
+                refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
     };
-    auto onRecov = [&s, st, ch] {
+    auto onRecov = [&s, &inputs, refreshCh, ch] {
         try {
-            auto pol = static_cast<RecoveryPolicy>(st->recovIdx);
-            int d = std::stoi(st->retryDelay), m = std::stoi(st->retryMax),
-                w = std::stoi(st->retryWindow);
-            writeAsync(s, "Recovery", [&s, ch, pol, d, m, w] {
-                return s.client.writeChannelRecovery(ch, pol, d, m, w);
-            });
+            auto pol = static_cast<RecoveryPolicy>(inputs.recovIdx[ch]);
+            int d = std::stoi(inputs.retryDelay[ch]), m = std::stoi(inputs.retryMax[ch]),
+                w = std::stoi(inputs.retryWindow[ch]);
+            writeSync(s, inputs, "Recovery",
+                [&s, ch, pol, d, m, w] { return s.client.writeChannelRecovery(ch, pol, d, m, w); },
+                refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid recovery value"; }
     };
-    auto onBand = [&s, st, ch] {
+    auto onBand = [&s, &inputs, refreshCh, ch] {
         try {
-            uint16_t pct = (uint16_t)std::stoul(st->iBand);
-            writeAsync(s, "SafeBand", [&s, ch, pct] { return s.client.writeChannelSafeBand(ch, pct); });
+            uint16_t pct = (uint16_t)std::stoul(inputs.iBand[ch]);
+            writeSync(s, inputs, "SafeBand",
+                [&s, ch, pct] { return s.client.writeChannelSafeBand(ch, pct); },
+                refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid safe-band value"; }
     };
 
-    auto tgtInp    = CommitInput(&st->targetV,   "+0.0",  onTarget);
-    auto ruStepInp = CommitInput(&st->ruStep,    "0",     onRampUp);
-    auto ruIntInp  = CommitInput(&st->ruInt,     "0",     onRampUp);
-    auto rdStepInp = CommitInput(&st->rdStep,    "0",     onRampDown);
-    auto rdIntInp  = CommitInput(&st->rdInt,     "0",     onRampDown);
-    auto derInp    = CommitInput(&st->derateStep,"0",     onDerate);
-    auto iModeC    = InlineCycler(kProtModes,  &st->iModeIdx, onIProt);
-    auto iActC     = InlineCycler(kIActNames,  &st->iActIdx,  onIProt);
-    auto iThrInp   = CommitInput(&st->iThr,    "0.000", onIProt);
-    auto recovC    = InlineCycler(kRecovNames, &st->recovIdx, onRecov);
-    auto delayInp  = CommitInput(&st->retryDelay,  "0",  onRecov);
-    auto maxInp    = CommitInput(&st->retryMax,    "3",   onRecov);
-    auto winInp    = CommitInput(&st->retryWindow, "60",  onRecov);
-    auto iBandInp  = CommitInput(&st->iBand,       "10",  onBand);
+    auto tgtInp    = CommitInput(&inputs.targetV[ch],   "+0.0",  onTarget);
+    auto ruStepInp = CommitInput(&inputs.ruStep[ch],    "0",     onRampUp);
+    auto ruIntInp  = CommitInput(&inputs.ruInt[ch],     "0",     onRampUp);
+    auto rdStepInp = CommitInput(&inputs.rdStep[ch],    "0",     onRampDown);
+    auto rdIntInp  = CommitInput(&inputs.rdInt[ch],     "0",     onRampDown);
+    auto derInp    = CommitInput(&inputs.derateStep[ch],"0",     onDerate);
+    auto iModeC    = InlineCycler(kProtModes,  &inputs.iModeIdx[ch], onIProt);
+    auto iActC     = InlineCycler(kIActNames,  &inputs.iActIdx[ch],  onIProt);
+    auto iThrInp   = CommitInput(&inputs.iThr[ch],    "0.000", onIProt);
+    auto recovC    = InlineCycler(kRecovNames, &inputs.recovIdx[ch], onRecov);
+    auto delayInp  = CommitInput(&inputs.retryDelay[ch],  "0",  onRecov);
+    auto maxInp    = CommitInput(&inputs.retryMax[ch],    "3",  onRecov);
+    auto winInp    = CommitInput(&inputs.retryWindow[ch], "60", onRecov);
+    auto iBandInp  = CommitInput(&inputs.iBand[ch],       "10", onBand);
 
-    auto bEnable  = ActionButton("Enable",    [&s,ch]{ writeAsync(s,"Enable",    [&s,ch]{ return s.client.sendOutputAction(ch, OutputAction::Enable); }); });
-    auto bDisImm  = ActionButton("Dis-Immed", [&s,ch]{ writeAsync(s,"Dis-Immed", [&s,ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableImmediate); }); });
-    auto bDisGra  = ActionButton("Dis-Grace", [&s,ch]{ writeAsync(s,"Dis-Grace", [&s,ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableGraceful); }); });
-    auto bSave    = ActionButton("Save",      [&s,ch]{ writeAsync(s,"Save",      [&s,ch]{ return s.client.sendParamAction(ch, ParamAction::Save); }); });
-    auto bLoad    = ActionButton("Load",      [&s,ch]{ writeAsync(s,"Load",      [&s,ch]{ return s.client.sendParamAction(ch, ParamAction::Load); }); });
-    auto bFactory = ActionButton("Factory",   [&s,ch]{ writeAsync(s,"Factory",   [&s,ch]{ return s.client.sendParamAction(ch, ParamAction::FactoryReset); }); });
-    auto bClrAct  = ActionButton("ClrActive", [&s,ch]{ writeAsync(s,"ClrActive", [&s,ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearActiveFaultBlock); }); });
-    auto bClrHist = ActionButton("ClrHist",   [&s,ch]{ writeAsync(s,"ClrHist",   [&s,ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearFaultHistory); }); });
+    auto bEnable  = ActionButton("Enable",    [&s, &inputs, refreshCh, ch]{
+        writeSync(s, inputs, "Enable", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::Enable); }, refreshCh); });
+    auto bDisImm  = ActionButton("Dis-Immed", [&s, &inputs, refreshCh, ch]{
+        writeSync(s, inputs, "Dis-Immed", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableImmediate); }, refreshCh); });
+    auto bDisGra  = ActionButton("Dis-Grace", [&s, &inputs, refreshCh, ch]{
+        writeSync(s, inputs, "Dis-Grace", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableGraceful); }, refreshCh); });
+    auto bSave    = ActionButton("Save",      [&s, &inputs, refreshCh, ch]{
+        writeSync(s, inputs, "Save", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::Save); }, refreshCh); });
+    auto bLoad    = ActionButton("Load",      [&s, &inputs, refreshCh, ch]{
+        writeSync(s, inputs, "Load", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::Load); }, refreshCh); });
+    auto bFactory = ActionButton("Factory",   [&s, &inputs, refreshCh, ch]{
+        writeSync(s, inputs, "Factory", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::FactoryReset); }, refreshCh); });
+    auto bClrAct  = ActionButton("ClrActive", [&s, &inputs, refreshCh, ch]{
+        writeSync(s, inputs, "ClrActive", [&s, ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearActiveFaultBlock); }, refreshCh); });
+    auto bClrHist = ActionButton("ClrHist",   [&s, &inputs, refreshCh, ch]{
+        writeSync(s, inputs, "ClrHist", [&s, ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearFaultHistory); }, refreshCh); });
 
     auto container = Container::Vertical({
         tgtInp, bEnable, bDisImm, bDisGra,
@@ -110,12 +123,10 @@ inline Component makeChannelTab(AppState& s, int ch) {
         bSave, bLoad, bFactory, bClrAct, bClrHist,
     });
 
-    return Renderer(container, [=, &s, ch]() {
-        // Channel beyond device's reported count — show placeholder.
+    return Renderer(container, [=, &s]() {
         if (s.data.valid && ch >= s.data.numChannels())
             return text(" CH" + std::to_string(ch) + " not present on this device ") | dim | center;
 
-        // Capability flags — all bits set when disconnected (show everything).
         const uint16_t caps = s.data.valid ? s.data.chInfo[ch].chCapFlags : 0xFFFFu;
         const bool hasOutEn = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
         const bool hasVolts = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
@@ -147,8 +158,8 @@ inline Component makeChannelTab(AppState& s, int ch) {
         }));
 
         auto rampPanel = window(text(" Ramping "), vbox({
-            hbox({ text("Ramp Up   : step "), ruStepInp->Render(), text(" LSB  int "), ruIntInp->Render(), text(" \xc3\x970.1s") }),
-            hbox({ text("Ramp Down : step "), rdStepInp->Render(), text(" LSB  int "), rdIntInp->Render(), text(" \xc3\x970.1s") }),
+            hbox({ text("Ramp Up   : step "), ruStepInp->Render(), text(" LSB  int "), ruIntInp->Render(), text(" x0.1s") }),
+            hbox({ text("Ramp Down : step "), rdStepInp->Render(), text(" LSB  int "), rdIntInp->Render(), text(" x0.1s") }),
             hbox({ text("Derate Step:      "), derInp->Render(),   text(" LSB") }),
         }));
 
@@ -184,7 +195,7 @@ inline Component makeChannelTab(AppState& s, int ch) {
             rows.push_back(window(text(" Current Protection "), hbox({
                 text("Mode : "), iModeC->Render(),
                 text("   Action : "), iActC->Render(),
-                text("   Threshold: "), iThrInp->Render(), text(" \xc2\xb5\x41"), // µA
+                text("   Threshold: "), iThrInp->Render(), text(" uA"),
             })));
         }
         rows.push_back(hbox({ calPanel, persistPanel }));

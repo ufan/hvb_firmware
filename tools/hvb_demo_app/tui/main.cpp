@@ -84,6 +84,7 @@ int main(int argc, char** argv) {
 
     // todo: dedicated state machine library (fsm)?
     hvb::tui::AppState appState{g_client, g_connected, data, statusMsg, statusMutex, g_scanMutex, screen};
+    hvb::tui::ConfigInputs inputs;
 
     // ---- Poll thread ----
     std::thread pollThread([&] {
@@ -120,6 +121,7 @@ int main(int argc, char** argv) {
             if (ok) {
                 { std::lock_guard<std::mutex> lk(g_scanMutex); doFullScan(data); }
                 data.valid = true;
+                syncDataToInputs(data, inputs);
                 rebuildChannelTitles(tabTitles, data.numChannels());
                 int maxTab = static_cast<int>(tabTitles.size()) - 1;
                 if (activeTab > maxTab) activeTab = maxTab;
@@ -165,7 +167,7 @@ int main(int argc, char** argv) {
     auto bRefresh = hvb::tui::ActionButton("Refresh", [&] {
         if (g_connected) {
             { std::lock_guard<std::mutex> lk(g_scanMutex); doFullScan(data); }
-            rebuildChannelTitles(tabTitles, data.numChannels());
+            syncDataToInputs(data, inputs);
             data.valid = true;
         }
     });
@@ -186,13 +188,15 @@ int main(int argc, char** argv) {
     };
     auto tabBar = Menu(&tabTitles, &activeTab, tabOpt);
 
-    // ---- Tab content (built upfront, phantom channels show placeholder) ----
+    // Tab content — built upfront with all 18 slots (Monitor + System + 16 channels).
+    // Per-channel tabs render a placeholder for out-of-range channels or when disconnected.
+    // The tab bar (tabTitles) controls visibility by resizing the title list.
     Components tabComponents = {
-        hvb::tui::makeMonitorTab(appState),
-        hvb::tui::makeSystemTab(appState),
+        hvb::tui::makeMonitorTab(appState, inputs),
+        hvb::tui::makeSystemTab(appState, inputs),
     };
     for (int ch = 0; ch < hvb::tui::MAX_CHANNELS; ++ch)
-        tabComponents.push_back(hvb::tui::makeChannelTab(appState, ch));
+        tabComponents.push_back(hvb::tui::makeChannelTab(appState, inputs, ch));
     auto tabContent = Container::Tab(tabComponents, &activeTab);
 
     // ---- Full layout: toolbar + tab bar + content ----
@@ -246,6 +250,7 @@ int main(int argc, char** argv) {
             if (ok) {
                 { std::lock_guard<std::mutex> lk(g_scanMutex); doFullScan(data); }
                 data.valid = true;
+                syncDataToInputs(data, inputs);
                 rebuildChannelTitles(tabTitles, data.numChannels());
             }
             { std::lock_guard<std::mutex> lk(statusMutex);

@@ -27,19 +27,103 @@ struct AppState {
     ftxui::ScreenInteractive& screen;
 };
 
-// Dispatch fn on a background thread; update statusMsg on completion.
-// fn must not capture any stack locals that may be destroyed before it runs.
-inline void writeAsync(AppState& s, const std::string& label, std::function<bool()> fn) {
+// Shared config-input state — single source of truth for all tabs.
+// Populated from ScannedData on connect/refresh/write-success.
+// Each tab's Input/InlineCycler widgets bind to fields in this struct.
+struct ConfigInputs {
+    // Monitor table editable columns
+    std::string targetV [MAX_CHANNELS];  // Vset  — configured target voltage in V
+    std::string ruStep  [MAX_CHANNELS];  // Ramp↑ — ramp-up step raw LSB
+    std::string rdStep  [MAX_CHANNELS];  // Ramp↓ — ramp-down step raw LSB
+    std::string iThr    [MAX_CHANNELS];  // I-limit — current threshold in nA
+
+    // System tab
+    std::string slaveAddr;
+    int opModeIdx       = 0;
+    int baudIdx         = 0;
+    int startupIdx      = 0;
+
+    // Channel tab extra fields
+    std::string ruInt      [MAX_CHANNELS];
+    std::string rdInt      [MAX_CHANNELS];
+    std::string derateStep [MAX_CHANNELS];
+    int iModeIdx           [MAX_CHANNELS]{};
+    int iActIdx            [MAX_CHANNELS]{};
+    int recovIdx           [MAX_CHANNELS]{};
+    std::string retryDelay  [MAX_CHANNELS];
+    std::string retryMax    [MAX_CHANNELS];
+    std::string retryWindow [MAX_CHANNELS];
+    std::string iBand       [MAX_CHANNELS];
+};
+
+inline void syncDataToInputs(const ScannedData& data, ConfigInputs& cfg) {
+    if (!data.valid) return;
+
+    // System fields
+    const auto& sc = data.sysCfg;
+    cfg.slaveAddr  = std::to_string(sc.slaveAddr);
+    cfg.opModeIdx  = static_cast<int>(sc.operatingMode);
+    cfg.baudIdx    = static_cast<int>(sc.baudRateCode);
+    cfg.startupIdx = static_cast<int>(sc.startupChannelPolicy);
+
+    // Per-channel fields
+    int n = data.numChannels();
+    for (int ch = 0; ch < n; ++ch) {
+        const auto& cc = data.chCfg[ch];
+
+        // Monitor editable
+        {
+            double v = reg::voltageToV(cc.configuredTargetVRaw);
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%+.1f", v);
+            cfg.targetV[ch] = buf;
+        }
+        cfg.ruStep[ch] = std::to_string(cc.rampUpStepRaw);
+        cfg.rdStep[ch] = std::to_string(cc.rampDownStepRaw);
+        {
+            double a = reg::currentToA(cc.iLimitThresholdRaw);
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.3f", a * 1e9);
+            cfg.iThr[ch] = buf;
+        }
+
+        // Channel tab extras
+        cfg.ruInt[ch]      = std::to_string(cc.rampUpInterval);
+        cfg.rdInt[ch]      = std::to_string(cc.rampDownInterval);
+        cfg.derateStep[ch] = std::to_string(cc.derateStepRaw);
+        cfg.iModeIdx[ch]   = static_cast<int>(cc.iProtMode);
+        cfg.iActIdx[ch]    = static_cast<int>(cc.iProtOutputAction);
+        cfg.recovIdx[ch]   = static_cast<int>(cc.recoveryPolicyMode);
+        cfg.retryDelay[ch]  = std::to_string(cc.autoRetryDelay);
+        cfg.retryMax[ch]    = std::to_string(cc.autoRetryMaxCount);
+        cfg.retryWindow[ch] = std::to_string(cc.autoRetryWindow);
+        cfg.iBand[ch]       = std::to_string(cc.currentSafeBandPct);
+    }
+}
+
+// Blocking write — acquires scanMutex, runs writeFn, reads back config on success.
+inline void writeSync(AppState& s, ConfigInputs& inputs,
+                      const std::string& label,
+                      std::function<bool()> writeFn,
+                      std::function<void()> refreshFn) {
     { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Writing " + label + "..."; }
     s.screen.PostEvent(Event::Custom);
-    std::thread([&s, label, fn = std::move(fn)]() mutable {
-        bool ok;
-        { std::lock_guard<std::mutex> lk(s.scanMutex); ok = fn(); }
+
+    bool ok;
+    { std::lock_guard<std::mutex> lk(s.scanMutex); ok = writeFn(); }
+
+    if (ok) {
+        refreshFn();
+        syncDataToInputs(s.data, inputs);
+        { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "OK: " + label; }
+    } else {
         { std::lock_guard<std::mutex> lk(s.statusMutex);
-          s.statusMsg = ok ? ("OK: " + label) : ("Error: " + s.client.lastError()); }
-        s.screen.PostEvent(Event::Custom);
-    }).detach();
+          s.statusMsg = "Error: " + s.client.lastError(); }
+    }
+    s.screen.PostEvent(Event::Custom);
 }
+
+
 
 // Input that calls onCommit when Enter is pressed (instead of inserting newline).
 inline Component CommitInput(std::string* val,
