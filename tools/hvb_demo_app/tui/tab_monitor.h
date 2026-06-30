@@ -171,7 +171,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
         table.SelectRow(0).SeparatorVertical(LIGHT);
         table.SelectRow(0).Border(DOUBLE);
 
-        return vbox({ table.Render() });
+        return table.Render() | flex_shrink;
     });
 }
 

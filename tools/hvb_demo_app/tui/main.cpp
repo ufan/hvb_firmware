@@ -132,7 +132,7 @@ int main(int argc, char** argv) {
               if (abortConnect)
                   statusMsg = "Connection aborted";
               else if (ok)
-                  statusMsg = "Connected " + portVal + "  (" + std::to_string(data.numChannels()) + " ch)";
+                  statusMsg = "";  // success shown in menu bar indicator, not error box
               else {
                   auto e = g_client.lastError();
                   statusMsg = "Error: " + (e.empty() ? "connection failed" : e)
@@ -234,55 +234,56 @@ int main(int argc, char** argv) {
             indTxt = "\xe2\x8f\xb3 Connecting...";
             indColor = Color::Yellow;
         }
-        bool isErr = msg.find("Error") != std::string::npos;
 
-        // --- Sys mode & uptime ---
-        std::string modeTxt = "--", uptimeTxt = "-- s";
+        // --- Sys mode & channel count ---
+        std::string modeTxt = "--", chTxt = "--";
         if (data.valid) {
             modeTxt = opModeName(data.sysInfo.activeOpMode);
-            uptimeTxt = std::to_string(data.sysInfo.uptimeSec) + " s";
+            chTxt = std::to_string(data.numChannels());
         }
 
         // --- Menu bar render ---
         auto menuBarEl = hbox({
             text(" HVB ") | bold,
-            text(" " + indTxt + " ") | (isErr ? color(Color::Red) : color(indColor)),
+            text(" " + indTxt + " ") | color(indColor),
             separator(),
             text(" Mode: " + modeTxt + " "),
-            text(" Up: " + uptimeTxt + " "),
+            text(" Ch: " + chTxt + " "),
             separator(),
             text(" P:"),
-            portInp->Render() | size(WIDTH, EQUAL, 18),
+            portInp->Render() | size(WIDTH, EQUAL, 14),
             text(" @"),
-            baudInp->Render() | size(WIDTH, EQUAL, 7),
+            baudInp->Render() | size(WIDTH, EQUAL, 6),
             text(" #"),
-            slaveInp->Render() | size(WIDTH, EQUAL, 4),
+            slaveInp->Render() | size(WIDTH, EQUAL, 3),
             bConnect->Render(), text(" "),
             bDisconnect->Render(), text(" "),
             bQuit->Render(),
         });
 
         // --- Status bar render ---
-        std::string fwTxt = "--", protoTxt = "--", varTxt = "--";
+        std::string fwTxt = "--", protoTxt = "--";
         char tmpS[16], humS[16];
+        std::string uptimeTxt = "-- s";
         tmpS[0] = humS[0] = 0;
         if (data.valid) {
             const auto& si = data.sysInfo;
             char fw[16]; snprintf(fw, sizeof(fw), "0x%04X", si.fwVersion);
             fwTxt = fw;
             protoTxt = std::to_string(si.protoMajor) + "." + std::to_string(si.protoMinor);
-            varTxt = std::to_string(si.variantId);
+            uptimeTxt = std::to_string(si.uptimeSec) + "s";
             snprintf(tmpS, sizeof(tmpS), "%.1fC", si.boardTempRaw * 0.1);
             snprintf(humS, sizeof(humS), "%.1f%%", si.boardHumidityRaw * 0.1);
         }
+        bool isErr = msg.find("Error") != std::string::npos;
         auto statusBarEl = hbox({
-            bSysCfg->Render(), separator(),
-            text(" FW:" + fwTxt + " "), separator(),
-            text(" Proto:" + protoTxt + " "), separator(),
-            text(" Variant:" + varTxt + " "), separator(),
-            text(" " + std::string(tmpS) + " " + std::string(humS) + " "),
-            separator(),
             text(" " + msg + " ") | (isErr ? color(Color::Red) : color(Color::Green)),
+            separator(),
+            text(" FW:" + fwTxt + "  Proto:" + protoTxt + " "),
+            separator(),
+            text(" Up:" + uptimeTxt + "  " + std::string(tmpS) + "  " + std::string(humS) + " "),
+            filler(),
+            bSysCfg->Render(),
         });
 
         return vbox({
