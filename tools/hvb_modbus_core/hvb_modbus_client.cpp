@@ -61,6 +61,9 @@ bool HvbModbusClient::connect(const std::string& portName, int baud, int slaveId
         return false;
     }
 
+    // Mark connected so readRegsInternal allows the probe transaction.
+    m_impl->connected = true;
+
     // Probe: verify the board actually responds before claiming success.
     // Read one well-known input register (PROTOCOL_MAJOR at address 0).
     uint16_t probe = 0xFFFF;
@@ -76,7 +79,6 @@ bool HvbModbusClient::connect(const std::string& portName, int baud, int slaveId
         return false;
     }
 
-    m_impl->connected = true;
     return true;
 }
 
