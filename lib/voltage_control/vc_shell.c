@@ -1156,7 +1156,6 @@ static int cmd_cal(const struct shell *sh, size_t argc, char **argv)
 		if (ret) {
 			return ret;
 		}
-		k_msleep(20);
 
 		struct vc_channel_snapshot snap;
 

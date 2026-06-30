@@ -837,6 +837,9 @@ ZTEST(vc_domain, test_calibration_sample_captures_raw_values)
 	make_fresh();
 	struct vc_channel_snapshot snap;
 
+	vc_channel_buffer_publish_voltage(ctrl->meas_index[0], 4567, 10);
+	vc_channel_buffer_publish_current(ctrl->meas_index[0], 89, 10);
+
 	enter_calibration_mode(ctrl);
 	zassert_equal(vc_controller_channel_cal_output_enable(ctrl, 0, true),
 		      VC_OK);
@@ -844,8 +847,51 @@ ZTEST(vc_domain, test_calibration_sample_captures_raw_values)
 	zassert_equal(vc_controller_channel_cal_sample(ctrl, 0), VC_OK);
 	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap),
 		      VC_OK);
-	zassert_equal(snap.raw_adc_voltage, 123);
-	zassert_equal(snap.raw_adc_current, 0);
+	zassert_equal(snap.raw_adc_voltage, 4567,
+		      "cal sample must read the real ADC buffer, not echo the DAC code");
+	zassert_equal(snap.raw_adc_current, 89);
+}
+
+ZTEST(vc_domain, test_calibration_session_does_not_disturb_normal_consumption)
+{
+	make_fresh();
+	struct vc_channel_snapshot snap;
+
+	/* Normal-mode tick consumption works before entering calibration. */
+	vc_channel_buffer_publish_voltage(ctrl->meas_index[0], 1111, 10);
+	vc_controller_tick(ctrl, 10);
+	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap), VC_OK);
+	zassert_equal(snap.measured_voltage, 1111);
+
+	/* The background ADC loop keeps publishing during calibration, but
+	 * entering calibration mode must stop the tick from consuming it into
+	 * the normal-mode measured_voltage quantity. */
+	enter_calibration_mode(ctrl);
+	vc_channel_buffer_publish_voltage(ctrl->meas_index[0], 2222, 20);
+	vc_controller_tick(ctrl, 10);
+	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap), VC_OK);
+	zassert_equal(snap.measured_voltage, 0,
+		      "tick must not run channel measurement consumption in calibration mode");
+
+	/* cal sample reads the buffer directly into raw_adc_voltage but must
+	 * not touch the calibrated measured_voltage quantity. */
+	zassert_equal(vc_controller_channel_cal_output_enable(ctrl, 0, true), VC_OK);
+	zassert_equal(vc_controller_channel_cal_sample(ctrl, 0), VC_OK);
+	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap), VC_OK);
+	zassert_equal(snap.raw_adc_voltage, 2222);
+	zassert_equal(snap.measured_voltage, 0);
+	zassert_equal(vc_controller_channel_cal_output_enable(ctrl, 0, false), VC_OK);
+
+	/* Exiting calibration must hand normal-mode consumption back cleanly:
+	 * the next tick should pick up the latest published sample, proving
+	 * the calibration session left the consume-on-change bookkeeping
+	 * (last_consumed_voltage_ts) intact rather than stuck or corrupted. */
+	zassert_equal(vc_controller_cal_exit(ctrl), VC_OK);
+	vc_channel_buffer_publish_voltage(ctrl->meas_index[0], 3333, 30);
+	vc_controller_tick(ctrl, 10);
+	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap), VC_OK);
+	zassert_equal(snap.measured_voltage, 3333,
+		      "normal-mode consumption must resume correctly after a calibration session");
 }
 
 /* ---- System snapshot ---- */

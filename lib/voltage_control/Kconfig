@@ -46,6 +46,20 @@ config VC_RUNTIME_TICK_INTERVAL_MS
 	help
 	  Runtime policy tick interval in milliseconds.
 
+config VC_CAL_SAMPLE_TIMEOUT_MS
+	int "VC calibration sample freshness timeout"
+	default 1000
+	range 1 60000
+	depends on VC_RUNTIME
+	help
+	  Upper bound in milliseconds for "vc cal sample" to wait for a
+	  measurement newer than the one already cached, so the reported
+	  raw ADC value reflects the DAC code just written rather than a
+	  stale reading from before it. Must comfortably exceed the
+	  hardware's worst-case conversion cycle. If no fresher sample
+	  arrives within this window, the latest available reading is
+	  returned anyway.
+
 config VC_CAL_MAX_RAW_DAC
 	int "Calibration DAC ceiling (raw counts)"
 	default 65535

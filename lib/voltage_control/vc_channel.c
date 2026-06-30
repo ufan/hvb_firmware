@@ -801,12 +801,27 @@ enum vc_status vc_channel_cal_set_raw_dac(struct vc_channel *ch, uint32_t code)
 
 enum vc_status vc_channel_cal_sample(struct vc_channel *ch)
 {
-	if ((ch->capabilities &
-	     (CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT)) == 0) {
+	int32_t raw_voltage = 0, raw_current = 0;
+	uint32_t voltage_ts, current_ts;
+	bool has_voltage = channel_has_cap(ch, CH_CAP_VOLTAGE_MEASUREMENT);
+	bool has_current = channel_has_cap(ch, CH_CAP_CURRENT_MEASUREMENT);
+
+	if (!has_voltage && !has_current) {
 		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
-	ch->raw_adc_voltage = ch->raw_dac_readback;
-	ch->raw_adc_current = 0;
+	if (ch->meas != NULL) {
+		vc_channel_buffer_read(ch->meas, &raw_voltage, &voltage_ts,
+				       &raw_current, &current_ts);
+	}
+	/* Only the measurement kinds this channel actually has are meaningful;
+	 * the buffer's other field is never published by the driver and would
+	 * otherwise read as a bogus zero reading instead of "not applicable". */
+	if (has_voltage) {
+		ch->raw_adc_voltage = raw_voltage;
+	}
+	if (has_current) {
+		ch->raw_adc_current = raw_current;
+	}
 	return VC_OK;
 }
 

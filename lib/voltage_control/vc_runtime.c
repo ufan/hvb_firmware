@@ -10,6 +10,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/sys/atomic.h>
+#include <zephyr/logging/log.h>
 
 #include "voltage_control/vc_runtime.h"
 #include "voltage_control/vc_controller.h"
@@ -18,6 +19,8 @@
 #include "reg_store/reg_catalog.h"
 #include "reg_store/reg_map.h"
 #include "reg_store/reg_schema.h"
+
+LOG_MODULE_REGISTER(vc_runtime, LOG_LEVEL_WRN);
 
 #ifdef CONFIG_VC_SETTINGS_PERSISTENCE
 #include <zephyr/settings/settings.h>
@@ -618,6 +621,63 @@ reg_handle_t reg_vc_global_handle(enum reg_vc_global_ordinal ordinal)
 	return &vc_catalog_global_regs[ordinal];
 }
 
+/* vc cal sample is documented as blocking: a calibration cycle is
+ * "write new DAC code, then sample" and the caller needs the measurement
+ * that resulted from the code just written, not whatever stale reading
+ * the free-running ADC loop last happened to publish. Wait for the
+ * channel's measurement buffer to advance past its pre-call timestamp
+ * (bounded by CONFIG_VC_CAL_SAMPLE_TIMEOUT_MS) before handing off to
+ * vc_controller_channel_cal_sample() to latch the result.
+ */
+static enum vc_status vc_runtime_cal_sample_fresh(struct vc_runtime *runtime,
+						   uint8_t ch_idx)
+{
+	struct vc_controller *ctrl = runtime->ctrl;
+
+	if (ch_idx >= ctrl->channel_count) {
+		return VC_ERR_UNSUPPORTED_CHANNEL;
+	}
+	if (ctrl->operating_mode != VC_OPERATING_MODE_CALIBRATION) {
+		return VC_ERR_INVALID_COMMAND;
+	}
+
+	struct vc_channel *channel = &ctrl->channels[ch_idx];
+
+	if (channel->meas != NULL) {
+		bool want_voltage = (channel->capabilities & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+		bool want_current = (channel->capabilities & CH_CAP_CURRENT_MEASUREMENT) != 0;
+		int32_t raw_voltage, raw_current;
+		uint32_t voltage_ts_before, current_ts_before, voltage_ts, current_ts;
+		int64_t deadline = k_uptime_get() + CONFIG_VC_CAL_SAMPLE_TIMEOUT_MS;
+
+		vc_channel_buffer_read(channel->meas, &raw_voltage, &voltage_ts_before,
+				       &raw_current, &current_ts_before);
+
+		for (;;) {
+			vc_channel_buffer_read(channel->meas, &raw_voltage, &voltage_ts,
+					       &raw_current, &current_ts);
+
+			bool voltage_fresh = !want_voltage || voltage_ts != voltage_ts_before;
+			bool current_fresh = !want_current || current_ts != current_ts_before;
+
+			if (voltage_fresh && current_fresh) {
+				break;
+			}
+
+			int64_t remaining = deadline - k_uptime_get();
+
+			if (remaining <= 0) {
+				LOG_WRN("ch%d cal sample timed out waiting for a fresh ADC reading",
+					ch_idx);
+				break;
+			}
+			k_sem_take(&runtime->wake, K_MSEC(remaining));
+		}
+	}
+
+	return vc_controller_channel_cal_sample(ctrl, ch_idx);
+}
+
 static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 						  const struct vc_runtime_command *cmd)
 {
@@ -643,7 +703,7 @@ static enum vc_status vc_runtime_dispatch_command(struct vc_runtime *runtime,
 		return vc_controller_channel_cal_raw_dac(ctrl, cmd->channel,
 							 cmd->payload.calibration_raw_dac);
 	case VC_RUNTIME_CMD_CALIBRATION_SAMPLE:
-		return vc_controller_channel_cal_sample(ctrl, cmd->channel);
+		return vc_runtime_cal_sample_fresh(runtime, cmd->channel);
 	case VC_RUNTIME_CMD_CALIBRATION_COMMIT:
 		return vc_controller_channel_cal_commit(ctrl, cmd->channel);
 	case VC_RUNTIME_CMD_CALIBRATION_EXIT:

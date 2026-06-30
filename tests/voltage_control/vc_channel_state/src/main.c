@@ -390,10 +390,44 @@ ZTEST(vc_channel_state, test_cal_set_raw_dac_requires_output_enabled)
 
 ZTEST(vc_channel_state, test_cal_sample_captures_raw)
 {
-	vc_channel_cal_set_output_enable(&ch, true);
-	vc_channel_cal_set_raw_dac(&ch, 123);
-	zassert_equal(vc_channel_cal_sample(&ch), VC_OK);
-	zassert_equal(ch.raw_adc_voltage, 123);
+	struct vc_channel_buffer meas = {
+		.channel_id = 0,
+	};
+	struct vc_channel cal_ch;
+
+	vc_channel_init(&cal_ch, NULL, 0, FULL_CAPS, &meas, NULL, NULL);
+	vc_channel_buffer_publish_voltage(&meas, 4567, 10);
+	vc_channel_buffer_publish_current(&meas, 89, 10);
+
+	vc_channel_cal_set_output_enable(&cal_ch, true);
+	vc_channel_cal_set_raw_dac(&cal_ch, 123);
+
+	zassert_equal(vc_channel_cal_sample(&cal_ch), VC_OK);
+	zassert_equal(cal_ch.raw_adc_voltage, 4567,
+		      "cal sample must read the real ADC buffer, not echo the DAC code");
+	zassert_equal(cal_ch.raw_adc_current, 89);
+}
+
+ZTEST(vc_channel_state, test_cal_sample_respects_capability_mask)
+{
+	struct vc_channel_buffer meas = {
+		.channel_id = 0,
+	};
+	struct vc_channel cal_ch;
+	uint16_t voltage_only_caps = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+				      CH_CAP_VOLTAGE_MEASUREMENT;
+
+	vc_channel_init(&cal_ch, NULL, 0, voltage_only_caps, &meas, NULL, NULL);
+	vc_channel_buffer_publish_voltage(&meas, 4567, 10);
+	vc_channel_buffer_publish_current(&meas, 89, 10);
+
+	vc_channel_cal_set_output_enable(&cal_ch, true);
+	vc_channel_cal_set_raw_dac(&cal_ch, 123);
+
+	zassert_equal(vc_channel_cal_sample(&cal_ch), VC_OK);
+	zassert_equal(cal_ch.raw_adc_voltage, 4567);
+	zassert_equal(cal_ch.raw_adc_current, 0,
+		      "channel without CH_CAP_CURRENT_MEASUREMENT must not surface buffer current");
 }
 
 ZTEST(vc_channel_state, test_cal_commit_requires_output_disabled)
