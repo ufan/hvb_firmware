@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
     static const std::vector<std::string> kOpModes  = {"Normal", "Automatic"};
     static const std::vector<std::string> kStartPol = {"Load NVS Config", "Factory Default"};
 
-    auto bSysCfg = hvb::tui::ActionButton("SysConfig", [&] { showSysCfg = !showSysCfg; });
+    auto bSysCfg = hvb::tui::ActionButton("SysConfig", [&] { showSysCfg = !showSysCfg; screen.PostEvent(Event::Custom); });
 
     auto scOpMode  = hvb::tui::InlineCycler(kOpModes, &inputs.opModeIdx, [&]{
         hvb::tui::writeSync(appState, inputs, "OpMode",
@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
     auto scSave    = Button("Save",    [&]{ hvb::tui::writeSync(appState, inputs, "Save", [&]{ return g_client.sendParamAction(-1, hvb::ParamAction::Save); }, [&]{ data.sysCfg = g_client.readSystemConfig(); }); });
     auto scLoad    = Button("Load",    [&]{ hvb::tui::writeSync(appState, inputs, "Load", [&]{ return g_client.sendParamAction(-1, hvb::ParamAction::Load); }, [&]{ data.sysCfg = g_client.readSystemConfig(); }); });
     auto scFactory = Button("Factory", [&]{ hvb::tui::writeSync(appState, inputs, "Factory", [&]{ return g_client.sendParamAction(-1, hvb::ParamAction::FactoryReset); }, [&]{ data.sysCfg = g_client.readSystemConfig(); }); });
-    auto scClose   = Button("Close", [&]{ showSysCfg = false; });
+    auto scClose   = Button("Close", [&]{ showSysCfg = false; screen.PostEvent(Event::Custom); });
 
     auto sysCfgForm = Container::Vertical({scOpMode, scStartup, scSave, scLoad, scFactory, scClose});
     auto sysCfgPopup = Renderer(sysCfgForm, [&] {
@@ -217,10 +217,7 @@ int main(int argc, char** argv) {
     // ---- Full layout ----
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
-    // Wrap with SysConfig modal
-    auto rootComponent = mainContainer | Modal(sysCfgPopup, &showSysCfg);
-
-    auto root = Renderer(rootComponent, [&] {
+    auto root = Renderer(mainContainer, [&] {
         std::string msg;
         { std::lock_guard<std::mutex> lk(statusMutex); msg = statusMsg; }
 
@@ -295,8 +292,9 @@ int main(int argc, char** argv) {
             separator(),
             statusBarEl,
         });
-    }) | CatchEvent([&](Event e) {
-        if (showSysCfg && e == Event::Escape) { showSysCfg = false; return true; }
+    }) | Modal(sysCfgPopup, &showSysCfg)
+       | CatchEvent([&](Event e) {
+        if (showSysCfg && e == Event::Escape) { showSysCfg = false; screen.PostEvent(Event::Custom); return true; }
         return false;
     });
 
