@@ -39,6 +39,7 @@ void ModbusWorker::doConnect(const QString& port, int baud, int slaveId, int tim
 
 void ModbusWorker::doDisconnect()
 {
+    m_channelCount = 0;
     m_client.disconnect();
     emit disconnected();
 }
@@ -155,16 +156,19 @@ QVariantMap ModbusWorker::channelConfigToMap(int /*ch*/, const hvb::ChannelConfi
 
 void ModbusWorker::doRefreshSystemInfo()
 {
-    auto info = m_client.readSystemInfo();
+    m_cachedSysInfo = m_client.readSystemInfo();
     if (!m_client.isConnected()) { emit operationComplete(false, "Read failed"); return; }
-    emit systemInfoReady(systemInfoToMap(info));
+    int n = m_cachedSysInfo.supportedChannels;
+    m_channelCount = (n >= 1 && n <= WORKER_MAX_CH) ? n : 0;
+    emit systemInfoReady(systemInfoToMap(m_cachedSysInfo));
 }
 
 void ModbusWorker::doRefreshChannelInfo(int ch)
 {
-    auto info = m_client.readChannelInfo(ch);
+    if (ch < 0 || ch >= WORKER_MAX_CH) return;
+    m_cachedChInfo[ch] = m_client.readChannelInfo(ch);
     if (!m_client.isConnected()) { emit operationComplete(false, "Read failed"); return; }
-    emit channelInfoReady(ch, channelInfoToMap(ch, info));
+    emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
 }
 
 void ModbusWorker::doReadSystemConfig()
@@ -327,4 +331,29 @@ void ModbusWorker::doRawReadFc03(int addr, int count) {
 void ModbusWorker::doRawWriteFc06(int addr, int value) {
     bool ok = m_client.writeReg16(static_cast<uint16_t>(addr), static_cast<uint16_t>(value));
     emit rawHexResult(ok ? "OK" : ("Error: " + QString::fromStdString(m_client.lastError())));
+}
+
+// ---------------------------------------------------------------------------
+//  Realtime poll — reads only status/measurement registers
+// ---------------------------------------------------------------------------
+
+void ModbusWorker::doPollStatus()
+{
+    if (!m_client.isConnected() || m_channelCount == 0) return;
+
+    m_client.readSystemStatus(m_cachedSysInfo);
+    if (!m_client.isConnected()) return;
+
+    uint16_t activeMask = m_cachedSysInfo.activeChMask;
+    for (int ch = 0; ch < m_channelCount; ++ch) {
+        if ((activeMask & (1u << ch)) == 0) continue;
+        m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch]);
+        if (!m_client.isConnected()) return;
+    }
+
+    emit systemInfoReady(systemInfoToMap(m_cachedSysInfo));
+    for (int ch = 0; ch < m_channelCount; ++ch) {
+        if ((activeMask & (1u << ch)) != 0)
+            emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
+    }
 }

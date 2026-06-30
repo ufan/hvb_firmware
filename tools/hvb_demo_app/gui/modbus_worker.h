@@ -47,6 +47,7 @@ public slots:
     void doRawReadFc04(int addr, int count);
     void doRawReadFc03(int addr, int count);
     void doRawWriteFc06(int addr, int value);
+    void doPollStatus();   // realtime registers only — called by poll timer
 
 signals:
     void connected(bool ok, const QString& error);
@@ -62,6 +63,12 @@ signals:
 
 private:
     hvb::HvbModbusClient m_client;
+
+    // Cached structs for realtime poll — populated by doRefreshSystemInfo/doRefreshChannelInfo
+    static constexpr int WORKER_MAX_CH = 16;
+    hvb::SystemInfo  m_cachedSysInfo{};
+    hvb::ChannelInfo m_cachedChInfo[WORKER_MAX_CH]{};
+    int m_channelCount = 0;
 
     QVariantMap systemInfoToMap(const hvb::SystemInfo& info);
     QVariantMap channelInfoToMap(int ch, const hvb::ChannelInfo& info);
