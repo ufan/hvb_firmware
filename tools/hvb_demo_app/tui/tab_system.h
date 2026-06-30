@@ -53,18 +53,10 @@ inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
         writeSync(s, inputs, "Factory", [&s]{ return s.client.sendParamAction(-1, ParamAction::FactoryReset); },
                   [&s, &inputs]{ s.data.sysCfg = s.client.readSystemConfig(); syncDataToInputs(s.data, inputs); });
     });
-    auto bCalExit = ActionButton("Exit Cal", [&s, &inputs]{
-        writeSync(s, inputs, "Exit Cal", [&s]{ return s.client.exitCalibrationMode(); },
-                  [&s, &inputs]{ s.data.sysCfg = s.client.readSystemConfig(); syncDataToInputs(s.data, inputs); });
-    });
-    auto bReset   = ActionButton("Reset",   [&s, &inputs]{
-        writeSync(s, inputs, "Reset", [&s]{ return s.client.sendParamAction(-1, ParamAction::SoftwareReset); },
-                  [&s, &inputs]{ s.data.sysCfg = s.client.readSystemConfig(); syncDataToInputs(s.data, inputs); });
-    });
 
     auto cfgContainer = Container::Vertical({
         opModeC, baudC, slaveInp, startupC,
-        bSave, bLoad, bFactory, bCalExit, bReset,
+        bSave, bLoad, bFactory,
     });
 
     return Renderer(cfgContainer, [=, &s]() {
@@ -98,8 +90,7 @@ inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
             hbox({ text("Startup Pol  : "), startupC->Render() }),
             separator(),
             hbox({ bSave->Render(), text("  "), bLoad->Render(), text("  "),
-                   bFactory->Render(), text("  "), bCalExit->Render(), text("  "),
-                   bReset->Render() }),
+                   bFactory->Render() }),
         }) | border;
 
         (void)sc;
