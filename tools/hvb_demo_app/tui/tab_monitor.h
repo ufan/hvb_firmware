@@ -33,8 +33,8 @@ inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         if (!s.data.valid) return;
         uint16_t st = s.data.chInfo[ch].status;
         bool on = (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0;
-        OutputAction act = on ? OutputAction::DisableImmediate : OutputAction::Enable;
-        std::string lbl = on ? "Disable" : "Enable";
+        OutputAction act = on ? OutputAction::DisableGraceful : OutputAction::Enable;
+        std::string lbl = on ? "Dis-Grace" : "Enable";
         writeSync(s, inputs, lbl,
             [&s, ch, act] { return s.client.sendOutputAction(ch, act); },
             refreshCh);
@@ -86,9 +86,24 @@ inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     };
     auto iLimitInp = CommitInput(&inputs.iThr[ch], "0.000", onILimit);
 
+    // ---- Kill button (DisableImmediate) ----
+    auto kopt = ButtonOption{};
+    kopt.transform = [](const EntryState& es) -> Element {
+        auto e = text("Kill");
+        e = e | color(Color::Red);
+        if (es.focused) e = e | inverted;
+        return e;
+    };
+    auto killBtn = Button("", [&s, &inputs, ch, refreshCh] {
+        if (!s.data.valid) return;
+        writeSync(s, inputs, "Kill",
+            [&s, ch] { return s.client.sendOutputAction(ch, OutputAction::DisableImmediate); },
+            refreshCh);
+    }, kopt);
+
     // ---- Horizontal container of all interactive widgets ----
     auto rowWidgets = Container::Horizontal({
-        statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp,
+        statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, killBtn,
     });
 
     return Renderer(rowWidgets, [=, &s]() mutable {
@@ -123,6 +138,8 @@ inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         parts.push_back(rampDownInp->Render() | size(WIDTH, EQUAL, 8));
         if (hasI) parts.push_back(iLimitInp->Render() | size(WIDTH, EQUAL, 13));
         else      parts.push_back(text(" -- ") | size(WIDTH, EQUAL, 13) | dim);
+        if (hasOut) parts.push_back(killBtn->Render());
+        else        parts.push_back(text(" -- ") | size(WIDTH, EQUAL, 5) | dim);
         parts.push_back(fltT);
 
         return hbox(std::move(parts));
@@ -180,6 +197,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
             text(" Ramp^") | size(WIDTH, EQUAL, 8)  | bold,
             text(" Rampv") | size(WIDTH, EQUAL, 8)  | bold,
             text(" I-lim (nA)  ") | size(WIDTH, EQUAL, 13) | bold,
+            text(" Kill") | bold,
             text(" Fault") | bold,
         });
 
