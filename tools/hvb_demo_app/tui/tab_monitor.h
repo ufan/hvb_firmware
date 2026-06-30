@@ -97,7 +97,10 @@ inline Component makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     auto killBtn = Button("", [&s, &inputs, ch, refreshCh] {
         if (!s.data.valid) return;
         writeSync(s, inputs, "Kill",
-            [&s, ch] { return s.client.sendOutputAction(ch, OutputAction::DisableImmediate); },
+            [&s, ch] {
+                uint16_t v = static_cast<uint16_t>(OutputAction::ForceOutputZero);
+                return s.client.writeReg16(reg::chAddr(ch, CH_OUTPUT_ACTION), v);
+            },
             refreshCh);
     }, kopt);
 
