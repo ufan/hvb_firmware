@@ -1000,17 +1000,17 @@ static int cmd_cal(const struct shell *sh, size_t argc, char **argv)
 			}
 			shell_fprintf(sh, SHELL_NORMAL, "  CH%d:", i);
 			if (snap.channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
-				shell_fprintf(sh, SHELL_NORMAL, " out=%s dac=%u",
+				shell_fprintf(sh, SHELL_NORMAL, " out=%s dac=%u (0x%04x)",
 					      snap.cal_output_enabled ? "ON" : "OFF",
-					      snap.raw_dac_readback);
+					      snap.raw_dac_readback, snap.raw_dac_readback);
 			}
 			if (snap.channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
-				shell_fprintf(sh, SHELL_NORMAL, " raw_v=%d",
-					      snap.raw_adc_voltage);
+				shell_fprintf(sh, SHELL_NORMAL, " raw_v=%d (0x%08x)",
+					      snap.raw_adc_voltage, snap.raw_adc_voltage);
 			}
 			if (snap.channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
-				shell_fprintf(sh, SHELL_NORMAL, " raw_i=%d",
-					      snap.raw_adc_current);
+				shell_fprintf(sh, SHELL_NORMAL, " raw_i=%d (0x%08x)",
+					      snap.raw_adc_current, snap.raw_adc_current);
 			}
 			shell_fprintf(sh, SHELL_NORMAL, "\n");
 		}
@@ -1065,17 +1065,17 @@ static int cmd_cal(const struct shell *sh, size_t argc, char **argv)
 				}
 				shell_fprintf(sh, SHELL_NORMAL, "CH%d:", i);
 				if (snap.channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
-					shell_fprintf(sh, SHELL_NORMAL, " dac=%u out=%s",
-						      snap.raw_dac_readback,
+					shell_fprintf(sh, SHELL_NORMAL, " dac=%u (0x%04x) out=%s",
+						      snap.raw_dac_readback, snap.raw_dac_readback,
 						      snap.cal_output_enabled ? "ON" : "OFF");
 				}
 				if (snap.channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
-					shell_fprintf(sh, SHELL_NORMAL, " raw_v=%d",
-						      snap.raw_adc_voltage);
+					shell_fprintf(sh, SHELL_NORMAL, " raw_v=%d (0x%08x)",
+						      snap.raw_adc_voltage, snap.raw_adc_voltage);
 				}
 				if (snap.channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
-					shell_fprintf(sh, SHELL_NORMAL, " raw_i=%d",
-						      snap.raw_adc_current);
+					shell_fprintf(sh, SHELL_NORMAL, " raw_i=%d (0x%08x)",
+						      snap.raw_adc_current, snap.raw_adc_current);
 				}
 				shell_fprintf(sh, SHELL_NORMAL, "\n");
 			}
@@ -1164,13 +1164,13 @@ static int cmd_cal(const struct shell *sh, size_t argc, char **argv)
 			return -EIO;
 		}
 		if (snap.channel_capability_flags & CH_CAP_RAW_OUTPUT_DRIVE) {
-			shell_print(sh, "  dac=%u", snap.raw_dac_readback);
+			shell_print(sh, "  dac=%u (0x%04x)", snap.raw_dac_readback, snap.raw_dac_readback);
 		}
 		if (snap.channel_capability_flags & CH_CAP_VOLTAGE_MEASUREMENT) {
-			shell_print(sh, "  raw_v=%d", snap.raw_adc_voltage);
+			shell_print(sh, "  raw_v=%d (0x%08x)", snap.raw_adc_voltage, snap.raw_adc_voltage);
 		}
 		if (snap.channel_capability_flags & CH_CAP_CURRENT_MEASUREMENT) {
-			shell_print(sh, "  raw_i=%d", snap.raw_adc_current);
+			shell_print(sh, "  raw_i=%d (0x%08x)", snap.raw_adc_current, snap.raw_adc_current);
 		}
 		shell_print(sh, "hint: vc cal %d set <field> <val>  or  vc cal %d commit", ch, ch);
 		return 0;
