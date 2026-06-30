@@ -55,7 +55,6 @@ void VirtualBoard::setVariantDefaults() {
         holdingRegs[base + CH_MEASURED_V_CAL_B] = 0;
         holdingRegs[base + CH_MEASURED_I_CAL_K] = 10000;
         holdingRegs[base + CH_MEASURED_I_CAL_B] = 0;
-        holdingRegs[base + CH_CAL_MAX_RAW_DAC_LIMIT] = 4095;
 
         inputRegs[base + CH_CAPABILITY_FLAGS] = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE | CH_CAP_VOLTAGE_MEASUREMENT;
     }

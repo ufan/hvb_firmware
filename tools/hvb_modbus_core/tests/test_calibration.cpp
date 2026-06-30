@@ -18,10 +18,11 @@ static void initBoard(uint16_t* input, uint16_t* holding) {
     input[SYS_ACTIVE_CHANNEL_MASK] = 0x0003;
     for (int ch = 0; ch < 2; ++ch) {
         uint16_t base = reg::chAddr(ch, 0);
+        input[base + CH_CAPABILITY_FLAGS] = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE |
+                                            CH_CAP_VOLTAGE_MEASUREMENT | CH_CAP_CURRENT_MEASUREMENT;
         holding[base + CH_OUTPUT_CAL_K] = 10000;
         holding[base + CH_MEASURED_V_CAL_K] = 10000;
         holding[base + CH_MEASURED_I_CAL_K] = 10000;
-        holding[base + CH_CAL_MAX_RAW_DAC_LIMIT] = 4095;
     }
 }
 
@@ -117,7 +118,6 @@ TEST_CASE("CalibrationSnapshot round-trip", "[calibration]") {
     /* v3: CH_CAL_SAMPLE_STATUS and CH_RAW_DAC_READBACK removed from FC04 input regs */
     holding[base_hold + CH_CAL_OUTPUT_ENABLE] = 1;
     holding[base_hold + CH_CAL_DAC_CODE] = 2048;
-    holding[base_hold + CH_CAL_MAX_RAW_DAC_LIMIT] = 3000;
 
     HvbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
@@ -129,12 +129,11 @@ TEST_CASE("CalibrationSnapshot round-trip", "[calibration]") {
     REQUIRE(snap.outputEnabled == true);
     REQUIRE(snap.rawDacCode == 2048);
     /* v3: rawDacReadback is the same FC03 register (CAL_DAC_CODE), no separate field */
-    REQUIRE(snap.maxRawDacLimit == 3000);
 
     client.detachTestArrays();
 }
 
-TEST_CASE("readChannelInfo includes v2.1 calibration fields", "[calibration]") {
+TEST_CASE("readCalibrationSnapshot reads raw ADC input registers", "[calibration]") {
     uint16_t input[MAX_ADDR], holding[MAX_ADDR];
     initBoard(input, holding);
 
@@ -143,15 +142,14 @@ TEST_CASE("readChannelInfo includes v2.1 calibration fields", "[calibration]") {
     input[base + CH_RAW_ADC_VOLTAGE_LO] = 0x1234;
     input[base + CH_RAW_ADC_CURRENT_HI] = 0x0000;
     input[base + CH_RAW_ADC_CURRENT_LO] = 0x5678;
-    /* v3: CH_CAL_SAMPLE_STATUS and CH_RAW_DAC_READBACK removed from FC04 input regs */
+    /* v3: raw ADC reads belong in readCalibrationSnapshot, not readChannelInfo */
 
     HvbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
-    auto info = client.readChannelInfo(0);
-    REQUIRE(info.rawAdcVoltage == 0x1234);
-    REQUIRE(info.rawAdcCurrent == 0x5678);
-    /* v3: sampleStatus and rawDacReadback not available from FC04 input regs */
+    auto snap = client.readCalibrationSnapshot(0);
+    REQUIRE(snap.rawAdcVoltage == 0x1234);
+    REQUIRE(snap.rawAdcCurrent == 0x5678);
 
     client.detachTestArrays();
 }
@@ -163,7 +161,6 @@ TEST_CASE("readCalibrationSnapshot includes cal session fields", "[calibration]"
     uint16_t base = reg::chAddr(0, 0);
     holding[base + CH_CAL_OUTPUT_ENABLE] = 1;
     holding[base + CH_CAL_DAC_CODE] = 3000;
-    holding[base + CH_CAL_MAX_RAW_DAC_LIMIT] = 3500;
 
     HvbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
@@ -171,7 +168,6 @@ TEST_CASE("readCalibrationSnapshot includes cal session fields", "[calibration]"
     auto snap = client.readCalibrationSnapshot(0);
     REQUIRE(snap.outputEnabled == true);
     REQUIRE(snap.rawDacCode == 3000);
-    REQUIRE(snap.maxRawDacLimit == 3500);
 
     client.detachTestArrays();
 }
@@ -215,15 +211,3 @@ TEST_CASE("exitCalibrationMode writes EXT_CAL_EXIT", "[calibration]") {
     client.detachTestArrays();
 }
 
-TEST_CASE("writeCalibrationMaxDacLimit", "[calibration]") {
-    uint16_t input[MAX_ADDR], holding[MAX_ADDR];
-    initBoard(input, holding);
-
-    HvbModbusClient client;
-    client.attachTestArrays(input, holding, MAX_ADDR);
-
-    REQUIRE(client.writeCalibrationMaxDacLimit(1, 2000));
-    REQUIRE(holding[reg::chAddr(1, CH_CAL_MAX_RAW_DAC_LIMIT)] == 2000);
-
-    client.detachTestArrays();
-}

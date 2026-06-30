@@ -6,7 +6,7 @@
 static void fillChannelDefaults(uint16_t* inputRegs, uint16_t* holdingRegs) {
     for (int ch = 0; ch < 2; ++ch) {
         uint16_t base = 40 + ch * 40;
-        inputRegs[base + 9]  = 0x0007;  // CapFlags: OutEn + CurrMeas + AutoRec (CH_CAPABILITY_FLAGS)
+        inputRegs[base + 9]  = 0x000F;  // CapFlags: OutEn + RawDrive + VMeas + IMeas (CH_CAPABILITY_FLAGS)
         holdingRegs[base + 12] = 10;    // Current safe band pct (CH_CURRENT_SAFE_BAND_PCT)
         holdingRegs[base + 15] = 32767; // I limit threshold (CH_CURRENT_LIMIT_THRESHOLD)
         holdingRegs[base + 20] = 10000; // Out cal K (CH_OUTPUT_CAL_K)
@@ -29,7 +29,7 @@ TEST_CASE("ChannelInfo — defaults both channels", "[channel-reads]") {
             CHECK(ci.voltageRaw == 0);
             CHECK(ci.currentRaw == 0);
             CHECK(ci.status == 0);
-            CHECK(ci.chCapFlags == 0x0007);
+            CHECK(ci.chCapFlags == 0x000F);
         }
     }
 }

@@ -1,11 +1,13 @@
 #include "hvb_modbus_client.h"
 #include "types.h"
+#include "register_map.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 TEST_CASE("Write — target voltage", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
+    inputRegs[hvb::reg::chAddr(0, CH_CAPABILITY_FLAGS)] = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE;
 
     hvb::HvbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
@@ -43,6 +45,8 @@ TEST_CASE("Write — fault command clear active", "[writes]") {
 TEST_CASE("Write — calibration", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
+    inputRegs[hvb::reg::chAddr(0, CH_CAPABILITY_FLAGS)] = CH_CAP_RAW_OUTPUT_DRIVE;
+    inputRegs[hvb::reg::chAddr(1, CH_CAPABILITY_FLAGS)] = CH_CAP_VOLTAGE_MEASUREMENT;
 
     hvb::HvbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
@@ -90,6 +94,7 @@ TEST_CASE("Write — channel safe band", "[writes]") {
 TEST_CASE("Write — read-back consistency", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
+    inputRegs[hvb::reg::chAddr(0, CH_CAPABILITY_FLAGS)] = CH_CAP_RAW_OUTPUT_DRIVE | CH_CAP_VOLTAGE_MEASUREMENT;
 
     hvb::HvbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);

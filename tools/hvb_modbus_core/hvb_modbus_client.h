@@ -67,7 +67,6 @@ public:
     bool writeRawDacCode(int ch, uint16_t code);
     bool sendCalibrationSampleCommand(int ch);
     bool sendCalibrationCommitCommand(int ch);
-    bool writeCalibrationMaxDacLimit(int ch, uint16_t limit);
     CalibrationSnapshot readCalibrationSnapshot(int ch);
 
     // Low-level

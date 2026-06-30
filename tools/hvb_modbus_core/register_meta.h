@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "register_map.h"
+
 namespace hvb::meta {
 
 struct RegDesc {
@@ -17,6 +19,7 @@ struct RegDesc {
     bool selfClearing = false;
     int channelIndex = -1;           // -1 = system, 0+ = channel
     std::vector<const char*> enumLabels;
+    hvb::reg::PollCat pollCat = hvb::reg::PollCat::Fixed;
 };
 
 extern const std::vector<RegDesc> SYSTEM_INPUT;

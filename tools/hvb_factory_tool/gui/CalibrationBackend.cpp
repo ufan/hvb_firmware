@@ -142,7 +142,6 @@ void CalibrationBackend::refreshSnapshot() {
     QVariantMap map;
     map["outputEnabled"] = snap.outputEnabled;
     map["rawDacCode"] = snap.rawDacCode;
-    map["maxRawDacLimit"] = snap.maxRawDacLimit;
     map["rawDacReadback"] = snap.rawDacCode;
     map["rawAdcVoltage"] = snap.rawAdcVoltage;
     map["rawAdcCurrent"] = snap.rawAdcCurrent;
