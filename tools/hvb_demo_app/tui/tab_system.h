@@ -81,7 +81,8 @@ inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
             hbox({ text("Humidity  : "), text(std::string(hum) + " %RH") }),
             hbox({ text("Op Mode   : "), text(opModeName(si.activeOpMode)) }),
             hbox({ text("Fault     : "), text(faultStr(si.faultCause)) }),
-        }) | border | size(WIDTH, GREATER_THAN, 38);
+            filler(),
+        }) | border;
 
         auto rightPanel = vbox({
             hbox({ text("Op Mode      : "), opModeC->Render() }),
@@ -91,10 +92,14 @@ inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
             separator(),
             hbox({ bSave->Render(), text("  "), bLoad->Render(), text("  "),
                    bFactory->Render() }),
+            filler(),
         }) | border;
 
         (void)sc;
-        return hbox({ leftPanel, rightPanel });
+        return vbox({
+            hbox({ leftPanel | flex, rightPanel | flex }) | flex,
+            filler(),
+        });
     });
 }
 
