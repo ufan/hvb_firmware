@@ -19,3 +19,5 @@ twister-out*
 tools/bin
 reports
 __pycache__
+.qtcreator
+.temp
