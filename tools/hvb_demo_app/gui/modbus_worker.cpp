@@ -157,9 +157,16 @@ QVariantMap ModbusWorker::channelConfigToMap(int /*ch*/, const hvb::ChannelConfi
 void ModbusWorker::doRefreshSystemInfo()
 {
     m_cachedSysInfo = m_client.readSystemInfo();
-    if (!m_client.isConnected()) { emit operationComplete(false, "Read failed"); return; }
     int n = m_cachedSysInfo.supportedChannels;
-    m_channelCount = (n >= 1 && n <= WORKER_MAX_CH) ? n : 0;
+    if (m_cachedSysInfo.protoMajor < 1 || n < 1 || n > WORKER_MAX_CH) {
+        m_channelCount = 0;
+        QString error = QString::fromStdString(m_client.lastError());
+        if (error.isEmpty())
+            error = QString("invalid channel count %1").arg(n);
+        emit operationComplete(false, "Channel discovery failed: " + error);
+        return;
+    }
+    m_channelCount = n;
     emit systemInfoReady(systemInfoToMap(m_cachedSysInfo));
 }
 

@@ -84,7 +84,7 @@ void ModbusBackend::connectToDevice()
     setStatus("Connecting...");
     QMetaObject::invokeMethod(m_worker, "doConnect", Qt::QueuedConnection,
         Q_ARG(QString, m_selectedPort), Q_ARG(int, m_baud),
-        Q_ARG(int, m_slaveId), Q_ARG(int, 500));
+        Q_ARG(int, m_slaveId), Q_ARG(int, 3000));
 }
 
 void ModbusBackend::disconnectFromDevice()
