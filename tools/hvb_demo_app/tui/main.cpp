@@ -2,17 +2,21 @@
 #include "config_manager.h"
 #include "tab_monitor.h"
 #include "tab_channel.h"
+#include "tui_policy.h"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <functional>
 #include <mutex>
 #include <queue>
+#include <string>
 #include <thread>
+#include <vector>
 
 using namespace ftxui;
 
@@ -117,9 +121,23 @@ int main(int argc, char** argv) {
 
     // ---- Connection inputs (live in the connection modal) ----
     std::string portVal = cfgPort, baudVal = cfgBaud, slaveVal = cfgSlaveId;
-    auto portInp  = Input(&portVal,  "port");
     auto baudInp  = Input(&baudVal,  "baud");
     auto slaveInp = Input(&slaveVal, "id");
+
+    // Port list & selection
+    auto portList = std::make_shared<std::vector<std::string>>();
+    int portIdx = -1;
+
+    auto doScanPorts = [&] {
+        *portList = hvb::HvbModbusClient::scanPorts();
+        portIdx = hvb::tui::selectedPortIndex(*portList, portVal);
+        portVal = portIdx >= 0 ? (*portList)[portIdx] : std::string{};
+        screen.PostEvent(Event::Custom);
+    };
+
+    auto portDropdown = Dropdown(portList.get(), &portIdx);
+    auto visiblePortDropdown = Maybe(portDropdown, [&] { return !portList->empty(); });
+    auto bScan = Button("Rescan", [&] { doScanPorts(); });
 
     // ---- Tab titles — dynamic; rebuilt after connect ----
     std::vector<std::string> tabTitles = {"Monitor"};
@@ -193,7 +211,11 @@ int main(int argc, char** argv) {
     auto bConnToggle = Button("", [&] {
         if (g_connected.load())     doDisconnect();
         else if (connecting.load()) abortConnect = true;
-        else { showConnModal = !showConnModal; screen.PostEvent(Event::Custom); }
+        else {
+            doScanPorts();
+            showConnModal = true;
+            screen.PostEvent(Event::Custom);
+        }
     }, connBtnOpt);
 
     // ---- Connection modal ----
@@ -203,17 +225,22 @@ int main(int argc, char** argv) {
     auto bCancelConn = hvb::tui::ActionButton("Cancel", [&] {
         showConnModal = false; screen.PostEvent(Event::Custom);
     });
-    auto connModalForm   = Container::Vertical({portInp, baudInp, slaveInp, bConnInModal, bCancelConn});
+    auto connModalForm   = Container::Vertical({visiblePortDropdown, bScan, baudInp, slaveInp, bConnInModal, bCancelConn});
     auto connModalPopup  = Renderer(connModalForm, [&] {
+        if (portIdx >= 0 && portIdx < static_cast<int>(portList->size()))
+            portVal = (*portList)[portIdx];
+        Element portChoice = portList->empty()
+            ? text("(no ports found)") | dim | flex
+            : visiblePortDropdown->Render() | flex;
         return vbox({
             text(" Connection Settings ") | bold | center,
             separator(),
-            hbox({ text("Port  : "), portInp->Render()  | size(WIDTH, EQUAL, 18) }),
+            hbox({ text("Port  : "), portChoice, text(" "), bScan->Render() }),
             hbox({ text("Baud  : "), baudInp->Render()  | size(WIDTH, EQUAL, 8)  }),
             hbox({ text("Slave : "), slaveInp->Render() | size(WIDTH, EQUAL, 5)  }),
             separator(),
             hbox({ bConnInModal->Render(), text("  "), bCancelConn->Render() }) | center,
-        }) | border | size(WIDTH, EQUAL, 38);
+        }) | border | size(WIDTH, EQUAL, 42);
     });
 
     auto bQuit = hvb::tui::ActionButton("Quit", [&] {
