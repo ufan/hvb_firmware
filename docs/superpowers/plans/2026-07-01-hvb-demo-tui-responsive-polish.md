@@ -456,3 +456,213 @@ Expected: all Catch2 tests pass and `git diff --check` produces no output.
 git add tools/hvb_demo_app/tui/tab_channel.h
 git commit -m "style(tui): separate channel live panel"
 ```
+
+### Task 7: Lock down persistence scope and disconnected tabs
+
+**Files:**
+- Modify: `tools/hvb_demo_app/tui/tui_policy.h`
+- Modify: `tools/hvb_modbus_core/tests/test_tui_policy.cpp`
+- Modify: `tools/hvb_modbus_core/tests/test_writes.cpp`
+
+- [ ] **Step 1: Write failing policy and persistence tests**
+
+Add tests proving disconnected UI state collapses to Monitor and parameter
+actions use distinct system/channel addresses:
+
+```cpp
+TEST_CASE("disconnected UI retains only Monitor") {
+    std::vector<std::string> titles = {"Monitor", "CH0", "CH1"};
+    int active = 2;
+    CHECK(reconcileDisconnectedTabs(false, titles, active));
+    CHECK(titles == std::vector<std::string>{"Monitor"});
+    CHECK(active == 0);
+    CHECK_FALSE(reconcileDisconnectedTabs(true, titles, active));
+}
+
+TEST_CASE("Write — parameter actions preserve system and channel scope") {
+    uint16_t inputRegs[280] = {};
+    uint16_t holdingRegs[280] = {};
+    hvb::HvbModbusClient client;
+    client.attachTestArrays(inputRegs, holdingRegs, 280);
+
+    REQUIRE(client.sendParamAction(-1, hvb::ParamAction::Save));
+    CHECK(holdingRegs[hvb::reg::sysAddr(SYS_PARAM_ACTION)] ==
+          static_cast<uint16_t>(hvb::ParamAction::Save));
+    REQUIRE(client.sendParamAction(1, hvb::ParamAction::Save));
+    CHECK(holdingRegs[hvb::reg::chAddr(1, CH_PARAM_ACTION)] ==
+          static_cast<uint16_t>(hvb::ParamAction::Save));
+}
+```
+
+- [ ] **Step 2: Run tests and verify RED**
+
+Run:
+
+```bash
+cmake --build tools/build/linux-debug --target hvb_tests -j2
+```
+
+Expected: compilation fails because `reconcileDisconnectedTabs` is undefined.
+
+- [ ] **Step 3: Implement disconnected-tab reconciliation**
+
+Add this pure policy to `tui_policy.h`:
+
+```cpp
+inline bool reconcileDisconnectedTabs(bool connected,
+                                      std::vector<std::string>& titles,
+                                      int& active) {
+    if (connected) return false;
+    if (titles.size() == 1 && titles.front() == "Monitor" && active == 0)
+        return false;
+    titles = {"Monitor"};
+    active = 0;
+    return true;
+}
+```
+
+- [ ] **Step 4: Run focused tests and verify GREEN**
+
+Run:
+
+```bash
+cmake --build tools/build/linux-debug --target hvb_tests -j2
+tools/build/linux-debug/hvb_modbus_core/tests/hvb_tests \
+  "*disconnected UI*,*parameter actions preserve*"
+```
+
+Expected: both test cases pass.
+
+- [ ] **Step 5: Commit the policies**
+
+```bash
+git add tools/hvb_demo_app/tui/tui_policy.h \
+        tools/hvb_modbus_core/tests/test_tui_policy.cpp \
+        tools/hvb_modbus_core/tests/test_writes.cpp
+git commit -m "test(tui): cover persistence scope and tab cleanup"
+```
+
+### Task 8: Recompose the menu and clean disconnected tabs
+
+**Files:**
+- Modify: `tools/hvb_demo_app/tui/main.cpp`
+
+- [ ] **Step 1: Share the system Save callback**
+
+Extract the existing System Settings Save body and use it for both buttons:
+
+```cpp
+auto saveSystemConfig = [&] {
+    hvb::tui::postWrite(appState, inputs, "Save",
+        [&] { return g_client.sendParamAction(-1, hvb::ParamAction::Save); },
+        [&] { data.sysCfg = g_client.readSystemConfig(); });
+};
+auto scSave = Button("Save", saveSystemConfig);
+auto menuSave = hvb::tui::ActionButton("Save", saveSystemConfig);
+auto connectedMenuSave = Maybe(menuSave, [&] { return g_connected.load(); });
+```
+
+Render a dim `[ Save ]` placeholder while offline, and put only
+`connectedMenuSave` in the focus container.
+
+- [ ] **Step 2: Move Connect to the menu and reorder it**
+
+Set the menu focus order to mode, Save, Connect, Quit. Leave only Setting in
+the status-bar focus container. Render the menu in this order:
+
+```cpp
+hbox({
+    text(" HVB ") | bold,
+    separator(),
+    text(" " + chTxt + " Channels "),
+    separator(),
+    modeElement,
+    text(" "),
+    saveElement,
+    filler(),
+    centerGroup,
+    filler(),
+    bConnToggle->Render(),
+    text(" "),
+    bQuit->Render(),
+})
+```
+
+Remove `bConnToggle` from `statusBarEl`; retain connection text and Setting.
+
+- [ ] **Step 3: Reconcile tabs after pending scans**
+
+After consuming `pendingSync`, rebuild channel titles only when both connection
+and scanned data are valid. Then call:
+
+```cpp
+hvb::tui::reconcileDisconnectedTabs(
+    g_connected.load() && data.valid, tabTitles, activeTab);
+```
+
+This prevents a late full-scan event from restoring stale tabs after disconnect.
+
+- [ ] **Step 4: Build and commit**
+
+Run:
+
+```bash
+cmake --build tools/build/linux-debug --target hvb_tui -j2
+```
+
+Expected: the target builds with no new warnings.
+
+```bash
+git add tools/hvb_demo_app/tui/main.cpp
+git commit -m "feat(tui): add menu persistence shortcut"
+```
+
+### Task 9: Add the Monitor Save column
+
+**Files:**
+- Modify: `tools/hvb_demo_app/tui/tab_monitor.h`
+
+- [ ] **Step 1: Add one channel-scoped Save component per row**
+
+Extend `MonitorRow` with `saveBtn`. Create it in `makeMonitorRow` using the
+same action and refresh path as Channel > Setting > Save:
+
+```cpp
+auto saveBtn = ActionButton("Save", [&s, &inputs, ch, refreshCh] {
+    postWrite(s, inputs, "Save",
+        [&s, ch] {
+            return s.client.sendParamAction(ch, ParamAction::Save);
+        },
+        refreshCh);
+});
+```
+
+Append it to `rowWidgets` so keyboard focus order matches the table.
+
+- [ ] **Step 2: Render the final Save column**
+
+Append `"Save"` to `kHeaders`. After Fault, append:
+
+```cpp
+cells.push_back(rows->at(ch).saveBtn->Render() | center);
+```
+
+- [ ] **Step 3: Run full verification**
+
+Run:
+
+```bash
+cmake --build tools/build/linux-debug --target hvb_tui hvb_tests -j2
+tools/build/linux-debug/hvb_modbus_core/tests/hvb_tests
+git diff --check
+```
+
+Expected: the TUI builds, all Catch2 tests pass, and whitespace checking emits
+no output.
+
+- [ ] **Step 4: Commit the Monitor shortcut**
+
+```bash
+git add tools/hvb_demo_app/tui/tab_monitor.h
+git commit -m "feat(tui): add channel save column"
+```
