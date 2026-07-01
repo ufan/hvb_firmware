@@ -1,0 +1,6 @@
+tests:
+  drivers.ads1232:
+    platform_allow: native_sim
+    tags:
+      - adc
+      - drivers

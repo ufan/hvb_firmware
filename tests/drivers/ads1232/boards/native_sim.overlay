@@ -1,0 +1,26 @@
+/ {
+	vc_controller: vc-controller {
+		compatible = "jianwei,vc-controller";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "okay";
+
+		channel@0 {
+			compatible = "zephyr,user";
+			reg = <0>;
+			status = "okay";
+		};
+	};
+
+	ads1232_test: ads1232-test {
+		compatible = "ti,ads1232";
+		status = "okay";
+		drdy-gpios = <&gpio0 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		sclk-gpios = <&gpio0 1 GPIO_ACTIVE_HIGH>;
+		pwdn-gpios = <&gpio0 2 GPIO_ACTIVE_LOW>;
+		a0-gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+		gain0-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+		gain1-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+		gain = <1>;
+	};
+};

@@ -93,24 +93,14 @@ static int32_t ads1232_bitbang_read(const struct ads1232_config *cfg)
 		k_busy_wait(1);
 	}
 
-	/* 25th SCLK to force DRDY/DOUT high (Figure 7-10).
-	 * Some isolators may drop an occasional SCLK edge; keep
-	 * pulsing until DRDY actually rises (up to 5 pulses).
-	 *
-	 * IMPORTANT: stop as soon as DRDY goes HIGH (logical inactive with
-	 * GPIO_ACTIVE_LOW → gpio_pin_get_dt returns 0).  Sending a 26th SCLK
-	 * while DRDY is high triggers offset calibration (§7.4.1), which
-	 * takes 801 ms at 10 SPS and causes permanent DRDY timeouts.
+	/* Exactly one extra clock forces DRDY/DOUT high (Figure 7-10).
+	 * Never retry this clock: the falling edge of clock 26 starts offset
+	 * calibration (§7.4.1) and stalls conversions for up to 801 ms.
 	 */
-	for (int i = 0; i < 5; i++) {
-		gpio_pin_set_dt(&cfg->sclk, 1);
-		k_busy_wait(1);
-		gpio_pin_set_dt(&cfg->sclk, 0);
-		k_busy_wait(1);
-		if (!gpio_pin_get_dt(&cfg->drdy)) {
-			break;
-		}
-	}
+	gpio_pin_set_dt(&cfg->sclk, 1);
+	k_busy_wait(1);
+	gpio_pin_set_dt(&cfg->sclk, 0);
+	k_busy_wait(1);
 
 	/* Sign-extend 24-bit two's complement to 32-bit */
 	if (val & BIT(23)) {
