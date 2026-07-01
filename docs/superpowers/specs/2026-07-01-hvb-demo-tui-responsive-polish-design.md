@@ -27,6 +27,34 @@ This represents an already-off channel with no nonzero target to enable. The but
 
 Existing behavior remains unchanged for a ramp in progress and for channels with a nonzero configured target.
 
+## Persistence shortcuts and menu composition
+
+Order the menu bar as `HVB | <count> Channels | <mode> <system Save> ...
+<Connect> <Quit>`. The middle span remains flexible and may show the existing
+connected telemetry. Show `-- Channels` while disconnected. Move the existing
+Connect/Disconnect/Abort control from the status bar to the menu bar immediately
+before Quit.
+
+Add a small system Save button immediately after the mode selector. It performs
+the same system-scoped `ParamAction::Save` operation as Save in System Settings.
+While disconnected, show the shortcut dimmed and exclude it from keyboard focus.
+
+Add a final Save column after Fault in the Monitor table. Each populated channel
+row has a small Save button that performs the same channel-scoped
+`ParamAction::Save` operation as Channel > Setting > Save. The action persists
+the channel's complete configuration, not only the adjacent table values.
+
+Share each persistence callback between its original control and convenience
+shortcut so status reporting, error handling, readback, and NVS scope cannot
+drift.
+
+## Disconnected tab lifecycle
+
+Whenever the client is disconnected, including an unexpected connection loss,
+remove every channel tab and retain only Monitor. If a removed channel tab was
+active, select Monitor. A later successful full scan recreates exactly the tabs
+reported by the connected device.
+
 ## Channel tab capability behavior
 
 Move the target-voltage input out of Live and into Control. It is the first field on Control's second row, before ramp-up and ramp-down.
@@ -81,6 +109,10 @@ Tests cover selection preservation/fallback/empty results, the zero-target off g
 7. Exercise all voltage/current capability combinations and confirm Protection exists only when both are present and no hidden protection control receives focus.
 8. Resize each tab from 80×24 upward and confirm it fills available space without ragged alignment or fixed-size islands.
 9. Build the TUI with warnings enabled and run the host-side tests.
+10. Confirm system and per-channel Save shortcuts issue the correct persistence
+    scope and report results through the shared status path.
+11. Disconnect while a channel tab is active and confirm only Monitor remains
+    selected; repeat with an unexpected client disconnect.
 
 ## Non-goals
 
