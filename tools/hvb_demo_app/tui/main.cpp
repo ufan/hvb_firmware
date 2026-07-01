@@ -266,8 +266,12 @@ int main(int argc, char** argv) {
             [&] { return g_client.writeStartupChannelPolicy((uint16_t)inputs.startupIdx); },
             [&] { data.sysCfg = g_client.readSystemConfig(); });
     });
-    auto scSave    = Button("Save",    [&] { hvb::tui::postWrite(appState, inputs, "Save",
-        [&] { return g_client.sendParamAction(-1, hvb::ParamAction::Save);         }, [&] { data.sysCfg = g_client.readSystemConfig(); }); });
+    auto saveSystemConfig = [&] {
+        hvb::tui::postWrite(appState, inputs, "Save",
+            [&] { return g_client.sendParamAction(-1, hvb::ParamAction::Save); },
+            [&] { data.sysCfg = g_client.readSystemConfig(); });
+    };
+    auto scSave    = Button("Save", saveSystemConfig);
     auto scLoad    = Button("Load",    [&] { hvb::tui::postWrite(appState, inputs, "Load",
         [&] { return g_client.sendParamAction(-1, hvb::ParamAction::Load);         }, [&] { data.sysCfg = g_client.readSystemConfig(); }); });
     auto scFactory = Button("Factory", [&] { hvb::tui::postWrite(appState, inputs, "Factory",
@@ -303,7 +307,9 @@ int main(int argc, char** argv) {
             [&] { data.sysCfg = g_client.readSystemConfig(); });
     }, /*autoCommit=*/true);
 
-    auto menuBar = Container::Horizontal({menuModeC, bQuit});
+    auto menuSave = hvb::tui::ActionButton("Save", saveSystemConfig);
+    auto connectedMenuSave = Maybe(menuSave, [&] { return g_connected.load(); });
+    auto menuBar = Container::Horizontal({menuModeC, connectedMenuSave, bConnToggle, bQuit});
 
     // ---- Tab bar ----
     MenuOption tabOpt = MenuOption::Horizontal();
@@ -322,18 +328,22 @@ int main(int argc, char** argv) {
         tabComponents.push_back(hvb::tui::makeChannelTab(appState, inputs, ch));
     auto tabContent = Container::Tab(tabComponents, &activeTab);
 
-    // ---- Status bar (toggle button + SysConfig; port/baud/slave are in the modal) ----
-    auto statusBar    = Container::Horizontal({bConnToggle, bSysCfg});
+    // ---- Status bar (connection details + SysConfig; Connect lives in the menu) ----
+    auto statusBar    = Container::Horizontal({bSysCfg});
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
     auto root = Renderer(mainContainer, [&] {
         if (pendingSync.exchange(false, std::memory_order_acq_rel)) {
-            int nc = pendingChannelCount.load(std::memory_order_acquire);
-            rebuildChannelTitles(tabTitles, nc);
-            int maxTab = static_cast<int>(tabTitles.size()) - 1;
-            if (activeTab > maxTab) activeTab = maxTab;
-            hvb::tui::syncDataToInputs(data, inputs);
+            if (g_connected.load() && data.valid) {
+                int nc = pendingChannelCount.load(std::memory_order_acquire);
+                rebuildChannelTitles(tabTitles, nc);
+                int maxTab = static_cast<int>(tabTitles.size()) - 1;
+                if (activeTab > maxTab) activeTab = maxTab;
+                hvb::tui::syncDataToInputs(data, inputs);
+            }
         }
+        hvb::tui::reconcileDisconnectedTabs(
+            g_connected.load() && data.valid, tabTitles, activeTab);
 
         std::string msg;
         { std::lock_guard<std::mutex> lk(statusMutex); msg = statusMsg; }
@@ -385,18 +395,25 @@ int main(int argc, char** argv) {
         } else {
             centerGroup = text("");
         }
+        Element modeElement = isOnline || connecting.load()
+            ? menuModeC->Render()
+            : text("[ " + kOpModes[inputs.opModeIdx] + " ]") | dim;
+        Element saveElement = isOnline
+            ? connectedMenuSave->Render()
+            : text("[ Save ]") | dim;
         auto menuBarEl = hbox({
             text(" HVB ") | bold,
             separator(),
-            text(" Mode: "),
-            isOnline || connecting.load()
-                ? menuModeC->Render()
-                : text("[ " + kOpModes[inputs.opModeIdx] + " ]") | dim,
+            text(" " + chTxt + " Channels "),
             separator(),
-            text(" Channel No: " + chTxt + " "),
+            modeElement,
+            text(" "),
+            saveElement,
             filler(),
             centerGroup,
             filler(),
+            bConnToggle->Render(),
+            text(" "),
             bQuit->Render(),
         });
 
@@ -422,7 +439,7 @@ int main(int argc, char** argv) {
             isOnline ? text(" FW:" + fwTxt + "  Proto:" + protoTxt + " ") : text(""),
             filler(),
             connTextEl,
-            bConnToggle->Render(), text(" "),
+            text(" "),
             bSysCfg->Render(),
         });
 
