@@ -406,3 +406,53 @@ git commit -m "fix(tui): preserve flexible tab geometry"
 ```
 
 If no correction was needed, do not create an empty commit.
+
+### Task 6: Separate Live from the Channel panel body
+
+**Files:**
+- Modify: `tools/hvb_demo_app/tui/tab_channel.h`
+
+- [ ] **Step 1: Add exactly one external blank row**
+
+In the final Channel renderer, place one `emptyElement()` between `livePanel`
+and the flexible two-column body:
+
+```cpp
+return vbox({
+    livePanel,
+    emptyElement(),
+    hbox({ leftColumn | flex, rightColumn | flex }) | flex,
+    filler(),
+});
+```
+
+Do not add padding inside any panel and do not change the focus container.
+
+- [ ] **Step 2: Build the TUI**
+
+Run:
+
+```bash
+cmake --build tools/build/linux-debug --target hvb_tui -j2
+```
+
+Expected: `hvb_tui` builds successfully with no new compiler warnings.
+
+- [ ] **Step 3: Verify the host suite and whitespace**
+
+Run:
+
+```bash
+cmake --build tools/build/linux-debug --target hvb_tests -j2
+tools/build/linux-debug/hvb_modbus_core/tests/hvb_tests
+git diff --check
+```
+
+Expected: all Catch2 tests pass and `git diff --check` produces no output.
+
+- [ ] **Step 4: Commit the spacing adjustment**
+
+```bash
+git add tools/hvb_demo_app/tui/tab_channel.h
+git commit -m "style(tui): separate channel live panel"
+```
