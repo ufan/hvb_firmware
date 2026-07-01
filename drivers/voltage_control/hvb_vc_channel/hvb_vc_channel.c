@@ -9,6 +9,7 @@
 #include <zephyr/drivers/dac.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
 
 #include <dt-bindings/voltage_control/capabilities.h>
 #include "voltage_control/vc_channel_api.h"
@@ -93,6 +94,8 @@ static int hvb_vc_set_enable(const struct device *dev, bool enable)
 
 /* ---- Async ADC sampling loop ---- */
 
+#ifdef CONFIG_ADC_ASYNC
+
 static void hvb_vc_start_next_cycle(struct hvb_vc_data *data);
 
 static void hvb_vc_notify_meas(struct hvb_vc_data *data)
@@ -134,9 +137,6 @@ static void hvb_vc_poll_handler(struct k_work *work)
 		vc_channel_buffer_publish_voltage(data->meas, raw,
 					  k_uptime_get_32());
 
-		/* Wake any cal_sample_fresh waiter even if current phase follows.
-		 * The waiter re-checks timestamps so it won't accept a half-cycle
-		 * as "fresh" when both V and I are required. */
 		hvb_vc_notify_meas(data);
 
 		if (cfg->capabilities & CH_CAP_CURRENT_MEASUREMENT) {
@@ -169,7 +169,11 @@ static void hvb_vc_start_next_cycle(struct hvb_vc_data *data)
 	}
 }
 
+#endif /* CONFIG_ADC_ASYNC */
+
 /* ---- Start/stop sampling ---- */
+
+#ifdef CONFIG_ADC_ASYNC
 
 static int hvb_vc_start_sampling(const struct device *dev)
 {
@@ -194,6 +198,22 @@ static int hvb_vc_stop_sampling(const struct device *dev)
 	k_work_poll_cancel(&data->poll_work);
 	return 0;
 }
+
+#else /* CONFIG_ADC_ASYNC */
+
+static int hvb_vc_start_sampling(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+	return 0;
+}
+
+static int hvb_vc_stop_sampling(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+	return 0;
+}
+
+#endif /* CONFIG_ADC_ASYNC */
 
 /* ---- Capability + callback ops ---- */
 
@@ -247,7 +267,9 @@ static int hvb_vc_init(const struct device *dev)
 			return ret;
 		}
 	}
-	if (!device_is_ready(cfg->adc)) {
+	if ((cfg->capabilities & (CH_CAP_VOLTAGE_MEASUREMENT |
+				  CH_CAP_CURRENT_MEASUREMENT)) &&
+	    !device_is_ready(cfg->adc)) {
 		LOG_ERR("ADC not ready");
 		return -ENODEV;
 	}
@@ -260,6 +282,7 @@ static int hvb_vc_init(const struct device *dev)
 	data->dev = dev;
 	data->channel = cfg->channel_index;
 
+#ifdef CONFIG_ADC_ASYNC
 	data->adc_seq.buffer = &data->adc_buf;
 	data->adc_seq.buffer_size = sizeof(data->adc_buf);
 	data->adc_seq.resolution = 24;
@@ -268,10 +291,13 @@ static int hvb_vc_init(const struct device *dev)
 	k_poll_event_init(&data->adc_event, K_POLL_TYPE_SIGNAL,
 			  K_POLL_MODE_NOTIFY_ONLY, &data->adc_signal);
 	k_work_poll_init(&data->poll_work, hvb_vc_poll_handler);
+#endif
 
 	LOG_INF("ch%d ready dac=%s adc=%s caps=0x%04x",
 		cfg->channel_index,
-		cfg->dac->name, cfg->adc->name, cfg->capabilities);
+		cfg->dac->name,
+		cfg->adc ? cfg->adc->name : "none",
+		cfg->capabilities);
 	return 0;
 }
 
@@ -281,7 +307,9 @@ static int hvb_vc_init(const struct device *dev)
 	VC_CHANNEL_BUFFER_EXTERN(DT_DRV_INST(n)); \
 	static const struct hvb_vc_config hvb_vc_config_##n = { \
 		.dac = DEVICE_DT_GET(DT_INST_PHANDLE(n, dac)), \
-		.adc = DEVICE_DT_GET(DT_INST_PHANDLE(n, adc)), \
+		.adc = COND_CODE_1(DT_INST_NODE_HAS_PROP(n, adc), \
+				   (DEVICE_DT_GET(DT_INST_PHANDLE(n, adc))), \
+				   (NULL)), \
 		.enable = GPIO_DT_SPEC_INST_GET(n, enable_gpios), \
 		.max_raw_dac = DT_INST_PROP(n, max_raw_dac), \
 		.capabilities = DT_INST_PROP(n, capabilities), \

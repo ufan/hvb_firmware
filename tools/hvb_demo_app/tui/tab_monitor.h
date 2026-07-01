@@ -154,7 +154,9 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
         for (int ch = 0; ch < n; ++ch) {
             const auto& ci = s.data.chInfo[ch];
             const uint16_t caps = ci.chCapFlags;
-            bool hasOut = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
+            bool hasOut  = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
+            bool hasVolt = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+            bool hasCurr = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
 
             char chLabel[8];
             snprintf(chLabel, sizeof(chLabel), "CH%-2d", ch);
@@ -166,14 +168,16 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
             cells.push_back(hasOut ? rows->at(ch).statusBtn->Render() | center
                                    : text(" -- ") | dim | center);
             cells.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | center);
-            cells.push_back(text(fmtVoltage(ci.voltageRaw)) | center);
-            cells.push_back(text(fmtCurrentNA(ci.currentRaw)) | center);
+            cells.push_back(hasVolt ? text(fmtVoltage(ci.voltageRaw)) | center
+                                    : text(" -- ") | dim | center);
+            cells.push_back(hasCurr ? text(fmtCurrentNA(ci.currentRaw)) | center
+                                    : text(" -- ") | dim | center);
             cells.push_back(hasOut ? rows->at(ch).rampUpInp->Render() | center
                                    : text(" -- ") | dim | center);
             cells.push_back(hasOut ? rows->at(ch).rampDownInp->Render() | center
                                    : text(" -- ") | dim | center);
-            cells.push_back(hasOut ? rows->at(ch).iLimitInp->Render() | center
-                                   : text(" -- ") | dim | center);
+            cells.push_back(hasCurr ? rows->at(ch).iLimitInp->Render() | center
+                                    : text(" -- ") | dim | center);
             cells.push_back(text(faultStr(ci.activeFault)) | center);
 
             grid.push_back(std::move(cells));

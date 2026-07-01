@@ -28,15 +28,10 @@ properties:
     description: Phandle to the DAC device.
   adc:
     type: phandle
-    required: true
-    description: Phandle to the ADC device.
+    required: false
+    description: Phandle to the ADC device. Required only when V or I measurement capability is enabled.
   max-raw-dac:
     type: int
     required: true
     default: 0xFFFF
     description: Maximum raw DAC code.
-  sample-rate-ms:
-    type: int
-    required: false
-    default: 100
-    description: Target measurement sampling period in milliseconds.

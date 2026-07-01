@@ -4,7 +4,7 @@ config HVB_VC_CHANNEL
 	bool "HVB virtual voltage channel provider"
 	default y
 	depends on DT_HAS_JIANWEI_HVB_VC_CHANNEL_ENABLED
-	select ADS1232_INTERRUPT_DRIVEN
+	select ADS1232_INTERRUPT_DRIVEN if ADS1232
 	help
 	  Virtual voltage channel provider for Jianwei HVB boards.
 	  Uses interrupt-driven ADC reads via adc_read_async().
