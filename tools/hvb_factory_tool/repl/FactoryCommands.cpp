@@ -20,47 +20,35 @@ static void requireCalChannel(FactorySession& s, std::ostream& out, std::functio
     fn();
 }
 
+// Returns the parsed interval in ms, or -1 if str isn't a valid interval.
 static int parseIntervalMs(const std::string& str) {
     if (str.empty()) return 1000;
-    if (str.size() > 2 && str.substr(str.size() - 2) == "ms") {
-        return std::stoi(str.substr(0, str.size() - 2));
+    try {
+        if (str.size() > 2 && str.substr(str.size() - 2) == "ms") {
+            return std::stoi(str.substr(0, str.size() - 2));
+        }
+        if (str.back() == 's') {
+            return static_cast<int>(std::stod(str.substr(0, str.size() - 1)) * 1000);
+        }
+        return static_cast<int>(std::stod(str) * 1000);
+    } catch (const std::exception&) {
+        return -1;
     }
-    if (str.back() == 's') {
-        return static_cast<int>(std::stod(str.substr(0, str.size() - 1)) * 1000);
-    }
-    return static_cast<int>(std::stod(str) * 1000);
 }
 
 std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
     auto root = std::make_unique<cli::Menu>("factory");
 
-    root->Insert("connect",
-        [&session](std::ostream& out, const std::string& port) {
-            if (session.connect(port)) out << "Connected to " << port << "\n";
-            else out << "Error: " << session.lastError() << "\n";
-        },
-        "Connect to device", {"port"});
-
-    root->Insert("connect",
-        [&session](std::ostream& out, const std::string& port, int baud) {
-            if (session.connect(port, baud)) out << "Connected to " << port << " @ " << baud << "\n";
-            else out << "Error: " << session.lastError() << "\n";
-        },
-        "Connect with baud", {"port", "baud"});
-
-    root->Insert("connect",
-        [&session](std::ostream& out, const std::string& port, int baud, int id) {
-            if (session.connect(port, baud, id)) out << "Connected to " << port << " @ " << baud << " id=" << id << "\n";
-            else out << "Error: " << session.lastError() << "\n";
-        },
-        "Connect with baud and slave id", {"port", "baud", "id"});
-
+    // Connection is established once, before the REPL starts (see main.cpp) —
+    // there is deliberately no "connect" command here. Re-issuing "connect"
+    // from within the REPL would race the already-open serial port and
+    // couldn't succeed anyway (the port is held by this session's connection).
     root->Insert("disconnect",
         [&session](std::ostream& out) {
             session.disconnect();
-            out << "Disconnected\n";
+            out << "Disconnected. Restart the tool to reconnect.\n";
         },
-        "Disconnect from device");
+        "Disconnect from device (session cannot reconnect afterwards)");
 
     root->Insert("info",
         [&session](std::ostream& out) {
@@ -215,7 +203,7 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                 out << "Sending software reset...\n";
                 session.client().sendParamAction(-1, ParamAction::SoftwareReset);
                 session.disconnect();
-                out << "Disconnected (reconnect after device restarts)\n";
+                out << "Disconnected. Restart the tool once the device has rebooted.\n";
             });
         },
         "Software reset and disconnect");
@@ -382,6 +370,8 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
     calMenu->Insert("coeff",
         [&session](std::ostream& out, const std::string& type, double k, double b) {
             requireCalChannel(session, out, [&] {
+                if (k < 0 || k > 65535) { out << "Error: k must be 0-65535\n"; return; }
+                if (b < -32768 || b > 32767) { out << "Error: b must be -32768..32767\n"; return; }
                 int ch = session.activeChannel();
                 auto kRaw = static_cast<uint16_t>(k);
                 auto bRaw = static_cast<int16_t>(b);

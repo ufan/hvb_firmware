@@ -1,5 +1,6 @@
 #include "FactorySession.h"
 #include "register_map.h"
+#include <algorithm>
 #include <chrono>
 #include <iomanip>
 #include <sstream>
@@ -72,8 +73,11 @@ void FactorySession::watchLoop(WatchMode mode, int intervalMs, std::ostream& out
 
         out << "\r" << ss.str() << std::flush;
 
-        for (int i = 0; i < intervalMs / 100 && m_watchRunning; ++i)
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        for (int slept = 0; slept < intervalMs && m_watchRunning; ) {
+            int step = std::min(100, intervalMs - slept);
+            std::this_thread::sleep_for(std::chrono::milliseconds(step));
+            slept += step;
+        }
     }
     out << "\n";
 }

@@ -36,7 +36,7 @@ public:
 private:
     HvbModbusClient m_client;
     ConfigManager m_config;
-    int m_activeChannel = -1;
+    std::atomic<int> m_activeChannel{-1};
     std::atomic<WatchMode> m_watchMode{WatchMode::Off};
     std::atomic<bool> m_watchRunning{false};
     std::thread m_watchThread;
