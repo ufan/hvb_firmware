@@ -1,4 +1,5 @@
 #pragma once
+#include "tui_policy.h"
 #include "widgets.h"
 #include <ftxui/dom/table.hpp>
 #include <algorithm>
@@ -49,16 +50,23 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         return e;
     };
     auto statusBtn = Button("", [&s, &inputs, ch, refreshCh] {
-        if (!s.data.valid) return;
-        uint16_t st = s.data.chInfo[ch].status;
-        bool ramp = (st & ChStatus::RAMPING_ACTIVE) != 0;
-        if (ramp) return;
-        int16_t tv    = s.data.chInfo[ch].operationalTargetVoltageRaw;
-        bool driveOn  = (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0;
-        bool on       = driveOn && tv != 0;
-        OutputAction act = on ? OutputAction::DisableGraceful : OutputAction::Enable;
-        postWrite(s, inputs, on ? "Dis-Grace" : "Enable",
-            [&s, ch, act] { return s.client.sendOutputAction(ch, act); },
+        const uint16_t st = s.data.chInfo[ch].status;
+        const auto action = statusClickAction(
+            s.data.valid,
+            (st & ChStatus::RAMPING_ACTIVE) != 0,
+            s.data.chCfg[ch].configuredTargetVRaw,
+            s.data.chInfo[ch].operationalTargetVoltageRaw,
+            (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0);
+        if (action == StatusClickAction::None) return;
+
+        const bool disabling = action == StatusClickAction::DisableGraceful;
+        const OutputAction outputAction = disabling
+            ? OutputAction::DisableGraceful
+            : OutputAction::Enable;
+        postWrite(s, inputs, disabling ? "Dis-Grace" : "Enable",
+            [&s, ch, outputAction] {
+                return s.client.sendOutputAction(ch, outputAction);
+            },
             refreshCh);
     }, bopt);
 
