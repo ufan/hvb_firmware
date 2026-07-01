@@ -13,21 +13,23 @@ Popup {
 
     ColumnLayout {
         spacing: 12
-        width: 280
+        width: 320
 
         Label {
             text: "Connection Settings"
             font.bold: true
             font.pixelSize: 14
-            Layout.alignment: Qt.AlignHCenter
+            horizontalAlignment: Text.AlignHCenter
+            Layout.fillWidth: true
         }
 
         GridLayout {
             columns: 2
             rowSpacing: 8
             columnSpacing: 8
+            Layout.fillWidth: true
 
-            Label { text: "Port" }
+            Label { text: "Port"; Layout.preferredWidth: 72 }
             ComboBox {
                 id: portCombo
                 Layout.fillWidth: true
@@ -40,7 +42,7 @@ Popup {
                 }
             }
 
-            Label { text: "Baud" }
+            Label { text: "Baud"; Layout.preferredWidth: 72 }
             ComboBox {
                 id: baudCombo
                 Layout.fillWidth: true
@@ -49,17 +51,19 @@ Popup {
                 onActivated: backend.baudRate = parseInt(currentText)
             }
 
-            Label { text: "Slave ID" }
+            Label { text: "Slave ID"; Layout.preferredWidth: 72 }
             SpinBox {
                 id: slaveSpin
+                Layout.fillWidth: true
                 from: 0; to: 247
                 value: backend.slaveId
                 onValueModified: backend.slaveId = value
             }
 
-            Label { text: "Poll" }
+            Label { text: "Poll"; Layout.preferredWidth: 72 }
             ComboBox {
                 id: pollCombo
+                Layout.fillWidth: true
                 model: ["0.5 s", "1 s", "2 s", "5 s", "10 s"]
                 currentIndex: 1
                 onActivated: {
@@ -70,12 +74,13 @@ Popup {
         }
 
         RowLayout {
-            Layout.alignment: Qt.AlignHCenter
+            Layout.fillWidth: true
             spacing: 12
 
             Button {
                 text: "Connect"
                 highlighted: true
+                Layout.fillWidth: true
                 enabled: portCombo.currentText.length > 0
                 onClicked: {
                     backend.connectToDevice()
@@ -85,6 +90,7 @@ Popup {
 
             Button {
                 text: "Cancel"
+                Layout.fillWidth: true
                 onClicked: root.close()
             }
         }
