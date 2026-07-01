@@ -204,8 +204,8 @@ ApplicationWindow {
                 Label {
                     id: statusLabel
                     text: backend.statusMessage
-                    color: backend.statusMessage.startsWith("✓") ? Theme.colorOk
-                         : backend.statusMessage.startsWith("✗") ? Theme.colorError
+                    color: backend.statusMessage.startsWith("✓") ? HvbTheme.colorOk
+                         : backend.statusMessage.startsWith("✗") ? HvbTheme.colorError
                          : Material.foreground
                     Layout.preferredWidth: 300
                     elide: Text.ElideRight

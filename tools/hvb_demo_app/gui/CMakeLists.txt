@@ -6,13 +6,13 @@ qt_add_executable(hvb_demo_gui
     modbus_worker.cpp modbus_worker.h
 )
 
-set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/HvbTheme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(hvb_demo_gui
     URI HvbTool
     NO_PLUGIN
     QML_FILES
-        qml/Theme.qml
+        qml/HvbTheme.qml
         qml/main.qml
         qml/ConnectionModal.qml
         qml/SysConfigDialog.qml

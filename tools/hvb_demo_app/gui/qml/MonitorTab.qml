@@ -23,16 +23,16 @@ Item {
             if (caps & 0x0008) hasCurr  = true
         }
         var cols = []
-        cols.push({ key: "ch",     label: "CH",        width: Theme.colCh })
-        if (hasOutEn) cols.push({ key: "vset",   label: "Vset (V)", width: Theme.colVset })
-        if (hasOutEn) cols.push({ key: "status", label: "Status",   width: Theme.colStatus })
-        cols.push(    { key: "vop",    label: "Vop (V)",   width: Theme.colVop })
-        if (hasVolt)  cols.push({ key: "v",      label: "V (V)",    width: Theme.colV })
-        if (hasCurr)  cols.push({ key: "i",      label: "I (nA)",   width: Theme.colI })
-        if (hasOutEn) cols.push({ key: "ru",     label: "Ru (V)",   width: Theme.colRamp })
-        if (hasOutEn) cols.push({ key: "rd",     label: "Rd (V)",   width: Theme.colRamp })
-        if (hasCurr)  cols.push({ key: "limit",  label: "Lim(nA)",  width: Theme.colLimit })
-        cols.push(    { key: "fault",  label: "Fault",     width: Theme.colFault })
+        cols.push({ key: "ch",     label: "CH",        width: HvbTheme.colCh })
+        if (hasOutEn) cols.push({ key: "vset",   label: "Vset (V)", width: HvbTheme.colVset })
+        if (hasOutEn) cols.push({ key: "status", label: "Status",   width: HvbTheme.colStatus })
+        cols.push(    { key: "vop",    label: "Vop (V)",   width: HvbTheme.colVop })
+        if (hasVolt)  cols.push({ key: "v",      label: "V (V)",    width: HvbTheme.colV })
+        if (hasCurr)  cols.push({ key: "i",      label: "I (nA)",   width: HvbTheme.colI })
+        if (hasOutEn) cols.push({ key: "ru",     label: "Ru (V)",   width: HvbTheme.colRamp })
+        if (hasOutEn) cols.push({ key: "rd",     label: "Rd (V)",   width: HvbTheme.colRamp })
+        if (hasCurr)  cols.push({ key: "limit",  label: "Lim(nA)",  width: HvbTheme.colLimit })
+        cols.push(    { key: "fault",  label: "Fault",     width: HvbTheme.colFault })
 
         // Column set is derived from hardware capability flags, which are
         // fixed for the lifetime of a connection — only replace the array
@@ -123,7 +123,7 @@ Item {
                                     text: ci.operationalTargetV !== undefined
                                         ? ci.operationalTargetV.toFixed(1) : ""
                                     onAccepted: backend.writeTargetVoltage(chIdx,
-                                        Theme.voltageFromV(parseFloat(text) || 0))
+                                        Math.round((parseFloat(text) || 0) / 0.1))
                                 }
 
                                 Button {
@@ -138,7 +138,7 @@ Item {
                                         return (ci.statusOutDrive && ci.operationalTargetV !== 0)
                                             ? Material.Green : Material.Grey
                                     }
-                                    implicitWidth: Theme.colStatus - 4
+                                    implicitWidth: parent.width - 4
                                     onClicked: {
                                         if (ci.statusRamping) return
                                         var on = ci.statusOutDrive && ci.operationalTargetV !== 0
@@ -171,9 +171,9 @@ Item {
                                     visible: modelData.key === "ru" && (caps & 0x0001) !== 0
                                     placeholderText: "V"
                                     text: cc.rampUpStepRaw !== undefined
-                                        ? Theme.voltageToV(cc.rampUpStepRaw).toFixed(1) : ""
+                                        ? (cc.rampUpStepRaw * 0.1).toFixed(1) : ""
                                     onAccepted: backend.writeRampUp(chIdx,
-                                        Theme.voltageFromV(parseFloat(text) || 0),
+                                        Math.round((parseFloat(text) || 0) / 0.1),
                                         cc.rampUpInterval || 1)
                                 }
 
@@ -183,9 +183,9 @@ Item {
                                     visible: modelData.key === "rd" && (caps & 0x0001) !== 0
                                     placeholderText: "V"
                                     text: cc.rampDownStepRaw !== undefined
-                                        ? Theme.voltageToV(cc.rampDownStepRaw).toFixed(1) : ""
+                                        ? (cc.rampDownStepRaw * 0.1).toFixed(1) : ""
                                     onAccepted: backend.writeRampDown(chIdx,
-                                        Theme.voltageFromV(parseFloat(text) || 0),
+                                        Math.round((parseFloat(text) || 0) / 0.1),
                                         cc.rampDownInterval || 1)
                                 }
 

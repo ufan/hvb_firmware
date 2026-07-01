@@ -44,7 +44,7 @@ ScrollView {
                         text: root.ci.operationalTargetV !== undefined
                             ? root.ci.operationalTargetV.toFixed(1) : ""
                         onAccepted: backend.writeTargetVoltage(root.channelIndex,
-                            Theme.voltageFromV(parseFloat(text) || 0))
+                            Math.round((parseFloat(text) || 0) / 0.1))
                     }
                     Label { text: "V"; opacity: 0.6 }
                 }
@@ -115,9 +115,9 @@ ScrollView {
                             implicitWidth: 70
                             placeholderText: "V/step"
                             text: root.cc.rampUpStepRaw !== undefined
-                                ? Theme.voltageToV(root.cc.rampUpStepRaw).toFixed(1) : ""
+                                ? (root.cc.rampUpStepRaw * 0.1).toFixed(1) : ""
                             onAccepted: backend.writeRampUp(root.channelIndex,
-                                Theme.voltageFromV(parseFloat(text) || 0),
+                                Math.round((parseFloat(text) || 0) / 0.1),
                                 root.cc.rampUpInterval || 1)
                         }
                         Label { text: "Rd:" }
@@ -125,9 +125,9 @@ ScrollView {
                             implicitWidth: 70
                             placeholderText: "V/step"
                             text: root.cc.rampDownStepRaw !== undefined
-                                ? Theme.voltageToV(root.cc.rampDownStepRaw).toFixed(1) : ""
+                                ? (root.cc.rampDownStepRaw * 0.1).toFixed(1) : ""
                             onAccepted: backend.writeRampDown(root.channelIndex,
-                                Theme.voltageFromV(parseFloat(text) || 0),
+                                Math.round((parseFloat(text) || 0) / 0.1),
                                 root.cc.rampDownInterval || 1)
                         }
                     }

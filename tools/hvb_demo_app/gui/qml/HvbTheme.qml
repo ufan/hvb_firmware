@@ -19,16 +19,4 @@ QtObject {
     readonly property color colorWarn:    "#FFC107"
     readonly property color colorOffline: "#555555"
     readonly property color colorCyan:    "#00BCD4"
-
-    // Voltage: 1 LSB = 0.1 V
-    function voltageFromV(v)   { return Math.round(v / 0.1) }
-    function voltageToV(raw)   { return raw * 0.1 }
-
-    // Current: 1 LSB = 1 nA — raw value IS nA directly
-    function currentNaFromA(a) { return Math.round(a * 1e9) }
-    function currentAFromNa(na){ return na * 1e-9 }
-
-    // Format helpers
-    function fmtV(raw)  { return (raw * 0.1).toFixed(1) + " V" }
-    function fmtNa(raw) { return raw + " nA" }
 }
