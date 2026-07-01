@@ -11,7 +11,7 @@ namespace hvb::tui {
 
 struct MonitorRow {
     Component row;  // Container::Horizontal — focus chain
-    Component statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp;
+    Component statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, saveBtn;
 };
 
 // Build one row — creates all widgets, returns them in a MonitorRow.
@@ -107,8 +107,16 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
     });
 
+    auto saveBtn = ActionButton("Save", [&s, &inputs, ch, refreshCh] {
+        postWrite(s, inputs, "Save",
+            [&s, ch] {
+                return s.client.sendParamAction(ch, ParamAction::Save);
+            },
+            refreshCh);
+    });
+
     auto rowWidgets = Container::Horizontal({
-        vsetInp, statusBtn, rampUpInp, rampDownInp, iLimitInp,
+        vsetInp, statusBtn, rampUpInp, rampDownInp, iLimitInp, saveBtn,
     });
 
     return MonitorRow{
@@ -116,7 +124,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             if (e.is_mouse()) return false;  // let mouse events pass; parent checks bounds
             return !s.data.valid || ch >= s.data.numChannels();
         }),
-        statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp,
+        statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, saveBtn,
     };
 }
 
@@ -132,7 +140,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
 
     static const std::vector<std::string> kHeaders = {
         "", "Vset", "Status", "Vop", "V (V)", "I (nA)",
-        "Ru", "Rd", "Limit", "Fault",
+        "Ru", "Rd", "Limit", "Fault", "Save",
     };
 
     return Renderer(tableContainer, [=, &s]() {
@@ -187,6 +195,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
             cells.push_back(hasCurr ? rows->at(ch).iLimitInp->Render() | center
                                     : text(" -- ") | dim | center);
             cells.push_back(text(faultStr(ci.activeFault)) | center);
+            cells.push_back(rows->at(ch).saveBtn->Render() | center);
 
             grid.push_back(std::move(cells));
         }
