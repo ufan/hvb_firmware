@@ -420,7 +420,7 @@ and the flexible two-column body:
 ```cpp
 return vbox({
     livePanel,
-    emptyElement(),
+    emptyElement() | size(HEIGHT, EQUAL, 1),
     hbox({ leftColumn | flex, rightColumn | flex }) | flex,
     filler(),
 });

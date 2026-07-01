@@ -53,8 +53,10 @@ The Channel tab uses two balanced, equally expanding columns:
 - right column: Protection above Recovery.
 
 Leave exactly one blank terminal row between the full-width Live strip and the
-two-column panel body. Keep this gap outside the Live and body panels so it does
-not change their borders, focus behavior, or proportional expansion.
+two-column panel body. Give the spacer an explicit one-row height because
+FTXUI's `emptyElement()` has a zero-height requirement. Keep this gap outside
+the Live and body panels so it does not change their borders, focus behavior,
+or proportional expansion.
 
 Labels within a panel use consistent widths so fields align vertically. Control lays out Vset, Ru, and Rd as aligned fields. Extra vertical space is consumed after the panels, keeping content at the top.
 

@@ -222,7 +222,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
 
         return vbox({
             livePanel,
-            emptyElement(),
+            emptyElement() | size(HEIGHT, EQUAL, 1),
             hbox({ leftColumn | flex, rightColumn | flex }) | flex,
             filler(),
         });
