@@ -137,7 +137,7 @@ void ModbusWorker::doDisconnect()
 
 ```bash
 cd /home/yong/backup/src/xlab/jianwei/hvb_wkspc/hvb_firmware.git
-cmake --build build/gui 2>&1 | tail -20
+cmake --build tools/hvb_demo_app/build --target hvb_demo_gui 2>&1 | tail -20
 # If no build dir yet: cmake -S tools/hvb_demo_app/gui -B build/gui -DCMAKE_PREFIX_PATH=~/backup/Qt/6.8.5/gcc_64
 ```
 Expected: compiles without errors.
@@ -209,7 +209,7 @@ void ModbusBackend::onOperationComplete(bool ok, const QString& msg)
 - [ ] **Step 2.5 — Verify build**
 
 ```bash
-cmake --build build/gui 2>&1 | tail -20
+cmake --build tools/hvb_demo_app/build --target hvb_demo_gui 2>&1 | tail -20
 ```
 Expected: compiles without errors.
 
@@ -327,13 +327,25 @@ git rm tools/hvb_demo_app/gui/qml/ConnectionBar.qml \
        tools/hvb_demo_app/gui/qml/SystemConfigTab.qml
 ```
 
-- [ ] **Step 3.4 — Verify CMake reconfigures cleanly**
+- [ ] **Step 3.4 — Add Charts to top-level find_package**
+
+In `tools/CMakeLists.txt`, change:
+```cmake
+find_package(Qt6 REQUIRED COMPONENTS Core SerialPort Quick QuickControls2)
+```
+to:
+```cmake
+find_package(Qt6 REQUIRED COMPONENTS Core SerialPort Quick QuickControls2 Charts)
+```
+
+- [ ] **Step 3.5 — Verify CMake reconfigures cleanly**
 
 ```bash
-cmake -S tools/hvb_demo_app/gui -B build/gui \
-      -DCMAKE_PREFIX_PATH=~/backup/Qt/6.8.5/gcc_64 2>&1 | tail -10
+cmake -S tools -B tools/hvb_demo_app/build \
+      -DBUILD_GUI=ON \
+      -DCMAKE_PREFIX_PATH=~/backup/Qt/6.8.5/gcc_64 2>&1 | tail -15
 ```
-Expected: no errors about missing files or missing Qt modules.
+Expected: configures without errors; `hvb_demo_gui` target present.
 
 - [ ] **Step 3.5 — Commit**
 
@@ -393,7 +405,7 @@ QtObject {
 - [ ] **Step 4.2 — Verify build (Theme singleton registered)**
 
 ```bash
-cmake --build build/gui 2>&1 | grep -E "error:|warning:|Theme" | head -20
+cmake --build tools/hvb_demo_app/build --target hvb_demo_gui 2>&1 | grep -E "error:|warning:|Theme" | head -20
 ```
 Expected: no errors; Theme.qml compiled as singleton.
 
@@ -481,7 +493,7 @@ Row {
 - [ ] **Step 5.3 — Verify build**
 
 ```bash
-cmake --build build/gui 2>&1 | grep -E "error:" | head -10
+cmake --build tools/hvb_demo_app/build --target hvb_demo_gui 2>&1 | grep -E "error:" | head -10
 ```
 Expected: no errors.
 
@@ -601,7 +613,7 @@ Popup {
 - [ ] **Step 6.2 — Verify build**
 
 ```bash
-cmake --build build/gui 2>&1 | grep -E "error:" | head -10
+cmake --build tools/hvb_demo_app/build --target hvb_demo_gui 2>&1 | grep -E "error:" | head -10
 ```
 
 - [ ] **Step 6.3 — Commit**
@@ -691,7 +703,7 @@ Popup {
 - [ ] **Step 7.2 — Verify build**
 
 ```bash
-cmake --build build/gui 2>&1 | grep -E "error:" | head -10
+cmake --build tools/hvb_demo_app/build --target hvb_demo_gui 2>&1 | grep -E "error:" | head -10
 ```
 
 - [ ] **Step 7.3 — Commit**
@@ -896,7 +908,7 @@ ColumnLayout {
 - [ ] **Step 8.2 — Verify build**
 
 ```bash
-cmake --build build/gui 2>&1 | grep -E "error:" | head -10
+cmake --build tools/hvb_demo_app/build --target hvb_demo_gui 2>&1 | grep -E "error:" | head -10
 ```
 
 - [ ] **Step 8.3 — Commit**
@@ -1164,7 +1176,7 @@ Item {
 - [ ] **Step 9.2 — Verify build**
 
 ```bash
-cmake --build build/gui 2>&1 | grep -E "error:" | head -10
+cmake --build tools/hvb_demo_app/build --target hvb_demo_gui 2>&1 | grep -E "error:" | head -10
 ```
 
 - [ ] **Step 9.3 — Commit**
@@ -1488,7 +1500,7 @@ ScrollView {
 - [ ] **Step 10.2 — Verify build**
 
 ```bash
-cmake --build build/gui 2>&1 | grep -E "error:" | head -10
+cmake --build tools/hvb_demo_app/build --target hvb_demo_gui 2>&1 | grep -E "error:" | head -10
 ```
 
 - [ ] **Step 10.3 — Commit**
@@ -1781,12 +1793,13 @@ git commit -m "feat(gui): main.qml — menu bar, tab container, status bar, debu
 - [ ] **Step 12.1 — Clean build**
 
 ```bash
-cmake -S tools/hvb_demo_app/gui -B build/gui \
+cmake -S tools -B tools/hvb_demo_app/build \
+      -DBUILD_GUI=ON \
       -DCMAKE_PREFIX_PATH=~/backup/Qt/6.8.5/gcc_64 \
       -DCMAKE_BUILD_TYPE=Debug && \
-cmake --build build/gui -j$(nproc) 2>&1 | tail -30
+cmake --build tools/hvb_demo_app/build --target hvb_demo_gui -j$(nproc) 2>&1 | tail -30
 ```
-Expected: exits with code 0; `bin/hvb_demo_gui` present.
+Expected: exits with code 0; `tools/hvb_demo_app/bin/hvb_demo_gui` present.
 
 - [ ] **Step 12.2 — Run and verify offline state**
 
