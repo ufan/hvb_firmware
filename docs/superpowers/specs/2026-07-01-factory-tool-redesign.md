@@ -98,7 +98,21 @@ Navigation forward is gated on step completion (see completion criteria per step
 
 One tab per channel detected (e.g. CH0, CH1). Channels are independent — CH0 can be Done while CH1 is Pending. "Next" is gated on all channels marked Done.
 
-#### 3.4.1 Sweep Config (collapsible, persisted to QSettings)
+#### 3.4.1 Capability-Driven Axis Selection
+
+Which calibration axes are required for a channel is determined entirely by the channel's capability flags (read via `readChannelInfo` at connect time). This is not user-configurable.
+
+| Axis | Formula | Required capability |
+|------|---------|---------------------|
+| `out` (V → DAC) | `dac_code = V × K/10000 + B` | `CH_CAP_RAW_OUTPUT_DRIVE` |
+| `meas-V` (ADC → V) | `V = adc_V × K/10000 + B` | `CH_CAP_VOLTAGE_MEASUREMENT` |
+| `meas-I` (ADC → I) | `I = adc_I × K/10000 + B` | `CH_CAP_CURRENT_MEASUREMENT` |
+
+A channel may require any subset — including none (skip calibration for that channel entirely), any single axis, any pair, or all three. The sweep UI shows only the DMM input columns relevant to the active axes: DMM-V is shown when `out` or `meas-V` is active; DMM-I is shown when `meas-I` is active.
+
+Channels with no calibration capabilities are shown in the channel tab list as "No cal required — skip" and are automatically marked Done.
+
+#### 3.4.2 Sweep Config (collapsible, persisted to QSettings)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -107,11 +121,10 @@ One tab per channel detected (e.g. CH0, CH1). Channels are independent — CH0 c
 | Step size | 800 | DAC increment per point |
 | Settlement time | 200 ms | Wait after DAC write before sampling |
 | Cooldown before read | 100 ms | Additional wait before reading ADC snapshot |
-| Axes | out, meas-V, meas-I | Which calibration axes to compute |
 
 Number of sweep points is derived: `floor((max - min) / step) + 1`. Minimum 2 points enforced.
 
-#### 3.4.2 Auto Sweep Mode (default)
+#### 3.4.3 Auto Sweep Mode (default)
 
 1. Operator presses **Start Sweep**.
 2. Backend enables cal output for the channel.
@@ -128,11 +141,11 @@ Number of sweep points is derived: `floor((max - min) / step) + 1`. Minimum 2 po
 
 Sweep can be aborted at any time. Partial sweep data is retained; operator can re-run or switch to Manual mode.
 
-#### 3.4.3 Manual Mode
+#### 3.4.4 Manual Mode
 
 Replaces the sweep table with an editable grid: (DAC code, DMM-V, DMM-I) entry rows. Operator adds/removes rows freely (minimum 2). **Compute Fit** triggers the same regression. Alternatively, each axis has a **Direct K/B override** row — operator types K and B directly, bypassing regression entirely (no R² shown). **Write & Verify** same as auto mode.
 
-#### 3.4.4 Channel State
+#### 3.4.5 Channel State
 
 Each channel tab displays a status badge: `○ Pending` / `⟳ In Progress` / `● Done` / `↩ Rolled Back`.
 
@@ -238,7 +251,7 @@ Accessible via a ⚙ icon in the toolbar (settings dialog, not a dedicated page)
 
 | Group | Keys |
 |-------|------|
-| `sweep/` | `dacMin`, `dacMax`, `stepSize`, `settlementMs`, `cooldownMs`, `axes` |
+| `sweep/` | `dacMin`, `dacMax`, `stepSize`, `settlementMs`, `cooldownMs` (axes derived from channel caps, not stored) |
 | `functest/` | `defaultTolerancePct`, `defaultSettleMs`, `defaultPoints` (JSON array) |
 | `stress/` | `defaultDurationSec`, `defaultPollMs`, `defaultFaultTolerance` |
 | `report/` | `outputDir`, `companyName`, `logoPath` |
