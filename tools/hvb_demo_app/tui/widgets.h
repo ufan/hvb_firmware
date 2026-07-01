@@ -153,6 +153,12 @@ inline void postWrite(AppState& s, ConfigInputs& inputs,
     s.workCv.notify_one();
 }
 
+inline void saveChannelConfig(AppState& s, ConfigInputs& inputs, int ch,
+                              std::function<void()> refreshFn) {
+    postWrite(s, inputs, "Save",
+        [&s, ch] { return s.client.sendParamAction(ch, ParamAction::Save); },
+        std::move(refreshFn));
+}
 
 
 // Input that calls onCommit when Enter is pressed (instead of inserting newline).

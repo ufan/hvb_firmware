@@ -108,11 +108,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     });
 
     auto saveBtn = ActionButton("Save", [&s, &inputs, ch, refreshCh] {
-        postWrite(s, inputs, "Save",
-            [&s, ch] {
-                return s.client.sendParamAction(ch, ParamAction::Save);
-            },
-            refreshCh);
+        saveChannelConfig(s, inputs, ch, refreshCh);
     });
 
     auto rowWidgets = Container::Horizontal({

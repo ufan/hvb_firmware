@@ -108,7 +108,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
 
     // ---- Persistence ----
     auto bSave    = ActionButton("Save",    [&s, &inputs, refreshCh, ch]{
-        postWrite(s, inputs, "Save", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::Save); }, refreshCh); });
+        saveChannelConfig(s, inputs, ch, refreshCh); });
     auto bLoad    = ActionButton("Load",    [&s, &inputs, refreshCh, ch]{
         postWrite(s, inputs, "Load", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::Load); }, refreshCh); });
     auto bFactory = ActionButton("Factory", [&s, &inputs, refreshCh, ch]{
