@@ -40,6 +40,18 @@
         "BUILD_GUI": "OFF",
         "BUILD_SHARED_LIBS": "OFF"
       }
+    },
+    {
+      "name": "mingw-release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/mingw-release",
+      "toolchainFile": "${sourceDir}/cmake/toolchain-mingw64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_GUI": "OFF",
+        "BUILD_SHARED_LIBS": "OFF",
+        "BUILD_FACTORY": "OFF"
+      }
     }
   ]
 }

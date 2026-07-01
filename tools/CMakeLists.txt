@@ -16,6 +16,46 @@ set(MB_QT_ENABLED OFF CACHE BOOL "" FORCE)
 set(MB_EXAMPLES_ENABLED OFF CACHE BOOL "" FORCE)
 set(MB_TESTS_ENABLED OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(modbuslib)
+
+# Workaround: ModbusLib uses Win32 headers with mixed case (e.g. <Windows.h>,
+# <WS2tcpip.h>) but MinGW headers on case-sensitive Linux filesystems are
+# lowercase (<windows.h>, <ws2tcpip.h>).
+if(MINGW)
+    set(MB_CASE_FIXES
+        "Windows.h|windows.h"
+        "WS2tcpip.h|ws2tcpip.h"
+    )
+    foreach(MBFILE IN ITEMS
+        "${modbuslib_SOURCE_DIR}/src/win/ModbusSerialPort_p_win.h"
+        "${modbuslib_SOURCE_DIR}/src/win/Modbus_win.cpp"
+        "${modbuslib_SOURCE_DIR}/src/win/ModbusTCP_win.h"
+    )
+        file(READ "${MBFILE}" MBFBUF)
+        foreach(MBPAIR IN LISTS MB_CASE_FIXES)
+            string(REPLACE "|" ";" MBPAIR "${MBPAIR}")
+            list(GET MBPAIR 0 MBFROM)
+            list(GET MBPAIR 1 MBTO)
+            string(REPLACE "<${MBFROM}>" "<${MBTO}>" MBFBUF "${MBFBUF}")
+        endforeach()
+        file(WRITE "${MBFILE}" "${MBFBUF}")
+    endforeach()
+
+    # MinGW on case-sensitive Linux filesystems has lowercase library names
+    # (libws2_32.a) but CMake's Windows platform module generates mixed-case
+    # -l flags (-lWs2_32). Create case-mapped symlinks.
+    set(MINGW_CASE_DIR "${CMAKE_BINARY_DIR}/mingw-case-libs")
+    file(MAKE_DIRECTORY "${MINGW_CASE_DIR}")
+    foreach(LIB Ws2_32 Winmm Setupapi)
+        string(TOLOWER "${LIB}" LOWER_NAME)
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+            "/usr/x86_64-w64-mingw32/lib/lib${LOWER_NAME}.a"
+            "${MINGW_CASE_DIR}/lib${LIB}.a"
+        )
+    endforeach()
+    link_directories("${MINGW_CASE_DIR}")
+endif()
+
 set(MODBUSLIB_INCLUDE_DIR ${modbuslib_SOURCE_DIR}/src)
 
 # CLI11 — header-only argument parser

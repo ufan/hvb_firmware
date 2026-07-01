@@ -1,116 +1,85 @@
 #!/usr/bin/env bash
+# deploy_windows.sh — Cross-compile and package hvb_tui for Windows (MinGW).
+#
+# Uses MinGW-w64 cross-compiler on Linux to produce a statically-linked .exe.
+# The resulting binary is self-contained: copy to any Windows 10/11 machine
+# and run in Windows Terminal (supports ANSI/UTF-8).
+#
+# Includes a .bat launcher so users can double-click to start after editing
+# their COM port and baud rate at the top of the file.
+#
+# Prerequisites (Ubuntu/Debian):
+#   sudo apt install g++-mingw-w64-x86-64 ninja-build zip
+#
+# Usage:
+#   ./deploy_windows.sh              # cross-compile + create zip in deploy/
+set -euo pipefail
 
-export APP_NAME="QmlAppTemplate"
-export APP_VERSION=0.8
-export GIT_VERSION=$(git rev-parse --short HEAD)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TOOLS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+APP_NAME="hvb_tui"
+VERSION="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || echo "dev")"
+ARCH="win-x86_64"
 
-echo "> $APP_NAME packager (Windows x86_64) [v$APP_VERSION]"
+BUILD_DIR="${TOOLS_DIR}/build/mingw-release"
+BIN_DIR="${TOOLS_DIR}/bin"
+DEPLOY_DIR="${SCRIPT_DIR}/deploy"
+STAGE_DIR="${DEPLOY_DIR}/${APP_NAME}-${VERSION}-${ARCH}"
 
-## CHECKS ######################################################################
+echo "=== HVB TUI — Windows cross-compile package ==="
+echo "    Version : $VERSION"
+echo "    Build   : $BUILD_DIR"
+echo "    Output  : $DEPLOY_DIR"
+echo ""
 
-if [ ${PWD##*/} != $APP_NAME ]; then
-  echo "This script MUST be run from the $APP_NAME/ directory"
-  exit 1
+if ! command -v x86_64-w64-mingw32-g++ &>/dev/null; then
+    echo "ERROR: MinGW cross-compiler not found."
+    echo "Install: sudo apt install g++-mingw-w64-x86-64"
+    exit 1
 fi
 
-## SETTINGS ####################################################################
+echo "[1/4] Cross-compiling TUI (static)..."
+cmake --preset mingw-release -S "$TOOLS_DIR"
+cmake --build "$BUILD_DIR" --target "$APP_NAME"
 
-use_contribs=false
-make_install=false
-create_package=false
-upload_package=false
+echo ""
+echo "[2/4] Staging binary..."
+rm -rf "$STAGE_DIR"
+mkdir -p "$STAGE_DIR"
 
-while [[ $# -gt 0 ]]
-do
-case $1 in
-  -c|--contribs)
-  use_contribs=true
-  ;;
-  -i|--install)
-  make_install=true
-  ;;
-  -p|--package)
-  create_package=true
-  ;;
-  -u|--upload)
-  upload_package=true
-  ;;
-  *)
-  echo "> Unknown argument '$1'"
-  ;;
-esac
-shift # skip argument or value
-done
-
-## PREP WORK ###################################################################
-
-if [[ -v QT_ROOT_DIR ]]; then
-  # cleanup undeployable Qt plugins (present, but missing their own dependencies)
-  # only if we are on a GitHub Action server, because this remove the plugins from the Qt directory
-  echo '---- Remove undeployable Qt plugins'
-  sudo rm $QT_ROOT_DIR/plugins/position/qtposition_nmea.dll
+BINARY="${BIN_DIR}/${APP_NAME}.exe"
+if [ ! -f "$BINARY" ]; then
+    echo "ERROR: $BINARY not found after build"
+    exit 1
 fi
+cp "$BINARY" "$STAGE_DIR/"
+echo "    + ${APP_NAME}.exe ($(du -h "$BINARY" | cut -f1))"
 
-## APP INSTALL #################################################################
+echo ""
+echo "[3/4] Creating .bat launcher..."
+cat > "$STAGE_DIR/${APP_NAME}.bat" << 'BATEOF'
+@echo off
+setlocal
+title HVB TUI
+hvb_tui.exe
+if errorlevel 1 (
+    echo hvb_tui.exe exited with error (code %errorlevel%).
+    pause
+)
+endlocal
+BATEOF
+echo "    + ${APP_NAME}.bat"
 
-if [[ $make_install = true ]] ; then
-  echo '---- Running make install'
-  make INSTALL_ROOT=bin/ install
+echo ""
+echo "[4/4] Creating zip..."
+mkdir -p "$DEPLOY_DIR"
+ZIPFILE="${DEPLOY_DIR}/${APP_NAME}-${VERSION}-${ARCH}.zip"
+(cd "$DEPLOY_DIR" && zip -r "$(basename "$ZIPFILE")" "$(basename "$STAGE_DIR")")
+echo "    Created: $ZIPFILE"
 
-  #echo '---- Installation directory content recap (after make install):'
-  #find bin/
-fi
-
-## APP DEPLOY ##################################################################
-
-echo '---- Running windeployqt'
-windeployqt bin/ --qmldir qml/
-
-#echo '---- MapLibre deployment hack'
-#cp $QT_ROOT_DIR/bin/QMapLibre.dll bin/QMapLibre.dll
-#cp $QT_ROOT_DIR/bin/QMapLibreLocation.dll bin/QMapLibreLocation.dll
-
-#echo '---- Installation directory content recap (after windeployqt):'
-#find bin/
-
-#echo '---- Clean installation directory'
-#rm bin/.gitkeep
-#rm bin/qmltooling
-#rm bin/generic
-#rm bin/Qt6QuickControls2WindowsStyleImpl.dll
-#rm bin/Qt6QuickControls2UniversalStyleImpl.dll
-#rm bin/Qt6QuickControls2Universal.dll
-#rm bin/Qt6QuickControls2ImagineStyleImpl.dll
-#rm bin/Qt6QuickControls2Imagine.dll
-#rm bin/Qt6QuickControls2FusionStyleImpl.dll
-#rm bin/Qt6QuickControls2Fusion.dll
-#rm bin/Qt6QuickControls2BasicStyleImpl.dll
-#rm bin/Qt6QuickControls2Basic.dll
-
-mv bin $APP_NAME
-
-## PACKAGE (zip) ###############################################################
-
-if [[ $create_package = true ]] ; then
-  echo '---- Compressing package'
-  7z a $APP_NAME-$APP_VERSION-win64.zip $APP_NAME
-fi
-
-## PACKAGE (NSIS) ##############################################################
-
-if [[ $create_package = true ]] ; then
-  echo '---- Creating installer'
-  mv $APP_NAME assets/windows/$APP_NAME
-  makensis assets/windows/setup.nsi
-  mv assets/windows/*.exe $APP_NAME-$APP_VERSION-win64.exe
-fi
-
-## UPLOAD ######################################################################
-
-if [[ $upload_package = true ]] ; then
-  printf "---- Uploading to transfer.sh"
-  curl --upload-file $APP_NAME*.zip https://transfer.sh/$APP_NAME-$APP_VERSION-git$GIT_VERSION-win64.zip
-  printf "\n"
-  curl --upload-file $APP_NAME*.exe https://transfer.sh/$APP_NAME-$APP_VERSION-git$GIT_VERSION-win64.exe
-  printf "\n"
-fi
+echo ""
+echo "Done. Package: $ZIPFILE"
+echo ""
+echo "To run on Windows:"
+echo "  1. Unzip ${APP_NAME}-${VERSION}-${ARCH}.zip"
+echo "  2. Double-click ${APP_NAME}.bat"
