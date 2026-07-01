@@ -49,7 +49,7 @@ FetchContent_Declare(Catch2
 FetchContent_MakeAvailable(Catch2)
 
 if(BUILD_GUI)
-    find_package(Qt6 REQUIRED COMPONENTS Core SerialPort Quick QuickControls2 Charts)
+    find_package(Qt6 REQUIRED COMPONENTS Core SerialPort Quick QuickControls2 Charts PrintSupport)
 endif()
 
 if(BUILD_FACTORY)

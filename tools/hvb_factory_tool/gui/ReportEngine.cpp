@@ -154,7 +154,7 @@ td,th{ padding: 4px 8px; }
     return h;
 }
 
-bool ReportEngine::generatePdf(const ReportData& data, const QString& path, QString* err) {
+bool ReportEngine::generatePdf(const ReportData& data, const QString& path, QString* /*err*/) {
     QPrinter printer(QPrinter::HighResolution);
     printer.setOutputFormat(QPrinter::PdfFormat);
     printer.setOutputFileName(path);
