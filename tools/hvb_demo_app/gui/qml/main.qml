@@ -131,7 +131,10 @@ ApplicationWindow {
 
             Repeater {
                 model: backend.channelCount
-                ChannelTab { channelIndex: index }
+                ChannelTab {
+                    required property int index
+                    channelIndex: index
+                }
             }
         }
 

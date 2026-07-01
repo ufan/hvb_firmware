@@ -11,7 +11,7 @@ Item {
 
     function computeActiveColumns() {
         if (!backend.connected || backend.channelCount === 0) {
-            activeColumns = []
+            if (activeColumns.length > 0) activeColumns = []
             return
         }
         var chList = backend.channelInfoList
@@ -33,7 +33,16 @@ Item {
         if (hasOutEn) cols.push({ key: "rd",     label: "Rd (V)",   width: Theme.colRamp })
         if (hasCurr)  cols.push({ key: "limit",  label: "Lim(nA)",  width: Theme.colLimit })
         cols.push(    { key: "fault",  label: "Fault",     width: Theme.colFault })
-        activeColumns = cols
+
+        // Column set is derived from hardware capability flags, which are
+        // fixed for the lifetime of a connection — only replace the array
+        // (and thus rebuild the header/row Repeaters) when the computed
+        // set actually changes. Reassigning it on every channelDataChanged
+        // tick (every poll interval) tore down and rebuilt the whole grid
+        // continuously, which hung the render thread indefinitely.
+        var newKeys = cols.map(function(c) { return c.key }).join(",")
+        var oldKeys = activeColumns.map(function(c) { return c.key }).join(",")
+        if (newKeys !== oldKeys) activeColumns = cols
     }
 
     Connections {
