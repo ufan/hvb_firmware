@@ -8,9 +8,12 @@ int main(int argc, char* argv[]) {
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle("Material");
 
+    // B-6 fix: use qmlRegisterSingletonInstance instead of deprecated setContextProperty
     hvb::factory::CalibrationBackend backend;
+    qmlRegisterSingletonInstance<hvb::factory::CalibrationBackend>(
+        "HvbFactory", 1, 0, "Backend", &backend);
+
     QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty("backend", &backend);
     engine.loadFromModule("HvbFactory", "MainWindow");
 
     return app.exec();
