@@ -42,4 +42,16 @@ inline bool hasProtectionPolicy(uint16_t caps) {
     return (caps & required) == required;
 }
 
+inline bool reconcileDisconnectedTabs(bool connected,
+                                      std::vector<std::string>& titles,
+                                      int& active) {
+    if (connected) return false;
+    if (titles.size() == 1 && titles.front() == "Monitor" && active == 0)
+        return false;
+
+    titles = {"Monitor"};
+    active = 0;
+    return true;
+}
+
 } // namespace hvb::tui

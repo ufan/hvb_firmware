@@ -30,3 +30,13 @@ TEST_CASE("protection requires both measurement capabilities") {
     CHECK(hasProtectionPolicy(CH_CAP_VOLTAGE_MEASUREMENT |
                               CH_CAP_CURRENT_MEASUREMENT));
 }
+
+TEST_CASE("disconnected UI retains only Monitor") {
+    std::vector<std::string> titles = {"Monitor", "CH0", "CH1"};
+    int active = 2;
+
+    CHECK(reconcileDisconnectedTabs(false, titles, active));
+    CHECK(titles == std::vector<std::string>{"Monitor"});
+    CHECK(active == 0);
+    CHECK_FALSE(reconcileDisconnectedTabs(true, titles, active));
+}

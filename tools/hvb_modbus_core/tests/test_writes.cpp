@@ -113,3 +113,19 @@ TEST_CASE("Write — read-back consistency", "[writes]") {
     CHECK(cfg.rampDownInterval == 3);
     CHECK(cfg.derateStepRaw == 50);
 }
+
+TEST_CASE("Write — parameter actions preserve system and channel scope", "[writes]") {
+    uint16_t inputRegs[280] = {};
+    uint16_t holdingRegs[280] = {};
+
+    hvb::HvbModbusClient client;
+    client.attachTestArrays(inputRegs, holdingRegs, 280);
+
+    REQUIRE(client.sendParamAction(-1, hvb::ParamAction::Save));
+    CHECK(holdingRegs[hvb::reg::sysAddr(SYS_PARAM_ACTION)] ==
+          static_cast<uint16_t>(hvb::ParamAction::Save));
+
+    REQUIRE(client.sendParamAction(1, hvb::ParamAction::Save));
+    CHECK(holdingRegs[hvb::reg::chAddr(1, CH_PARAM_ACTION)] ==
+          static_cast<uint16_t>(hvb::ParamAction::Save));
+}
