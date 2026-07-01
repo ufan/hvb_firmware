@@ -7,6 +7,7 @@ add_executable(hvb_tests
     test_error_handling.cpp
     test_monitor_output.cpp
     test_tui_format.cpp
+    test_tui_policy.cpp
     test_calibration.cpp
 )
 
