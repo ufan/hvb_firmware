@@ -5,8 +5,8 @@
 # The resulting binary is self-contained: copy to any Windows 10/11 machine
 # and run in Windows Terminal (supports ANSI/UTF-8).
 #
-# Includes a .bat launcher so users can double-click to start after editing
-# their COM port and baud rate at the top of the file.
+# The ZIP contains only the self-contained executable. Users can run it
+# directly without a launcher script or additional runtime dependencies.
 #
 # Prerequisites (Ubuntu/Debian):
 #   sudo apt install g++-mingw-w64-x86-64 ninja-build zip
@@ -24,7 +24,6 @@ ARCH="win-x86_64"
 BUILD_DIR="${TOOLS_DIR}/build/mingw-release"
 BIN_DIR="${TOOLS_DIR}/bin"
 DEPLOY_DIR="${SCRIPT_DIR}/deploy"
-STAGE_DIR="${DEPLOY_DIR}/${APP_NAME}-${VERSION}-${ARCH}"
 
 echo "=== HVB TUI — Windows cross-compile package ==="
 echo "    Version : $VERSION"
@@ -38,43 +37,27 @@ if ! command -v x86_64-w64-mingw32-g++ &>/dev/null; then
     exit 1
 fi
 
-echo "[1/4] Cross-compiling TUI (static)..."
+echo "[1/3] Cross-compiling TUI (static)..."
 cmake --preset mingw-release -S "$TOOLS_DIR"
 cmake --build "$BUILD_DIR" --target "$APP_NAME"
 
 echo ""
-echo "[2/4] Staging binary..."
-rm -rf "$STAGE_DIR"
-mkdir -p "$STAGE_DIR"
-
 BINARY="${BIN_DIR}/${APP_NAME}.exe"
 if [ ! -f "$BINARY" ]; then
     echo "ERROR: $BINARY not found after build"
     exit 1
 fi
-cp "$BINARY" "$STAGE_DIR/"
+
+echo ""
+echo "[2/3] Verifying binary..."
 echo "    + ${APP_NAME}.exe ($(du -h "$BINARY" | cut -f1))"
 
 echo ""
-echo "[3/4] Creating .bat launcher..."
-cat > "$STAGE_DIR/${APP_NAME}.bat" << 'BATEOF'
-@echo off
-setlocal
-title HVB TUI
-hvb_tui.exe
-if errorlevel 1 (
-    echo hvb_tui.exe exited with error (code %errorlevel%).
-    pause
-)
-endlocal
-BATEOF
-echo "    + ${APP_NAME}.bat"
-
-echo ""
-echo "[4/4] Creating zip..."
+echo "[3/3] Creating single-executable zip..."
 mkdir -p "$DEPLOY_DIR"
 ZIPFILE="${DEPLOY_DIR}/${APP_NAME}-${VERSION}-${ARCH}.zip"
-(cd "$DEPLOY_DIR" && zip -r "$(basename "$ZIPFILE")" "$(basename "$STAGE_DIR")")
+rm -f "$ZIPFILE"
+zip -j "$ZIPFILE" "$BINARY"
 echo "    Created: $ZIPFILE"
 
 echo ""
@@ -82,4 +65,4 @@ echo "Done. Package: $ZIPFILE"
 echo ""
 echo "To run on Windows:"
 echo "  1. Unzip ${APP_NAME}-${VERSION}-${ARCH}.zip"
-echo "  2. Double-click ${APP_NAME}.bat"
+echo "  2. Double-click ${APP_NAME}.exe"
