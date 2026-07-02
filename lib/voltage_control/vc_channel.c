@@ -281,6 +281,8 @@ static void force_safe_state(struct vc_channel *ch)
 {
 	ch->output_enabled = false;
 	ch->ramping = false;
+	ch->recovering = false;
+	ch->cooldown_remaining_ms = 0;
 	ch->cal_output_enabled = 0;
 	ch->raw_dac_readback = 0;
 	ch->operational_target_voltage = 0;
@@ -301,6 +303,33 @@ static bool is_safe_to_clear_active(const struct vc_channel *ch)
 		}
 	}
 	return true;
+}
+
+static bool current_fault_only(const struct vc_channel *ch)
+{
+	return ch->active_fault_cause == VC_FAULT_CURRENT;
+}
+
+static void tick_recovery(struct vc_channel *ch, const struct vc_system_config *sys_cfg,
+			   uint32_t dt_ms)
+{
+	const struct vc_channel_config *cfg = &ch->config;
+
+	if (sys_cfg->operating_mode != VC_OPERATING_MODE_AUTOMATIC) {
+		return;
+	}
+	if (!current_fault_only(ch)) {
+		return;
+	}
+	if (cfg->recovery_policy_mode != VC_RECOVERY_AUTO_RETRY &&
+	    cfg->recovery_policy_mode != VC_RECOVERY_AUTO_DERATE_RETRY) {
+		return;
+	}
+	if (ch->ramping) {
+		return;
+	}
+
+	ARG_UNUSED(dt_ms);
 }
 
 /* ---- Measurement callback — registered with hw driver ---- */
@@ -368,6 +397,7 @@ void vc_channel_run(struct vc_channel *ch, uint32_t dt_ms,
 	}
 
 	vc_channel_tick_ramp(ch, dt_ms, sys_cfg);
+	tick_recovery(ch, sys_cfg, dt_ms);
 }
 
 enum vc_channel_smf_state vc_channel_get_smf_state(const struct vc_channel *ch)

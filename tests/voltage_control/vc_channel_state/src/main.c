@@ -257,6 +257,86 @@ ZTEST(vc_channel_state, test_current_protection_graceful_disable_ramps_to_zero)
 	zassert_false(ch.ramping);
 }
 
+/* ---- Automatic recovery ---- */
+
+static void arm_current_fault(struct vc_channel *ch, enum vc_recovery_policy_mode recovery)
+{
+	struct vc_channel_config cfg;
+
+	zassert_equal(vc_channel_set_cal_field(ch, VC_CAL_FIELD_MEASURED_I_K, 50000), VC_OK);
+
+	vc_channel_get_config(ch, &cfg);
+	cfg.configured_target_voltage = 5000;
+	cfg.current_limit_threshold = 100;
+	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
+	cfg.current_protection_output_action = VC_OUTPUT_ACTION_DISABLE_IMMEDIATE;
+	cfg.recovery_policy_mode = recovery;
+	cfg.auto_retry_delay = 1;
+	cfg.auto_retry_max_count = 3;
+	cfg.auto_retry_window = 60;
+	cfg.ramp_up_step = 5000;
+	cfg.ramp_up_interval = 1;
+	vc_channel_set_config(ch, &cfg);
+	vc_channel_output_action(ch, VC_OUTPUT_ACTION_ENABLE);
+	vc_channel_tick_ramp(ch, 1000, &default_sys);
+
+	vc_channel_consume_current(ch, 5000); /* measured = 250, exceeds threshold 100 */
+	zassert_true(ch->active_fault_cause & VC_FAULT_CURRENT);
+}
+
+ZTEST(vc_channel_state, test_recovery_stays_latched_in_normal_mode)
+{
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_RETRY);
+
+	for (int i = 0; i < 20; i++) {
+		vc_channel_run(&ch, 1000, &default_sys); /* default_sys = NORMAL mode */
+	}
+
+	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT,
+		     "Automatic-only recovery must never act in Normal mode");
+	zassert_false(ch.output_enabled);
+}
+
+ZTEST(vc_channel_state, test_recovery_stays_latched_with_manual_policy)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+
+	arm_current_fault(&ch, VC_RECOVERY_MANUAL_LATCH);
+
+	for (int i = 0; i < 20; i++) {
+		vc_channel_run(&ch, 1000, &auto_sys);
+	}
+
+	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT,
+		     "MANUAL_LATCH must never auto-retry even in Automatic mode");
+	zassert_false(ch.output_enabled);
+}
+
+ZTEST(vc_channel_state, test_recovery_ignores_non_current_fault)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+	struct vc_channel_config cfg;
+
+	vc_channel_get_config(&ch, &cfg);
+	cfg.recovery_policy_mode = VC_RECOVERY_AUTO_RETRY;
+	cfg.auto_retry_delay = 1;
+	cfg.auto_retry_max_count = 3;
+	cfg.auto_retry_window = 60;
+	vc_channel_set_config(&ch, &cfg);
+	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE);
+
+	vc_channel_consume_fault(&ch, VC_FAULT_HARDWARE);
+	zassert_true(ch.active_fault_cause & VC_FAULT_HARDWARE);
+
+	for (int i = 0; i < 20; i++) {
+		vc_channel_run(&ch, 1000, &auto_sys);
+	}
+
+	zassert_true(ch.active_fault_cause & VC_FAULT_HARDWARE,
+		     "hardware faults are never auto-recoverable, regardless of policy");
+	zassert_false(ch.output_enabled);
+}
+
 ZTEST(vc_channel_state, test_set_field_does_not_evaluate_protection_synchronously)
 {
 	/* A real Modbus write of mode+action+threshold lands as three separate
