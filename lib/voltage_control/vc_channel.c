@@ -380,6 +380,16 @@ static void tick_recovery(struct vc_channel *ch, const struct vc_system_config *
 
 	int32_t target = cfg->configured_target_voltage;
 
+	if (cfg->recovery_policy_mode == VC_RECOVERY_AUTO_DERATE_RETRY) {
+		target -= (int32_t)(retry_count + 1) * cfg->auto_derate_step;
+		if (target <= 0) {
+			ch->active_fault_cause |= VC_FAULT_RETRY_EXHAUST;
+			set_smf_state(ch, VC_CHANNEL_SMF_FAULT_LATCHED);
+			update_status_bits(ch);
+			return;
+		}
+	}
+
 	record_retry_attempt(ch);
 	ch->active_fault_cause = 0;
 	ch->recovering = true;

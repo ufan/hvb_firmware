@@ -424,6 +424,39 @@ ZTEST(vc_channel_state, test_recovery_window_expiry_resets_count)
 		      "retry timestamps older than the window must age out");
 }
 
+ZTEST(vc_channel_state, test_recovery_auto_derate_lowers_target_each_retry)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_DERATE_RETRY);
+	ch.config.auto_derate_step = 1000;
+	ch.config.auto_retry_max_count = 5;
+
+	vc_channel_consume_current(&ch, 100); /* safe */
+	vc_channel_run(&ch, 1000, &auto_sys);
+
+	zassert_equal(ch.active_fault_cause, 0);
+	zassert_equal(ch.recovery_target, 4000,
+		      "first derate retry = configured(5000) - 1*step(1000)");
+}
+
+ZTEST(vc_channel_state, test_recovery_auto_derate_exhausts_at_floor)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_DERATE_RETRY);
+	ch.config.configured_target_voltage = 1000;
+	ch.config.auto_derate_step = 2000; /* one derate step already exceeds the target */
+	ch.config.auto_retry_max_count = 5;
+
+	vc_channel_consume_current(&ch, 100); /* safe */
+	vc_channel_run(&ch, 1000, &auto_sys);
+
+	zassert_true(ch.active_fault_cause & VC_FAULT_RETRY_EXHAUST,
+		     "derating below zero must exhaust immediately, not retry at a negative target");
+	zassert_false(ch.output_enabled);
+}
+
 ZTEST(vc_channel_state, test_set_field_does_not_evaluate_protection_synchronously)
 {
 	/* A real Modbus write of mode+action+threshold lands as three separate
