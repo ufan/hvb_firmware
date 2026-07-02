@@ -428,6 +428,16 @@ ZTEST(vc_channel_state, test_set_field_target_voltage)
 	zassert_equal(cfg.configured_target_voltage, 5000);
 }
 
+ZTEST(vc_channel_state, test_set_field_rejects_retry_max_count_above_history_cap)
+{
+	zassert_equal(vc_channel_set_field(&ch, VC_FIELD_AUTO_RETRY_MAX_COUNT,
+					   CONFIG_VC_MAX_RETRY_HISTORY),
+		      VC_OK, "exactly at the cap must be accepted");
+	zassert_equal(vc_channel_set_field(&ch, VC_FIELD_AUTO_RETRY_MAX_COUNT,
+					   CONFIG_VC_MAX_RETRY_HISTORY + 1),
+		      VC_ERR_INVALID_VALUE, "above the cap must be rejected");
+}
+
 ZTEST(vc_channel_state, test_set_field_rejects_system_field)
 {
 	zassert_equal(vc_channel_set_field(&ch, VC_FIELD_OPERATING_MODE, 0),

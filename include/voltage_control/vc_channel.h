@@ -47,6 +47,10 @@ struct vc_channel {
 	int16_t graceful_ramp_dest;   /* runtime-only, not a register */
 	uint32_t ramp_accum_ms;
 	uint32_t cooldown_remaining_ms;
+	bool recovering;                                             /* auto-retry ramp in progress */
+	int16_t recovery_target;                                     /* ramp target while recovering */
+	uint32_t retry_timestamps_ms[CONFIG_VC_MAX_RETRY_HISTORY];    /* sliding-window retry log */
+	uint8_t retry_timestamp_count;
 	int16_t operational_target_voltage;
 
 	int16_t measured_voltage;

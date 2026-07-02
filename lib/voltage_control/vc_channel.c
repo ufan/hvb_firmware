@@ -349,6 +349,8 @@ void vc_channel_init(struct vc_channel *ch,
 void vc_channel_run(struct vc_channel *ch, uint32_t dt_ms,
 			    const struct vc_system_config *sys_cfg)
 {
+	ch->uptime_ref += dt_ms;
+
 	if (ch->meas != NULL) {
 		int32_t raw_voltage, raw_current;
 		uint32_t voltage_ts, current_ts;
@@ -455,6 +457,9 @@ enum vc_status vc_channel_set_field(struct vc_channel *ch,
 		ch->config.auto_retry_delay = value;
 		break;
 	case VC_FIELD_AUTO_RETRY_MAX_COUNT:
+		if (value > CONFIG_VC_MAX_RETRY_HISTORY) {
+			return VC_ERR_INVALID_VALUE;
+		}
 		ch->config.auto_retry_max_count = value;
 		break;
 	case VC_FIELD_AUTO_RETRY_WINDOW:
