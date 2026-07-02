@@ -81,6 +81,25 @@ The Markdown report contains:
 
 Unavailable capability-dependent values are shown as `N/A`.
 
+### Raw ADC linearity fit
+
+After each channel sweep, the script performs an ordinary least-squares fit of
+each supported raw ADC series against DAC code. Voltage and current axes are
+fitted independently. Calibrated measured V/I values are not fitted.
+
+Each fit reports:
+
+- `raw_adc = slope × DAC + intercept`;
+- coefficient of determination (R²);
+- maximum absolute residual in raw ADC counts;
+- maximum absolute residual as a percentage of the fitted full-scale span;
+- number of sweep points.
+
+The calculation uses `awk` and adds no non-standard runtime dependency. A
+constant raw ADC series has zero response span and reports R² and residual
+percentage as `N/A`; its slope, intercept, absolute residual, and point count
+are still reported.
+
 ## Verification
 
 Tests use a mock CLI executable and no hardware. They cover:
@@ -89,6 +108,8 @@ Tests use a mock CLI executable and no hardware. They cover:
 - seven-point sweep generation;
 - signed 16-bit and signed 32-bit decoding;
 - physical-unit conversion;
+- positive-slope and negative-slope raw ADC fits;
+- constant-series fit handling;
 - Markdown report content;
 - DAC-zero/output-disable/Calibration-Mode-exit cleanup after success and an
   injected failure.
