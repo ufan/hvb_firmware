@@ -43,6 +43,14 @@ TEST_CASE("fmtCurrentUA") {
     CHECK(fmtCurrentUA(-1000) == "-0.100 uA");
 }
 
+TEST_CASE("fmtCurrentNA") {
+    // Monitor table cell — one decimal place so sub-nA readings aren't
+    // rounded away to an indistinguishable integer.
+    CHECK(fmtCurrentNA(32767) == "+3276.7 nA");
+    CHECK(fmtCurrentNA(0)     == "+0.0 nA");
+    CHECK(fmtCurrentNA(-1000) == "-100.0 nA");
+}
+
 TEST_CASE("fmtInterval") {
     CHECK(fmtInterval(0)   == "0.0 s");
     CHECK(fmtInterval(10)  == "1.0 s");
