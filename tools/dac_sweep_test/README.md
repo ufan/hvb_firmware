@@ -28,16 +28,18 @@ The script requires `gnuplot` with `pngcairo` support.
 - Discovers the board's supported channel count and capability flags.
 - Processes every channel sequentially.
 - Skips channels without raw DAC output capability.
-- Sweeps DAC codes `0, 10000, 20000, 30000, 40000, 50000, 60000`.
+- Sweeps DAC codes `0, 5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000,
+  45000, 50000, 55000, 60000`.
 - Waits five seconds after every DAC write.
 - Requests a fresh calibration sample before reading supported measurements.
-- Records raw ADC voltage/current, measured raw voltage/current, volts, and nA.
+- Records raw ADC voltage/current codes only, each with a decimal and a
+  0x-prefixed hex column; DAC codes get a hex column too.
 - Reports unsupported measurement fields as `N/A`.
 
 After each channel sweep, the report fits each supported raw ADC axis against
 DAC code using ordinary least squares. The fit table includes slope, intercept,
 R², maximum absolute residual, residual as a percentage of the fitted response
-span, and point count. Calibrated measured V/I values are not fitted. For a
+span, and point count. For a
 constant raw ADC series, R² and residual percentage are reported as `N/A`.
 
 One PNG is generated beside the report for every swept channel using the report

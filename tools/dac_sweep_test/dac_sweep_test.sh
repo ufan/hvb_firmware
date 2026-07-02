@@ -9,7 +9,7 @@ TIMEOUT_MS=3000
 CLI="$SCRIPT_DIR/../bin/hvb_demo_cli"
 REPORT=""
 
-SWEEP_CODES=(0 10000 20000 30000 40000 50000 60000)
+SWEEP_CODES=(0 5000 10000 15000 20000 25000 30000 35000 40000 45000 50000 55000 60000)
 SETTLE_SECONDS=5
 SAMPLE_DELAY_SECONDS=0.1
 
@@ -86,20 +86,10 @@ unsigned16() {
     echo "$((16#$1))"
 }
 
-signed16() {
-    local value=$((16#$1))
-    ((value >= 0x8000)) && value=$((value - 0x10000))
-    echo "$value"
-}
-
 signed32() {
     local value=$(((16#$1 << 16) | 16#$2))
     ((value >= 0x80000000)) && value=$((value - 0x100000000))
     echo "$value"
-}
-
-volts_from_raw() {
-    awk -v raw="$1" 'BEGIN { printf "%.1f", raw * 0.1 }'
 }
 
 calculate_linearity_fit() {
@@ -314,7 +304,7 @@ firmware_hex="0x${WORDS[10]}${WORDS[11]}"
     echo "- **Variant**: $variant_id"
     echo "- **Firmware**: $firmware_hex"
     echo "- **Supported channels**: $channel_count"
-    echo "- **Sweep**: 0–60000, step 10000, settle ${SETTLE_SECONDS}s"
+    echo "- **Sweep**: 0–60000, step 5000, settle ${SETTLE_SECONDS}s"
     echo
 } >> "$BODY"
 
@@ -365,8 +355,8 @@ for ch in "${DAC_CHANNELS[@]}"; do
             echo "CH$ch measurement capability: none; measurement columns are N/A."
             echo
         fi
-        echo "| DAC | Raw ADC V | Raw ADC I | Measured V raw | Measured V (V) | Measured I raw | Measured I (nA) |"
-        echo "|---:|---:|---:|---:|---:|---:|---:|"
+        echo "| DAC | DAC (hex) | Raw ADC V | Raw ADC V (hex) | Raw ADC I | Raw ADC I (hex) |"
+        echo "|---:|---:|---:|---:|---:|---:|"
     } >> "$BODY"
 
     write_reg "$((base + 30))" 1 || fail "CH$ch calibration output enable failed"
@@ -375,30 +365,25 @@ for ch in "${DAC_CHANNELS[@]}"; do
         write_reg "$((base + 31))" "$dac" || fail "CH$ch DAC write failed at $dac"
         sleep "$SETTLE_SECONDS"
 
-        raw_v="N/A" raw_i="N/A"
-        measured_v_raw="N/A" measured_v="N/A"
-        measured_i_raw="N/A" measured_i="N/A"
+        raw_v="N/A" raw_v_hex="N/A" raw_i="N/A" raw_i_hex="N/A"
+        printf -v dac_hex '0x%04X' "$dac"
 
         if ((has_v || has_i)); then
             write_reg "$((base + 32))" 1 || fail "CH$ch sample command failed at DAC $dac"
             sleep "$SAMPLE_DELAY_SECONDS"
         fi
         if ((has_v)); then
-            read_regs "$((base + 10))" 1 || fail "CH$ch measured voltage read failed"
-            measured_v_raw=$(signed16 "${WORDS[0]}")
-            measured_v=$(volts_from_raw "$measured_v_raw")
             read_regs "$((base + 12))" 2 || fail "CH$ch raw voltage ADC read failed"
             raw_v=$(signed32 "${WORDS[0]}" "${WORDS[1]}")
+            raw_v_hex="0x${WORDS[0]}${WORDS[1]}"
         fi
         if ((has_i)); then
-            read_regs "$((base + 11))" 1 || fail "CH$ch measured current read failed"
-            measured_i_raw=$(signed16 "${WORDS[0]}")
-            measured_i=$measured_i_raw
             read_regs "$((base + 14))" 2 || fail "CH$ch raw current ADC read failed"
             raw_i=$(signed32 "${WORDS[0]}" "${WORDS[1]}")
+            raw_i_hex="0x${WORDS[0]}${WORDS[1]}"
         fi
 
-        echo "| $dac | $raw_v | $raw_i | $measured_v_raw | $measured_v | $measured_i_raw | $measured_i |" >> "$BODY"
+        echo "| $dac | $dac_hex | $raw_v | $raw_v_hex | $raw_i | $raw_i_hex |" >> "$BODY"
         ((has_v)) && echo "$dac $raw_v" >> "$fit_v_file"
         ((has_i)) && echo "$dac $raw_i" >> "$fit_i_file"
     done

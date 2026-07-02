@@ -30,11 +30,11 @@ run_success_case() {
         --port /dev/mock --timeout 10 >/dev/null
 
     grep -q '^# DAC Sweep Test Report — PASS$' "$report" || fail "success heading"
-    grep -q '| 60000 | 600000 | -600000 | 6000 | 600.0 | -6000 | -6000 |' "$report" || fail "signed/scaled row"
+    grep -q '| 60000 | 0xEA60 | 600000 | 0x000927C0 | -600000 | 0xFFF6D840 |' "$report" || fail "signed/scaled row"
     grep -q 'CH1 measurement capability: none; measurement columns are N/A.' "$report" || fail "CH1 capability note"
     grep -q 'CH2 skipped: missing RAW_OUTPUT_DRIVE capability.' "$report" || fail "CH2 skip note"
-    grep -Fq '| Raw ADC V | raw_adc = 10.000000 × DAC + 0.000 | 1.000000 | 0.000 | 0.000000% | 7 |' "$report" || fail "voltage linearity fit"
-    grep -Fq '| Raw ADC I | raw_adc = -10.000000 × DAC + 0.000 | 1.000000 | 0.000 | 0.000000% | 7 |' "$report" || fail "current linearity fit"
+    grep -Fq '| Raw ADC V | raw_adc = 10.000000 × DAC + 0.000 | 1.000000 | 0.000 | 0.000000% | 13 |' "$report" || fail "voltage linearity fit"
+    grep -Fq '| Raw ADC I | raw_adc = -10.000000 × DAC + 0.000 | 1.000000 | 0.000 | 0.000000% | 13 |' "$report" || fail "current linearity fit"
     test "$(grep -c '^### Linearity Fit$' "$report")" -eq 1 || fail "fit section capability gating"
     grep -Fq '![CH0 DAC sweep plot](success_ch0.png)' "$report" || fail "CH0 plot link"
     grep -Fq '![CH1 DAC sweep plot](success_ch1.png)' "$report" || fail "CH1 plot link"
@@ -73,7 +73,7 @@ run_constant_series_case() {
         "$RUNNER" --cli "$MOCK" --report "$report" --port /dev/mock --timeout 10 \
         >/dev/null
 
-    grep -Fq '| Raw ADC V | raw_adc = 0.000000 × DAC + 1234.000 | N/A | 0.000 | N/A | 7 |' "$report" || fail "constant-series fit"
+    grep -Fq '| Raw ADC V | raw_adc = 0.000000 × DAC + 1234.000 | N/A | 0.000 | N/A | 13 |' "$report" || fail "constant-series fit"
 }
 
 [[ -x "$RUNNER" ]] || fail "runner not executable: $RUNNER"
