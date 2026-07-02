@@ -310,6 +310,30 @@ static bool current_fault_only(const struct vc_channel *ch)
 	return ch->active_fault_cause == VC_FAULT_CURRENT;
 }
 
+static uint16_t count_active_retries(const struct vc_channel *ch)
+{
+	uint32_t window_ms = (uint32_t)ch->config.auto_retry_window * 1000;
+	uint16_t count = 0;
+
+	for (uint8_t i = 0; i < ch->retry_timestamp_count; i++) {
+		if (ch->uptime_ref - ch->retry_timestamps_ms[i] <= window_ms) {
+			count++;
+		}
+	}
+	return count;
+}
+
+static void record_retry_attempt(struct vc_channel *ch)
+{
+	if (ch->retry_timestamp_count < CONFIG_VC_MAX_RETRY_HISTORY) {
+		ch->retry_timestamps_ms[ch->retry_timestamp_count++] = ch->uptime_ref;
+		return;
+	}
+	memmove(&ch->retry_timestamps_ms[0], &ch->retry_timestamps_ms[1],
+		sizeof(ch->retry_timestamps_ms[0]) * (CONFIG_VC_MAX_RETRY_HISTORY - 1));
+	ch->retry_timestamps_ms[CONFIG_VC_MAX_RETRY_HISTORY - 1] = ch->uptime_ref;
+}
+
 static void tick_recovery(struct vc_channel *ch, const struct vc_system_config *sys_cfg,
 			   uint32_t dt_ms)
 {
@@ -345,8 +369,18 @@ static void tick_recovery(struct vc_channel *ch, const struct vc_system_config *
 		return;
 	}
 
+	uint16_t retry_count = count_active_retries(ch);
+
+	if (retry_count >= cfg->auto_retry_max_count) {
+		ch->active_fault_cause |= VC_FAULT_RETRY_EXHAUST;
+		set_smf_state(ch, VC_CHANNEL_SMF_FAULT_LATCHED);
+		update_status_bits(ch);
+		return;
+	}
+
 	int32_t target = cfg->configured_target_voltage;
 
+	record_retry_attempt(ch);
 	ch->active_fault_cause = 0;
 	ch->recovering = true;
 	ch->recovery_target = (int16_t)target;
@@ -578,7 +612,7 @@ void vc_channel_get_snapshot(const struct vc_channel *ch,
 	snap->active_fault_cause = ch->active_fault_cause;
 	snap->fault_history_cause = ch->fault_history_cause;
 	snap->last_protection_output_action = ch->last_protection_output_action;
-	snap->auto_retry_count = 0;
+	snap->auto_retry_count = count_active_retries(ch);
 	snap->auto_cooldown_remaining = (uint16_t)(ch->cooldown_remaining_ms / 1000);
 	snap->last_fault_timestamp = ch->last_fault_timestamp;
 	snap->channel_capability_flags = ch->capabilities;

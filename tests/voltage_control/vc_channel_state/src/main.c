@@ -370,6 +370,60 @@ ZTEST(vc_channel_state, test_recovery_auto_retry_clears_fault_after_cooldown_and
 	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_ENABLED_HOLDING);
 }
 
+ZTEST(vc_channel_state, test_recovery_exhausts_after_max_retries)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_RETRY);
+	ch.config.auto_retry_max_count = 2;
+
+	for (int attempt = 0; attempt < 2; attempt++) {
+		vc_channel_consume_current(&ch, 100); /* safe */
+		vc_channel_run(&ch, 1000, &auto_sys);  /* cooldown elapses, retries */
+		zassert_equal(ch.active_fault_cause, 0,
+			      "attempt %d must succeed (under max count)", attempt);
+
+		/* Re-fault immediately so the next attempt has something to retry from. */
+		vc_channel_consume_current(&ch, 5000);
+		zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT);
+	}
+
+	/* Third attempt: max_count (2) already used up inside the window. */
+	vc_channel_consume_current(&ch, 100);
+	vc_channel_run(&ch, 1000, &auto_sys);
+
+	zassert_true(ch.active_fault_cause & VC_FAULT_RETRY_EXHAUST,
+		     "third attempt must exhaust and latch, not retry again");
+	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT);
+	zassert_false(ch.output_enabled);
+}
+
+ZTEST(vc_channel_state, test_recovery_window_expiry_resets_count)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+	struct vc_channel_snapshot snap;
+
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_RETRY);
+	ch.config.auto_retry_max_count = 1;
+	ch.config.auto_retry_window = 5; /* seconds */
+
+	vc_channel_consume_current(&ch, 100);
+	vc_channel_run(&ch, 1000, &auto_sys); /* first (and only allowed) retry */
+	zassert_equal(ch.active_fault_cause, 0);
+
+	vc_channel_get_snapshot(&ch, &snap);
+	zassert_equal(snap.auto_retry_count, 1);
+
+	/* Advance well past the 5s window with no further faults. */
+	for (int i = 0; i < 10; i++) {
+		vc_channel_run(&ch, 1000, &auto_sys);
+	}
+
+	vc_channel_get_snapshot(&ch, &snap);
+	zassert_equal(snap.auto_retry_count, 0,
+		      "retry timestamps older than the window must age out");
+}
+
 ZTEST(vc_channel_state, test_set_field_does_not_evaluate_protection_synchronously)
 {
 	/* A real Modbus write of mode+action+threshold lands as three separate
