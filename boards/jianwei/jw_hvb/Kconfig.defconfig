@@ -15,4 +15,10 @@ config SYS_STATUS
 config VC_VARIANT_ID
 	default 1
 
+config VC_DEFAULT_MEASURED_V_CAL_K
+	default 2387
+
+config VC_DEFAULT_MEASURED_I_CAL_K
+	default 14901
+
 endif # BOARD_JW_HVB
