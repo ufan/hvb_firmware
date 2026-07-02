@@ -1,0 +1,120 @@
+# Modbus DAC Sweep Test Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build a standalone Bash test that drives a fixed DAC sweep on every supported DAC-capable channel through `hvb_demo_cli` and emits a capability-aware Markdown report.
+
+**Architecture:** `dac_sweep_test.sh` owns CLI parsing, raw Modbus transactions, signed decoding, sequential channel execution, report generation, and trap-based cleanup. A mock CLI provides deterministic register responses and records writes so shell tests verify normal and failed runs without hardware.
+
+**Tech Stack:** Bash 4+, `hvb_demo_cli` raw FC03/FC04/FC06 commands, standard Unix tools.
+
+---
+
+## File structure
+
+- Create `tools/dac_sweep_test/dac_sweep_test.sh`: production sweep runner.
+- Create `tools/dac_sweep_test/tests/mock_hvb_demo_cli.sh`: deterministic CLI replacement.
+- Create `tools/dac_sweep_test/tests/test_dac_sweep_test.sh`: end-to-end regression tests.
+- Create `tools/dac_sweep_test/README.md`: usage, report, and safety behavior.
+
+### Task 1: Mocked sweep contract
+
+**Files:**
+- Create: `tools/dac_sweep_test/tests/mock_hvb_demo_cli.sh`
+- Create: `tools/dac_sweep_test/tests/test_dac_sweep_test.sh`
+
+- [ ] **Step 1: Write a deterministic mock CLI**
+
+The mock ignores connection options, logs the raw command, and returns protocol
+3.0 with calibration capability and three channels: CH0 has DAC/V/I, CH1 has
+DAC only, and CH2 has V measurement only. CH0 telemetry is derived from the
+most recently logged DAC write. `MOCK_FAIL_DAC` injects a write failure.
+
+- [ ] **Step 2: Write failing end-to-end tests**
+
+Run the production script with a fake `sleep` first in `PATH`. Assert seven DAC
+writes per swept channel, signed/scaled CH0 report values, CH1 `N/A` values,
+CH2 skip reporting, and cleanup writes. Run again with failure at DAC 30000 and
+assert nonzero exit, overall FAIL, DAC zero, output disable, and mode exit.
+
+- [ ] **Step 3: Verify the tests fail before implementation**
+
+Run `bash tools/dac_sweep_test/tests/test_dac_sweep_test.sh`.
+
+Expected: FAIL because `tools/dac_sweep_test/dac_sweep_test.sh` is absent.
+
+### Task 2: Sweep runner
+
+**Files:**
+- Create: `tools/dac_sweep_test/dac_sweep_test.sh`
+
+- [ ] **Step 1: Add option parsing and CLI wrappers**
+
+Support `--port`, `--baud`, `--slave`, `--timeout`, `--cli`, and `--report`.
+Every transaction invokes the CLI with connection options followed by a raw
+FC03, FC04, or FC06 command. Validate the executable and report directory.
+
+- [ ] **Step 2: Add register decoding helpers**
+
+Parse CLI hexadecimal words. Decode INT16 by subtracting `0x10000` when bit 15
+is set and INT32 by combining high/low words then subtracting `0x100000000`
+when bit 31 is set. Format voltage as `raw * 0.1` V and current as raw nA.
+
+- [ ] **Step 3: Add discovery and Calibration Mode entry**
+
+Read FC04 address 0 count 15. Require protocol major 3, calibration capability
+bit `0x0004`, and channel count 1–16. Read capability flags at
+`40 + channel*40 + 9`. Enter Calibration Mode with FC06 writes `680=0xCA1B`,
+`680=0xA11B`, and `0=2`.
+
+- [ ] **Step 4: Implement sequential seven-point sweeps**
+
+For every channel with raw-drive bit `0x0002`, enable `base+30`, sweep DAC
+`0 10000 20000 30000 40000 50000 60000` through `base+31`, sleep five seconds,
+trigger `base+32=1` when measurement capability exists, wait 100 ms, and read
+the supported subset of input offsets 10–15. Append capability-aware Markdown
+rows. Zero `base+31` and disable `base+30` before the next channel.
+
+- [ ] **Step 5: Implement unconditional cleanup**
+
+An EXIT trap best-effort zeros and disables every discovered DAC channel, then
+writes `681=1` to exit Calibration Mode. Preserve the original exit status and
+append cleanup and overall PASS/FAIL to the report.
+
+- [ ] **Step 6: Run regression tests**
+
+Run `bash tools/dac_sweep_test/tests/test_dac_sweep_test.sh`.
+
+Expected: success and injected-failure scenarios both pass their assertions.
+
+### Task 3: Documentation and final verification
+
+**Files:**
+- Create: `tools/dac_sweep_test/README.md`
+
+- [ ] **Step 1: Document usage and output**
+
+Document `tools/dac_sweep_test/dac_sweep_test.sh --port /dev/ttyUSB0`, the fixed
+sweep and timing, sequential capability-gated behavior, report path, absence of
+NVS writes, and automatic cleanup.
+
+- [ ] **Step 2: Run final verification**
+
+Run:
+
+```bash
+bash -n tools/dac_sweep_test/dac_sweep_test.sh
+bash -n tools/dac_sweep_test/tests/mock_hvb_demo_cli.sh
+bash -n tools/dac_sweep_test/tests/test_dac_sweep_test.sh
+bash tools/dac_sweep_test/tests/test_dac_sweep_test.sh
+git diff --check -- tools/dac_sweep_test
+```
+
+Expected: all commands exit 0.
+
+- [ ] **Step 3: Commit the implementation**
+
+```bash
+git add tools/dac_sweep_test docs/superpowers/plans/2026-07-02-modbus-dac-sweep-test.md
+git commit -m "feat(tools): add Modbus DAC sweep test"
+```
