@@ -78,6 +78,15 @@ inline int32_t int32FromRegs(uint16_t hi, uint16_t lo) {
 namespace scale {
     inline constexpr double VOLTAGE_LSB_TO_V = 0.1;    // 100 mV/LSB → V
     inline constexpr double CURRENT_LSB_TO_A = 1e-10;  // 0.1 nA/LSB → A
+
+    // Calibration coefficient (Cal K) fixed-point divisors — calibrated = raw * k / DIVISOR + b.
+    // Single source of truth: every host-tool call site that scales a Cal K
+    // value (register_meta.cpp's catalog, hvb_factory_tool's CalibrationBackend/
+    // ReportEngine, hvb_demo_cli) must use these constants, not a literal
+    // 10000/1000000, so the three can never drift apart again.
+    inline constexpr double OUTPUT_CAL_DIVISOR = 10000.0;    // output_calib_k; unity = 10000
+    inline constexpr double MEAS_CAL_DIVISOR   = 1000000.0;  // measured_{voltage,current}_calib_k;
+                                                               // unity NOT representable (max k=65535)
 }
 
 // INT16 values — negative voltage/current are possible

@@ -93,12 +93,29 @@ int cmdListPorts() {
 
 int cmdListRegs() { std::cout << hvb::meta::formatRegisterCatalog(); return 0; }
 
+// Print one bank's metadata, plus a live decoded value (via hvb::meta::formatValue)
+// if a device is connected.
+static void describeBank(const char* label, const hvb::meta::RegDesc* d, uint16_t addr, bool holding) {
+    if (!d) return;
+    printSep(label, std::string(d->name) + " " + d->desc);
+    printSep("Type:", std::string(d->type) + (d->unit[0] ? std::string(", ") + d->unit : ""));
+    if (!g_client->isConnected()) return;
+    uint16_t raw = 0;
+    bool ok = holding ? g_client->readHoldingRegs(addr, 1, &raw)
+                       : g_client->readInputRegs(addr, 1, &raw);
+    if (ok) printSep("Value:", hvb::meta::formatValue(raw, *d));
+    else    std::cerr << "Read error: " << g_client->lastError() << "\n";
+}
+
 int cmdDescribe(uint16_t addr) {
-    auto* d = hvb::meta::findDesc(addr, true);
-    if (d) { printSep("Holding:", std::string(d->name) + " " + d->desc); }
-    d = hvb::meta::findDesc(addr, false);
-    if (d) { printSep("Input:", std::string(d->name) + " " + d->desc); }
-    if (!d) { std::cout << "No register at 0x" << std::hex << addr << std::dec << "\n"; }
+    const auto* holdingDesc = hvb::meta::findDesc(addr, true);
+    const auto* inputDesc   = hvb::meta::findDesc(addr, false);
+    if (!holdingDesc && !inputDesc) {
+        std::cout << "No register at 0x" << std::hex << addr << std::dec << "\n";
+        return 1;
+    }
+    describeBank("Holding:", holdingDesc, addr, true);
+    describeBank("Input:",   inputDesc,   addr, false);
     return 0;
 }
 
@@ -203,9 +220,15 @@ int cmdChannelCal(int ch) {
     auto cal = g_client->readChannelCalConfig(ch);
     if (!g_client->isConnected()) return 1;
     std::cout << "=== Channel " << ch << " Calibration ===\n";
-    printSep("Output:", "K=" + std::to_string(cal.outCalK) + " (x10000)  B=" + std::to_string(cal.outCalB) + " (x1000)");
-    printSep("Meas V:", "K=" + std::to_string(cal.measVCalK) + " (x1000000)  B=" + std::to_string(cal.measVCalB) + " (x1000)");
-    printSep("Meas I:", "K=" + std::to_string(cal.measICalK) + " (x1000000)  B=" + std::to_string(cal.measICalB) + " (x1000)");
+    auto divisorTag = [](double divisor) {
+        return " (x" + std::to_string(static_cast<long long>(divisor)) + ")";
+    };
+    printSep("Output:", "K=" + std::to_string(cal.outCalK) + divisorTag(hvb::reg::scale::OUTPUT_CAL_DIVISOR)
+             + "  B=" + std::to_string(cal.outCalB) + " (x1000)");
+    printSep("Meas V:", "K=" + std::to_string(cal.measVCalK) + divisorTag(hvb::reg::scale::MEAS_CAL_DIVISOR)
+             + "  B=" + std::to_string(cal.measVCalB) + " (x1000)");
+    printSep("Meas I:", "K=" + std::to_string(cal.measICalK) + divisorTag(hvb::reg::scale::MEAS_CAL_DIVISOR)
+             + "  B=" + std::to_string(cal.measICalB) + " (x1000)");
     return 0;
 }
 
@@ -264,6 +287,7 @@ int main(int argc, char** argv) {
     uint32_t hexAddr = 0;
     auto* describeCmd = app.add_subcommand("describe", "Show register metadata");
     describeCmd->add_option("addr", hexAddr, "PDU address (hex)")->required();
+    describeCmd->callback([&]() { cmdDescribe(static_cast<uint16_t>(hexAddr)); });
 
     // Monitor
     int interval = 2;

@@ -7,6 +7,15 @@
 namespace hvb::meta {
 
 using Cat = hvb::reg::PollCat;
+namespace vscale = hvb::reg::scale;
+
+// Divisor for the register catalog's "raw (converted unit)" display — the same
+// x0.1 convention documented for both voltage and current (see
+// docs/guide/parameter-reference.md). Named here, rather than a literal 10.0,
+// so it can never silently diverge from hvb::reg::scale::VOLTAGE_LSB_TO_V /
+// CURRENT_LSB_TO_A.
+constexpr double kVoltageDisplayDivisor = 1.0 / vscale::VOLTAGE_LSB_TO_V;       // -> V
+constexpr double kCurrentDisplayDivisor = 1.0 / (vscale::CURRENT_LSB_TO_A * 1e9); // -> nA
 
 const std::vector<RegDesc> SYSTEM_INPUT = {
     {0,  "Protocol Major",        "uint16", "",        "Protocol version major", 1.0, false, false, -1, {}, Cat::Fixed},
@@ -49,10 +58,10 @@ const std::vector<RegDesc> CHANNEL_INPUT = {
     {5,  "Auto Cooldown Remaining","uint16", "seconds", "Seconds until retry allowed", 1.0, false, false, -1, {}, Cat::Realtime},
     {6,  "Last Fault TS HI",       "uint16", "seconds", "Uptime of last fault event (high)", 1.0, false, false, -1, {}, Cat::Realtime},
     {7,  "Last Fault TS LO",       "uint16", "seconds", "Uptime of last fault event (low)", 1.0, false, false, -1, {}, Cat::Realtime},
-    {8,  "Oper Target Voltage",    "uint16", "lsb",     "Current runtime target (raw LSB)", 1.0, false, false, -1, {}, Cat::Realtime},
+    {8,  "Oper Target Voltage",    "int16",  "V",       "Current runtime target", kVoltageDisplayDivisor, false, false, -1, {}, Cat::Realtime},
     {9,  "Channel Capability Flags","uint16","bitmask", "Channel capability flags", 1.0, false, false, -1, {}, Cat::Fixed},
-    {10, "Measured Voltage",       "uint16", "lsb",     "Calibrated output voltage (raw LSB)", 1.0, false, false, -1, {}, Cat::Realtime},
-    {11, "Measured Current",       "uint16", "lsb",     "Calibrated output current (raw LSB)", 1.0, false, false, -1, {}, Cat::Realtime},
+    {10, "Measured Voltage",       "int16",  "V",       "Calibrated output voltage", kVoltageDisplayDivisor, false, false, -1, {}, Cat::Realtime},
+    {11, "Measured Current",       "int16",  "nA",      "Calibrated output current", kCurrentDisplayDivisor, false, false, -1, {}, Cat::Realtime},
     {12, "Raw ADC Voltage HI",     "int32_hi","lsb",    "Calibration Mode — raw ADC voltage (high)", 1.0, false, false, -1, {}, Cat::Realtime},
     {13, "Raw ADC Voltage LO",     "int32_lo","lsb",    "Calibration Mode — raw ADC voltage (low)", 1.0, false, false, -1, {}, Cat::Realtime},
     {14, "Raw ADC Current HI",     "int32_hi","lsb",    "Calibration Mode — raw ADC current (high)", 1.0, false, false, -1, {}, Cat::Realtime},
@@ -69,11 +78,11 @@ const std::vector<RegDesc> CHANNEL_HOLDING = {
     {2,  "Channel Param Action",  "uint16", "enum",    "Save/Load/Factory/Reset per channel", 1.0, true, true, -1,
         {"None", "Save", "Load", "FactoryReset"}, Cat::Command},
     /* Operational config */
-    {3,  "Configured Target V",   "uint16", "lsb",     "Host target voltage (raw LSB)", 1.0, true, false, -1, {}, Cat::Config},
-    {4,  "Ramp Up Step",          "uint16", "lsb",     "Step size per ramp-up", 1.0, true, false, -1, {}, Cat::Config},
-    {5,  "Ramp Up Interval",      "uint16", "seconds_x10","Delay per ramp-up step", 10.0, true, false, -1, {}, Cat::Config},
-    {6,  "Ramp Down Step",        "uint16", "lsb",     "Step size per ramp-down", 1.0, true, false, -1, {}, Cat::Config},
-    {7,  "Ramp Down Interval",    "uint16", "seconds_x10","Delay per ramp-down step", 10.0, true, false, -1, {}, Cat::Config},
+    {3,  "Configured Target V",   "int16",  "V",       "Host target voltage", kVoltageDisplayDivisor, true, false, -1, {}, Cat::Config},
+    {4,  "Ramp Up Step",          "uint16", "V",       "Step size per ramp-up", kVoltageDisplayDivisor, true, false, -1, {}, Cat::Config},
+    {5,  "Ramp Up Interval",      "uint16", "s",       "Delay per ramp-up step", 10.0, true, false, -1, {}, Cat::Config},
+    {6,  "Ramp Down Step",        "uint16", "V",       "Step size per ramp-down", kVoltageDisplayDivisor, true, false, -1, {}, Cat::Config},
+    {7,  "Ramp Down Interval",    "uint16", "s",       "Delay per ramp-down step", 10.0, true, false, -1, {}, Cat::Config},
     /* Recovery (moved from system in v3) */
     {8,  "Recovery Policy Mode",  "uint16", "enum",    "Per-channel recovery policy", 1.0, true, false, -1,
         {"ManualLatch", "AutoRetry", "AutoDerate", "NeverRetry"}, Cat::Config},
@@ -86,16 +95,16 @@ const std::vector<RegDesc> CHANNEL_HOLDING = {
         {"Disabled", "FlagOnly", "ApplyAction"}, Cat::Config},
     {14, "I Protection Out Action","uint16","enum",    "Action applied on I fault", 1.0, true, false, -1,
         {"None", "DisableGraceful", "DisableImmediate", "ForceZero"}, Cat::Config},
-    {15, "Current Limit Threshold","uint16","lsb",     "Current limit (raw LSB)", 1.0, true, false, -1, {}, Cat::Config},
-    {16, "Auto Derate Step",      "uint16", "lsb",     "Target reduction per derate retry", 1.0, true, false, -1, {}, Cat::Config},
+    {15, "Current Limit Threshold","int16", "nA",      "Current limit", kCurrentDisplayDivisor, true, false, -1, {}, Cat::Config},
+    {16, "Auto Derate Step",      "uint16", "V",       "Target reduction per derate retry", kVoltageDisplayDivisor, true, false, -1, {}, Cat::Config},
     /* 17..19 reserved — CH_SAVE_TARGET_POLICY removed in v3 */
     /* Cal config — readable any mode, writable in cal mode only */
-    {20, "Output Calibration K",  "uint16", "x10000",  "Output path slope", 1.0, true, false, -1, {}, Cat::Config},
+    {20, "Output Calibration K",  "uint16", "x",       "Output path slope (unity = 10000)", vscale::OUTPUT_CAL_DIVISOR, true, false, -1, {}, Cat::Config},
     {21, "Output Calibration B",  "int16",  "dac",     "Output path offset (DAC counts)", 1.0, true, false, -1, {}, Cat::Config},
-    {22, "Meas V Calibration K",  "uint16", "x1000000","Voltage measurement slope (unity not representable)", 1.0, true, false, -1, {}, Cat::Config},
-    {23, "Meas V Calibration B",  "int16",  "x100mV",  "Voltage measurement offset", 1.0, true, false, -1, {}, Cat::Config},
-    {24, "Meas I Calibration K",  "uint16", "x1000000","Current measurement slope (unity not representable)", 1.0, true, false, -1, {}, Cat::Config},
-    {25, "Meas I Calibration B",  "int16",  "x0.1nA",  "Current measurement offset", 1.0, true, false, -1, {}, Cat::Config},
+    {22, "Meas V Calibration K",  "uint16", "x",       "Voltage measurement slope (unity not representable)", vscale::MEAS_CAL_DIVISOR, true, false, -1, {}, Cat::Config},
+    {23, "Meas V Calibration B",  "int16",  "V",       "Voltage measurement offset", kVoltageDisplayDivisor, true, false, -1, {}, Cat::Config},
+    {24, "Meas I Calibration K",  "uint16", "x",       "Current measurement slope (unity not representable)", vscale::MEAS_CAL_DIVISOR, true, false, -1, {}, Cat::Config},
+    {25, "Meas I Calibration B",  "int16",  "nA",      "Current measurement offset", kCurrentDisplayDivisor, true, false, -1, {}, Cat::Config},
     /* 26..29 reserved */
     /* Cal session commands — cal mode only */
     {30, "Cal Output Enable",     "uint16", "bool",    "Calibration Mode — raw output gate", 1.0, true, false, -1, {}, Cat::Command},
@@ -133,6 +142,14 @@ std::string formatValue(uint16_t raw, const RegDesc& d) {
     }
     std::ostringstream ss;
     ss << raw;
+    if (d.scaleTo != 1.0) {
+        bool isSigned = d.type && std::string(d.type) == "int16";
+        double value = isSigned ? static_cast<double>(static_cast<int16_t>(raw))
+                                 : static_cast<double>(raw);
+        ss << " (" << std::setprecision(6) << (value / d.scaleTo);
+        if (d.unit[0]) ss << " " << d.unit;
+        ss << ")";
+    }
     return ss.str();
 }
 

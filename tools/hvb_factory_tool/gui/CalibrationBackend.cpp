@@ -1,5 +1,6 @@
 #include "CalibrationBackend.h"
 #include "SweepData.h"
+#include "register_map.h"
 
 #include "dt-bindings/voltage_control/capabilities.h"
 #include "reg_store/reg_map.h"
@@ -11,6 +12,8 @@
 #include <QtMath>
 
 namespace hvb::factory {
+
+namespace vscale = hvb::reg::scale;
 
 // ---------------------------------------------------------------------------
 // MetaType registration — required for cross-thread signal/slot with custom types
@@ -174,9 +177,9 @@ QVariantMap CalibrationBackend::channelSweepFit(int ch) const {
     m["hasMeasV"]      = d.hasMeasV;
     m["hasMeasI"]      = d.hasMeasI;
     m["needsCal"]      = d.needsCal;
-    m["outFit"]        = fitMap(d.outFit,   d.hasOut,   10000.0);
-    m["measVFit"]      = fitMap(d.measVFit, d.hasMeasV, 1000000.0);
-    m["measIFit"]      = fitMap(d.measIFit, d.hasMeasI, 1000000.0);
+    m["outFit"]        = fitMap(d.outFit,   d.hasOut,   vscale::OUTPUT_CAL_DIVISOR);
+    m["measVFit"]      = fitMap(d.measVFit, d.hasMeasV, vscale::MEAS_CAL_DIVISOR);
+    m["measIFit"]      = fitMap(d.measIFit, d.hasMeasI, vscale::MEAS_CAL_DIVISOR);
     m["coeffsWritten"] = d.coeffsWritten;
     m["committed"]     = d.committed;
     return m;
@@ -281,11 +284,11 @@ QVariantList CalibrationBackend::calSummary() const {
         m["outR2"]        = d.outFit.r2;
         m["measVR2"]      = d.measVFit.r2;
         m["measIR2"]      = d.measIFit.r2;
-        m["outKDevice"]   = qRound(d.outFit.k  * 10000);
+        m["outKDevice"]   = qRound(d.outFit.k  * vscale::OUTPUT_CAL_DIVISOR);
         m["outBDevice"]   = qRound(d.outFit.b);
-        m["measVKDevice"] = qRound(d.measVFit.k * 1000000);
+        m["measVKDevice"] = qRound(d.measVFit.k * vscale::MEAS_CAL_DIVISOR);
         m["measVBDevice"] = qRound(d.measVFit.b);
-        m["measIKDevice"] = qRound(d.measIFit.k * 1000000);
+        m["measIKDevice"] = qRound(d.measIFit.k * vscale::MEAS_CAL_DIVISOR);
         m["measIBDevice"] = qRound(d.measIFit.b);
         list.append(m);
     }
@@ -565,7 +568,7 @@ void CalibrationBackend::computeFit(int ch, const QVariantList& dmmPoints) {
         m["bDevice"] = qRound(f.b);
         return m;
     };
-    emit fitReady(ch, fitMap(d.outFit, 10000.0), fitMap(d.measVFit, 1000000.0), fitMap(d.measIFit, 1000000.0));
+    emit fitReady(ch, fitMap(d.outFit, vscale::OUTPUT_CAL_DIVISOR), fitMap(d.measVFit, vscale::MEAS_CAL_DIVISOR), fitMap(d.measIFit, vscale::MEAS_CAL_DIVISOR));
     setStatus(QString("CH%1 fit computed").arg(ch));
 }
 
@@ -585,15 +588,15 @@ void CalibrationBackend::writeCoefficients(int ch,
         QMutexLocker lk(&m_clientMutex);
         if (d.hasOut)
             ok = ok && m_client.writeCalibrationOutput(ch,
-                    static_cast<uint16_t>(qRound(outK  * 10000)),
+                    static_cast<uint16_t>(qRound(outK  * vscale::OUTPUT_CAL_DIVISOR)),
                     static_cast<int16_t> (qRound(outB)));
         if (d.hasMeasV)
             ok = ok && m_client.writeCalibrationMeasV(ch,
-                    static_cast<uint16_t>(qRound(measVK * 1000000)),
+                    static_cast<uint16_t>(qRound(measVK * vscale::MEAS_CAL_DIVISOR)),
                     static_cast<int16_t> (qRound(measVB)));
         if (d.hasMeasI)
             ok = ok && m_client.writeCalibrationMeasI(ch,
-                    static_cast<uint16_t>(qRound(measIK * 1000000)),
+                    static_cast<uint16_t>(qRound(measIK * vscale::MEAS_CAL_DIVISOR)),
                     static_cast<int16_t> (qRound(measIB)));
     }
     d.coeffsWritten = ok;

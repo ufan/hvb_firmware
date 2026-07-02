@@ -1,4 +1,5 @@
 #include "ReportEngine.h"
+#include "register_map.h"
 #include <QFile>
 #include <QPageSize>
 #include <QPrinter>
@@ -6,6 +7,8 @@
 #include <QTextStream>
 
 namespace hvb::factory {
+
+namespace vscale = hvb::reg::scale;
 
 QString ReportEngine::verdictBadge(bool pass) {
     return pass
@@ -26,9 +29,9 @@ QString ReportEngine::fitTable(const ChannelCalData& cal) {
                  .arg(f.r2, 0, 'f', 6)
                  .arg(cal.points.size());
     };
-    row("out (V→DAC), K ×10000",       cal.outFit,   cal.hasOut,   10000.0);
-    row("meas-V (ADC→V), K ×1000000", cal.measVFit, cal.hasMeasV, 1000000.0);
-    row("meas-I (ADC→I), K ×1000000", cal.measIFit, cal.hasMeasI, 1000000.0);
+    row("out (V→DAC), K ×10000",       cal.outFit,   cal.hasOut,   vscale::OUTPUT_CAL_DIVISOR);
+    row("meas-V (ADC→V), K ×1000000", cal.measVFit, cal.hasMeasV, vscale::MEAS_CAL_DIVISOR);
+    row("meas-I (ADC→I), K ×1000000", cal.measIFit, cal.hasMeasI, vscale::MEAS_CAL_DIVISOR);
     s += "</table>";
     return s;
 }
@@ -201,9 +204,9 @@ QString ReportEngine::buildMarkdown(const ReportData& data) {
                           .arg(ax).arg(qRound(f.k * divisor)).arg(qRound(f.b))
                           .arg(f.r2, 0, 'f', 6);
             };
-            row("out (V→DAC), K ×10000",       cal.outFit,   cal.hasOut,   10000.0);
-            row("meas-V (ADC→V), K ×1000000", cal.measVFit, cal.hasMeasV, 1000000.0);
-            row("meas-I (ADC→I), K ×1000000", cal.measIFit, cal.hasMeasI, 1000000.0);
+            row("out (V→DAC), K ×10000",       cal.outFit,   cal.hasOut,   vscale::OUTPUT_CAL_DIVISOR);
+            row("meas-V (ADC→V), K ×1000000", cal.measVFit, cal.hasMeasV, vscale::MEAS_CAL_DIVISOR);
+            row("meas-I (ADC→I), K ×1000000", cal.measIFit, cal.hasMeasI, vscale::MEAS_CAL_DIVISOR);
             md += "\n";
         }
     }
