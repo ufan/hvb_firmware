@@ -3,6 +3,7 @@
 #include "tab_monitor.h"
 #include "tab_channel.h"
 #include "tui_policy.h"
+#include "modbus_settings.h"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -250,8 +251,10 @@ int main(int argc, char** argv) {
     // ---- SysConfig popup ----
     static const std::vector<std::string> kOpModes  = {"Normal", "Automatic"};
     static const std::vector<std::string> kStartPol = {"Load NVS Config", "Factory Default"};
+    static const std::vector<std::string> kBaudNames = {"115200", "9600"};
 
     auto bSysCfg = hvb::tui::ActionButton("Setting", [&] {
+        if (!showSysCfg && data.valid) hvb::tui::syncDataToInputs(data, inputs);
         showSysCfg = !showSysCfg; screen.PostEvent(Event::Custom);
     });
 
@@ -266,6 +269,63 @@ int main(int argc, char** argv) {
             [&] { return g_client.writeStartupChannelPolicy((uint16_t)inputs.startupIdx); },
             [&] { data.sysCfg = g_client.readSystemConfig(); });
     });
+    auto scSlave = Input(&inputs.slaveAddr, "1-247");
+    auto scBaud = hvb::tui::InlineCycler(kBaudNames, &inputs.baudIdx, [] {});
+
+    auto scSaveModbus = hvb::tui::ActionButton("Save Modbus", [&] {
+        uint16_t slaveAddress = 0;
+        if (!hvb::tui::parseModbusSlaveAddress(inputs.slaveAddr, slaveAddress)) {
+            {
+                std::lock_guard<std::mutex> lk(statusMutex);
+                statusMsg = "Error: slave address must be 1-247";
+            }
+            screen.PostEvent(Event::Custom);
+            return;
+        }
+        if (inputs.baudIdx < 0 || inputs.baudIdx >= static_cast<int>(kBaudNames.size())) {
+            {
+                std::lock_guard<std::mutex> lk(statusMutex);
+                statusMsg = "Error: invalid baud rate";
+            }
+            screen.PostEvent(Event::Custom);
+            return;
+        }
+
+        const std::string stagedSlave = inputs.slaveAddr;
+        const int stagedBaud = inputs.baudIdx;
+        const hvb::SystemConfig current = data.sysCfg;
+        {
+            std::lock_guard<std::mutex> lk(statusMutex);
+            statusMsg = "Writing Modbus config...";
+        }
+        screen.PostEvent(Event::Custom);
+
+        std::function<void()> item = [&, stagedSlave, stagedBaud, current] {
+            auto result = hvb::tui::saveModbusSettings(
+                stagedSlave, stagedBaud, current,
+                [&](uint16_t value) { return g_client.writeSlaveAddress(value); },
+                [&](uint16_t value) { return g_client.writeBaudRateCode(value); });
+
+            if (result == hvb::tui::ModbusSettingsSaveResult::Success) {
+                data.sysCfg = g_client.readSystemConfig();
+                hvb::tui::syncDataToInputs(data, inputs);
+            }
+            std::string resultMessage =
+                hvb::tui::modbusSettingsStatusMessage(result, g_client.lastError());
+            {
+                std::lock_guard<std::mutex> lk(statusMutex);
+                statusMsg = std::move(resultMessage);
+            }
+            screen.PostEvent(Event::Custom);
+        };
+
+        {
+            std::lock_guard<std::mutex> lk(workMutex);
+            workQueue.push(std::move(item));
+        }
+        workCv.notify_one();
+    });
+
     auto saveSystemConfig = [&] {
         hvb::tui::postWrite(appState, inputs, "Save",
             [&] { return g_client.sendParamAction(-1, hvb::ParamAction::Save); },
@@ -285,7 +345,11 @@ int main(int argc, char** argv) {
     });
     auto scClose   = Button("Close",   [&] { showSysCfg = false; screen.PostEvent(Event::Custom); });
 
-    auto sysCfgForm = Container::Vertical({scOpMode, scStartup, scSave, scLoad, scFactory, scReset, scClose});
+    auto sysCfgForm = Container::Vertical({
+        scOpMode, scStartup, scSave, scLoad, scFactory,
+        scSlave, scBaud, scSaveModbus,
+        scReset, scClose,
+    });
     auto sysCfgPopup = Renderer(sysCfgForm, [&] {
         return vbox({
             text(" System Config ") | bold | center, separator(),
@@ -294,10 +358,15 @@ int main(int argc, char** argv) {
             separator(),
             hbox({ scSave->Render(), text("  "), scLoad->Render(), text("  "), scFactory->Render() }) | center,
             separator(),
+            text(" Modbus (next boot) ") | bold | center,
+            hbox({ text("Slave Address : "), scSlave->Render() | size(WIDTH, EQUAL, 8) }),
+            hbox({ text("Baud Rate     : "), scBaud->Render() }),
+            scSaveModbus->Render() | center,
+            separator(),
             scReset->Render() | center,
             separator(),
             scClose->Render() | center,
-        }) | border | size(WIDTH, EQUAL, 42);
+        }) | border | size(WIDTH, EQUAL, 48);
     });
 
     // ---- Menu bar mode cycler (shares opModeIdx with scOpMode) ----

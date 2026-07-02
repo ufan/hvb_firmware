@@ -8,6 +8,7 @@
 #include <charconv>
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <string_view>
 
 namespace hvb::tui {
@@ -19,6 +20,22 @@ enum class ModbusSettingsSaveResult {
     SlaveWriteFailed,
     BaudWriteFailed,
 };
+
+inline std::string modbusSettingsStatusMessage(ModbusSettingsSaveResult result,
+                                                std::string_view clientError) {
+    switch (result) {
+    case ModbusSettingsSaveResult::Success:
+        return "OK: Modbus config saved — takes effect after reset";
+    case ModbusSettingsSaveResult::InvalidSlave:
+        return "Error: slave address must be 1-247";
+    case ModbusSettingsSaveResult::InvalidBaud:
+        return "Error: invalid baud rate";
+    case ModbusSettingsSaveResult::SlaveWriteFailed:
+    case ModbusSettingsSaveResult::BaudWriteFailed:
+        return "Error: " + std::string(clientError);
+    }
+    return "Error: invalid Modbus save result";
+}
 
 inline bool parseModbusSlaveAddress(std::string_view text, uint16_t& address) {
     if (text.empty()) return false;

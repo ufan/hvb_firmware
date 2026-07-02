@@ -10,7 +10,20 @@
 #include <vector>
 
 using hvb::tui::ModbusSettingsSaveResult;
+using hvb::tui::modbusSettingsStatusMessage;
 using hvb::tui::saveModbusSettings;
+
+TEST_CASE("Modbus settings save result has a status-bar message") {
+    CHECK(modbusSettingsStatusMessage(ModbusSettingsSaveResult::Success, "") ==
+          "OK: Modbus config saved — takes effect after reset");
+    CHECK(modbusSettingsStatusMessage(ModbusSettingsSaveResult::InvalidSlave, "") ==
+          "Error: slave address must be 1-247");
+    CHECK(modbusSettingsStatusMessage(ModbusSettingsSaveResult::InvalidBaud, "") ==
+          "Error: invalid baud rate");
+    CHECK(modbusSettingsStatusMessage(ModbusSettingsSaveResult::BaudWriteFailed,
+                                      "device failure") ==
+          "Error: device failure");
+}
 
 TEST_CASE("unchanged Modbus settings perform no writes") {
     hvb::SystemConfig current{};
