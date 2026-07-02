@@ -118,3 +118,54 @@ Expected: all commands exit 0.
 git add tools/dac_sweep_test docs/superpowers/plans/2026-07-02-modbus-dac-sweep-test.md
 git commit -m "feat(tools): add Modbus DAC sweep test"
 ```
+
+### Task 4: Raw ADC linearity fit
+
+**Files:**
+- Modify: `tools/dac_sweep_test/dac_sweep_test.sh`
+- Modify: `tools/dac_sweep_test/tests/test_dac_sweep_test.sh`
+- Modify: `tools/dac_sweep_test/README.md`
+
+- [ ] **Step 1: Add failing report assertions**
+
+Extend the mock success test to require independent Raw ADC V and Raw ADC I
+fits for CH0. Its deterministic data must produce slopes `10.000000` and
+`-10.000000`, intercepts `0.000`, R² `1.000000`, zero maximum residual, zero
+residual percentage, and seven points. Assert CH1 has no fit section because it
+has no measurement capability.
+
+- [ ] **Step 2: Run the test and verify RED**
+
+Run `bash tools/dac_sweep_test/tests/test_dac_sweep_test.sh`.
+
+Expected: FAIL because the report has no `Linearity Fit` section.
+
+- [ ] **Step 3: Collect per-axis point files and calculate OLS fits**
+
+Create temporary per-channel point files containing `DAC raw_adc`. After each
+channel sweep, use one `awk` calculation per supported axis to compute slope,
+intercept, R², maximum absolute residual, fitted response span, residual percent,
+and point count. For a zero response span, print `N/A` for R² and residual
+percent without dividing by zero.
+
+- [ ] **Step 4: Append the fit table to each channel report**
+
+Add a `### Linearity Fit` table with columns Axis, Equation, R², Max residual,
+Max residual (% span), and Points. Include only supported raw ADC axes.
+
+- [ ] **Step 5: Extend documentation**
+
+Document that fits use raw ADC V/I versus DAC code, ordinary least squares, and
+report slope/intercept/R²/residual metrics. State constant-series behavior.
+
+- [ ] **Step 6: Run final verification**
+
+Run syntax checks, mock regression tests, ShellCheck, and `git diff --check`.
+Expected: all commands exit 0.
+
+- [ ] **Step 7: Commit the fit enhancement**
+
+```bash
+git add tools/dac_sweep_test docs/superpowers/plans/2026-07-02-modbus-dac-sweep-test.md
+git commit -m "feat(tools): report DAC sweep linearity fits"
+```
