@@ -100,7 +100,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
             int  iIdx   = inputs.iActIdx[ch];
             auto action = kIActVals[iIdx >= 0 && iIdx < 4 ? iIdx : 0];
-            auto raw    = static_cast<int16_t>(std::stod(inputs.iThr[ch]) + 0.5);
+            auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]) * 1e-9);
             postWrite(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); },
                 refreshCh);

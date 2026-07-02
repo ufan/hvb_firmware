@@ -61,7 +61,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         try {
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
             auto action = kIActVals.at(inputs.iActIdx[ch]);
-            auto raw    = static_cast<int16_t>(std::stod(inputs.iThr[ch]) + 0.5);
+            auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]) * 1e-9);
             postWrite(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); }, refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
