@@ -18,9 +18,9 @@ audiences:
 | Max target voltage (validation bound) | `CONFIG_VC_MAX_TARGET_VOLTAGE` | 20000 | ×100 mV | 1–32767 |
 | Cal DAC ceiling (build-time) | `CONFIG_VC_CAL_MAX_RAW_DAC` | 65535 | raw DAC count | 1–65535 |
 | Output cal gain | `CONFIG_VC_DEFAULT_OUTPUT_CAL_K` | 32768 | ×10⁻⁴ | 1–65535 |
-| Voltage measurement cal gain | `CONFIG_VC_DEFAULT_MEASURED_V_CAL_K` | 10000 | ×10⁻⁴ | 1–65535 |
-| Current measurement cal gain | `CONFIG_VC_DEFAULT_MEASURED_I_CAL_K` | 10000 | ×10⁻⁴ | 1–65535 |
-| Current limit threshold | `CONFIG_VC_DEFAULT_CURRENT_LIMIT` | 32767 | nA (post-cal) | 1–32767 |
+| Voltage measurement cal gain | `CONFIG_VC_DEFAULT_MEASURED_V_CAL_K` | 1 | ×10⁻⁶ | 1–65535 |
+| Current measurement cal gain | `CONFIG_VC_DEFAULT_MEASURED_I_CAL_K` | 1 | ×10⁻⁶ | 1–65535 |
+| Current limit threshold | `CONFIG_VC_DEFAULT_CURRENT_LIMIT` | 32767 | ×0.1 nA (post-cal) | 1–32767 |
 | Ramp step | `CONFIG_VC_DEFAULT_RAMP_STEP` | 50000 | ×100 mV | 1–65535 |
 | Ramp interval | — (hardcoded) | 1 | seconds | — |
 | Current safe-band | `CONFIG_VC_DEFAULT_CURRENT_SAFE_BAND_PCT` | 10 | % | 0–100 |
@@ -42,19 +42,36 @@ All voltage quantities in the firmware use a fixed-point encoding of
 | 1000 | 1000 | 100 V |
 | 20000 | 20000 | 2000 V |
 
-Current values are in **nA** after factory calibration (see §4). With the
-default unity-gain calibration, the stored value equals the raw ADC reading.
+Current values are in **×0.1 nA per count** after factory calibration (see §4)
+— the same ×0.1 scaling convention as voltage. There is no unity-gain default
+for this axis; see below.
 
-Calibration gain coefficients use a fixed-point encoding of **×10⁻⁴**:
+Calibration gain coefficients are **not** on a single shared scale — the
+output axis and the two measurement axes use different fixed-point encodings
+because they operate at very different magnitudes:
 
-| Stored value | Effective multiplier |
-|-------------|---------------------|
-| 10000 | 1.0000× (unity, no scaling) |
-| 32768 | 3.2768× |
-| 5000 | 0.5000× |
+- **Output** (`output_calib_k`) uses **×10⁻⁴** (divide by 10000). This axis
+  operates near unity (mapping ~100 mV target units to ~1 DAC count), so a
+  1-in-10000 step size gives fine relative resolution and `k = 10000` is an
+  exact, representable identity gain.
+
+  | Stored value | Effective multiplier |
+  |-------------|---------------------|
+  | 10000 | 1.0000× (unity, no scaling) |
+  | 32768 | 3.2768× |
+  | 5000 | 0.5000× |
+
+- **Measurement** (`measured_voltage_calib_k`, `measured_current_calib_k`)
+  uses **×10⁻⁶** (divide by 1000000). These axes convert an attenuated raw
+  ADC reading (typically a gain around 0.001–0.01, per the HVB sense
+  network) into physical units, so they need much finer resolution than
+  the output axis at a much smaller magnitude. Because `uint16_t` tops out
+  at 65535, unity gain (`k = 1000000`) is **not representable** on this
+  axis — it can only ever scale a raw reading *down*, never pass it through
+  unchanged. See "Measurement Calibration" below for the derivation.
 
 Offset (b) terms for the output axis are raw DAC counts; for measurement axes,
-they are in the same units as the output (×100 mV or nA).
+they are in the same units as the calibrated output (×100 mV or ×0.1 nA).
 
 ---
 
@@ -82,8 +99,8 @@ Operator sets target voltage (×100 mV)
   [ADC raw readings: raw_adc_voltage, raw_adc_current]
         │
         ▼
-  voltage_calib formula:  measured_voltage = (raw_v × v_cal_k) / 10000 + v_cal_b
-  current_calib formula:  measured_current = (raw_i × i_cal_k) / 10000 + i_cal_b
+  voltage_calib formula:  measured_voltage = (raw_v × v_cal_k) / 1000000 + v_cal_b
+  current_calib formula:  measured_current = (raw_i × i_cal_k) / 1000000 + i_cal_b
         │
         ▼
   [current protection, snapshots, Modbus reporting]
@@ -133,35 +150,50 @@ maximum.
 
 ## Measurement Calibration
 
-Both voltage and current measurement use the same linear formula:
+Both voltage and current measurement use the same linear formula, but on a
+**finer fixed-point scale than the output axis** (÷1000000, not ÷10000):
 
 ```
-measured = (int64_t)(raw_adc × cal_k) / 10000 + cal_b
+measured = (int64_t)(raw_adc × cal_k) / 1000000 + cal_b
 ```
+
+This axis converts a raw, attenuated ADC reading (e.g. HVB's sense network
+produces roughly 129 raw counts per DAC code, or a gain on the order of
+0.001–0.01 once referred to physical units) into physical units. A ÷10000
+divisor — fine enough for the near-unity output axis — only gives k about two
+significant digits of resolution at this magnitude, which was measured to
+produce ~0.5–0.7% systematic gain error on jw_hvb hardware. ÷1000000 pushes
+that down to roughly 0.01%. The trade-off: `uint16_t cal_k` tops out at
+65535, so the maximum representable gain is 65535/1000000 ≈ 0.0655, and
+**unity gain (k = 1000000) cannot be represented** — this axis can only ever
+scale a raw reading down, never pass it through unchanged. The Kconfig
+default (`k = 1`) intentionally yields a near-zero reading until real
+per-unit calibration is loaded.
 
 ### Voltage Measurement
 
 | Field | Type | Default | Unit |
 |-------|------|---------|------|
-| `v_cal_k` | `uint16_t` | 10000 | ×10⁻⁴ |
+| `v_cal_k` | `uint16_t` | 1 | ×10⁻⁶ |
 | `v_cal_b` | `int16_t` | 0 | ×100 mV |
 
-Unity gain (k = 10000) means one raw ADC count maps to one ×100 mV unit in
-`measured_voltage`. Factory calibration adjusts k and b to account for the
-ADC input divider ratio and offset.
+Factory calibration derives k and b from a DAC sweep against a reference
+voltmeter (see `tools/dac_sweep_test/`), accounting for the ADC input divider
+ratio and offset.
 
 ### Current Measurement
 
 | Field | Type | Default | Unit |
 |-------|------|---------|------|
-| `i_cal_k` | `uint16_t` | 10000 | ×10⁻⁴ |
-| `i_cal_b` | `int16_t` | 0 | nA |
+| `i_cal_k` | `uint16_t` | 1 | ×10⁻⁶ |
+| `i_cal_b` | `int16_t` | 0 | ×0.1 nA |
 
-Unity gain (k = 10000) means one raw ADC count maps to 1 nA in
-`measured_current`. Factory calibration adjusts k to match the shunt resistor
-value and ADC scaling. The physical unit of `measured_current` (and therefore
-`current_limit_threshold`) is **nA after calibration**; with the default unity
-gain it numerically equals the raw ADC reading.
+Factory calibration adjusts k to match the shunt resistor value and ADC
+scaling. The physical unit of `measured_current` (and therefore
+`current_limit_threshold`) is **×0.1 nA after calibration** — the same ×0.1
+per-count convention as voltage. There is no unity-gain default; every
+channel needs a real per-unit `i_cal_k` before `measured_current` is
+meaningful.
 
 ---
 
@@ -258,14 +290,20 @@ Given two calibration points (raw₁, ref₁) and (raw₂, ref₂) measured with
 reference instrument, the linear fit is:
 
 ```
-k = (ref₂ − ref₁) × 10000 / (raw₂ − raw₁)
-b = ref₁ − (raw₁ × k) / 10000
+k = (ref₂ − ref₁) × D / (raw₂ − raw₁)
+b = ref₁ − (raw₁ × k) / D
 ```
 
-`k` must be stored as an integer (round to nearest). `b` must fit in int16
-(−32768 to 32767). For output calibration, ref is in ×100 mV and raw is
-the DAC code; for measurement calibration, ref is in nA or ×100 mV depending
-on axis, and raw is the ADC reading.
+where `D` is the axis's divisor: **10000 for output calibration**, **1000000
+for voltage/current measurement calibration** (see "Measurement Calibration"
+above for why the two axes differ).
+
+`k` must be stored as an integer (round to nearest) and fit in `uint16_t`
+(1–65535) — for the measurement axes this caps the representable gain at
+65535/1000000 ≈ 0.0655, so `k` will always be a small integer relative to
+`D`. `b` must fit in `int16_t` (−32768 to 32767). For output calibration, ref
+is in ×100 mV and raw is the DAC code; for measurement calibration, ref is in
+×0.1 nA or ×100 mV depending on axis, and raw is the ADC reading.
 
 ---
 

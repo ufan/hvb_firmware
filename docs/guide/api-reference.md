@@ -299,7 +299,7 @@ The authoritative mutable state owned by the runtime worker thread. Consists of:
 - **Cal config** loaded from NVS per-channel on boot or load. Persisted on `VC_PARAM_ACTION_SAVE` or `vc cal commit`.
 - **Channel runtime** derived from config + hardware input at every tick (`vc_channel_run()` in `vc_channel.c:335`):
   1. Consume fresh raw ADC data from measurement buffer (Layer 2) via timestamp comparison
-  2. Apply calibration: `measured = raw × k/10000 + b`
+  2. Apply calibration: `measured = raw × k/1000000 + b` (measurement axes; output axis uses ÷10000)
   3. Run current protection check (`tick_current_protection()` at `vc_channel.c:239`)
   4. Advance ramping state machine (`vc_channel_tick_ramp()` at `vc_channel.c:619`)
   5. Apply output to hardware via `apply_hw()` (`vc_channel.c:87`)
@@ -577,9 +577,9 @@ struct vc_channel_config {
 struct vc_channel_cal_config {
     uint16_t output_calib_k;              /* DAC gain (÷10000, default 10000) */
     int16_t  output_calib_b;              /* DAC offset (default 0) */
-    uint16_t measured_voltage_calib_k;    /* Voltage meas gain (÷10000) */
+    uint16_t measured_voltage_calib_k;    /* Voltage meas gain (÷1000000) */
     int16_t  measured_voltage_calib_b;    /* Voltage meas offset */
-    uint16_t measured_current_calib_k;    /* Current meas gain (÷10000) */
+    uint16_t measured_current_calib_k;    /* Current meas gain (÷1000000) */
     int16_t  measured_current_calib_b;    /* Current meas offset */
 };
 ```
@@ -587,15 +587,20 @@ struct vc_channel_cal_config {
 ## Calibration Formula
 
 ```
-calibrated = raw × k / 10000 + b
+calibrated = raw × k / D + b
 ```
 
-Identity: `k = 10000`, `b = 0`.
+Three independent axes, each with its own divisor `D`:
+- **Output**: `raw_dac = target_voltage × output_calib_k / 10000 + output_calib_b`.
+  Identity: `k = 10000`, `b = 0`.
+- **Voltage measurement**: `measured_v = raw_adc_voltage × measured_voltage_calib_k / 1000000 + measured_voltage_calib_b`
+- **Current measurement**: `measured_i = raw_adc_current × measured_current_calib_k / 1000000 + measured_current_calib_b`
 
-Three independent axes:
-- **Output**: `raw_dac = target_voltage × output_calib_k / 10000 + output_calib_b`
-- **Voltage measurement**: `measured_v = raw_adc_voltage × measured_voltage_calib_k / 10000 + measured_voltage_calib_b`
-- **Current measurement**: `measured_i = raw_adc_current × measured_current_calib_k / 10000 + measured_current_calib_b`
+The measurement axes use a finer ÷1000000 scale (vs. output's ÷10000) because
+they convert a small, attenuated raw ADC gain (~0.001–0.01) rather than a
+near-unity output gain; see `docs/guide/parameter-reference.md` for the
+derivation. Unity gain is not representable on the measurement axes — the
+maximum gain a `uint16_t` k can express there is 65535/1000000 ≈ 0.0655.
 
 ## Channel Capability Bitmask
 

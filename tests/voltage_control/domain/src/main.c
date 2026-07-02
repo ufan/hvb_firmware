@@ -125,12 +125,16 @@ ZTEST(vc_domain, test_consume_voltage_and_current_updates_snapshot)
 	make_fresh();
 	struct vc_channel_snapshot snap;
 
-	vc_channel_consume_voltage(&ctrl->channels[0], 1200);
-	vc_channel_consume_current(&ctrl->channels[0], 34);
+	zassert_equal(vc_channel_set_cal_field(&ctrl->channels[0], VC_CAL_FIELD_MEASURED_V_K, 50000),
+		      VC_OK);
+	zassert_equal(vc_channel_set_cal_field(&ctrl->channels[0], VC_CAL_FIELD_MEASURED_I_K, 50000),
+		      VC_OK);
+	vc_channel_consume_voltage(&ctrl->channels[0], 24000);
+	vc_channel_consume_current(&ctrl->channels[0], 680);
 	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap),
 		      VC_OK);
-	zassert_equal(snap.raw_adc_voltage, 1200);
-	zassert_equal(snap.raw_adc_current, 34);
+	zassert_equal(snap.raw_adc_voltage, 24000);
+	zassert_equal(snap.raw_adc_current, 680);
 	zassert_equal(snap.measured_voltage, 1200);
 	zassert_equal(snap.measured_current, 34);
 	zassert_equal(snap.active_fault_cause, 0);
@@ -159,7 +163,7 @@ ZTEST(vc_domain, test_consume_voltage_clamps_calibrated)
 	zassert_equal(vc_controller_set_operating_mode(ctrl,
 			 VC_OPERATING_MODE_NORMAL), VC_OK);
 
-	vc_channel_consume_voltage(&ctrl->channels[0], 20000);
+	vc_channel_consume_voltage(&ctrl->channels[0], 600000);
 	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap),
 		      VC_OK);
 	zassert_equal(snap.measured_voltage, INT16_MAX);
@@ -476,9 +480,9 @@ ZTEST(vc_domain, test_channel_config_defaults)
 	zassert_equal(vc_controller_get_channel_cal_config(ctrl, 0, &cal), VC_OK);
 	zassert_equal(cal.output_calib_k, 32768);
 	zassert_equal(cal.output_calib_b, 0);
-	zassert_equal(cal.measured_voltage_calib_k, 10000);
+	zassert_equal(cal.measured_voltage_calib_k, 1);
 	zassert_equal(cal.measured_voltage_calib_b, 0);
-	zassert_equal(cal.measured_current_calib_k, 10000);
+	zassert_equal(cal.measured_current_calib_k, 1);
 	zassert_equal(cal.measured_current_calib_b, 0);
 }
 
@@ -764,9 +768,9 @@ ZTEST(vc_domain, test_calibration_coefficients_require_calibration_mode)
 	zassert_equal(vc_controller_get_channel_cal_config(ctrl, 0, &cal), VC_OK);
 	zassert_equal(cal.output_calib_k, 32768);
 	zassert_equal(cal.output_calib_b, 0);
-	zassert_equal(cal.measured_voltage_calib_k, 10000);
+	zassert_equal(cal.measured_voltage_calib_k, 1);
 	zassert_equal(cal.measured_voltage_calib_b, 0);
-	zassert_equal(cal.measured_current_calib_k, 10000);
+	zassert_equal(cal.measured_current_calib_k, 1);
 	zassert_equal(cal.measured_current_calib_b, 0);
 
 	/* Normal operational config writes are still permitted */
@@ -857,8 +861,11 @@ ZTEST(vc_domain, test_calibration_session_does_not_disturb_normal_consumption)
 	make_fresh();
 	struct vc_channel_snapshot snap;
 
+	zassert_equal(vc_channel_set_cal_field(&ctrl->channels[0], VC_CAL_FIELD_MEASURED_V_K, 50000),
+		      VC_OK);
+
 	/* Normal-mode tick consumption works before entering calibration. */
-	vc_channel_buffer_publish_voltage(ctrl->meas_index[0], 1111, 10);
+	vc_channel_buffer_publish_voltage(ctrl->meas_index[0], 22220, 10);
 	vc_controller_tick(ctrl, 10);
 	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap), VC_OK);
 	zassert_equal(snap.measured_voltage, 1111);
@@ -887,7 +894,7 @@ ZTEST(vc_domain, test_calibration_session_does_not_disturb_normal_consumption)
 	 * the calibration session left the consume-on-change bookkeeping
 	 * (last_consumed_voltage_ts) intact rather than stuck or corrupted. */
 	zassert_equal(vc_controller_cal_exit(ctrl), VC_OK);
-	vc_channel_buffer_publish_voltage(ctrl->meas_index[0], 3333, 30);
+	vc_channel_buffer_publish_voltage(ctrl->meas_index[0], 66660, 30);
 	vc_controller_tick(ctrl, 10);
 	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap), VC_OK);
 	zassert_equal(snap.measured_voltage, 3333,
@@ -991,7 +998,7 @@ ZTEST(vc_domain, test_tick_measured_with_noise)
 	make_fresh();
 	struct vc_channel_config cfg;
 	struct vc_channel_snapshot snap;
-	int16_t v_noise[VC_MAX_CHANNELS] = {7, 0};
+	int16_t v_noise[VC_MAX_CHANNELS] = {140, 0};
 	int16_t c_noise[VC_MAX_CHANNELS] = {0};
 
 	vc_controller_get_channel_config(ctrl, 0, &cfg);
@@ -999,13 +1006,15 @@ ZTEST(vc_domain, test_tick_measured_with_noise)
 	cfg.ramp_up_step = 0;
 	vc_channel_set_config(&ctrl->channels[0], &cfg);
 	vc_controller_channel_output_action(ctrl, 0, VC_OUTPUT_ACTION_ENABLE);
+	zassert_equal(vc_channel_set_cal_field(&ctrl->channels[0], VC_CAL_FIELD_MEASURED_V_K, 50000),
+		      VC_OK);
 
 	sim_tick(ctrl, 500, v_noise, c_noise);
 
 	vc_controller_get_channel_snapshot(ctrl, 0, &snap);
 	zassert_equal(snap.operational_target_voltage, 1000);
-	zassert_equal(snap.measured_voltage, 1007,
-		      "measured = target + noise");
+	zassert_equal(snap.measured_voltage, 57,
+		      "measured = (target + noise) * calib gain");
 }
 
 ZTEST(vc_domain, test_smf_preserves_calibration_output_rejection)

@@ -77,8 +77,8 @@ ZTEST(vc_channel_state, test_default_config)
 	zassert_equal(vc_channel_get_cal_config(&ch, &cal), VC_OK);
 	zassert_equal(cal.output_calib_k, 32768);
 	zassert_equal(cal.output_calib_b, 0);
-	zassert_equal(cal.measured_voltage_calib_k, 10000);
-	zassert_equal(cal.measured_current_calib_k, 10000);
+	zassert_equal(cal.measured_voltage_calib_k, 1);
+	zassert_equal(cal.measured_current_calib_k, 1);
 }
 
 ZTEST(vc_channel_state, test_snapshot_defaults)
@@ -160,16 +160,18 @@ ZTEST(vc_channel_state, test_fault_command_invalid)
 
 ZTEST(vc_channel_state, test_consume_voltage_applies_calibration)
 {
-	vc_channel_consume_voltage(&ch, 1200);
+	zassert_equal(vc_channel_set_cal_field(&ch, VC_CAL_FIELD_MEASURED_V_K, 50000),
+		      VC_OK);
+	vc_channel_consume_voltage(&ch, 24000);
 	zassert_equal(ch.measured_voltage, 1200);
-	zassert_equal(ch.raw_adc_voltage, 1200);
+	zassert_equal(ch.raw_adc_voltage, 24000);
 }
 
 ZTEST(vc_channel_state, test_consume_voltage_with_calibration_gain)
 {
 	zassert_equal(vc_channel_set_cal_field(&ch, VC_CAL_FIELD_MEASURED_V_K, 20000),
 		      VC_OK);
-	vc_channel_consume_voltage(&ch, 100);
+	vc_channel_consume_voltage(&ch, 10000);
 	zassert_equal(ch.measured_voltage, 200);
 }
 
@@ -177,7 +179,7 @@ ZTEST(vc_channel_state, test_consume_voltage_clamps_to_int16)
 {
 	zassert_equal(vc_channel_set_cal_field(&ch, VC_CAL_FIELD_MEASURED_V_K, 65535),
 		      VC_OK);
-	vc_channel_consume_voltage(&ch, 20000);
+	vc_channel_consume_voltage(&ch, 600000);
 	zassert_equal(ch.measured_voltage, INT16_MAX);
 }
 
@@ -185,9 +187,11 @@ ZTEST(vc_channel_state, test_consume_voltage_clamps_to_int16)
 
 ZTEST(vc_channel_state, test_consume_current_applies_calibration)
 {
-	vc_channel_consume_current(&ch, 500);
+	zassert_equal(vc_channel_set_cal_field(&ch, VC_CAL_FIELD_MEASURED_I_K, 50000),
+		      VC_OK);
+	vc_channel_consume_current(&ch, 10000);
 	zassert_equal(ch.measured_current, 500);
-	zassert_equal(ch.raw_adc_current, 500);
+	zassert_equal(ch.raw_adc_current, 10000);
 }
 
 ZTEST(vc_channel_state, test_current_protection_triggers_fault)
@@ -204,7 +208,9 @@ ZTEST(vc_channel_state, test_current_protection_triggers_fault)
 	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE);
 	vc_channel_tick_ramp(&ch, 100, &default_sys);
 
-	vc_channel_consume_current(&ch, 200);
+	zassert_equal(vc_channel_set_cal_field(&ch, VC_CAL_FIELD_MEASURED_I_K, 50000),
+		      VC_OK);
+	vc_channel_consume_current(&ch, 10000);
 
 	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT);
 	zassert_false(ch.output_enabled);
@@ -477,11 +483,13 @@ ZTEST(vc_channel_state, test_run_consumes_meas_buffer)
 	vc_channel_buffer_publish_voltage(&meas, 1500, 100);
 	vc_channel_buffer_publish_current(&meas, 300, 100);
 	vc_channel_init(&run_ch, NULL, 0, FULL_CAPS, &meas, NULL, NULL);
+	zassert_equal(vc_channel_set_cal_field(&run_ch, VC_CAL_FIELD_MEASURED_V_K, 50000), VC_OK);
+	zassert_equal(vc_channel_set_cal_field(&run_ch, VC_CAL_FIELD_MEASURED_I_K, 50000), VC_OK);
 
 	vc_channel_run(&run_ch, 100, &default_sys);
 
-	zassert_equal(run_ch.measured_voltage, 1500);
-	zassert_equal(run_ch.measured_current, 300);
+	zassert_equal(run_ch.measured_voltage, 75);
+	zassert_equal(run_ch.measured_current, 15);
 	zassert_equal(run_ch.last_consumed_voltage_ts, 100);
 	zassert_equal(run_ch.last_consumed_current_ts, 100);
 }
@@ -498,12 +506,13 @@ ZTEST(vc_channel_state, test_run_skips_unchanged_timestamps)
 	struct vc_channel run_ch;
 
 	vc_channel_init(&run_ch, NULL, 0, FULL_CAPS, &meas, NULL, NULL);
+	zassert_equal(vc_channel_set_cal_field(&run_ch, VC_CAL_FIELD_MEASURED_V_K, 50000), VC_OK);
 	vc_channel_run(&run_ch, 100, &default_sys);
 
 	meas.raw_voltage = 9999;
 	vc_channel_run(&run_ch, 100, &default_sys);
 
-	zassert_equal(run_ch.measured_voltage, 1500,
+	zassert_equal(run_ch.measured_voltage, 75,
 		      "should not re-consume with same timestamp");
 }
 
@@ -655,7 +664,9 @@ ZTEST(vc_channel_no_dac, test_voltage_measurement_consumed)
 {
 	struct vc_channel_snapshot snap;
 
-	vc_channel_consume_voltage(&no_dac_ch, 3500);
+	zassert_equal(vc_channel_set_cal_field(&no_dac_ch, VC_CAL_FIELD_MEASURED_V_K, 50000),
+		      VC_OK);
+	vc_channel_consume_voltage(&no_dac_ch, 70000);
 	vc_channel_get_snapshot(&no_dac_ch, &snap);
 	zassert_equal(snap.measured_voltage, 3500);
 }
@@ -664,7 +675,9 @@ ZTEST(vc_channel_no_dac, test_current_measurement_consumed)
 {
 	struct vc_channel_snapshot snap;
 
-	vc_channel_consume_current(&no_dac_ch, 200);
+	zassert_equal(vc_channel_set_cal_field(&no_dac_ch, VC_CAL_FIELD_MEASURED_I_K, 50000),
+		      VC_OK);
+	vc_channel_consume_current(&no_dac_ch, 4000);
 	vc_channel_get_snapshot(&no_dac_ch, &snap);
 	zassert_equal(snap.measured_current, 200);
 }

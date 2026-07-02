@@ -619,7 +619,7 @@ void vc_channel_consume_voltage(struct vc_channel *ch, int32_t raw_voltage)
 	ch->raw_adc_voltage = raw_voltage;
 	ch->measured_voltage = clamp_int16(
 		((int64_t)raw_voltage * ch->cal_config.measured_voltage_calib_k) /
-		10000 + ch->cal_config.measured_voltage_calib_b);
+		1000000 + ch->cal_config.measured_voltage_calib_b);
 
 	update_status_bits(ch);
 }
@@ -629,7 +629,7 @@ void vc_channel_consume_current(struct vc_channel *ch, int32_t raw_current)
 	ch->raw_adc_current = raw_current;
 	ch->measured_current = clamp_int16(
 		((int64_t)raw_current * ch->cal_config.measured_current_calib_k) /
-		10000 + ch->cal_config.measured_current_calib_b);
+		1000000 + ch->cal_config.measured_current_calib_b);
 
 	if (!ch->ramping) {
 		tick_current_protection(ch);

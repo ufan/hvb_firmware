@@ -100,9 +100,9 @@ struct vc_channel_config {
 struct vc_channel_cal_config {
 	uint16_t output_calib_k;                               /* ×10⁻⁴ gain (10000 = 1.0×) */
 	int16_t  output_calib_b;                               /* DAC counts offset */
-	uint16_t measured_voltage_calib_k;                     /* ×10⁻⁴ gain (10000 = 1.0×) */
+	uint16_t measured_voltage_calib_k;                     /* ×10⁻⁶ gain (unity not representable) */
 	int16_t  measured_voltage_calib_b;                     /* mV offset */
-	uint16_t measured_current_calib_k;                     /* ×10⁻⁴ gain (10000 = 1.0×) */
+	uint16_t measured_current_calib_k;                     /* ×10⁻⁶ gain (unity not representable) */
 	int16_t  measured_current_calib_b;                     /* raw ADC counts offset */
 };
 
