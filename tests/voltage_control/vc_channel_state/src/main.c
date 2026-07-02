@@ -337,6 +337,39 @@ ZTEST(vc_channel_state, test_recovery_ignores_non_current_fault)
 	zassert_false(ch.output_enabled);
 }
 
+ZTEST(vc_channel_state, test_recovery_auto_retry_clears_fault_after_cooldown_and_safe_band)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_RETRY);
+	zassert_false(ch.output_enabled);
+
+	/* Still above the safe band (threshold 100, 10% band -> safe at <=90).
+	 * Ticking through the 1s cooldown must not clear the fault yet. */
+	for (int i = 0; i < 3; i++) {
+		vc_channel_run(&ch, 1000, &auto_sys);
+	}
+	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT,
+		     "still unsafe -- must not retry even after cooldown elapses");
+	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_RETRY_COOLDOWN);
+
+	/* Current drops to a safe level (raw 100 -> measured 5, well under 90). */
+	vc_channel_consume_current(&ch, 100);
+	vc_channel_run(&ch, 1000, &auto_sys);
+
+	zassert_equal(ch.active_fault_cause, 0, "safe now -- retry must clear the fault");
+	zassert_true(ch.output_enabled);
+	zassert_equal(ch.recovery_target, 5000, "AUTO_RETRY targets the full configured value");
+
+	/* Drive the recovery ramp to completion. */
+	for (int i = 0; i < 5; i++) {
+		vc_channel_run(&ch, 1000, &auto_sys);
+	}
+	zassert_equal(ch.operational_target_voltage, 5000);
+	zassert_false(ch.recovering);
+	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_ENABLED_HOLDING);
+}
+
 ZTEST(vc_channel_state, test_set_field_does_not_evaluate_protection_synchronously)
 {
 	/* A real Modbus write of mode+action+threshold lands as three separate

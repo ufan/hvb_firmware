@@ -329,7 +329,30 @@ static void tick_recovery(struct vc_channel *ch, const struct vc_system_config *
 		return;
 	}
 
-	ARG_UNUSED(dt_ms);
+	if (vc_channel_get_smf_state(ch) != VC_CHANNEL_SMF_RETRY_COOLDOWN) {
+		ch->cooldown_remaining_ms = (uint32_t)cfg->auto_retry_delay * 1000;
+		set_smf_state(ch, VC_CHANNEL_SMF_RETRY_COOLDOWN);
+		update_status_bits(ch);
+	}
+
+	if (ch->cooldown_remaining_ms > dt_ms) {
+		ch->cooldown_remaining_ms -= dt_ms;
+		return;
+	}
+	ch->cooldown_remaining_ms = 0;
+
+	if (!is_safe_to_clear_active(ch)) {
+		return;
+	}
+
+	int32_t target = cfg->configured_target_voltage;
+
+	ch->active_fault_cause = 0;
+	ch->recovering = true;
+	ch->recovery_target = (int16_t)target;
+	ch->output_enabled = true;
+	apply_hw(ch);
+	update_status_bits(ch);
 }
 
 /* ---- Measurement callback — registered with hw driver ---- */
@@ -695,7 +718,9 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 		return;
 	}
 
-	target = ch->ramp_to_disable ? ch->graceful_ramp_dest : cfg->configured_target_voltage;
+	target = ch->ramp_to_disable ? ch->graceful_ramp_dest
+	       : ch->recovering ? ch->recovery_target
+	       : cfg->configured_target_voltage;
 	current = ch->operational_target_voltage;
 
 	if (current == target) {
@@ -708,6 +733,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 				apply_hw(ch);
 				update_status_bits(ch);
 			} else {
+				ch->recovering = false;
 				set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
 			}
 		}
@@ -732,6 +758,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 			ch->output_enabled = false;
 			set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
 		} else {
+			ch->recovering = false;
 			set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
 		}
 		apply_hw(ch);
@@ -765,6 +792,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 			ch->output_enabled = false;
 			set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
 		} else {
+			ch->recovering = false;
 			set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
 		}
 	}
