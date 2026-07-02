@@ -130,7 +130,7 @@ Channel 0 Configuration
   recovery:     MANUAL
   retry:        delay=0 max=0 window=0
   safe_band:    10%
-  protection:   mode=OFF action=IMMEDIATE limit=32767
+  protection:   mode=OFF action=IMMEDIATE limit=10000
   derate_step:  0
 ```
 

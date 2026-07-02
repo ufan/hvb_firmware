@@ -20,7 +20,7 @@ audiences:
 | Output cal gain | `CONFIG_VC_DEFAULT_OUTPUT_CAL_K` | 32768 | ×10⁻⁴ | 1–65535 |
 | Voltage measurement cal gain | `CONFIG_VC_DEFAULT_MEASURED_V_CAL_K` | 1 | ×10⁻⁶ | 1–65535 |
 | Current measurement cal gain | `CONFIG_VC_DEFAULT_MEASURED_I_CAL_K` | 1 | ×10⁻⁶ | 1–65535 |
-| Current limit threshold | `CONFIG_VC_DEFAULT_CURRENT_LIMIT` | 32767 | ×0.1 nA (post-cal) | 1–32767 |
+| Current limit threshold | `CONFIG_VC_DEFAULT_CURRENT_LIMIT` | 10000 | ×0.1 nA (post-cal) | 1–32767 |
 | Ramp step | `CONFIG_VC_DEFAULT_RAMP_STEP` | 50000 | ×100 mV | 1–65535 |
 | Ramp interval | — (hardcoded) | 1 | seconds | — |
 | Current safe-band | `CONFIG_VC_DEFAULT_CURRENT_SAFE_BAND_PCT` | 10 | % | 0–100 |
@@ -199,26 +199,36 @@ meaningful.
 
 ## Current Protection
 
-The firmware compares `measured_current` against the configured limit after
-applying a safe-band to avoid false trips near the limit.
+The trip condition itself has no hysteresis: the firmware compares
+`measured_current` directly against `current_limit_threshold`.
 
 ```
-effective_limit = current_limit_threshold × (1 + current_safe_band_pct / 100)
+if (measured_current > current_limit_threshold) { /* fault fires */ }
 ```
 
-If `measured_current > effective_limit`, the protection action fires.
+`current_safe_band_pct` is not part of the trip condition — it only gates
+*clearing* an already-active current fault, so the channel can't be
+re-enabled while still hovering right at the limit:
+
+```
+safe_to_clear = measured_current <= current_limit_threshold × (100 − current_safe_band_pct) / 100
+```
+
+Protection is re-evaluated only on fresh current samples
+(`vc_channel_consume_current()`), never synchronously on a config write —
+so writing mode/action/threshold as separate register writes always lands
+as a complete, consistent set before the next evaluation.
 
 | Parameter | Kconfig | Default | Unit | Notes |
 |-----------|---------|---------|------|-------|
-| `current_limit_threshold` | `CONFIG_VC_DEFAULT_CURRENT_LIMIT` | 32767 | nA | Max int16 → effectively disabled |
-| `current_safe_band_pct` | `CONFIG_VC_DEFAULT_CURRENT_SAFE_BAND_PCT` | 10 | % | Hysteresis band above limit |
+| `current_limit_threshold` | `CONFIG_VC_DEFAULT_CURRENT_LIMIT` | 10000 | ×0.1 nA | 10000 = 1000 nA (1 µA) |
+| `current_safe_band_pct` | `CONFIG_VC_DEFAULT_CURRENT_SAFE_BAND_PCT` | 10 | % | Hysteresis band below limit, for re-clearing only |
 | `current_protection_mode` | — | `DISABLED` | enum | Set to `FLAG_ONLY` or `APPLY_OUTPUT_ACTION` to activate |
 | `current_protection_output_action` | — | `DISABLE_IMMEDIATE` | enum | Action taken when protection fires |
 
-**Default behavior:** the current limit is set to 32767 nA (maximum storable
-in int16) so it is effectively disabled out of the box. Set
+**Default behavior:** the current limit defaults to 1000 nA (1 µA). Set
 `current_protection_mode` to `FLAG_ONLY` or `APPLY_OUTPUT_ACTION` via Modbus or
-shell to enable protection.
+shell to activate protection at that limit.
 
 ---
 

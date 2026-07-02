@@ -123,13 +123,15 @@ config VC_MAX_TARGET_VOLTAGE
 	  The field is signed 16-bit so 32767 is the absolute type ceiling.
 
 config VC_DEFAULT_CURRENT_LIMIT
-	int "Default current limit threshold (nA)"
-	default 32767
+	int "Default current limit threshold (raw, x0.1 nA/LSB)"
+	default 10000
 	range 1 32767
 	help
 	  Factory default for the per-channel current_limit_threshold field.
-	  Unit is nA. Set to the highest value the hardware variant can measure
-	  to effectively disable the limit out of the box.
+	  Unit is x0.1 nA per LSB, the same convention as measured_current
+	  (see docs/guide/parameter-reference.md). Default 10000 = 1000 nA
+	  (1 uA). The field is signed 16-bit, so 32767 (3276.7 nA) is the
+	  absolute ceiling.
 
 config VC_DEFAULT_RAMP_STEP
 	int "Default output ramp step size"

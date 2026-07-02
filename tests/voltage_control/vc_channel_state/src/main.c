@@ -70,7 +70,7 @@ ZTEST(vc_channel_state, test_default_config)
 
 	zassert_equal(vc_channel_get_config(&ch, &cfg), VC_OK);
 	zassert_equal(cfg.configured_target_voltage, 0);
-	zassert_equal(cfg.current_limit_threshold, 32767);
+	zassert_equal(cfg.current_limit_threshold, 10000);
 	zassert_equal(cfg.current_protection_mode, VC_PROTECTION_MODE_DISABLED);
 	zassert_equal(cfg.recovery_policy_mode, VC_RECOVERY_MANUAL_LATCH);
 
