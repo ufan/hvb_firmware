@@ -44,6 +44,7 @@ if [[ -z "$REPORT" ]]; then
 fi
 mkdir -p "$(dirname "$REPORT")"
 BODY="$(mktemp)"
+TEMP_FILES=("$BODY")
 
 CAL_ENTERED=0
 CLEANUP_OK=1
@@ -100,6 +101,55 @@ volts_from_raw() {
     awk -v raw="$1" 'BEGIN { printf "%.1f", raw * 0.1 }'
 }
 
+append_linearity_fit() {
+    local axis=$1 points_file=$2
+    awk -v axis="$axis" '
+        {
+            n++
+            x[n] = $1
+            y[n] = $2
+            sx += $1
+            sy += $2
+            sxx += $1 * $1
+            sxy += $1 * $2
+            if (n == 1 || $1 < xmin) xmin = $1
+            if (n == 1 || $1 > xmax) xmax = $1
+        }
+        END {
+            denominator = n * sxx - sx * sx
+            if (n < 2 || denominator == 0) {
+                printf "| %s | N/A | N/A | N/A | N/A | %d |\n", axis, n
+                exit
+            }
+
+            slope = (n * sxy - sx * sy) / denominator
+            intercept = (sy - slope * sx) / n
+            mean = sy / n
+            for (i = 1; i <= n; i++) {
+                fitted = slope * x[i] + intercept
+                residual = y[i] - fitted
+                absolute = residual < 0 ? -residual : residual
+                if (absolute > max_residual) max_residual = absolute
+                ss_res += residual * residual
+                centered = y[i] - mean
+                ss_total += centered * centered
+            }
+
+            fitted_span = slope * (xmax - xmin)
+            if (fitted_span < 0) fitted_span = -fitted_span
+            r2 = ss_total > 0 ? sprintf("%.6f", 1 - ss_res / ss_total) : "N/A"
+            residual_pct = fitted_span > 0 \
+                ? sprintf("%.6f%%", max_residual * 100 / fitted_span) : "N/A"
+            sign = intercept < 0 ? "-" : "+"
+            intercept_abs = intercept < 0 ? -intercept : intercept
+            equation = sprintf("raw_adc = %.6f × DAC %s %.3f", slope, sign, intercept_abs)
+
+            printf "| %s | %s | %s | %.3f | %s | %d |\n", \
+                axis, equation, r2, max_residual, residual_pct, n
+        }
+    ' "$points_file" >> "$BODY"
+}
+
 fail() {
     ERROR_MESSAGE="$*"
     echo "ERROR: $*" >&2
@@ -147,7 +197,7 @@ finish() {
         result="FAIL"
     fi
     render_report "$result" "$cleanup_result"
-    rm -f "$BODY"
+    rm -f "${TEMP_FILES[@]}"
     echo "Report: $REPORT"
 
     if [[ "$result" == "PASS" ]]; then
@@ -215,6 +265,16 @@ for ch in "${DAC_CHANNELS[@]}"; do
     caps=${CHANNEL_CAPS[ch]}
     has_v=$(( (caps & 0x0004) != 0 ))
     has_i=$(( (caps & 0x0008) != 0 ))
+    fit_v_file=""
+    fit_i_file=""
+    if ((has_v)); then
+        fit_v_file="$(mktemp)"
+        TEMP_FILES+=("$fit_v_file")
+    fi
+    if ((has_i)); then
+        fit_i_file="$(mktemp)"
+        TEMP_FILES+=("$fit_i_file")
+    fi
 
     echo "Sweeping CH$ch..."
     {
@@ -258,9 +318,22 @@ for ch in "${DAC_CHANNELS[@]}"; do
         fi
 
         echo "| $dac | $raw_v | $raw_i | $measured_v_raw | $measured_v | $measured_i_raw | $measured_i |" >> "$BODY"
+        ((has_v)) && echo "$dac $raw_v" >> "$fit_v_file"
+        ((has_i)) && echo "$dac $raw_i" >> "$fit_i_file"
     done
 
     write_reg "$((base + 31))" 0 || fail "CH$ch DAC zero failed"
     write_reg "$((base + 30))" 0 || fail "CH$ch calibration output disable failed"
     echo >> "$BODY"
+    if ((has_v || has_i)); then
+        {
+            echo "### Linearity Fit"
+            echo
+            echo "| Axis | Equation | R² | Max residual | Max residual (% span) | Points |"
+            echo "|---|---|---:|---:|---:|---:|"
+        } >> "$BODY"
+        ((has_v)) && append_linearity_fit "Raw ADC V" "$fit_v_file"
+        ((has_i)) && append_linearity_fit "Raw ADC I" "$fit_i_file"
+        echo >> "$BODY"
+    fi
 done

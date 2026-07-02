@@ -26,6 +26,9 @@ run_success_case() {
     grep -q '| 60000 | 600000 | -600000 | 6000 | 600.0 | -6000 | -6000 |' "$report" || fail "signed/scaled row"
     grep -q 'CH1 measurement capability: none; measurement columns are N/A.' "$report" || fail "CH1 capability note"
     grep -q 'CH2 skipped: missing RAW_OUTPUT_DRIVE capability.' "$report" || fail "CH2 skip note"
+    grep -Fq '| Raw ADC V | raw_adc = 10.000000 × DAC + 0.000 | 1.000000 | 0.000 | 0.000000% | 7 |' "$report" || fail "voltage linearity fit"
+    grep -Fq '| Raw ADC I | raw_adc = -10.000000 × DAC + 0.000 | 1.000000 | 0.000 | 0.000000% | 7 |' "$report" || fail "current linearity fit"
+    test "$(grep -c '^### Linearity Fit$' "$report")" -eq 1 || fail "fit section capability gating"
     grep -q 'raw fc06 71 60000' "$state/commands.log" || fail "CH0 upper DAC write"
     grep -q 'raw fc06 111 60000' "$state/commands.log" || fail "CH1 upper DAC write"
     grep -q 'raw fc06 71 0' "$state/commands.log" || fail "CH0 DAC cleanup"
@@ -52,7 +55,18 @@ run_failure_case() {
     grep -q 'raw fc06 681 1' "$state/commands.log" || fail "failure calibration exit"
 }
 
+run_constant_series_case() {
+    local state="$TMP/constant-state" report="$TMP/constant.md"
+    mkdir -p "$state"
+    MOCK_STATE_DIR="$state" MOCK_CONSTANT_RAW_V=1 \
+        "$RUNNER" --cli "$MOCK" --report "$report" --port /dev/mock --timeout 10 \
+        >/dev/null
+
+    grep -Fq '| Raw ADC V | raw_adc = 0.000000 × DAC + 1234.000 | N/A | 0.000 | N/A | 7 |' "$report" || fail "constant-series fit"
+}
+
 [[ -x "$RUNNER" ]] || fail "runner not executable: $RUNNER"
 run_success_case
 run_failure_case
+run_constant_series_case
 echo "PASS: DAC sweep script regression tests"

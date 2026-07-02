@@ -33,6 +33,12 @@ Without `--report`, reports are written to `tools/dac_sweep_test/reports/`.
 - Records raw ADC voltage/current, measured raw voltage/current, volts, and nA.
 - Reports unsupported measurement fields as `N/A`.
 
+After each channel sweep, the report fits each supported raw ADC axis against
+DAC code using ordinary least squares. The fit table includes slope, intercept,
+R², maximum absolute residual, residual as a percentage of the fitted response
+span, and point count. Calibrated measured V/I values are not fitted. For a
+constant raw ADC series, R² and residual percentage are reported as `N/A`.
+
 The script enters volatile Calibration Mode but does not write calibration
 coefficients, commit calibration, or save configuration to NVS.
 

@@ -68,8 +68,12 @@ fc04)
         hex16 "$(( -dac / 10 ))"
         echo
     elif (( count == 2 && (addr - 40) % 40 == 12 )); then
-        dac=$(dac_for_addr "$addr")
-        hex32 "$(( dac * 10 ))"
+        if [[ -n "${MOCK_CONSTANT_RAW_V:-}" ]]; then
+            hex32 1234
+        else
+            dac=$(dac_for_addr "$addr")
+            hex32 "$(( dac * 10 ))"
+        fi
     elif (( count == 2 && (addr - 40) % 40 == 14 )); then
         dac=$(dac_for_addr "$addr")
         hex32 "$(( -dac * 10 ))"
