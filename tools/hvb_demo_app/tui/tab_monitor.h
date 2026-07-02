@@ -11,7 +11,7 @@ namespace hvb::tui {
 
 struct MonitorRow {
     Component row;  // Container::Horizontal — focus chain
-    Component statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, saveBtn;
+    Component statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn;
 };
 
 // Build one row — creates all widgets, returns them in a MonitorRow.
@@ -107,12 +107,26 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
     });
 
+    // ---- Clear Fault button ----
+    // FlagOnly mode surfaces fault *history* in the Fault column, so Clear
+    // targets history there; ApplyOutputAction (and Disabled, which still
+    // shows a dimmed active fault) target the active fault block instead.
+    auto clearFaultBtn = ActionButton("Clear", [&s, &inputs, ch, refreshCh] {
+        auto mode = s.data.chCfg[ch].iProtMode;
+        auto cmd = (mode == ProtectionMode::FlagOnly)
+            ? ChannelFaultCommand::ClearFaultHistory
+            : ChannelFaultCommand::ClearActiveFaultBlock;
+        postWrite(s, inputs, "Clear Fault",
+            [&s, ch, cmd] { return s.client.sendChannelFaultCommand(ch, cmd); },
+            refreshCh);
+    });
+
     auto saveBtn = ActionButton("Save", [&s, &inputs, ch, refreshCh] {
         saveChannelConfig(s, inputs, ch, refreshCh);
     });
 
     auto rowWidgets = Container::Horizontal({
-        vsetInp, statusBtn, rampUpInp, rampDownInp, iLimitInp, saveBtn,
+        vsetInp, statusBtn, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
     });
 
     return MonitorRow{
@@ -120,7 +134,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             if (e.is_mouse()) return false;  // let mouse events pass; parent checks bounds
             return !s.data.valid || ch >= s.data.numChannels();
         }),
-        statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, saveBtn,
+        statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
     };
 }
 
@@ -136,7 +150,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
 
     static const std::vector<std::string> kHeaders = {
         "", "Vset", "Status", "Vop", "V (V)", "I (nA)",
-        "Ru", "Rd", "Limit", "Fault", "Save",
+        "Ru", "Rd", "Limit", "Fault", "Clear", "Save",
     };
 
     return Renderer(tableContainer, [=, &s]() {
@@ -190,7 +204,26 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
                                    : text(" -- ") | dim | center);
             cells.push_back(hasCurr ? rows->at(ch).iLimitInp->Render() | center
                                     : text(" -- ") | dim | center);
-            cells.push_back(text(faultStr(ci.activeFault)) | center);
+            // Fault column is mode-dependent: ApplyOutputAction shows the active
+            // fault (protection took effect), FlagOnly shows fault history (the
+            // only trace it leaves, since output is untouched), Disabled shows a
+            // dimmed active fault (still meaningful for non-current faults).
+            {
+                ProtectionMode mode = s.data.chCfg[ch].iProtMode;
+                Element faultEl;
+                if (!hasCurr) {
+                    faultEl = text(" -- ") | dim;
+                } else if (mode == ProtectionMode::FlagOnly) {
+                    faultEl = text(faultStr(ci.faultHistory));
+                } else if (mode == ProtectionMode::ApplyOutputAction) {
+                    faultEl = text(faultStr(ci.activeFault));
+                } else {
+                    faultEl = text(faultStr(ci.activeFault)) | dim;
+                }
+                cells.push_back(faultEl | center);
+            }
+            cells.push_back(hasCurr ? rows->at(ch).clearFaultBtn->Render() | center
+                                    : text(" -- ") | dim | center);
             cells.push_back(rows->at(ch).saveBtn->Render() | center);
 
             grid.push_back(std::move(cells));
