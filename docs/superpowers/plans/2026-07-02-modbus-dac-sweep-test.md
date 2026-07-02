@@ -169,3 +169,59 @@ Expected: all commands exit 0.
 git add tools/dac_sweep_test docs/superpowers/plans/2026-07-02-modbus-dac-sweep-test.md
 git commit -m "feat(tools): report DAC sweep linearity fits"
 ```
+
+### Task 5: Per-channel PNG plots
+
+**Files:**
+- Modify: `tools/dac_sweep_test/dac_sweep_test.sh`
+- Modify: `tools/dac_sweep_test/tests/test_dac_sweep_test.sh`
+- Modify: `tools/dac_sweep_test/README.md`
+
+- [ ] **Step 1: Add failing PNG assertions**
+
+Extend the mock success test to require `<report-stem>_ch0.png` and
+`<report-stem>_ch1.png`, verify each starts with the PNG signature, and require
+relative Markdown image links. CH0 has two plotted panels; CH1 produces a
+placeholder image explaining that it has no raw ADC measurement capability.
+
+- [ ] **Step 2: Run the regression test and verify RED**
+
+Run `bash tools/dac_sweep_test/tests/test_dac_sweep_test.sh`.
+
+Expected: FAIL because PNG files are absent.
+
+- [ ] **Step 3: Add plotting preflight and fit-value reuse**
+
+Require `gnuplot` before entering Calibration Mode. Refactor the OLS calculation
+so slope, intercept, and R² used in the Markdown table are also available to the
+plot generator without fitting the data a second way.
+
+- [ ] **Step 4: Generate one PNG per channel after safe-off**
+
+Write a temporary gnuplot program using `pngcairo`. For each supported raw ADC
+axis, plot the point file and `slope*x+intercept` on its own panel with equation
+and R² in the title. Use independent Y axes. For a DAC-only channel, render a
+single placeholder panel. Generate plots only after DAC zero and output disable.
+
+- [ ] **Step 5: Embed relative image links**
+
+Append `![CHn DAC sweep plot](<report-stem>_chn.png)` to each channel section.
+Treat a gnuplot error or absent/empty output file as a test failure so the EXIT
+cleanup path executes.
+
+- [ ] **Step 6: Extend documentation**
+
+Document the `gnuplot` dependency, per-channel filenames, panel behavior, fit
+line, point markers, constant-series handling, and report embedding.
+
+- [ ] **Step 7: Run final verification**
+
+Run syntax checks, mock regression tests, ShellCheck, PNG signature checks, and
+`git diff --check`. Expected: all commands exit 0.
+
+- [ ] **Step 8: Commit the plotting enhancement**
+
+```bash
+git add tools/dac_sweep_test docs/superpowers/plans/2026-07-02-modbus-dac-sweep-test.md
+git commit -m "feat(tools): plot DAC sweep linearity"
+```
