@@ -52,6 +52,7 @@ ERROR_MESSAGE=""
 DAC_CHANNELS=()
 CHANNEL_CAPS=()
 WORDS=()
+declare -A FIT_SLOPES FIT_INTERCEPTS FIT_R2
 
 cli_raw() {
     "$CLI" -p "$PORT" -b "$BAUD" -i "$SLAVE" -t "$TIMEOUT_MS" raw "$@"
@@ -101,9 +102,10 @@ volts_from_raw() {
     awk -v raw="$1" 'BEGIN { printf "%.1f", raw * 0.1 }'
 }
 
-append_linearity_fit() {
-    local axis=$1 points_file=$2
-    awk -v axis="$axis" '
+calculate_linearity_fit() {
+    local points_file=$1
+    local values
+    values="$(awk '
         {
             n++
             x[n] = $1
@@ -118,7 +120,7 @@ append_linearity_fit() {
         END {
             denominator = n * sxx - sx * sx
             if (n < 2 || denominator == 0) {
-                printf "| %s | N/A | N/A | N/A | N/A | %d |\n", axis, n
+                printf "N/A\tN/A\tN/A\tN/A\tN/A\t%d\n", n
                 exit
             }
 
@@ -139,15 +141,93 @@ append_linearity_fit() {
             if (fitted_span < 0) fitted_span = -fitted_span
             r2 = ss_total > 0 ? sprintf("%.6f", 1 - ss_res / ss_total) : "N/A"
             residual_pct = fitted_span > 0 \
-                ? sprintf("%.6f%%", max_residual * 100 / fitted_span) : "N/A"
-            sign = intercept < 0 ? "-" : "+"
-            intercept_abs = intercept < 0 ? -intercept : intercept
-            equation = sprintf("raw_adc = %.6f × DAC %s %.3f", slope, sign, intercept_abs)
-
-            printf "| %s | %s | %s | %.3f | %s | %d |\n", \
-                axis, equation, r2, max_residual, residual_pct, n
+                ? sprintf("%.6f", max_residual * 100 / fitted_span) : "N/A"
+            printf "%.12g\t%.12g\t%s\t%.12g\t%s\t%d\n", \
+                slope, intercept, r2, max_residual, residual_pct, n
         }
-    ' "$points_file" >> "$BODY"
+    ' "$points_file")"
+    IFS=$'\t' read -r FIT_SLOPE FIT_INTERCEPT FIT_R2_VALUE \
+        FIT_MAX_RESIDUAL FIT_RESIDUAL_PCT FIT_POINT_COUNT <<< "$values"
+}
+
+append_linearity_fit() {
+    local axis=$1 points_file=$2 fit_key=$3 sign intercept_abs pct
+    calculate_linearity_fit "$points_file"
+    if [[ "$FIT_SLOPE" == "N/A" ]]; then
+        printf '| %s | N/A | N/A | N/A | N/A | %s |\n' \
+            "$axis" "$FIT_POINT_COUNT" >> "$BODY"
+        return
+    fi
+
+    FIT_SLOPES["$fit_key"]=$FIT_SLOPE
+    FIT_INTERCEPTS["$fit_key"]=$FIT_INTERCEPT
+    FIT_R2["$fit_key"]=$FIT_R2_VALUE
+    sign="+"
+    intercept_abs=$FIT_INTERCEPT
+    if awk -v value="$FIT_INTERCEPT" 'BEGIN { exit !(value < 0) }'; then
+        sign="-"
+        intercept_abs="${FIT_INTERCEPT#-}"
+    fi
+    pct=$FIT_RESIDUAL_PCT
+    [[ "$pct" != "N/A" ]] && pct="${pct}%"
+    printf '| %s | raw_adc = %.6f × DAC %s %.3f | %s | %.3f | %s | %s |\n' \
+        "$axis" "$FIT_SLOPE" "$sign" "$intercept_abs" "$FIT_R2_VALUE" \
+        "$FIT_MAX_RESIDUAL" "$pct" "$FIT_POINT_COUNT" >> "$BODY"
+}
+
+gnuplot_escape() {
+    local value=${1//\\/\\\\}
+    printf '%s' "${value//\'/\\\'}"
+}
+
+generate_channel_plot() {
+    local ch=$1 has_v=$2 fit_v_file=$3 has_i=$4 fit_i_file=$5
+    local plot_path plot_name escaped_plot panels=$((has_v + has_i))
+    local escaped_v="" escaped_i="" key slope intercept r2
+    if [[ "$REPORT" == *.md ]]; then
+        plot_path="${REPORT%.md}_ch${ch}.png"
+    else
+        plot_path="${REPORT}_ch${ch}.png"
+    fi
+    plot_name="$(basename "$plot_path")"
+    escaped_plot="$(gnuplot_escape "$plot_path")"
+    ((has_v)) && escaped_v="$(gnuplot_escape "$fit_v_file")"
+    ((has_i)) && escaped_i="$(gnuplot_escape "$fit_i_file")"
+
+    {
+        echo "set terminal pngcairo size 1200,800 enhanced font 'Sans,11'"
+        echo "set output '$escaped_plot'"
+        echo "set grid"
+        echo "set xlabel 'DAC code'"
+        echo "set key top left"
+        if ((panels == 0)); then
+            echo "unset border"
+            echo "unset tics"
+            echo "set xrange [0:1]"
+            echo "set yrange [0:1]"
+            echo "set label 'CH$ch: no raw ADC measurement capability' at 0.5,0.5 center"
+            echo "plot NaN notitle"
+        else
+            ((panels > 1)) && echo "set multiplot layout $panels,1 title 'CH$ch DAC Sweep Linearity'"
+            if ((has_v)); then
+                key="$ch:v"; slope=${FIT_SLOPES[$key]}; intercept=${FIT_INTERCEPTS[$key]}; r2=${FIT_R2[$key]}
+                echo "set ylabel 'Raw ADC V (counts)'"
+                echo "set title sprintf('Raw ADC V: y = %.6f x + %.3f, R^2 = %s', $slope, $intercept, '$r2')"
+                echo "plot '$escaped_v' using 1:2 with points pointtype 7 pointsize 1.2 title 'Samples', $slope*x+$intercept with lines linewidth 2 title 'OLS fit'"
+            fi
+            if ((has_i)); then
+                key="$ch:i"; slope=${FIT_SLOPES[$key]}; intercept=${FIT_INTERCEPTS[$key]}; r2=${FIT_R2[$key]}
+                echo "set ylabel 'Raw ADC I (counts)'"
+                echo "set title sprintf('Raw ADC I: y = %.6f x + %.3f, R^2 = %s', $slope, $intercept, '$r2')"
+                echo "plot '$escaped_i' using 1:2 with points pointtype 7 pointsize 1.2 title 'Samples', $slope*x+$intercept with lines linewidth 2 title 'OLS fit'"
+            fi
+            ((panels > 1)) && echo "unset multiplot"
+        fi
+    } | gnuplot || return 1
+
+    [[ -s "$plot_path" ]] || return 1
+    echo "![CH$ch DAC sweep plot]($plot_name)" >> "$BODY"
+    echo >> "$BODY"
 }
 
 fail() {
@@ -212,6 +292,7 @@ trap 'ERROR_MESSAGE="Interrupted by SIGINT"; exit 130' INT
 trap 'ERROR_MESSAGE="Interrupted by SIGTERM"; exit 143' TERM
 
 [[ -x "$CLI" ]] || fail "CLI is not executable: $CLI"
+command -v gnuplot >/dev/null || fail "gnuplot is required to generate PNG plots"
 
 read_regs 0 15 || fail "Unable to read system input registers"
 protocol_major=$(unsigned16 "${WORDS[0]}")
@@ -332,8 +413,10 @@ for ch in "${DAC_CHANNELS[@]}"; do
             echo "| Axis | Equation | R² | Max residual | Max residual (% span) | Points |"
             echo "|---|---|---:|---:|---:|---:|"
         } >> "$BODY"
-        ((has_v)) && append_linearity_fit "Raw ADC V" "$fit_v_file"
-        ((has_i)) && append_linearity_fit "Raw ADC I" "$fit_i_file"
+        ((has_v)) && append_linearity_fit "Raw ADC V" "$fit_v_file" "$ch:v"
+        ((has_i)) && append_linearity_fit "Raw ADC I" "$fit_i_file" "$ch:i"
         echo >> "$BODY"
     fi
+    generate_channel_plot "$ch" "$has_v" "$fit_v_file" "$has_i" "$fit_i_file" \
+        || fail "CH$ch PNG plot generation failed"
 done

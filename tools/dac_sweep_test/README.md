@@ -21,6 +21,7 @@ Options:
 ```
 
 Without `--report`, reports are written to `tools/dac_sweep_test/reports/`.
+The script requires `gnuplot` with `pngcairo` support.
 
 ## Behavior
 
@@ -38,6 +39,13 @@ DAC code using ordinary least squares. The fit table includes slope, intercept,
 R², maximum absolute residual, residual as a percentage of the fitted response
 span, and point count. Calibrated measured V/I values are not fitted. For a
 constant raw ADC series, R² and residual percentage are reported as `N/A`.
+
+One PNG is generated beside the report for every swept channel using the report
+stem plus `_ch<channel>.png`. Each supported raw ADC axis gets an independent
+panel containing the collected points and its OLS fit line; panel titles show
+the equation and R². Constant series render as horizontal lines. DAC-only
+channels receive a placeholder image stating that raw ADC measurement is not
+available. The Markdown report embeds each image with a relative link.
 
 The script enters volatile Calibration Mode but does not write calibration
 coefficients, commit calibration, or save configuration to NVS.

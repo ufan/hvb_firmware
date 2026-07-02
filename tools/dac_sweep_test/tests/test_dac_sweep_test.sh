@@ -16,6 +16,13 @@ fail() {
     exit 1
 }
 
+assert_png() {
+    local path=$1 signature
+    [[ -s "$path" ]] || fail "missing PNG: $path"
+    signature="$(od -An -tx1 -N8 "$path" | tr -d ' \n')"
+    [[ "$signature" == "89504e470d0a1a0a" ]] || fail "invalid PNG signature: $path"
+}
+
 run_success_case() {
     local state="$TMP/success-state" report="$TMP/success.md"
     mkdir -p "$state"
@@ -29,6 +36,10 @@ run_success_case() {
     grep -Fq '| Raw ADC V | raw_adc = 10.000000 × DAC + 0.000 | 1.000000 | 0.000 | 0.000000% | 7 |' "$report" || fail "voltage linearity fit"
     grep -Fq '| Raw ADC I | raw_adc = -10.000000 × DAC + 0.000 | 1.000000 | 0.000 | 0.000000% | 7 |' "$report" || fail "current linearity fit"
     test "$(grep -c '^### Linearity Fit$' "$report")" -eq 1 || fail "fit section capability gating"
+    grep -Fq '![CH0 DAC sweep plot](success_ch0.png)' "$report" || fail "CH0 plot link"
+    grep -Fq '![CH1 DAC sweep plot](success_ch1.png)' "$report" || fail "CH1 plot link"
+    assert_png "$TMP/success_ch0.png"
+    assert_png "$TMP/success_ch1.png"
     grep -q 'raw fc06 71 60000' "$state/commands.log" || fail "CH0 upper DAC write"
     grep -q 'raw fc06 111 60000' "$state/commands.log" || fail "CH1 upper DAC write"
     grep -q 'raw fc06 71 0' "$state/commands.log" || fail "CH0 DAC cleanup"
