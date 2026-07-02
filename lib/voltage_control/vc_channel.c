@@ -404,7 +404,6 @@ enum vc_status vc_channel_set_config(struct vc_channel *ch,
 	}
 
 	ch->config = *cfg;
-	tick_current_protection(ch);
 	apply_hw(ch);
 	update_status_bits(ch);
 	return VC_OK;
@@ -505,7 +504,6 @@ enum vc_status vc_channel_set_field(struct vc_channel *ch,
 		return VC_ERR_INVALID_VALUE;
 	}
 
-	tick_current_protection(ch);
 	apply_hw(ch);
 	update_status_bits(ch);
 	return VC_OK;
@@ -655,7 +653,10 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 
 	ARG_UNUSED(sys_cfg);
 
-	if (!ch->output_enabled || ch->active_fault_cause != 0) {
+	if (!ch->output_enabled) {
+		return;
+	}
+	if (ch->active_fault_cause != 0 && !ch->ramp_to_disable) {
 		return;
 	}
 

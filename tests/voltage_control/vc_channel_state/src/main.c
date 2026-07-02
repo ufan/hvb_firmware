@@ -216,6 +216,75 @@ ZTEST(vc_channel_state, test_current_protection_triggers_fault)
 	zassert_false(ch.output_enabled);
 }
 
+ZTEST(vc_channel_state, test_current_protection_graceful_disable_ramps_to_zero)
+{
+	struct vc_channel_config cfg;
+
+	zassert_equal(vc_channel_set_cal_field(&ch, VC_CAL_FIELD_MEASURED_I_K, 50000),
+		      VC_OK);
+
+	vc_channel_get_config(&ch, &cfg);
+	cfg.configured_target_voltage = 5000;
+	cfg.current_limit_threshold = 100;
+	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
+	cfg.current_protection_output_action = VC_OUTPUT_ACTION_DISABLE_GRACEFUL;
+	cfg.ramp_up_step = 5000;
+	cfg.ramp_up_interval = 1;
+	cfg.ramp_down_step = 1000;
+	cfg.ramp_down_interval = 1;
+	vc_channel_set_config(&ch, &cfg);
+	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE);
+	vc_channel_tick_ramp(&ch, 1000, &default_sys);
+	zassert_equal(ch.operational_target_voltage, 5000);
+	zassert_false(ch.ramping);
+
+	vc_channel_consume_current(&ch, 5000); /* measured = 250, exceeds threshold 100 */
+	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT);
+	zassert_true(ch.ramping, "graceful disable must arm a ramp-to-zero");
+	zassert_true(ch.output_enabled, "graceful disable must not cut output instantly");
+
+	/* Drive the ramp-down. Without the fix this never progresses, because
+	 * vc_channel_tick_ramp() bails out while active_fault_cause is set --
+	 * exactly the fault this ramp-down exists to resolve. */
+	for (int i = 0; i < 10; i++) {
+		vc_channel_tick_ramp(&ch, 1000, &default_sys);
+	}
+
+	zassert_equal(ch.operational_target_voltage, 0,
+		      "graceful disable must actually ramp to zero despite the active fault "
+		      "that triggered it");
+	zassert_false(ch.output_enabled);
+	zassert_false(ch.ramping);
+}
+
+ZTEST(vc_channel_state, test_set_field_does_not_evaluate_protection_synchronously)
+{
+	/* A real Modbus write of mode+action+threshold lands as three separate
+	 * single-register writes. Evaluating protection after each individual
+	 * field write risks latching a fault against a stale/partial config --
+	 * exactly the race that let a fault fire using the wrong action before
+	 * the caller's intended config had fully landed. */
+	zassert_equal(vc_channel_set_cal_field(&ch, VC_CAL_FIELD_MEASURED_I_K, 50000),
+		      VC_OK);
+	zassert_equal(vc_channel_set_field(&ch, VC_FIELD_CURRENT_LIMIT_THRESHOLD, 100),
+		      VC_OK);
+	vc_channel_consume_current(&ch, 5000); /* measured = 250, already above 100 */
+	zassert_equal(ch.active_fault_cause, 0, "mode is still Disabled, must not fault yet");
+
+	zassert_equal(vc_channel_set_field(&ch, VC_FIELD_CURRENT_PROTECTION_MODE,
+					   VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION),
+		      VC_OK);
+
+	zassert_equal(ch.active_fault_cause, 0,
+		      "a config write alone must never trigger protection -- only a fresh "
+		      "current sample may, so mode/action/threshold always land as a "
+		      "consistent whole before evaluation happens");
+
+	vc_channel_consume_current(&ch, 5000);
+	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT,
+		     "the next real sample must evaluate against the now-armed config");
+}
+
 /* ---- Consume fault ---- */
 
 ZTEST(vc_channel_state, test_consume_fault_sets_hardware_fault)
