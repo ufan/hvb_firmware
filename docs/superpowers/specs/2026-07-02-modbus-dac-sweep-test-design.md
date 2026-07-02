@@ -100,6 +100,26 @@ constant raw ADC series has zero response span and reports R² and residual
 percentage as `N/A`; its slope, intercept, absolute residual, and point count
 are still reported.
 
+### Per-channel PNG plots
+
+The script uses `gnuplot` to generate one PNG image per swept channel beside
+the Markdown report. The image name is the report stem followed by
+`_ch<channel>.png`. `gnuplot` availability is validated before Calibration Mode
+is entered so a missing plotting dependency cannot leave hardware active.
+
+Each image contains one panel for every supported raw ADC axis:
+
+- collected DAC/raw-ADC samples are shown as points;
+- the ordinary least-squares result is shown as a line;
+- the panel title includes the fitted equation and R²;
+- voltage and current use independent vertical scales;
+- constant series render as a horizontal line and display R² as `N/A`.
+
+The Markdown channel section embeds its PNG using a relative image link.
+Plotting runs only after the channel DAC has been restored to zero and its
+calibration output has been disabled. A plotting failure marks the test and
+report as failed; the normal global cleanup path still runs.
+
 ## Verification
 
 Tests use a mock CLI executable and no hardware. They cover:
@@ -110,6 +130,8 @@ Tests use a mock CLI executable and no hardware. They cover:
 - physical-unit conversion;
 - positive-slope and negative-slope raw ADC fits;
 - constant-series fit handling;
+- per-channel PNG creation and PNG signature validation;
+- capability-gated panel count and Markdown image links;
 - Markdown report content;
 - DAC-zero/output-disable/Calibration-Mode-exit cleanup after success and an
   injected failure.
