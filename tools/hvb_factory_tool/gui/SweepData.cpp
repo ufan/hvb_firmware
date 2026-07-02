@@ -31,7 +31,8 @@ FitResult linearRegression(const QList<double>& x, const QList<double>& y) {
         ssRes += res * res;
     }
     r.r2    = (ssTot < 1e-12) ? 1.0 : 1.0 - ssRes / ssTot;
-    r.k     = slope;       // caller multiplies by 10000 to get device register value
+    r.k     = slope;       // caller multiplies by the axis divisor (10000 or
+                            // 1000000) to get the device register value
     r.b     = intercept;
     r.valid = true;
     return r;

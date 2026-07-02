@@ -2,13 +2,13 @@
 
 ## Overview
 
-This guide describes the shell command sequence for factory calibration of a Jianwei voltage-control board channel. Calibration computes linear coefficients `y = x * k/10000 + b` per measurement axis (output, voltage measurement, current measurement) by collecting (DAC code, raw ADC reading) pairs and persisting them to NVS.
+This guide describes the shell command sequence for factory calibration of a Jianwei voltage-control board channel. Calibration computes linear coefficients `y = x * k/D + b` per measurement axis (output, voltage measurement, current measurement) by collecting (DAC code, raw ADC reading) pairs and persisting them to NVS. `D` is 10000 for the output axis and 1000000 for the two measurement axes — the measurement axes need finer resolution because they convert a small, attenuated raw ADC gain (~0.001–0.01) rather than a near-unity output gain; unity gain is not representable on those two axes (max is 65535/1000000 ≈ 0.0655). See `docs/guide/parameter-reference.md` for the derivation.
 
 | Coefficient | Factory default | Description |
 |-------------|----------------|-------------|
 | `out_cal_k` / `out_cal_b` | k=32768, b=0 | Output DAC: raw_dac = target × k/10000 + b |
-| `v_cal_k` / `v_cal_b` | k=10000, b=0 | Voltage measurement: measured = raw_adc × k/10000 + b |
-| `i_cal_k` / `i_cal_b` | k=10000, b=0 | Current measurement: measured = raw_adc × k/10000 + b |
+| `v_cal_k` / `v_cal_b` | k=1, b=0 | Voltage measurement: measured = raw_adc × k/1000000 + b |
+| `i_cal_k` / `i_cal_b` | k=1, b=0 | Current measurement: measured = raw_adc × k/1000000 + b |
 
 ## Prerequisites
 
@@ -143,9 +143,9 @@ There is no single command that resets cal coefficients to their firmware defaul
 vc cal unlock
 vc cal <ch> set out_cal_k 32768
 vc cal <ch> set out_cal_b 0
-vc cal <ch> set v_cal_k 10000
+vc cal <ch> set v_cal_k 1
 vc cal <ch> set v_cal_b 0
-vc cal <ch> set i_cal_k 10000
+vc cal <ch> set i_cal_k 1
 vc cal <ch> set i_cal_b 0
 vc cal <ch> commit
 vc cal exit

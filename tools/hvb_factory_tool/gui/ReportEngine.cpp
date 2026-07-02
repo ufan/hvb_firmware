@@ -16,19 +16,19 @@ QString ReportEngine::verdictBadge(bool pass) {
 QString ReportEngine::fitTable(const ChannelCalData& cal) {
     if (!cal.needsCal) return "<p><i>No calibration required for this channel.</i></p>";
     QString s = "<table border='1' cellpadding='4' cellspacing='0' width='100%'>"
-                "<tr><th>Axis</th><th>K (×10000)</th><th>B</th><th>R²</th><th>Points</th></tr>";
-    auto row = [&](const QString& axis, const FitResult& f, bool active) {
+                "<tr><th>Axis</th><th>K (device register)</th><th>B</th><th>R²</th><th>Points</th></tr>";
+    auto row = [&](const QString& axis, const FitResult& f, bool active, double divisor) {
         if (!active) return;
         s += QString("<tr><td>%1</td><td>%2</td><td>%3</td><td>%4</td><td>%5</td></tr>")
                  .arg(axis)
-                 .arg(qRound(f.k * 10000))
+                 .arg(qRound(f.k * divisor))
                  .arg(qRound(f.b))
                  .arg(f.r2, 0, 'f', 6)
                  .arg(cal.points.size());
     };
-    row("out (V→DAC)",   cal.outFit,   cal.hasOut);
-    row("meas-V (ADC→V)", cal.measVFit, cal.hasMeasV);
-    row("meas-I (ADC→I)", cal.measIFit, cal.hasMeasI);
+    row("out (V→DAC), K ×10000",       cal.outFit,   cal.hasOut,   10000.0);
+    row("meas-V (ADC→V), K ×1000000", cal.measVFit, cal.hasMeasV, 1000000.0);
+    row("meas-I (ADC→I), K ×1000000", cal.measIFit, cal.hasMeasI, 1000000.0);
     s += "</table>";
     return s;
 }
@@ -194,16 +194,16 @@ QString ReportEngine::buildMarkdown(const ReportData& data) {
         for (const auto& cal : data.calResults) {
             md += QString("### CH%1\n\n").arg(cal.ch);
             if (!cal.needsCal) { md += "_No calibration required._\n\n"; continue; }
-            md += "| Axis | K (×10000) | B | R² |\n|---|---|---|---|\n";
-            auto row = [&](const QString& ax, const FitResult& f, bool active) {
+            md += "| Axis | K (device register) | B | R² |\n|---|---|---|---|\n";
+            auto row = [&](const QString& ax, const FitResult& f, bool active, double divisor) {
                 if (!active) return;
                 md += QString("| %1 | %2 | %3 | %4 |\n")
-                          .arg(ax).arg(qRound(f.k * 10000)).arg(qRound(f.b))
+                          .arg(ax).arg(qRound(f.k * divisor)).arg(qRound(f.b))
                           .arg(f.r2, 0, 'f', 6);
             };
-            row("out (V→DAC)",    cal.outFit,   cal.hasOut);
-            row("meas-V (ADC→V)", cal.measVFit, cal.hasMeasV);
-            row("meas-I (ADC→I)", cal.measIFit, cal.hasMeasI);
+            row("out (V→DAC), K ×10000",       cal.outFit,   cal.hasOut,   10000.0);
+            row("meas-V (ADC→V), K ×1000000", cal.measVFit, cal.hasMeasV, 1000000.0);
+            row("meas-I (ADC→I), K ×1000000", cal.measIFit, cal.hasMeasI, 1000000.0);
             md += "\n";
         }
     }

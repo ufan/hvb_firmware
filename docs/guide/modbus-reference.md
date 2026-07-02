@@ -90,8 +90,8 @@ Extension block base: `EXT_BASE = 40 + 16 × 40 = 680`
 | 7 | Last Fault Timestamp LO | uint16 | — | Last fault timestamp, low word |
 | 8 | Oper Target Voltage | int16 | — | Operational target voltage (mV) |
 | 9 | Capability Flags | uint16 | — | Channel capability bitmask |
-| 10 | Measured Voltage | int16 | VOLTAGE_MEASUREMENT | Calibrated voltage (mV) |
-| 11 | Measured Current | int16 | CURRENT_MEASUREMENT | Calibrated current (raw ADC counts) |
+| 10 | Measured Voltage | int16 | VOLTAGE_MEASUREMENT | Calibrated voltage (×100 mV) |
+| 11 | Measured Current | int16 | CURRENT_MEASUREMENT | Calibrated current (×0.1 nA) |
 | 12 | Raw ADC Voltage HI | int32 | VOLTAGE_MEASUREMENT | Raw ADC voltage, high word |
 | 13 | Raw ADC Voltage LO | int32 | VOLTAGE_MEASUREMENT | Raw ADC voltage, low word |
 | 14 | Raw ADC Current HI | int32 | CURRENT_MEASUREMENT | Raw ADC current, high word |
@@ -124,7 +124,7 @@ Extension block base: `EXT_BASE = 40 + 16 × 40 = 680`
 | 12 | Current Safe Band % | R/W | — | 0–100% below limit for clear eligibility |
 | 13 | Current Protection Mode | R/W | CURRENT_MEASUREMENT | 0=Off, 1=Flag Only, 2=Apply Action |
 | 14 | Current Prot Out Action | R/W | CURRENT_MEASUREMENT | Protection action (see enum) |
-| 15 | Current Limit Threshold | R/W | CURRENT_MEASUREMENT | Raw ADC counts |
+| 15 | Current Limit Threshold | R/W | CURRENT_MEASUREMENT | ×0.1 nA (compared against Measured Current, same unit) |
 | 16 | Auto Derate Step | R/W | OUTPUT+V_MEAS | mV per derate step |
 | 17–19 | Reserved | — | — | — |
 
@@ -136,10 +136,10 @@ Readable in any mode. Writable only in Calibration mode.
 |--------|----------|-----|-------|-------------|
 | 20 | Output Cal K | R/W/CAL | RAW_OUTPUT_DRIVE | DAC gain (÷10000, default 10000) |
 | 21 | Output Cal B | R/W/CAL | RAW_OUTPUT_DRIVE | DAC offset (default 0) |
-| 22 | Measured V Cal K | R/W/CAL | VOLTAGE_MEASUREMENT | Voltage gain (÷10000) |
-| 23 | Measured V Cal B | R/W/CAL | VOLTAGE_MEASUREMENT | Voltage offset |
-| 24 | Measured I Cal K | R/W/CAL | CURRENT_MEASUREMENT | Current gain (÷10000) |
-| 25 | Measured I Cal B | R/W/CAL | CURRENT_MEASUREMENT | Current offset |
+| 22 | Measured V Cal K | R/W/CAL | VOLTAGE_MEASUREMENT | Voltage gain (÷1000000; unity not representable) |
+| 23 | Measured V Cal B | R/W/CAL | VOLTAGE_MEASUREMENT | Voltage offset (×100 mV) |
+| 24 | Measured I Cal K | R/W/CAL | CURRENT_MEASUREMENT | Current gain (÷1000000; unity not representable) |
+| 25 | Measured I Cal B | R/W/CAL | CURRENT_MEASUREMENT | Current offset (×0.1 nA) |
 
 ### Calibration Session (offset 30–34)
 
@@ -251,10 +251,13 @@ The extension block starts at absolute Modbus address 680 (0-based).
 ### Calibration Formula
 
 ```
-calibrated = raw × k / 10000 + b
+calibrated = raw × k / D + b
 ```
 
-Identity: `k = 10000`, `b = 0`.
+`D` depends on the axis: **10000 for Output Cal K** (identity `k = 10000`,
+`b = 0`), **1000000 for Measured V/I Cal K** (unity gain not representable —
+see `docs/guide/parameter-reference.md` for why the measurement axes use a
+finer scale).
 
 ## mbpoll Examples
 

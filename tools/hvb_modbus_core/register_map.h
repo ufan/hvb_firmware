@@ -68,12 +68,16 @@ inline int32_t int32FromRegs(uint16_t hi, uint16_t lo) {
 }
 
 // UINT16 scaling model — variant profile provides compile-time scales (§5)
-// HVB variant (id=1): voltage_scale = 100 mV/LSB, current_scale = 1 nA/LSB
-//   raw 20000 = 2000 V, raw 5000 = 5 uA
+// HVB variant (id=1): voltage_scale = 100 mV/LSB, current_scale = 0.1 nA/LSB
+//   raw 20000 = 2000 V, raw 5000 = 0.5 uA
+// Both axes are calibration-dependent (measured_voltage_calib_k /
+// measured_current_calib_k, see lib/voltage_control/vc_channel.c): these
+// constants describe the scale a *calibrated* board is expected to produce,
+// not a fixed firmware guarantee.
 
 namespace scale {
-    inline constexpr double VOLTAGE_LSB_TO_V = 0.1;   // 100 mV/LSB → V
-    inline constexpr double CURRENT_LSB_TO_A = 1e-9;  // 1 nA/LSB → A
+    inline constexpr double VOLTAGE_LSB_TO_V = 0.1;    // 100 mV/LSB → V
+    inline constexpr double CURRENT_LSB_TO_A = 1e-10;  // 0.1 nA/LSB → A
 }
 
 // INT16 values — negative voltage/current are possible

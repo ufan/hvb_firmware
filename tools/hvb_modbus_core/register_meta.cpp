@@ -92,10 +92,10 @@ const std::vector<RegDesc> CHANNEL_HOLDING = {
     /* Cal config — readable any mode, writable in cal mode only */
     {20, "Output Calibration K",  "uint16", "x10000",  "Output path slope", 1.0, true, false, -1, {}, Cat::Config},
     {21, "Output Calibration B",  "int16",  "dac",     "Output path offset (DAC counts)", 1.0, true, false, -1, {}, Cat::Config},
-    {22, "Meas V Calibration K",  "uint16", "x10000",  "Voltage measurement slope", 1.0, true, false, -1, {}, Cat::Config},
-    {23, "Meas V Calibration B",  "int16",  "mV",      "Voltage measurement offset", 1.0, true, false, -1, {}, Cat::Config},
-    {24, "Meas I Calibration K",  "uint16", "x10000",  "Current measurement slope", 1.0, true, false, -1, {}, Cat::Config},
-    {25, "Meas I Calibration B",  "int16",  "lsb",     "Current measurement offset", 1.0, true, false, -1, {}, Cat::Config},
+    {22, "Meas V Calibration K",  "uint16", "x1000000","Voltage measurement slope (unity not representable)", 1.0, true, false, -1, {}, Cat::Config},
+    {23, "Meas V Calibration B",  "int16",  "x100mV",  "Voltage measurement offset", 1.0, true, false, -1, {}, Cat::Config},
+    {24, "Meas I Calibration K",  "uint16", "x1000000","Current measurement slope (unity not representable)", 1.0, true, false, -1, {}, Cat::Config},
+    {25, "Meas I Calibration B",  "int16",  "x0.1nA",  "Current measurement offset", 1.0, true, false, -1, {}, Cat::Config},
     /* 26..29 reserved */
     /* Cal session commands — cal mode only */
     {30, "Cal Output Enable",     "uint16", "bool",    "Calibration Mode — raw output gate", 1.0, true, false, -1, {}, Cat::Command},

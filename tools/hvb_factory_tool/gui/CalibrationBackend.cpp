@@ -159,14 +159,14 @@ QVariantMap CalibrationBackend::channelSweepFit(int ch) const {
     if (ch < 0 || ch >= m_calData.size()) return m;
     const auto& d = m_calData[ch];
 
-    auto fitMap = [](const FitResult& f, bool active) {
+    auto fitMap = [](const FitResult& f, bool active, double divisor) {
         QVariantMap fm;
         fm["active"]  = active;
         fm["valid"]   = f.valid;
         fm["k"]       = f.k;
         fm["b"]       = f.b;
         fm["r2"]      = f.r2;
-        fm["kDevice"] = qRound(f.k * 10000);
+        fm["kDevice"] = qRound(f.k * divisor);
         fm["bDevice"] = qRound(f.b);
         return fm;
     };
@@ -174,9 +174,9 @@ QVariantMap CalibrationBackend::channelSweepFit(int ch) const {
     m["hasMeasV"]      = d.hasMeasV;
     m["hasMeasI"]      = d.hasMeasI;
     m["needsCal"]      = d.needsCal;
-    m["outFit"]        = fitMap(d.outFit,   d.hasOut);
-    m["measVFit"]      = fitMap(d.measVFit, d.hasMeasV);
-    m["measIFit"]      = fitMap(d.measIFit, d.hasMeasI);
+    m["outFit"]        = fitMap(d.outFit,   d.hasOut,   10000.0);
+    m["measVFit"]      = fitMap(d.measVFit, d.hasMeasV, 1000000.0);
+    m["measIFit"]      = fitMap(d.measIFit, d.hasMeasI, 1000000.0);
     m["coeffsWritten"] = d.coeffsWritten;
     m["committed"]     = d.committed;
     return m;
@@ -283,9 +283,9 @@ QVariantList CalibrationBackend::calSummary() const {
         m["measIR2"]      = d.measIFit.r2;
         m["outKDevice"]   = qRound(d.outFit.k  * 10000);
         m["outBDevice"]   = qRound(d.outFit.b);
-        m["measVKDevice"] = qRound(d.measVFit.k * 10000);
+        m["measVKDevice"] = qRound(d.measVFit.k * 1000000);
         m["measVBDevice"] = qRound(d.measVFit.b);
-        m["measIKDevice"] = qRound(d.measIFit.k * 10000);
+        m["measIKDevice"] = qRound(d.measIFit.k * 1000000);
         m["measIBDevice"] = qRound(d.measIFit.b);
         list.append(m);
     }
@@ -555,17 +555,17 @@ void CalibrationBackend::computeFit(int ch, const QVariantList& dmmPoints) {
         d.measIFit = (x.size() >= 2) ? linearRegression(x, y) : FitResult{};
     }
 
-    auto fitMap = [](const FitResult& f) {
+    auto fitMap = [](const FitResult& f, double divisor) {
         QVariantMap m;
         m["valid"]   = f.valid;
         m["k"]       = f.k;
         m["b"]       = f.b;
         m["r2"]      = f.r2;
-        m["kDevice"] = qRound(f.k * 10000);
+        m["kDevice"] = qRound(f.k * divisor);
         m["bDevice"] = qRound(f.b);
         return m;
     };
-    emit fitReady(ch, fitMap(d.outFit), fitMap(d.measVFit), fitMap(d.measIFit));
+    emit fitReady(ch, fitMap(d.outFit, 10000.0), fitMap(d.measVFit, 1000000.0), fitMap(d.measIFit, 1000000.0));
     setStatus(QString("CH%1 fit computed").arg(ch));
 }
 
@@ -589,11 +589,11 @@ void CalibrationBackend::writeCoefficients(int ch,
                     static_cast<int16_t> (qRound(outB)));
         if (d.hasMeasV)
             ok = ok && m_client.writeCalibrationMeasV(ch,
-                    static_cast<uint16_t>(qRound(measVK * 10000)),
+                    static_cast<uint16_t>(qRound(measVK * 1000000)),
                     static_cast<int16_t> (qRound(measVB)));
         if (d.hasMeasI)
             ok = ok && m_client.writeCalibrationMeasI(ch,
-                    static_cast<uint16_t>(qRound(measIK * 10000)),
+                    static_cast<uint16_t>(qRound(measIK * 1000000)),
                     static_cast<int16_t> (qRound(measIB)));
     }
     d.coeffsWritten = ok;

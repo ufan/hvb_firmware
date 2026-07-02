@@ -37,10 +37,10 @@ TEST_CASE("fmtVoltage") {
 }
 
 TEST_CASE("fmtCurrentUA") {
-    // 1 LSB = 1 nA; 32767 LSB = 32.767 µA
-    CHECK(fmtCurrentUA(32767) == "+32.767 uA");
+    // 1 LSB = 0.1 nA; 32767 LSB = 3.2767 µA
+    CHECK(fmtCurrentUA(32767) == "+3.277 uA");
     CHECK(fmtCurrentUA(0)     == "+0.000 uA");
-    CHECK(fmtCurrentUA(-1000) == "-1.000 uA");
+    CHECK(fmtCurrentUA(-1000) == "-0.100 uA");
 }
 
 TEST_CASE("fmtInterval") {

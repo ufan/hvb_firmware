@@ -171,10 +171,10 @@ struct ChannelConfig {
 struct ChannelCalConfig {
     uint16_t outCalK = 10000;    // UINT16, x10000
     int16_t outCalB = 0;         // INT16, DAC counts offset
-    uint16_t measVCalK = 10000;  // UINT16, x10000
-    int16_t measVCalB = 0;       // INT16, mV offset
-    uint16_t measICalK = 10000;  // UINT16, x10000
-    int16_t measICalB = 0;       // INT16, raw ADC offset
+    uint16_t measVCalK = 10000;  // UINT16, x1000000 (default is a placeholder; unity not representable)
+    int16_t measVCalB = 0;       // INT16, x100 mV offset
+    uint16_t measICalK = 10000;  // UINT16, x1000000 (default is a placeholder; unity not representable)
+    int16_t measICalB = 0;       // INT16, x0.1 nA offset
 };
 
 struct CalibrationSnapshot {

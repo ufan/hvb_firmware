@@ -204,8 +204,8 @@ int cmdChannelCal(int ch) {
     if (!g_client->isConnected()) return 1;
     std::cout << "=== Channel " << ch << " Calibration ===\n";
     printSep("Output:", "K=" + std::to_string(cal.outCalK) + " (x10000)  B=" + std::to_string(cal.outCalB) + " (x1000)");
-    printSep("Meas V:", "K=" + std::to_string(cal.measVCalK) + " (x10000)  B=" + std::to_string(cal.measVCalB) + " (x1000)");
-    printSep("Meas I:", "K=" + std::to_string(cal.measICalK) + " (x10000)  B=" + std::to_string(cal.measICalB) + " (x1000)");
+    printSep("Meas V:", "K=" + std::to_string(cal.measVCalK) + " (x1000000)  B=" + std::to_string(cal.measVCalB) + " (x1000)");
+    printSep("Meas I:", "K=" + std::to_string(cal.measICalK) + " (x1000000)  B=" + std::to_string(cal.measICalB) + " (x1000)");
     return 0;
 }
 

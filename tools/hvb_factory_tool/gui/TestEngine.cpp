@@ -7,9 +7,8 @@
 
 namespace hvb::factory {
 
-// 1 LSB = 1 mV (matches firmware reg::voltageToV / voltageFromV scaling)
-int16_t TestEngine::voltsToRaw(double v) const { return static_cast<int16_t>(v * 1000.0); }
-double  TestEngine::rawToVolts(int16_t raw)   const { return raw / 1000.0; }
+int16_t TestEngine::voltsToRaw(double v) const { return hvb::reg::voltageFromV(v); }
+double  TestEngine::rawToVolts(int16_t raw)   const { return hvb::reg::voltageToV(raw); }
 
 TestEngine::TestEngine(QObject* parent) : QObject(parent) {}
 

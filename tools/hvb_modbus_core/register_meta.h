@@ -12,7 +12,7 @@ struct RegDesc {
     uint16_t address = 0;
     const char* name = nullptr;
     const char* type = nullptr;      // "uint16"
-    const char* unit = nullptr;      // "raw", "lsb", "seconds", "seconds_x10", "x10000", "x1000", "%", "enum", "bitmask", "bool", "count", ""
+    const char* unit = nullptr;      // "raw", "lsb", "seconds", "seconds_x10", "x10000", "x1000000", "x1000", "x100mV", "x0.1nA", "%", "enum", "bitmask", "bool", "count", ""
     const char* desc = nullptr;
     double scaleTo = 1.0;            // divisor for display
     bool writable = false;

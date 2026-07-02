@@ -300,9 +300,14 @@ Show calibration coefficients.
 uart:~$ vc cal config 0
 Channel 0 Calibration Config
   out_cal:  k=10000 b=0
-  v_cal:    k=10000 b=0
-  i_cal:    k=10000 b=0
+  v_cal:    k=1 b=0
+  i_cal:    k=1 b=0
 ```
+
+`v_cal`/`i_cal` default to `k=1` — the smallest representable measurement
+gain, an intentionally near-zero placeholder until a real per-unit
+calibration is written (see below; unity gain is not representable on these
+two axes).
 
 ### `vc cal set <ch> <field> <value>`
 
@@ -312,18 +317,18 @@ Set a calibration coefficient field. Only writable in calibration mode. Availabl
 |-------------|-------------|---------|
 | `out_cal_k` | DAC gain (÷10000) | DAC = target × k/10000 + b |
 | `out_cal_b` | DAC offset | |
-| `v_cal_k` | Voltage measurement gain | Measured = raw_adc × k/10000 + b |
+| `v_cal_k` | Voltage measurement gain (÷1000000) | Measured = raw_adc × k/1000000 + b |
 | `v_cal_b` | Voltage measurement offset | |
-| `i_cal_k` | Current measurement gain | Measured = raw_adc × k/10000 + b |
+| `i_cal_k` | Current measurement gain (÷1000000) | Measured = raw_adc × k/1000000 + b |
 | `i_cal_b` | Current measurement offset | |
 | `max_dac` | Safety DAC ceiling (uint16) | Same as `vc cal max_dac <ch> <limit>` |
 
 ```
 vc cal set 0 out_cal_k 10000
 vc cal set 0 out_cal_b 0
-vc cal set 0 v_cal_k   10000
+vc cal set 0 v_cal_k   2387
 vc cal set 0 v_cal_b   0
-vc cal set 0 i_cal_k   10000
+vc cal set 0 i_cal_k   14901
 vc cal set 0 i_cal_b   0
 ```
 
