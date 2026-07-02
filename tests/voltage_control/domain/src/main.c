@@ -1149,3 +1149,43 @@ ZTEST(vc_domain, test_current_protection_skipped_during_ramping)
 	zassert_equal(snap.fault_history_cause, 0,
 		      "current protection must not flag during ramping");
 }
+
+ZTEST(vc_domain, test_recovery_auto_retry_through_controller_tick)
+{
+	make_fresh();
+	struct vc_channel_config cfg;
+	struct vc_channel_snapshot snap;
+
+	zassert_equal(vc_channel_set_cal_field(&ctrl->channels[0], VC_CAL_FIELD_MEASURED_I_K,
+						50000), VC_OK);
+
+	vc_controller_get_channel_config(ctrl, 0, &cfg);
+	cfg.configured_target_voltage = 5000;
+	cfg.current_limit_threshold = 100;
+	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
+	cfg.current_protection_output_action = VC_OUTPUT_ACTION_DISABLE_IMMEDIATE;
+	cfg.recovery_policy_mode = VC_RECOVERY_AUTO_RETRY;
+	cfg.auto_retry_delay = 1;
+	cfg.auto_retry_max_count = 3;
+	cfg.auto_retry_window = 60;
+	cfg.ramp_up_step = 5000;
+	cfg.ramp_up_interval = 1;
+	vc_channel_set_config(&ctrl->channels[0], &cfg);
+
+	zassert_equal(vc_controller_set_operating_mode(ctrl, VC_OPERATING_MODE_AUTOMATIC),
+		      VC_OK);
+	vc_controller_channel_output_action(ctrl, 0, VC_OUTPUT_ACTION_ENABLE);
+	vc_controller_tick(ctrl, 1000);
+
+	vc_channel_consume_current(&ctrl->channels[0], 5000); /* trips the fault */
+	vc_controller_tick(ctrl, 0);
+	vc_controller_get_channel_snapshot(ctrl, 0, &snap);
+	zassert_true(snap.active_fault_cause & VC_FAULT_CURRENT);
+
+	vc_channel_consume_current(&ctrl->channels[0], 100); /* safe */
+	vc_controller_tick(ctrl, 1000); /* cooldown elapses, retry fires */
+
+	vc_controller_get_channel_snapshot(ctrl, 0, &snap);
+	zassert_equal(snap.active_fault_cause, 0,
+		      "auto-retry must clear the fault through the normal controller tick path");
+}

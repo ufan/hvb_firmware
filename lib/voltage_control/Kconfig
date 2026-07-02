@@ -150,6 +150,16 @@ config VC_DEFAULT_CURRENT_SAFE_BAND_PCT
 	  suppressed while the output is within this percentage of the limit,
 	  to avoid false trips during normal transients.
 
+config VC_MAX_RETRY_HISTORY
+	int "Max tracked auto-retry attempts per channel"
+	default 8
+	range 1 32
+	help
+	  Size of the fixed-size ring buffer used for the auto-retry sliding
+	  window (Auto Retry Window / Auto Retry Max Count). auto_retry_max_count
+	  writes above this value are rejected -- there is no dynamic allocation
+	  in the domain layer, so this is a hard ceiling, not a soft default.
+
 config VC_CAL_WATCHDOG_TIMEOUT_S
 	int "VC calibration inactivity watchdog timeout"
 	default 300

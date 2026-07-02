@@ -232,6 +232,41 @@ shell to activate protection at that limit.
 
 ---
 
+## Automatic Recovery
+
+`recovery_policy_mode` only has an effect in **Automatic operating mode** — in
+Normal mode every fault always latches and requires an explicit manual clear,
+regardless of this setting. This matches the "explicit user action always
+wins" behavior of manual host commands.
+
+| Policy | Behavior |
+|---|---|
+| `MANUAL_LATCH` (default) | Fault always latches; manual clear required. |
+| `NEVER_RETRY` | Same as `MANUAL_LATCH` in this implementation. |
+| `AUTO_RETRY` | After `auto_retry_delay` seconds and once `measured_current` is back within the current safe band, clears the fault and ramps back to `configured_target_voltage`. |
+| `AUTO_DERATE_RETRY` | Same as `AUTO_RETRY`, but each retry targets `configured_target_voltage - (attempt_number × auto_derate_step)`. If that would reach zero or below, the channel exhausts immediately instead of retrying at an invalid target. |
+
+Only `VC_FAULT_CURRENT` is auto-recoverable — hardware, interlock, measurement,
+and stale-data faults always require a manual clear, because this codebase
+only has a "safe now?" check (the current safe-band) for current faults.
+
+Retry attempts are counted in a sliding window: attempts older than
+`auto_retry_window` seconds age out and don't count against
+`auto_retry_max_count`. Exceeding the max count (or, for derate retry,
+derating to zero or below) latches the channel with `VC_FAULT_RETRY_EXHAUST`
+in addition to the original fault cause — that combination means "auto-retry
+gave up," not "still faulted, waiting for a retry."
+
+**Known gap:** this does not distinguish "fault detected while already in
+Automatic mode" from "fault detected in Normal mode, then switched to
+Automatic" — the spec calls for only the former to be retryable. The current
+gate checks only the operating mode at evaluation time, not the mode at the
+moment the fault was detected. See
+`docs/superpowers/plans/2026-07-03-automatic-recovery-policy.md` for what
+fixing this would require.
+
+---
+
 ## Ramp Control
 
 The ramp controller steps `operational_target_voltage` toward

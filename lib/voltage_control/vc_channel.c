@@ -281,6 +281,8 @@ static void force_safe_state(struct vc_channel *ch)
 {
 	ch->output_enabled = false;
 	ch->ramping = false;
+	ch->recovering = false;
+	ch->cooldown_remaining_ms = 0;
 	ch->cal_output_enabled = 0;
 	ch->raw_dac_readback = 0;
 	ch->operational_target_voltage = 0;
@@ -301,6 +303,100 @@ static bool is_safe_to_clear_active(const struct vc_channel *ch)
 		}
 	}
 	return true;
+}
+
+static bool current_fault_only(const struct vc_channel *ch)
+{
+	return ch->active_fault_cause == VC_FAULT_CURRENT;
+}
+
+static uint16_t count_active_retries(const struct vc_channel *ch)
+{
+	uint32_t window_ms = (uint32_t)ch->config.auto_retry_window * 1000;
+	uint16_t count = 0;
+
+	for (uint8_t i = 0; i < ch->retry_timestamp_count; i++) {
+		if (ch->uptime_ref - ch->retry_timestamps_ms[i] <= window_ms) {
+			count++;
+		}
+	}
+	return count;
+}
+
+static void record_retry_attempt(struct vc_channel *ch)
+{
+	if (ch->retry_timestamp_count < CONFIG_VC_MAX_RETRY_HISTORY) {
+		ch->retry_timestamps_ms[ch->retry_timestamp_count++] = ch->uptime_ref;
+		return;
+	}
+	memmove(&ch->retry_timestamps_ms[0], &ch->retry_timestamps_ms[1],
+		sizeof(ch->retry_timestamps_ms[0]) * (CONFIG_VC_MAX_RETRY_HISTORY - 1));
+	ch->retry_timestamps_ms[CONFIG_VC_MAX_RETRY_HISTORY - 1] = ch->uptime_ref;
+}
+
+static void tick_recovery(struct vc_channel *ch, const struct vc_system_config *sys_cfg,
+			   uint32_t dt_ms)
+{
+	const struct vc_channel_config *cfg = &ch->config;
+
+	if (sys_cfg->operating_mode != VC_OPERATING_MODE_AUTOMATIC) {
+		return;
+	}
+	if (!current_fault_only(ch)) {
+		return;
+	}
+	if (cfg->recovery_policy_mode != VC_RECOVERY_AUTO_RETRY &&
+	    cfg->recovery_policy_mode != VC_RECOVERY_AUTO_DERATE_RETRY) {
+		return;
+	}
+	if (ch->ramping) {
+		return;
+	}
+
+	if (vc_channel_get_smf_state(ch) != VC_CHANNEL_SMF_RETRY_COOLDOWN) {
+		ch->cooldown_remaining_ms = (uint32_t)cfg->auto_retry_delay * 1000;
+		set_smf_state(ch, VC_CHANNEL_SMF_RETRY_COOLDOWN);
+		update_status_bits(ch);
+	}
+
+	if (ch->cooldown_remaining_ms > dt_ms) {
+		ch->cooldown_remaining_ms -= dt_ms;
+		return;
+	}
+	ch->cooldown_remaining_ms = 0;
+
+	if (!is_safe_to_clear_active(ch)) {
+		return;
+	}
+
+	uint16_t retry_count = count_active_retries(ch);
+
+	if (retry_count >= cfg->auto_retry_max_count) {
+		ch->active_fault_cause |= VC_FAULT_RETRY_EXHAUST;
+		set_smf_state(ch, VC_CHANNEL_SMF_FAULT_LATCHED);
+		update_status_bits(ch);
+		return;
+	}
+
+	int32_t target = cfg->configured_target_voltage;
+
+	if (cfg->recovery_policy_mode == VC_RECOVERY_AUTO_DERATE_RETRY) {
+		target -= (int32_t)(retry_count + 1) * cfg->auto_derate_step;
+		if (target <= 0) {
+			ch->active_fault_cause |= VC_FAULT_RETRY_EXHAUST;
+			set_smf_state(ch, VC_CHANNEL_SMF_FAULT_LATCHED);
+			update_status_bits(ch);
+			return;
+		}
+	}
+
+	record_retry_attempt(ch);
+	ch->active_fault_cause = 0;
+	ch->recovering = true;
+	ch->recovery_target = (int16_t)target;
+	ch->output_enabled = true;
+	apply_hw(ch);
+	update_status_bits(ch);
 }
 
 /* ---- Measurement callback — registered with hw driver ---- */
@@ -349,6 +445,8 @@ void vc_channel_init(struct vc_channel *ch,
 void vc_channel_run(struct vc_channel *ch, uint32_t dt_ms,
 			    const struct vc_system_config *sys_cfg)
 {
+	ch->uptime_ref += dt_ms;
+
 	if (ch->meas != NULL) {
 		int32_t raw_voltage, raw_current;
 		uint32_t voltage_ts, current_ts;
@@ -366,6 +464,7 @@ void vc_channel_run(struct vc_channel *ch, uint32_t dt_ms,
 	}
 
 	vc_channel_tick_ramp(ch, dt_ms, sys_cfg);
+	tick_recovery(ch, sys_cfg, dt_ms);
 }
 
 enum vc_channel_smf_state vc_channel_get_smf_state(const struct vc_channel *ch)
@@ -455,6 +554,9 @@ enum vc_status vc_channel_set_field(struct vc_channel *ch,
 		ch->config.auto_retry_delay = value;
 		break;
 	case VC_FIELD_AUTO_RETRY_MAX_COUNT:
+		if (value > CONFIG_VC_MAX_RETRY_HISTORY) {
+			return VC_ERR_INVALID_VALUE;
+		}
 		ch->config.auto_retry_max_count = value;
 		break;
 	case VC_FIELD_AUTO_RETRY_WINDOW:
@@ -520,7 +622,7 @@ void vc_channel_get_snapshot(const struct vc_channel *ch,
 	snap->active_fault_cause = ch->active_fault_cause;
 	snap->fault_history_cause = ch->fault_history_cause;
 	snap->last_protection_output_action = ch->last_protection_output_action;
-	snap->auto_retry_count = 0;
+	snap->auto_retry_count = count_active_retries(ch);
 	snap->auto_cooldown_remaining = (uint16_t)(ch->cooldown_remaining_ms / 1000);
 	snap->last_fault_timestamp = ch->last_fault_timestamp;
 	snap->channel_capability_flags = ch->capabilities;
@@ -660,7 +762,9 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 		return;
 	}
 
-	target = ch->ramp_to_disable ? ch->graceful_ramp_dest : cfg->configured_target_voltage;
+	target = ch->ramp_to_disable ? ch->graceful_ramp_dest
+	       : ch->recovering ? ch->recovery_target
+	       : cfg->configured_target_voltage;
 	current = ch->operational_target_voltage;
 
 	if (current == target) {
@@ -673,6 +777,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 				apply_hw(ch);
 				update_status_bits(ch);
 			} else {
+				ch->recovering = false;
 				set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
 			}
 		}
@@ -697,6 +802,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 			ch->output_enabled = false;
 			set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
 		} else {
+			ch->recovering = false;
 			set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
 		}
 		apply_hw(ch);
@@ -730,6 +836,7 @@ void vc_channel_tick_ramp(struct vc_channel *ch, uint32_t dt_ms,
 			ch->output_enabled = false;
 			set_smf_state(ch, VC_CHANNEL_SMF_DISABLED_SAFE);
 		} else {
+			ch->recovering = false;
 			set_smf_state(ch, VC_CHANNEL_SMF_ENABLED_HOLDING);
 		}
 	}

@@ -257,6 +257,206 @@ ZTEST(vc_channel_state, test_current_protection_graceful_disable_ramps_to_zero)
 	zassert_false(ch.ramping);
 }
 
+/* ---- Automatic recovery ---- */
+
+static void arm_current_fault(struct vc_channel *ch, enum vc_recovery_policy_mode recovery)
+{
+	struct vc_channel_config cfg;
+
+	zassert_equal(vc_channel_set_cal_field(ch, VC_CAL_FIELD_MEASURED_I_K, 50000), VC_OK);
+
+	vc_channel_get_config(ch, &cfg);
+	cfg.configured_target_voltage = 5000;
+	cfg.current_limit_threshold = 100;
+	cfg.current_protection_mode = VC_PROTECTION_MODE_APPLY_OUTPUT_ACTION;
+	cfg.current_protection_output_action = VC_OUTPUT_ACTION_DISABLE_IMMEDIATE;
+	cfg.recovery_policy_mode = recovery;
+	cfg.auto_retry_delay = 1;
+	cfg.auto_retry_max_count = 3;
+	cfg.auto_retry_window = 60;
+	cfg.ramp_up_step = 5000;
+	cfg.ramp_up_interval = 1;
+	vc_channel_set_config(ch, &cfg);
+	vc_channel_output_action(ch, VC_OUTPUT_ACTION_ENABLE);
+	vc_channel_tick_ramp(ch, 1000, &default_sys);
+
+	vc_channel_consume_current(ch, 5000); /* measured = 250, exceeds threshold 100 */
+	zassert_true(ch->active_fault_cause & VC_FAULT_CURRENT);
+}
+
+ZTEST(vc_channel_state, test_recovery_stays_latched_in_normal_mode)
+{
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_RETRY);
+
+	for (int i = 0; i < 20; i++) {
+		vc_channel_run(&ch, 1000, &default_sys); /* default_sys = NORMAL mode */
+	}
+
+	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT,
+		     "Automatic-only recovery must never act in Normal mode");
+	zassert_false(ch.output_enabled);
+}
+
+ZTEST(vc_channel_state, test_recovery_stays_latched_with_manual_policy)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+
+	arm_current_fault(&ch, VC_RECOVERY_MANUAL_LATCH);
+
+	for (int i = 0; i < 20; i++) {
+		vc_channel_run(&ch, 1000, &auto_sys);
+	}
+
+	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT,
+		     "MANUAL_LATCH must never auto-retry even in Automatic mode");
+	zassert_false(ch.output_enabled);
+}
+
+ZTEST(vc_channel_state, test_recovery_ignores_non_current_fault)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+	struct vc_channel_config cfg;
+
+	vc_channel_get_config(&ch, &cfg);
+	cfg.recovery_policy_mode = VC_RECOVERY_AUTO_RETRY;
+	cfg.auto_retry_delay = 1;
+	cfg.auto_retry_max_count = 3;
+	cfg.auto_retry_window = 60;
+	vc_channel_set_config(&ch, &cfg);
+	vc_channel_output_action(&ch, VC_OUTPUT_ACTION_ENABLE);
+
+	vc_channel_consume_fault(&ch, VC_FAULT_HARDWARE);
+	zassert_true(ch.active_fault_cause & VC_FAULT_HARDWARE);
+
+	for (int i = 0; i < 20; i++) {
+		vc_channel_run(&ch, 1000, &auto_sys);
+	}
+
+	zassert_true(ch.active_fault_cause & VC_FAULT_HARDWARE,
+		     "hardware faults are never auto-recoverable, regardless of policy");
+	zassert_false(ch.output_enabled);
+}
+
+ZTEST(vc_channel_state, test_recovery_auto_retry_clears_fault_after_cooldown_and_safe_band)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_RETRY);
+	zassert_false(ch.output_enabled);
+
+	/* Still above the safe band (threshold 100, 10% band -> safe at <=90).
+	 * Ticking through the 1s cooldown must not clear the fault yet. */
+	for (int i = 0; i < 3; i++) {
+		vc_channel_run(&ch, 1000, &auto_sys);
+	}
+	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT,
+		     "still unsafe -- must not retry even after cooldown elapses");
+	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_RETRY_COOLDOWN);
+
+	/* Current drops to a safe level (raw 100 -> measured 5, well under 90). */
+	vc_channel_consume_current(&ch, 100);
+	vc_channel_run(&ch, 1000, &auto_sys);
+
+	zassert_equal(ch.active_fault_cause, 0, "safe now -- retry must clear the fault");
+	zassert_true(ch.output_enabled);
+	zassert_equal(ch.recovery_target, 5000, "AUTO_RETRY targets the full configured value");
+
+	/* Drive the recovery ramp to completion. */
+	for (int i = 0; i < 5; i++) {
+		vc_channel_run(&ch, 1000, &auto_sys);
+	}
+	zassert_equal(ch.operational_target_voltage, 5000);
+	zassert_false(ch.recovering);
+	zassert_equal(vc_channel_get_smf_state(&ch), VC_CHANNEL_SMF_ENABLED_HOLDING);
+}
+
+ZTEST(vc_channel_state, test_recovery_exhausts_after_max_retries)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_RETRY);
+	ch.config.auto_retry_max_count = 2;
+
+	for (int attempt = 0; attempt < 2; attempt++) {
+		vc_channel_consume_current(&ch, 100); /* safe */
+		vc_channel_run(&ch, 1000, &auto_sys);  /* cooldown elapses, retries */
+		zassert_equal(ch.active_fault_cause, 0,
+			      "attempt %d must succeed (under max count)", attempt);
+
+		/* Re-fault immediately so the next attempt has something to retry from. */
+		vc_channel_consume_current(&ch, 5000);
+		zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT);
+	}
+
+	/* Third attempt: max_count (2) already used up inside the window. */
+	vc_channel_consume_current(&ch, 100);
+	vc_channel_run(&ch, 1000, &auto_sys);
+
+	zassert_true(ch.active_fault_cause & VC_FAULT_RETRY_EXHAUST,
+		     "third attempt must exhaust and latch, not retry again");
+	zassert_true(ch.active_fault_cause & VC_FAULT_CURRENT);
+	zassert_false(ch.output_enabled);
+}
+
+ZTEST(vc_channel_state, test_recovery_window_expiry_resets_count)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+	struct vc_channel_snapshot snap;
+
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_RETRY);
+	ch.config.auto_retry_max_count = 1;
+	ch.config.auto_retry_window = 5; /* seconds */
+
+	vc_channel_consume_current(&ch, 100);
+	vc_channel_run(&ch, 1000, &auto_sys); /* first (and only allowed) retry */
+	zassert_equal(ch.active_fault_cause, 0);
+
+	vc_channel_get_snapshot(&ch, &snap);
+	zassert_equal(snap.auto_retry_count, 1);
+
+	/* Advance well past the 5s window with no further faults. */
+	for (int i = 0; i < 10; i++) {
+		vc_channel_run(&ch, 1000, &auto_sys);
+	}
+
+	vc_channel_get_snapshot(&ch, &snap);
+	zassert_equal(snap.auto_retry_count, 0,
+		      "retry timestamps older than the window must age out");
+}
+
+ZTEST(vc_channel_state, test_recovery_auto_derate_lowers_target_each_retry)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_DERATE_RETRY);
+	ch.config.auto_derate_step = 1000;
+	ch.config.auto_retry_max_count = 5;
+
+	vc_channel_consume_current(&ch, 100); /* safe */
+	vc_channel_run(&ch, 1000, &auto_sys);
+
+	zassert_equal(ch.active_fault_cause, 0);
+	zassert_equal(ch.recovery_target, 4000,
+		      "first derate retry = configured(5000) - 1*step(1000)");
+}
+
+ZTEST(vc_channel_state, test_recovery_auto_derate_exhausts_at_floor)
+{
+	struct vc_system_config auto_sys = { .operating_mode = VC_OPERATING_MODE_AUTOMATIC };
+
+	arm_current_fault(&ch, VC_RECOVERY_AUTO_DERATE_RETRY);
+	ch.config.configured_target_voltage = 1000;
+	ch.config.auto_derate_step = 2000; /* one derate step already exceeds the target */
+	ch.config.auto_retry_max_count = 5;
+
+	vc_channel_consume_current(&ch, 100); /* safe */
+	vc_channel_run(&ch, 1000, &auto_sys);
+
+	zassert_true(ch.active_fault_cause & VC_FAULT_RETRY_EXHAUST,
+		     "derating below zero must exhaust immediately, not retry at a negative target");
+	zassert_false(ch.output_enabled);
+}
+
 ZTEST(vc_channel_state, test_set_field_does_not_evaluate_protection_synchronously)
 {
 	/* A real Modbus write of mode+action+threshold lands as three separate
@@ -426,6 +626,16 @@ ZTEST(vc_channel_state, test_set_field_target_voltage)
 					   5000), VC_OK);
 	vc_channel_get_config(&ch, &cfg);
 	zassert_equal(cfg.configured_target_voltage, 5000);
+}
+
+ZTEST(vc_channel_state, test_set_field_rejects_retry_max_count_above_history_cap)
+{
+	zassert_equal(vc_channel_set_field(&ch, VC_FIELD_AUTO_RETRY_MAX_COUNT,
+					   CONFIG_VC_MAX_RETRY_HISTORY),
+		      VC_OK, "exactly at the cap must be accepted");
+	zassert_equal(vc_channel_set_field(&ch, VC_FIELD_AUTO_RETRY_MAX_COUNT,
+					   CONFIG_VC_MAX_RETRY_HISTORY + 1),
+		      VC_ERR_INVALID_VALUE, "above the cap must be rejected");
 }
 
 ZTEST(vc_channel_state, test_set_field_rejects_system_field)
