@@ -1,0 +1,20 @@
+sequenceDiagram
+  participant T as Technician
+  participant Tool as hvb_factory_tui
+  participant Board as Board (Modbus)
+
+  Note over T,Board: after cal exit-cal, mode = Normal
+
+  T->>Tool: ch <n>
+  T->>Tool: target <V>
+  Tool->>Board: write configured target voltage
+  T->>Tool: output on
+  Tool->>Board: enable output, ramp to target
+
+  T->>Tool: measure
+  Tool->>Board: read channel info
+  Tool-->>T: Vmeas / Imeas / target / status
+  T->>T: compare against reference meter
+
+  T->>Tool: output off
+  Tool->>Board: graceful disable

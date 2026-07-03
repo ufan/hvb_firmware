@@ -1,0 +1,40 @@
+sequenceDiagram
+  participant T as 技术员
+  participant Tool as hvb_factory_tui
+  participant Board as 板卡（Modbus）
+
+  T->>Tool: hvb_factory_tui -p /dev/ttyUSB0
+  Tool->>Board: 建立连接
+  Tool-->>T: "Connected to /dev/ttyUSB0 ..."
+
+  T->>Tool: cal unlock
+  Tool->>Board: 两步解锁，进入校准模式
+  Tool-->>T: "Calibration session started"
+
+  loop 对每个需要校准的通道
+    T->>Tool: cal ch <n>
+    T->>Tool: cal enable
+
+    loop 至少采集 2 个 DAC 点
+      T->>Tool: cal dac <code>
+      T->>Tool: cal sample
+      Tool->>Board: 触发采样并读取原始 ADC 值
+      Tool-->>T: dac / adc_v / adc_i
+      T->>T: 记录外部基准表读数
+    end
+
+    T->>T: 离线计算 k、b（线性拟合）
+
+    T->>Tool: cal coeff out <k> <b>
+    T->>Tool: cal coeff meas-v <k> <b>
+    T->>Tool: cal coeff meas-i <k> <b>
+    T->>Tool: cal coeff show
+    Tool-->>T: 确认各轴 K/B
+
+    T->>Tool: cal disable
+    T->>Tool: cal commit
+    Tool->>Board: 系数写入 NVS
+  end
+
+  T->>Tool: cal exit-cal
+  Tool->>Board: 恢复之前的工作模式

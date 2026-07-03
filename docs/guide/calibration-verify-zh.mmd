@@ -1,0 +1,20 @@
+sequenceDiagram
+  participant T as 技术员
+  participant Tool as hvb_factory_tui
+  participant Board as 板卡（Modbus）
+
+  Note over T,Board: 执行 cal exit-cal 后，模式 = Normal
+
+  T->>Tool: ch <n>
+  T->>Tool: target <V>
+  Tool->>Board: 写入目标电压
+  T->>Tool: output on
+  Tool->>Board: 使能输出，斜坡升至目标值
+
+  T->>Tool: measure
+  Tool->>Board: 读取通道信息
+  Tool-->>T: Vmeas / Imeas / target / status
+  T->>T: 与基准表读数比对
+
+  T->>Tool: output off
+  Tool->>Board: 平滑关断

@@ -1,0 +1,40 @@
+sequenceDiagram
+  participant T as Technician
+  participant Tool as hvb_factory_tui
+  participant Board as Board (Modbus)
+
+  T->>Tool: hvb_factory_tui -p /dev/ttyUSB0
+  Tool->>Board: connect
+  Tool-->>T: "Connected to /dev/ttyUSB0 ..."
+
+  T->>Tool: cal unlock
+  Tool->>Board: unlock step 1 + step 2, enter Calibration Mode
+  Tool-->>T: "Calibration session started"
+
+  loop for each channel to calibrate
+    T->>Tool: cal ch <n>
+    T->>Tool: cal enable
+
+    loop at least 2 DAC points
+      T->>Tool: cal dac <code>
+      T->>Tool: cal sample
+      Tool->>Board: sample + read raw ADC
+      Tool-->>T: dac / adc_v / adc_i
+      T->>T: read external reference meter
+    end
+
+    T->>T: compute k, b offline (linear fit)
+
+    T->>Tool: cal coeff out <k> <b>
+    T->>Tool: cal coeff meas-v <k> <b>
+    T->>Tool: cal coeff meas-i <k> <b>
+    T->>Tool: cal coeff show
+    Tool-->>T: confirm K/B per axis
+
+    T->>Tool: cal disable
+    T->>Tool: cal commit
+    Tool->>Board: save coefficients to NVS
+  end
+
+  T->>Tool: cal exit-cal
+  Tool->>Board: restore previous operating mode
