@@ -59,7 +59,6 @@ int main(int argc, char** argv) {
     cli::LoopScheduler sched;
     cli::CliLocalTerminalSession localSession(app, sched, std::cout);
     localSession.ExitAction([&sched, &session](auto& out) {
-        session.stopWatch();
         session.disconnect();
         out << "Goodbye.\n";
         sched.Stop();

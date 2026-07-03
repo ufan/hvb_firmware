@@ -2,6 +2,7 @@
 #include "register_map.h"
 
 #include <ModbusClientPort.h>
+#include <ModbusPort.h>
 #include <Modbus.h>
 
 #include <algorithm>
@@ -143,7 +144,33 @@ bool HvbModbusClient::readRegsInternal(bool holding, uint16_t addr, uint16_t cou
     return true;
 }
 
-bool HvbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uint16_t* values) {
+namespace {
+// RAII helper: temporarily overrides a ModbusPort's response timeout for the
+// duration of a single request, restoring the previous value on scope exit
+// (including early returns). No-op if port is null or override is negative.
+class ScopedPortTimeout {
+public:
+    ScopedPortTimeout(ModbusPort* port, int overrideMs) : m_port(nullptr) {
+        if (port && overrideMs >= 0) {
+            m_port = port;
+            m_saved = m_port->timeout();
+            m_port->setTimeout(static_cast<uint32_t>(overrideMs));
+        }
+    }
+    ~ScopedPortTimeout() {
+        if (m_port) m_port->setTimeout(m_saved);
+    }
+    ScopedPortTimeout(const ScopedPortTimeout&) = delete;
+    ScopedPortTimeout& operator=(const ScopedPortTimeout&) = delete;
+
+private:
+    ModbusPort* m_port;
+    uint32_t m_saved = 0;
+};
+} // namespace
+
+bool HvbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uint16_t* values,
+                                         int timeoutOverrideMs) {
     // Test mode — direct array access
     if (m_impl->testHoldingRegs) {
         if (addr + count > static_cast<uint16_t>(m_impl->testMaxAddr)) {
@@ -154,6 +181,7 @@ bool HvbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uin
         return true;
     }
     if (!checkConnected()) return false;
+    ScopedPortTimeout timeoutGuard(m_impl->port ? m_impl->port->port() : nullptr, timeoutOverrideMs);
     auto unit = static_cast<uint8_t>(m_impl->slaveId);
     for (uint16_t i = 0; i < count; i++) {
         // Non-blocking port: poll until the write request completes.
@@ -585,8 +613,15 @@ bool HvbModbusClient::writeRawDacCode(int ch, uint16_t code) {
 }
 
 bool HvbModbusClient::sendCalibrationSampleCommand(int ch) {
+    // The firmware blocks its Modbus response for up to
+    // CONFIG_VC_CAL_SAMPLE_TIMEOUT_MS (1000 ms default, see lib/voltage_control/
+    // Kconfig) while it waits for a fresh ADC reading, which can exceed the
+    // port's normal response timeout even though the device is healthy.
+    // Scope a longer timeout to just this one request so every other command
+    // keeps the fast default.
+    constexpr int kCalSampleTimeoutMs = 2000;
     uint16_t v = CAL_COMMAND_EXECUTE;
-    return writeRegsInternal(reg::chAddr(ch, CH_CAL_SAMPLE_CMD), 1, &v);
+    return writeRegsInternal(reg::chAddr(ch, CH_CAL_SAMPLE_CMD), 1, &v, kCalSampleTimeoutMs);
 }
 
 bool HvbModbusClient::sendCalibrationCommitCommand(int ch) {

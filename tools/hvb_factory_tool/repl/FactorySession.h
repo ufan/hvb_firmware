@@ -7,7 +7,6 @@
 #include <functional>
 #include <mutex>
 #include <string>
-#include <thread>
 
 namespace hvb::factory {
 
@@ -26,9 +25,12 @@ public:
     int activeChannel() const;
     void setActiveChannel(int ch);
 
-    WatchMode watchMode() const;
-    void startWatch(WatchMode mode, int intervalMs, std::ostream& out);
-    void stopWatch();
+    // Blocking: prints periodic updates until any key is pressed or the
+    // connection drops, then returns. Exclusively owns terminal input for
+    // its duration — safe because the cli library deactivates its own
+    // keyboard reader around command execution (see FactorySession.cpp).
+    // No other command can run while this is in progress.
+    void runWatch(WatchMode mode, int intervalMs, std::ostream& out);
 
     std::string lastError() const;
     std::mutex& clientMutex();
@@ -37,12 +39,7 @@ private:
     HvbModbusClient m_client;
     ConfigManager m_config;
     std::atomic<int> m_activeChannel{-1};
-    std::atomic<WatchMode> m_watchMode{WatchMode::Off};
-    std::atomic<bool> m_watchRunning{false};
-    std::thread m_watchThread;
     std::mutex m_clientMutex;
-
-    void watchLoop(WatchMode mode, int intervalMs, std::ostream& out);
 };
 
 } // namespace hvb::factory

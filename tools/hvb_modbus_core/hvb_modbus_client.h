@@ -83,7 +83,11 @@ private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
     bool readRegsInternal(bool holding, uint16_t addr, uint16_t count, uint16_t* out);
-    bool writeRegsInternal(uint16_t addr, uint16_t count, const uint16_t* values);
+    // timeoutOverrideMs >= 0 temporarily replaces the port's response timeout
+    // for just this request (restored afterward); -1 keeps the port's current
+    // timeout unchanged.
+    bool writeRegsInternal(uint16_t addr, uint16_t count, const uint16_t* values,
+                            int timeoutOverrideMs = -1);
     bool checkConnected();
 };
 

@@ -43,12 +43,9 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
     // there is deliberately no "connect" command here. Re-issuing "connect"
     // from within the REPL would race the already-open serial port and
     // couldn't succeed anyway (the port is held by this session's connection).
-    root->Insert("disconnect",
-        [&session](std::ostream& out) {
-            session.disconnect();
-            out << "Disconnected. Restart the tool to reconnect.\n";
-        },
-        "Disconnect from device (session cannot reconnect afterwards)");
+    // There is likewise no "disconnect" command: the session cannot reconnect
+    // afterwards, so exposing it only invites confusion. Use "exit"/"quit" or
+    // "sys reset" instead.
 
     root->Insert("info",
         [&session](std::ostream& out) {
@@ -109,6 +106,21 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
             });
         },
         "Output action on active channel", {"on|off|immed|zero"});
+
+    root->Insert("fault",
+        [&session](std::ostream& out, const std::string& action) {
+            requireCalChannel(session, out, [&] {
+                int ch = session.activeChannel();
+                ChannelFaultCommand cmd;
+                if      (action == "clear")         cmd = ChannelFaultCommand::ClearActiveFaultBlock;
+                else if (action == "clear-history") cmd = ChannelFaultCommand::ClearFaultHistory;
+                else { out << "Error: action must be clear|clear-history\n"; return; }
+                if (session.client().sendChannelFaultCommand(ch, cmd))
+                    out << "CH" << ch << " fault " << action << "\n";
+                else out << "Error: " << session.lastError() << "\n";
+            });
+        },
+        "Clear fault on active channel", {"clear|clear-history"});
 
     root->Insert("measure",
         [&session](std::ostream& out) {
@@ -187,7 +199,9 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
         },
         "Load configuration from NVS");
 
-    sysMenu->Insert("factory",
+    // Named "factory-reset" (not "factory") to avoid colliding with the root
+    // menu's own name ("factory>" prompt).
+    sysMenu->Insert("factory-reset",
         [&session](std::ostream& out) {
             requireConnected(session, out, [&] {
                 if (session.client().sendParamAction(-1, ParamAction::FactoryReset))
@@ -240,7 +254,6 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
     calMenu->Insert("exit-cal",
         [&session](std::ostream& out) {
             requireConnected(session, out, [&] {
-                session.stopWatch();
                 if (session.client().exitCalibrationMode())
                     out << "Exited calibration mode\n";
                 else
@@ -275,7 +288,6 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                     session.client().writeRawDacCode(ch, 0);
                     session.client().writeCalibrationOutputEnable(ch, false);
                 }
-                session.stopWatch();
                 out << "All calibration outputs disabled, DAC zeroed\n";
             });
         },
@@ -403,39 +415,41 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
         },
         "Show current coefficients", {"show"});
 
+    // Watch is blocking and exclusive: it takes over the terminal and runs
+    // until any key is pressed (or the device disconnects), during which no
+    // other command can be entered. There is no "watch off" — pressing any
+    // key is how you stop it.
     calMenu->Insert("watch",
         [&session](std::ostream& out, const std::string& mode) {
-            if (mode == "off") { session.stopWatch(); out << "Watch stopped\n"; return; }
             requireCalChannel(session, out, [&] {
                 WatchMode wm = WatchMode::Off;
                 if (mode == "adc") wm = WatchMode::Adc;
                 else if (mode == "measure") wm = WatchMode::Measure;
                 else if (mode == "status") wm = WatchMode::Status;
                 else if (mode == "all") wm = WatchMode::All;
-                else { out << "Error: mode must be adc|measure|status|all|off\n"; return; }
-                session.startWatch(wm, 1000, out);
-                out << "Watch " << mode << " started (1s)\n";
+                else { out << "Error: mode must be adc|measure|status|all\n"; return; }
+                out << "Watch " << mode << " (1s)\n";
+                session.runWatch(wm, 1000, out);
             });
         },
-        "Start/stop periodic watch", {"adc|measure|status|all|off"});
+        "Run periodic watch until any key is pressed", {"adc|measure|status|all"});
 
     calMenu->Insert("watch",
         [&session](std::ostream& out, const std::string& mode, const std::string& interval) {
-            if (mode == "off") { session.stopWatch(); out << "Watch stopped\n"; return; }
             requireCalChannel(session, out, [&] {
                 WatchMode wm = WatchMode::Off;
                 if (mode == "adc") wm = WatchMode::Adc;
                 else if (mode == "measure") wm = WatchMode::Measure;
                 else if (mode == "status") wm = WatchMode::Status;
                 else if (mode == "all") wm = WatchMode::All;
-                else { out << "Error: mode must be adc|measure|status|all|off\n"; return; }
+                else { out << "Error: mode must be adc|measure|status|all\n"; return; }
                 int ms = parseIntervalMs(interval);
                 if (ms <= 0) { out << "Error: invalid interval\n"; return; }
-                session.startWatch(wm, ms, out);
-                out << "Watch " << mode << " started (" << interval << ")\n";
+                out << "Watch " << mode << " (" << interval << ")\n";
+                session.runWatch(wm, ms, out);
             });
         },
-        "Start periodic watch with interval", {"adc|measure|status|all|off", "interval"});
+        "Run periodic watch with interval until any key is pressed", {"adc|measure|status|all", "interval"});
 
     root->Insert(std::move(calMenu));
     return root;
