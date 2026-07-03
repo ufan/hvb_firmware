@@ -17,7 +17,7 @@ build_*/
 .superpowers/
 twister-out*
 tools/bin
-tools/hvb_demo_app/deploy/
+tools/deploy/
 reports
 __pycache__
 .qtcreator
