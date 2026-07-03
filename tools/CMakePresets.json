@@ -50,7 +50,7 @@
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_GUI": "OFF",
         "BUILD_SHARED_LIBS": "OFF",
-        "BUILD_FACTORY": "OFF"
+        "BUILD_FACTORY": "ON"
       }
     }
   ]

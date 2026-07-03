@@ -99,6 +99,21 @@ if(BUILD_FACTORY)
         GIT_TAG v2.2.0
     )
     FetchContent_MakeAvailable(daniele77cli)
+
+    # Workaround: cli/detail/rang.h includes <VersionHelpers.h> (Win32's
+    # mixed-case convention) but MinGW headers on case-sensitive Linux
+    # filesystems are lowercase (<versionhelpers.h>) — same class of issue
+    # as the ModbusLib case-fixes above.
+    if(MINGW)
+        set(DANIELE77CLI_CASE_DIR "${CMAKE_BINARY_DIR}/mingw-case-includes")
+        file(MAKE_DIRECTORY "${DANIELE77CLI_CASE_DIR}")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+            "/usr/x86_64-w64-mingw32/include/versionhelpers.h"
+            "${DANIELE77CLI_CASE_DIR}/VersionHelpers.h"
+        )
+        include_directories(BEFORE SYSTEM "${DANIELE77CLI_CASE_DIR}")
+    endif()
 endif()
 
 add_subdirectory(hvb_modbus_core)
