@@ -683,3 +683,5 @@ struct sys_status_snapshot {
 - **Shell Reference**: `docs/guide/shell-reference.md` — complete `vc`, `mb`, `ss` command tree
 - **Modbus Register Map**: `docs/guide/modbus-reference.md` — protocol v3.0 register layout
 - **Calibration Guide**: `docs/guide/calibration-guide.md` — factory calibration procedure
+- **Demo TUI Guide**: `docs/guide/demo-tui-guide.md` — interactive monitoring/control dashboard user guide
+- **Operating Mode Guide**: `docs/guide/operating-mode-guide.md` — Normal vs. Automatic mode, protection and recovery policy
