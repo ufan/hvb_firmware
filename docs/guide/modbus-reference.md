@@ -1,298 +1,560 @@
 # Modbus Register Reference — Jianwei Voltage-Control Board
 
-## Protocol Overview
+This is the authoritative wire-protocol reference for the Jianwei
+voltage-control board: transport, register map, encoding, and enumerations.
+It's written for **third-party developers implementing their own host
+tooling** (not reusing `tools/hvb_modbus_core`) — no familiarity with this
+repo's C++ code is assumed. If you *are* working in this repo, the register
+offsets below are generated from `include/reg_store/reg_map.h` and
+`include/reg_store/modbus_view.def`, which remain the single source of
+truth; this document should never drift from them.
 
-- **Protocol version:** 3.0
-- **Transport:** Modbus RTU over RS-485 (USART6)
-- **Default slave address:** 1 (configurable 1–247)
-- **Default baud:** 115200 (configurable: 9600)
-- **Parity:** None (8N1)
-- **All registers:** 16-bit (UINT16 or INT16)
-- **32-bit values:** Split across consecutive HI (MSW) / LO (LSW) register pairs
+Related documents, once you have a working connection:
+[`calibration-guide.md`](calibration-guide.md) (factory calibration
+workflow), [`operating-mode-guide.md`](operating-mode-guide.md) (Normal vs.
+Automatic mode, protection/recovery semantics),
+[`parameter-reference.md`](parameter-reference.md) (field-by-field defaults
+and derivations). This document does not repeat product *behavior* — only
+the wire format needed to talk to it.
 
-### Backing Store
+---
 
-All Modbus registers are dispatched through a centralized **Register Catalog** (`lib/reg_store/reg_catalog.c`) — a descriptor-based catalog with owner vtables. Each register is keyed by a semantic ID (`REG_ID(module, instance, field)`). Reads are non-blocking; writes block until the VC runtime worker thread processes the command. This decouples the protocol adapter from domain logic.
+## 1. Protocol overview
 
-## Register Block Layout
+| | |
+|---|---|
+| Protocol version | **3.0** (`Protocol Major`=3, `Protocol Minor`=0 — read and check before interpreting anything else) |
+| Transport | Modbus RTU |
+| Physical layer | RS-485 half-duplex (current variants) |
+| Serial format | 8N1 |
+| Baud rate | 115200 default, 9600 alternate (runtime-selectable, see §5) |
+| Slave address | 1 default, runtime-selectable 1–247; 0 is the broadcast address |
+| Function codes | 0x03 (Read Holding), 0x04 (Read Input), 0x06 (Write Single Holding) — that's all; no FC10, no coils/discrete inputs |
+
+**A major version mismatch means incompatible registers — do not proceed.**
+Protocol 3 is a breaking change from protocol 2 (different offsets, removed
+and added registers throughout); a client built against this document must
+refuse to talk to a board reporting `Protocol Major` ≠ 3. A minor-version
+bump is additive only (new registers in previously-reserved space); it's
+safe to ignore fields you don't recognize.
+
+---
+
+## 2. Transport framing
+
+Standard Modbus RTU framing applies — nothing board-specific here, but
+spelled out for implementers who haven't built an RTU client before:
+
+- Frame: `[slave addr: 1B] [function code: 1B] [data: N bytes] [CRC16: 2B]`
+- CRC16 is the standard Modbus CRC (poly `0xA001`, init `0xFFFF`, LSB-first
+  in the frame — i.e. CRC low byte transmitted before CRC high byte). Any
+  standard Modbus CRC16 implementation works; it is not board-specific.
+- Register values are big-endian on the wire (high byte first), standard
+  Modbus convention.
+- A frame boundary is a silence of ≥3.5 character times on the wire — the
+  usual RTU inter-frame gap. If you're using an off-the-shelf RTU
+  master library (e.g. `libmodbus`, `pymodbus`, ModbusLib), it already
+  handles this; you only need the register map below.
+- **RS-485 half-duplex**: the board's driver-enable timing is handled
+  firmware-side: don't add your own extra inter-request delay beyond normal
+  RTU turnaround unless your USB-RS485 adapter needs it.
+- **Broadcast** (slave address 0): write-only, no response is sent. Reads
+  addressed to 0 are not meaningful and should not be sent.
+
+Everything below describes the **PDU** (data field) contents — register
+addresses, encoding, and semantics — which is transport-agnostic.
+
+---
+
+## 3. Data conventions
+
+- **All registers are single 16-bit words** (`UINT16` or `INT16`,
+  two's-complement for signed). There is no register wider than 16 bits at
+  the wire level.
+- **32-bit values** (uptime, firmware version, fault timestamp, raw ADC
+  codes) are split across two consecutive registers, `_HI` then `_LO`, at
+  addresses `N` and `N+1`: `value = (HI << 16) | LO`. Raw ADC values are
+  signed 32-bit (sign-extend after combining).
+- **Voltage**: raw register value × **0.1 V/LSB** (i.e. ×100 mV). Raw 5000
+  = 500.0 V. This applies uniformly to every voltage-flavored register
+  (configured target, operational target, measured voltage, ramp steps).
+- **Current**: raw register value × **0.1 nA/LSB**. Raw 10000 = 1000.0 nA.
+  This applies to current threshold and measured-current registers.
+- **Time intervals**: raw × 0.1 = seconds (i.e. raw is deciseconds — "×10"
+  in field names below means the raw value is ten times the second count).
+  Delay/window fields (auto-retry delay, window) are already in whole
+  seconds with no ×10 factor — check the per-field description, the
+  convention differs between "interval" and "delay/window" fields.
+- **Percentages**: plain `UINT16`, e.g. 10 = 10%. Not scaled.
+- **Calibration coefficients**: see §9's dedicated formula — the divisor
+  differs between the output axis and the two measurement axes, and is not
+  the simple ×0.1 pattern used elsewhere.
+- **Reserved registers**: always read as `0`, always reject writes with
+  exception `0x02`. Never assume a meaning for a reserved offset, even if
+  it happens to read back a non-zero value on some firmware build — that
+  would be a firmware bug, not a documented behavior to depend on.
+
+---
+
+## 4. Address space
 
 ```
-Offset  Block           Type        Size
-0       System          Input       40
-0       System          Holding     40
-40      Channel 0       Input       40
-40      Channel 0       Holding     40
-80      Channel 1       Input       40
-80      Channel 1       Holding     40
-120     Channel 2       Input       40
-120     Channel 2       Holding     40
+0      System block            input + holding, 40 registers
+40     Channel 0 block         input + holding, 40 registers
+80     Channel 1 block         input + holding, 40 registers
+120    Channel 2 block         input + holding, 40 registers  (reserved on 2-channel variants)
 ...
-640     Channel 15      Input       40
-640     Channel 15      Holding     40
-680     Extension       Holding     80
+640    Channel 15 block        input + holding, 40 registers  (protocol max; reserved unless present)
+680    Extension block         holding only, 80 registers
 ```
 
-Channel base address formula: `CH_BASE(ch) = 40 + ch × 40`
-
-Extension block base: `EXT_BASE = 40 + 16 × 40 = 680`
-
-## System Input Block (FC04, offsets 0–39)
-
-| Offset | Register | Type | Description |
-|--------|----------|------|-------------|
-| 0 | Protocol Major | uint16 | Major version (3) |
-| 1 | Protocol Minor | uint16 | Minor version (0) |
-| 2 | Variant ID | uint16 | Board variant identifier |
-| 3 | Capability Flags | uint16 | `0x0001`=AUTO, `0x0002`=ENV_SENSOR, `0x0004`=CAL |
-| 4 | Supported Channels | uint16 | Number of addressable channels |
-| 5 | Active Channel Mask | uint16 | Bitmask of present channels |
-| 6 | Board Temperature | int16 | Deci-°C (e.g. 255 = 25.5°C) |
-| 7 | Board Humidity | uint16 | Deci-%RH (e.g. 450 = 45.0%) |
-| 8 | Uptime HI | uint16 | Uptime seconds, high word |
-| 9 | Uptime LO | uint16 | Uptime seconds, low word |
-| 10 | FW Version HI | uint16 | Firmware version, major |
-| 11 | FW Version LO | uint16 | Firmware version, minor |
-| 12 | Operating Mode | uint16 | 0=Normal, 1=Automatic, 2=Calibration |
-| 13 | System Status | uint16 | System status bitmask |
-| 14 | Fault Cause | uint16 | System fault bitmask |
-| 15–39 | Reserved | — | — |
-
-## System Holding Block (FC03/FC06, offsets 0–39)
-
-| Offset | Register | R/W | Description |
-|--------|----------|-----|-------------|
-| 0 | Operating Mode | R/W | Set operating mode (0=N, 1=A, 2=C) |
-| 1 | Startup Channel Policy | R/W | 0=load from NVS, 1=factory reset op-config |
-| 2 | Slave Address | R/W | Modbus slave address (1–247) |
-| 3 | Baud Rate Code | R/W | 0=115200, 1=9600 |
-| 4–38 | Reserved | — | — |
-| 39 | Param Action | W | 1=Save, 2=Load, 3=Factory Reset |
-
-### Changing Slave Address / Baud Rate
-
 ```
-1. Write new value to SYS_SLAVE_ADDRESS (offset 2) and/or SYS_BAUD_RATE_CODE (offset 3)
-2. Write 1 (SAVE) to SYS_PARAM_ACTION (offset 39) to persist + apply
-3. Reconnect using new settings (Modbus server restarts immediately)
+CH_BASE(ch) = 40 + ch × 40
+EXT_BASE    = 40 + 16 × 40 = 680
 ```
 
-## Channel Input Block (FC04, base CH_BASE(ch))
+The protocol always reserves address space for 16 channels regardless of
+what any particular board variant actually populates. **Read `Supported
+Channels` and `Active Channel Mask` (§6) before assuming any channel beyond
+0 exists** — accessing an unsupported channel's block returns exception
+`0x02` for every register in it, not zeroed/dummy data.
 
-| Offset | Register | Type | Capability Guard | Description |
-|--------|----------|------|-------------------|-------------|
-| 0 | Status Bits | uint16 | — | Channel status bitmask |
-| 1 | Active Fault Cause | uint16 | — | Active blocking fault bitmask |
-| 2 | Fault History Cause | uint16 | — | Recorded fault history bitmask |
-| 3 | Last Prot Out Action | uint16 | — | Last protection output action applied |
-| 4 | Auto Retry Count | uint16 | — | Auto-retry attempt counter |
-| 5 | Auto Cooldown Remaining | uint16 | — | Cooldown seconds remaining |
-| 6 | Last Fault Timestamp HI | uint16 | — | Last fault timestamp, high word |
-| 7 | Last Fault Timestamp LO | uint16 | — | Last fault timestamp, low word |
-| 8 | Oper Target Voltage | int16 | — | Operational target voltage (mV) |
-| 9 | Capability Flags | uint16 | — | Channel capability bitmask |
-| 10 | Measured Voltage | int16 | VOLTAGE_MEASUREMENT | Calibrated voltage (×100 mV) |
-| 11 | Measured Current | int16 | CURRENT_MEASUREMENT | Calibrated current (×0.1 nA) |
-| 12 | Raw ADC Voltage HI | int32 | VOLTAGE_MEASUREMENT | Raw ADC voltage, high word |
-| 13 | Raw ADC Voltage LO | int32 | VOLTAGE_MEASUREMENT | Raw ADC voltage, low word |
-| 14 | Raw ADC Current HI | int32 | CURRENT_MEASUREMENT | Raw ADC current, high word |
-| 15 | Raw ADC Current LO | int32 | CURRENT_MEASUREMENT | Raw ADC current, low word |
-| 16–39 | Reserved | — | — | — |
+---
 
-## Channel Holding Block (FC03/FC06, base CH_BASE(ch))
+## 5. Getting started — recommended bring-up sequence
 
-### Commands (offset 0–2)
+A minimal client implementation should, in order:
 
-| Offset | Register | R/W | Description |
-|--------|----------|-----|-------------|
-| 0 | Output Action | W | 1=Enable, 2=Disable Graceful, 3=Disable Immediate |
-| 1 | Fault Command | W | 1=Clear Active, 2=Clear History |
-| 2 | Param Action | W | 1=Save, 2=Load, 3=Factory Reset |
+1. Connect at 115200 8N1, slave address 1 (the universal defaults — override
+   only if you already know the board was reconfigured).
+2. **FC04 read System Input offsets 0–1** (`Protocol Major`/`Minor`).
+   Refuse to continue if `Major` ≠ 3.
+3. **FC04 read System Input offsets 2–5** (`Variant ID`, `System Capability
+   Flags`, `Supported Channels`, `Active Channel Mask`). Use these to decide
+   which channel blocks and which system-level features (Automatic mode,
+   environment sensor, Calibration mode) are meaningful for this board —
+   don't hardcode "2 channels" even though that's the only shipping variant
+   today.
+4. **Per active channel, FC04 read Channel Input offset 9** (`Capability
+   Flags`) before touching any capability-gated register (§10) on that
+   channel. A register whose guard capability is absent returns exception
+   `0x02` for both read and write — this is not a soft "returns zero"
+   fallback.
+5. From here, poll or write as needed. Use the **poll category** noted per
+   register (§6/§9/§10) to decide polling cadence: `REALTIME` fields change
+   continuously and are safe to poll fast (~100 ms+); `CONFIG` fields only
+   change when you or another client writes them — poll slowly or read
+   on-demand; `FIXED` fields never change after boot — read once; `COMMAND`
+   registers are write-only triggers — never poll them.
 
-### Operational Config (offset 3–16)
+### Self-clearing commands are synchronous
 
-| Offset | Register | R/W | Capability Guard | Description |
-|--------|----------|-----|-------------------|-------------|
-| 3 | Target Voltage | R/W | RAW_OUTPUT_DRIVE | Configured target (mV) |
-| 4 | Ramp Up Step | R/W | RAW_OUTPUT_DRIVE | mV per interval |
-| 5 | Ramp Up Interval | R/W | RAW_OUTPUT_DRIVE | ×100 ms |
-| 6 | Ramp Down Step | R/W | RAW_OUTPUT_DRIVE | mV per interval |
-| 7 | Ramp Down Interval | R/W | RAW_OUTPUT_DRIVE | ×100 ms |
-| 8 | Recovery Policy Mode | R/W | — | 0=Manual, 1=Retry, 2=Derate, 3=Never |
-| 9 | Auto Retry Delay | R/W | — | Seconds |
-| 10 | Auto Retry Max Count | R/W | — | Max attempts |
-| 11 | Auto Retry Window | R/W | — | Seconds |
-| 12 | Current Safe Band % | R/W | — | 0–100% below limit for clear eligibility |
-| 13 | Current Protection Mode | R/W | CURRENT_MEASUREMENT | 0=Off, 1=Flag Only, 2=Apply Action |
-| 14 | Current Prot Out Action | R/W | CURRENT_MEASUREMENT | Protection action (see enum) |
-| 15 | Current Limit Threshold | R/W | CURRENT_MEASUREMENT | ×0.1 nA (compared against Measured Current, same unit) |
-| 16 | Auto Derate Step | R/W | OUTPUT+V_MEAS | mV per derate step |
-| 17–19 | Reserved | — | — | — |
+Command registers (Output Action, Fault Command, Param Action, the
+calibration session commands) execute **before the FC06 write response is
+sent** — the board's command dispatch blocks the write until the underlying
+action completes. A command register always reads back `0` immediately
+after a successful write; you do not need to poll-wait for it to clear.
+If a write to a command register returns a Modbus exception, the command
+was rejected outright and had no effect.
 
-### Calibration Coefficients (offset 20–25)
+---
 
-Readable in any mode. Writable only in Calibration mode.
+## 6. System Input Block (FC04, offsets 0–39)
 
-| Offset | Register | R/W | Guard | Description |
-|--------|----------|-----|-------|-------------|
-| 20 | Output Cal K | R/W/CAL | RAW_OUTPUT_DRIVE | DAC gain (÷10000, default 10000) |
-| 21 | Output Cal B | R/W/CAL | RAW_OUTPUT_DRIVE | DAC offset (default 0) |
-| 22 | Measured V Cal K | R/W/CAL | VOLTAGE_MEASUREMENT | Voltage gain (÷1000000; unity not representable) |
-| 23 | Measured V Cal B | R/W/CAL | VOLTAGE_MEASUREMENT | Voltage offset (×100 mV) |
-| 24 | Measured I Cal K | R/W/CAL | CURRENT_MEASUREMENT | Current gain (÷1000000; unity not representable) |
-| 25 | Measured I Cal B | R/W/CAL | CURRENT_MEASUREMENT | Current offset (×0.1 nA) |
+| Offset | Register | Type | Poll | Description |
+|---:|---|---|---|---|
+| 0 | Protocol Major | UINT16 | FIXED | Always check this first — see §1 |
+| 1 | Protocol Minor | UINT16 | FIXED | Additive-only within a major version |
+| 2 | Variant ID | UINT16 | FIXED | Board/product variant identifier (§14) |
+| 3 | Capability Flags | UINT16 | FIXED | `0x0001`=Automatic mode, `0x0002`=env sensor, `0x0004`=Calibration mode — see §12 |
+| 4 | Supported Channels | UINT16 | FIXED | Number of channels this variant addresses |
+| 5 | Active Channel Mask | UINT16 | REALTIME | Bit N set ⇒ channel N addressable right now |
+| 6 | Board Temperature | INT16 | REALTIME | ×0.1 °C; 0 if no environment sensor |
+| 7 | Board Humidity | UINT16 | REALTIME | ×0.1 %RH; 0 if no environment sensor |
+| 8–9 | Uptime HI/LO | UINT32 | REALTIME | Seconds since boot |
+| 10–11 | FW Version HI/LO | UINT32 | FIXED | Packed 32-bit; current firmware sets HI=major, LO=minor as separate 16-bit values, not a semantic version string |
+| 12 | Active Operating Mode | UINT16 | REALTIME | See §11.1 |
+| 13 | System Status | UINT16 | REALTIME | Global status bitmask (product-reserved; no bits currently defined) |
+| 14 | Fault Cause | UINT16 | REALTIME | Global fault summary, same bit layout as channel fault cause (§13) |
+| 15–39 | Reserved | — | — | Read as 0, reject writes |
 
-### Calibration Session (offset 30–34)
+---
 
-Writable only in Calibration mode.
+## 7. System Holding Block (FC03/FC06, offsets 0–39)
 
-| Offset | Register | R/W | Guard | Description |
-|--------|----------|-----|-------|-------------|
-| 30 | Cal Output Enable | W/CAL | RAW_OUTPUT_DRIVE | 1=On, 0=Off |
-| 31 | Cal DAC Code | W/CAL | RAW_OUTPUT_DRIVE | Raw DAC value (0–65535) |
-| 32 | Cal Sample Cmd | W/CAL | V\_or\_I\_MEAS | Write 1 to trigger ADC sample |
-| 33 | Cal Commit Cmd | W/CAL | Any cal cap | Write 1 to persist to NVS |
-| 34 | Cal Max Raw DAC Limit | R/W/CAL | RAW_OUTPUT_DRIVE | DAC ceiling (default 65535) |
+| Offset | Register | Access | Poll | Description |
+|---:|---|---|---|---|
+| 0 | Operating Mode | RW | CONFIG | 0=Normal, 1=Automatic, 2=Calibration — see §11.1. Entering Calibration requires the unlock sequence (§8) first |
+| 1 | Startup Channel Policy | RW | CONFIG | 0=load channel config from NVS at boot, 1=apply factory-default op-config at boot |
+| 2 | Slave Address | RW | CONFIG | 1–247. Writing this does **not** apply immediately — see procedure below |
+| 3 | Baud Rate Code | RW | CONFIG | 0=115200, 1=9600. Same apply-on-reset caveat as Slave Address |
+| 4–38 | Reserved | — | — | Read as 0, reject writes |
+| 39 | Param Action | RW | COMMAND | 1=Save, 2=Load, 3=Factory Reset, 255=Software Reset — see §11.4 |
 
-## Extension Holding Block (FC03/FC06, offsets 680–759)
+### Changing slave address or baud rate
 
-The extension block starts at absolute Modbus address 680 (0-based).
+```
+1. FC06 write new value to offset 2 (Slave Address) and/or offset 3 (Baud Rate Code)
+2. FC06 write 1 (Save) to offset 39 (Param Action)
+3. The change is persisted immediately but the live Modbus interface keeps
+   running at the OLD address/baud until the next reset or power cycle.
+4. Reset (Param Action = 255, or power-cycle), then reconnect using the NEW
+   address/baud.
+```
 
-| Offset | Register | Description |
-|--------|----------|-------------|
-| 680 | Cal Unlock | Write `0xCA1B` then `0xA11B` to unlock calibration mode |
-| 681 | Cal Exit | Write `1` to exit calibration mode |
-| 682–759 | Reserved | — |
+Writing offset 2/3 without a subsequent Save is lost on reset — these two
+registers by themselves only stage the value; `Param Action = Save` is what
+actually persists it to NVS.
 
-## Modbus Error Codes
+---
 
-| Code | Name | Condition |
-|------|------|-----------|
-| 1 | Illegal Function | Unimplemented function code |
-| 2 | Illegal Address | Unsupported channel, capability-guarded register, or out-of-range address |
-| 3 | Illegal Value | Invalid field value, unsafe state, or invalid command |
-| 4 | Device Failure | Storage error or internal failure |
+## 8. Extension Holding Block (FC03/FC06, offsets 680–759)
 
-## Enum Values
+| Offset | Abs | Register | Access | Description |
+|---:|---:|---|---|---|
+| 0 | 680 | Calibration Unlock | RW | Two-step unlock — see below. Always reads back 0 |
+| 1 | 681 | Calibration Exit | RW | Write 1 to exit Calibration mode and restore the operating mode that was active before entry |
+| 2–79 | 682–759 | Reserved | R | Read as 0, reject writes |
 
-### Operating Mode
+**Calibration Unlock sequence** (a volatile guard, not cryptographic
+authentication — it exists to prevent a stray/accidental write from putting
+a board into Calibration mode):
+
+```
+1. FC06 write 0xCA1B to offset 680
+2. FC06 write 0xA11B to offset 680
+3. FC06 write 2 (Calibration) to System Holding offset 0 (Operating Mode)
+```
+
+Any wrong value at step 1 or 2 resets unlock progress to zero — you must
+restart from step 1. Successfully entering Calibration mode (step 3) also
+resets unlock progress, so re-entering after an exit requires unlocking
+again. Calibration mode itself is volatile: it is never the mode restored
+on the next boot, regardless of what was active when the board was
+power-cycled while calibrating.
+
+---
+
+## 9. Channel Input Block (FC04, base `CH_BASE(ch)`, offsets 0–39)
+
+| Offset | Register | Type | Poll | Guard | Description |
+|---:|---|---|---|---|---|
+| 0 | Status Bits | UINT16 | REALTIME | — | See §13.1 |
+| 1 | Active Fault Cause | UINT16 | REALTIME | — | Fault bits currently blocking operation; see §13.2 |
+| 2 | Fault History Cause | UINT16 | REALTIME | — | Fault bits observed since the last history clear |
+| 3 | Last Protection Output Action | UINT16 | REALTIME | — | See §11.2 |
+| 4 | Auto Retry Count | UINT16 | REALTIME | — | Retries counted inside the current sliding retry window |
+| 5 | Auto Cooldown Remaining | UINT16 | REALTIME | — | Seconds until a retry is next allowed, 0 if not cooling down |
+| 6–7 | Last Fault Timestamp HI/LO | INT32 | REALTIME | — | Board uptime (seconds) when the last fault was recorded |
+| 8 | Operational Target Voltage | INT16 | REALTIME | — | Live target, ramps toward Configured Target Voltage; ×0.1 V |
+| 9 | Capability Flags | UINT16 | FIXED | — | Read this before touching any guarded register on this channel — see §12.2 |
+| 10 | Measured Voltage | INT16 | REALTIME | VOLTAGE_MEASUREMENT | Calibrated, ×0.1 V |
+| 11 | Measured Current | INT16 | REALTIME | CURRENT_MEASUREMENT | Calibrated, ×0.1 nA |
+| 12–13 | Raw ADC Voltage HI/LO | INT32 | REALTIME | VOLTAGE_MEASUREMENT | Uncalibrated ADC code — only meaningful in Calibration mode |
+| 14–15 | Raw ADC Current HI/LO | INT32 | REALTIME | CURRENT_MEASUREMENT | Uncalibrated ADC code — only meaningful in Calibration mode |
+| 16–39 | Reserved | — | — | — | Read as 0, reject writes |
+
+## 10. Channel Holding Block (FC03/FC06, base `CH_BASE(ch)`, offsets 0–39)
+
+### Commands (offsets 0–2)
+
+| Offset | Register | Poll | Description |
+|---:|---|---|---|
+| 0 | Output Action | COMMAND | See §11.2 for valid values and host/protection context rules |
+| 1 | Fault Command | COMMAND | 1=Clear Active Fault Block, 2=Clear Fault History — see §11.3 |
+| 2 | Param Action | COMMAND | 1=Save, 2=Load, 3=Factory Reset for this channel only. **255 (Software Reset) is invalid here** — that's a system-block-only value; sending it at the channel level returns exception `0x03` |
+
+### Operational configuration (offsets 3–16)
+
+| Offset | Register | Guard | Description |
+|---:|---|---|---|
+| 3 | Configured Target Voltage | RAW_OUTPUT_DRIVE | ×0.1 V. What the channel ramps toward when enabled |
+| 4 | Ramp Up Step | RAW_OUTPUT_DRIVE | ×0.1 V per interval |
+| 5 | Ramp Up Interval | RAW_OUTPUT_DRIVE | ×0.1 s per step (deciseconds) |
+| 6 | Ramp Down Step | RAW_OUTPUT_DRIVE | ×0.1 V per interval |
+| 7 | Ramp Down Interval | RAW_OUTPUT_DRIVE | ×0.1 s per step |
+| 8 | Recovery Policy Mode | — | 0=ManualLatch, 1=AutoRetry, 2=AutoDerateRetry, 3=NeverRetry — see §11.5 |
+| 9 | Auto Retry Delay | — | Seconds (no ×10 — whole seconds), cooldown before a retry attempt |
+| 10 | Auto Retry Max Count | — | Max retries allowed inside the sliding window before latching `RETRY_EXHAUST` |
+| 11 | Auto Retry Window | — | Seconds (no ×10), sliding-window width for counting retries |
+| 12 | Current Safe Band % | — | `UINT16` percent. Firmware does not range-clamp this field; 0–50 is the conventional/documented range (see `parameter-reference.md`) and values above 100 make the clear-eligibility formula (`threshold × (100−pct)/100`) go negative |
+| 13 | Current Protection Mode | CURRENT_MEASUREMENT | 0=Disabled, 1=FlagOnly, 2=ApplyOutputAction — see §11.6 |
+| 14 | Current Protection Output Action | CURRENT_MEASUREMENT | Same enum as offset 0, evaluated in **Protection** context (§11.2) |
+| 15 | Current Limit Threshold | CURRENT_MEASUREMENT | ×0.1 nA, compared directly against Measured Current |
+| 16 | Auto Derate Step | RAW_OUTPUT_DRIVE + VOLTAGE_MEASUREMENT | ×0.1 V subtracted from target per retry attempt under AutoDerateRetry |
+| 17–19 | Reserved | — | Read as 0, reject writes |
+
+### Calibration coefficients (offsets 20–25)
+
+Readable in any mode. **Writable only in Calibration mode** — a write
+attempt outside Calibration mode returns exception `0x03`.
+
+| Offset | Register | Guard | Description |
+|---:|---|---|---|
+| 20 | Output Cal K | RAW_OUTPUT_DRIVE | `UINT16`, ÷10000 — see §9 formula. Default 32768 |
+| 21 | Output Cal B | RAW_OUTPUT_DRIVE | `INT16`, raw offset in DAC-code units. Default 0 |
+| 22 | Measured Voltage Cal K | VOLTAGE_MEASUREMENT | `UINT16`, ÷1000000 — see §9 formula |
+| 23 | Measured Voltage Cal B | VOLTAGE_MEASUREMENT | `INT16`, raw offset in ×0.1 V units |
+| 24 | Measured Current Cal K | CURRENT_MEASUREMENT | `UINT16`, ÷1000000 — see §9 formula |
+| 25 | Measured Current Cal B | CURRENT_MEASUREMENT | `INT16`, raw offset in ×0.1 nA units |
+| 26–29 | Reserved | — | Read as 0, reject writes |
+
+**Calibration formula:** `calibrated = raw × K / D + B`, where `raw` is the
+uncalibrated ADC code (measurement axes) or the target value being converted
+to a DAC code (output axis), and `D` is **10000 for the output axis** or
+**1000000 for both measurement axes**. The measurement axes need the finer
+divisor because they scale down a small, attenuated raw ADC gain — unity
+gain (1.0×) isn't representable there (max representable is 65535/1000000 ≈
+0.0655); see [`parameter-reference.md`](parameter-reference.md) for the full
+derivation. Full calibration walkthrough:
+[`calibration-guide.md`](calibration-guide.md).
+
+### Calibration session (offsets 30–33)
+
+**Writable only in Calibration mode.**
+
+| Offset | Register | Guard | Description |
+|---:|---|---|---|
+| 30 | Cal Output Enable | RAW_OUTPUT_DRIVE | 1=on, 0=off. Firmware allows only one channel board-wide to have this set at a time — enabling a second channel while another is still enabled is rejected |
+| 31 | Cal DAC Code | RAW_OUTPUT_DRIVE | Raw DAC code, 0–65535 (or lower if a build-time ceiling is configured — that ceiling is **not** a Modbus register; it's compiled into firmware and isn't discoverable over the wire) |
+| 32 | Cal Sample Command | VOLTAGE_MEASUREMENT or CURRENT_MEASUREMENT | Write 1 to trigger a fresh ADC sample on every measurement path this channel supports; reads back 0 once complete (synchronous, see §5) |
+| 33 | Cal Commit Command | any cal-capable | Write 1 to persist this channel's calibration coefficients (offsets 20–25) to NVS |
+| 34–39 | Reserved | — | Read as 0, reject writes — **note:** an earlier protocol draft placed a "Cal Max Raw DAC Limit" register at offset 34; it was never shipped as a Modbus register (the DAC ceiling is firmware-internal session state only) |
+
+---
+
+## 11. Command and mode enumerations
+
+### 11.1 Operating Mode
+
 | Value | Name |
-|-------|------|
+|---:|---|
 | 0 | Normal |
 | 1 | Automatic |
 | 2 | Calibration |
 
-### Baud Rate Code
-| Value | Rate |
-|-------|------|
-| 0 | 115200 |
-| 1 | 9600 |
+Behavioral differences between Normal and Automatic are in
+[`operating-mode-guide.md`](operating-mode-guide.md); Calibration is
+covered in [`calibration-guide.md`](calibration-guide.md).
 
-### Output Action
-| Value | Name |
-|-------|------|
-| 0 | None |
-| 1 | Enable |
-| 2 | Disable Graceful |
-| 3 | Disable Immediate |
-| 4 | Force Output Zero (protection only) |
+### 11.2 Output Action
 
-### Protection Mode
-| Value | Name |
-|-------|------|
-| 0 | Disabled |
-| 1 | Flag Only (record history) |
-| 2 | Apply Output Action |
+| Value | Name | Valid as Host command (channel offset 0) | Valid as Protection action (channel offset 14) |
+|---:|---|:---:|:---:|
+| 0 | None | yes | yes |
+| 1 | Enable | yes | **no** |
+| 2 | Disable Graceful | yes | yes |
+| 3 | Disable Immediate | yes | yes |
+| 4 | Force Output Zero | **no** | yes |
 
-### Recovery Policy Mode
+Writing a value invalid for its context (e.g. `Enable` at the protection
+action offset 14, or `Force Output Zero` as a host command at offset 0)
+returns exception `0x03`. This context split is enforced by firmware, not
+just convention — do not assume both offsets accept the same value set.
+
+### 11.3 Channel Fault Command
+
 | Value | Name |
-|-------|------|
+|---:|---|
+| 0 | None (readback value after execution) |
+| 1 | Clear Active Fault Block |
+| 2 | Clear Fault History |
+
+Clearing an Active Fault Block that's still unsafe (e.g. current still
+above the safe band) is rejected with exception `0x03` rather than
+silently no-oping.
+
+### 11.4 Param Action
+
+| Value | Name | Valid at |
+|---:|---|---|
+| 0 | None (readback value after execution) | system + channel |
+| 1 | Save | system + channel |
+| 2 | Load | system + channel |
+| 3 | Factory Reset | system + channel |
+| 255 | Software Reset | **system only** — invalid at channel offset 2, returns exception `0x03` |
+
+Software Reset acknowledges the write (so the FC06 response is transmitted)
+before the board reboots.
+
+### 11.5 Recovery Policy Mode
+
+| Value | Name |
+|---:|---|
 | 0 | Manual Latch |
 | 1 | Auto Retry |
-| 2 | Auto Derate + Retry |
+| 2 | Auto Derate Retry |
 | 3 | Never Retry |
 
-### Param Action
+Only meaningful in Automatic operating mode; see
+[`operating-mode-guide.md`](operating-mode-guide.md) §4.
+
+### 11.6 Protection Mode
+
 | Value | Name |
-|-------|------|
-| 1 | Save (persist to NVS) |
-| 2 | Load (reload from NVS) |
-| 3 | Factory Reset |
+|---:|---|
+| 0 | Disabled |
+| 1 | Flag Only (records fault history, output untouched) |
+| 2 | Apply Output Action (records fault history **and** disables output per offset 14) |
 
-### Fault Cause Bitmask
-| Bit | Name | Description |
-|-----|------|-------------|
-| 0x0002 | Current | Current exceeded limit |
-| 0x0004 | Measurement | ADC measurement fault |
-| 0x0008 | Hardware | Hardware failure |
-| 0x0010 | Interlock | Safety interlock |
-| 0x0020 | Retry Exhaust | Auto-retry limit reached |
-| 0x0040 | Config Invalid | Invalid configuration |
-| 0x0080 | Stale | Measurement data stale |
+---
 
-### Status Bits
-| Bit | Name |
-|-----|------|
-| 0x0001 | Output Active (voltage non-zero or state enabling/ramping) |
-| 0x0002 | Output Enabled |
-| 0x0004 | Ramping |
-| 0x0008 | Fault Latched |
-| 0x0010 | Fault History Present |
-| 0x0020 | Retry Cooldown |
+## 12. Capability flags
 
-### Channel Capability Flags
-| Bit | Name |
-|-----|------|
-| 0x0001 | Output Enable (separate enable GPIO) |
-| 0x0002 | Raw Output Drive (DAC) |
-| 0x0004 | Voltage Measurement (ADC) |
-| 0x0008 | Current Measurement (ADC) |
-| 0x0010 | Hardware Status |
+### 12.1 System Capability Flags (System Input offset 3)
 
-### Calibration Formula
+| Bit | Mask | Meaning |
+|---:|---:|---|
+| 0 | 0x0001 | Automatic operating mode supported |
+| 1 | 0x0002 | Environment sensor present (board temperature/humidity meaningful) |
+| 2 | 0x0004 | Calibration mode supported |
+
+### 12.2 Channel Capability Flags (Channel Input offset 9)
+
+| Bit | Mask | Meaning |
+|---:|---:|---|
+| 0 | 0x0001 | Output Enable control present |
+| 1 | 0x0002 | Raw output drive present (`RAW_OUTPUT_DRIVE` guard used above) |
+| 2 | 0x0004 | Voltage measurement present (`VOLTAGE_MEASUREMENT` guard) |
+| 3 | 0x0008 | Current measurement present (`CURRENT_MEASUREMENT` guard) |
+| 4 | 0x0010 | Hardware status/fault evidence present |
+
+**Any register tagged with a guard above returns exception `0x02` for both
+reads and writes if the channel lacks that capability bit** — this is not a
+"reads zero" fallback; treat it exactly like accessing an unsupported
+channel. Always check capability flags once at connect time (per channel)
+and cache the result rather than re-deriving it from exception codes at
+runtime.
+
+---
+
+## 13. Status and fault bit fields
+
+### 13.1 Channel Status Bits (Channel Input offset 0)
+
+| Bit | Mask | Meaning |
+|---:|---:|---|
+| 0 | 0x0001 | Output drive level is nonzero |
+| 1 | 0x0002 | Output enable is active |
+| 2 | 0x0004 | Ramping is in progress |
+| 3 | 0x0008 | Active Fault Block present (output may be forcibly disabled, depending on protection mode) |
+| 4 | 0x0010 | Fault History present |
+| 5 | 0x0020 | Automatic-mode retry cooldown active |
+| 6 | 0x0040 | Measurement stale (no fresh sample since the last expected update) |
+
+### 13.2 Fault Cause Bits (Channel Input offset 1/2, System Input offset 14)
+
+| Bit | Mask | Meaning |
+|---:|---:|---|
+| 1 | 0x0002 | Current limit exceeded |
+| 2 | 0x0004 | Measurement invalid |
+| 3 | 0x0008 | Output hardware fault |
+| 4 | 0x0010 | Variant safety interlock |
+| 5 | 0x0020 | Automatic retry budget exhausted |
+| 6 | 0x0040 | Configuration invalid for automatic start |
+| 7 | 0x0080 | Measurement data stale |
+
+Bit 0 (`0x0001`) is not currently assigned — earlier protocol drafts used it
+for a voltage-limit fault; only current protection ships today. Multiple
+bits can be set simultaneously (e.g. `0x0022` = current fault + retries
+exhausted, the signature of an auto-retry policy giving up).
+
+---
+
+## 14. Variant profile — HVB (id=1)
+
+| Field | Value |
+|---|---|
+| Variant ID | 1 |
+| Physical channels | 2, fixed by hardware |
+| Voltage scale | 0.1 V/LSB (100 mV/LSB) |
+| Current scale | 0.1 nA/LSB |
+| Default operating mode | Normal |
+| Default recovery policy | Manual Latch |
+| Default current safe band | 10% |
+| Default calibration coefficients | Output K=32768 B=0; Voltage/Current K/B are board-specific, set during factory calibration — see [`calibration-guide.md`](calibration-guide.md) |
+
+Other variant IDs (e.g. a future multi-channel LVB variant) will use the
+same protocol structure with different `Variant ID`, `Supported Channels`,
+and possibly different capability flags per channel — never hardcode
+channel count or capability assumptions from this table; always derive them
+from `Supported Channels`/`Active Channel Mask`/`Capability Flags` at
+runtime (§5).
+
+---
+
+## 15. Exception codes
+
+| Code | Name | Returned when |
+|---:|---|---|
+| 0x01 | Illegal Function | Function code other than 0x03/0x04/0x06 |
+| 0x02 | Illegal Data Address | Reserved register, unsupported channel, or a capability-guarded register on a channel lacking that capability |
+| 0x03 | Illegal Data Value | Out-of-range value, invalid enum, wrong-context Output Action, unsafe fault clear, calibration write outside Calibration mode, channel-level Software Reset |
+| 0x04 | Slave Device Failure | Internal failure — e.g. NVS write failure on a Save/commit |
+
+---
+
+## 16. Worked byte-level examples
+
+Slave address 1 throughout. CRC bytes shown are correct for the exact frame
+given — recompute if you change any byte.
+
+**Read the first 15 System Input registers (protocol version through fault
+cause), FC04, start address 0, count 15:**
 
 ```
-calibrated = raw × k / D + b
+Request : 01 04 00 00 00 0F B0 0E
+Response: 01 04 1E 00 03 00 00 00 01 00 07 00 02 00 03 00 F5 01 C2
+          00 00 02 58 00 00 01 02 00 00 00 00 00 00 2B 7C
+```
+(Byte count `0x1E` = 30 = 15 registers × 2 bytes. Decoding a few: Protocol
+Major=3, Minor=0, Variant ID=1, Capability Flags=0x0007, Supported
+Channels=2, Active Channel Mask=0x0003, Board Temp=0x00F5=24.5°C, Board
+Humidity=0x01C2=45.0%RH, Uptime=0x00000258=600s, FW Version=0x00000102.)
+
+**Write System Holding offset 0 (Operating Mode) = 1 (Automatic), FC06:**
+
+```
+Request : 01 06 00 00 00 01 48 0A
+Response: 01 06 00 00 00 01 48 0A   (FC06 echoes the request verbatim on success)
 ```
 
-`D` depends on the axis: **10000 for Output Cal K** (identity `k = 10000`,
-`b = 0`), **1000000 for Measured V/I Cal K** (unity gain not representable —
-see `docs/guide/parameter-reference.md` for why the measurement axes use a
-finer scale).
+**Write Channel 0 Configured Target Voltage (holding offset 3, absolute
+address 40+3=43=0x002B) to raw 5000 (= 500.0 V), FC06:**
 
-## mbpoll Examples
-
-All `-r` values are 1-indexed Modbus register addresses. Add 1 to the 0-based offset for the `-r` argument.
-
-```bash
-# Read system snapshot (input registers 1–15, Modbus addresses)
-mbpoll -a 1 -b 115200 -t 4 -r 1 -c 15 /dev/ttyUSB0
-
-# Read channel 0 input snapshot (base 40 + offsets 0–15 = addresses 41–56)
-mbpoll -a 1 -b 115200 -t 4 -r 41 -c 16 /dev/ttyUSB0
-
-# Read slave address and baud rate (holding registers, offsets 2–3 = addresses 3–4)
-mbpoll -a 1 -b 115200 -t 3 -r 3 -c 2 /dev/ttyUSB0
-
-# Set slave address to 10 (holding offset 2 = address 3), baud to 9600 (offset 3 = address 4), then save (offset 39 = address 40)
-mbpoll -a 1 -b 115200 -t 6 -r 3 10 /dev/ttyUSB0
-mbpoll -a 1 -b 115200 -t 6 -r 4 1 /dev/ttyUSB0
-mbpoll -a 1 -b 115200 -t 6 -r 40 1 /dev/ttyUSB0
-# → reconnect with: mbpoll -a 10 -b 9600 ...
-
-# Set channel 0 target voltage to 5000 mV (holding offset 3 = address 44)
-mbpoll -a 1 -b 115200 -t 6 -r 44 5000 /dev/ttyUSB0
-
-# Enable channel 0 output (holding offset 0 = address 41)
-mbpoll -a 1 -b 115200 -t 6 -r 41 1 /dev/ttyUSB0
-
-# Calibration unlock (extension block, absolute offset 680 = address 681)
-mbpoll -a 1 -b 115200 -t 6 -r 681 51867 /dev/ttyUSB0    # 0xCA1B
-mbpoll -a 1 -b 115200 -t 6 -r 681 41243 /dev/ttyUSB0    # 0xA11B
-# Then enter calibration mode: mbpoll -r 1 2  (set operating mode = 2)
-
-# Calibration exit (extension block, absolute offset 681 = address 682)
-mbpoll -a 1 -b 115200 -t 6 -r 682 1 /dev/ttyUSB0
-
-# Read calibration coefficients (channel 0 holding, offsets 20–25 = addresses 61–66)
-mbpoll -a 1 -b 115200 -t 3 -r 61 -c 6 /dev/ttyUSB0
 ```
+Request : 01 06 00 2B 13 88 F4 94
+Response: 01 06 00 2B 13 88 F4 94
+```
+
+**Attempted write to a reserved register (System Holding offset 4,
+absolute address 4) — rejected:**
+
+```
+Request : 01 06 00 04 00 01 09 CB
+Response: 01 86 02 C3 A1
+```
+(Function code `0x86` = `0x06 | 0x80` marks an exception response; `0x02`
+is the exception code, Illegal Data Address.)
+
+---
+
+## 17. Building your own client — checklist
+
+- [ ] Verify `Protocol Major` = 3 before trusting any offset in this
+      document.
+- [ ] Read `Supported Channels`/`Active Channel Mask` before assuming any
+      channel exists; read each channel's `Capability Flags` before
+      touching a guarded register on it.
+- [ ] Treat exception `0x02` on a guarded register as "not supported here,"
+      not as an error to retry.
+- [ ] Don't poll `COMMAND`-category registers — they're write-only triggers
+      and read back 0 immediately after a successful write (§5).
+- [ ] Apply the correct scale per field: 0.1 V/LSB for voltage, 0.1 nA/LSB
+      for current, the calibration-specific divisor for Cal K (§10), plain
+      integer percent for safe band — don't assume one universal scale.
+- [ ] Respect the Output Action host/protection context split (§11.2) — the
+      same enum, two different valid subsets depending on which offset
+      you're writing.
+- [ ] Remember Slave Address / Baud Rate writes need an explicit `Param
+      Action = Save` and a reset before they take effect (§7).
