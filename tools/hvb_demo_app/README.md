@@ -1,330 +1,126 @@
-# HVB Modbus Debug Tool
+# HVB Demo App
 
-Self-contained Modbus-RTU debug tool for the Jianwei High Voltage Board. Three layers: core library → CLI → GUI.
-
-## Prerequisites
-
-| Tool | Linux | Windows |
-|------|-------|---------|
-| C++17 compiler | GCC 11+ / Clang 14+ | MSVC 2022 / MinGW-w64 |
-| CMake | 3.20+ | 3.20+ |
-| Git | any | any |
-| Qt 6.5+ (GUI only) | `qt6-base-dev qt6-declarative-dev` | [Qt Online Installer](https://www.qt.io/download) |
-| Ninja | optional, recommended | optional |
-
-No other dependencies — ModbusLib, CLI11, and toml++ are auto-fetched by CMake.
+Modbus RTU engineering/demo tools for the Jianwei voltage-control board:
+a scriptable CLI, an interactive TUI dashboard, and an optional Qt GUI, all
+built on the shared `hvb_modbus_core` client library. These are bring-up and
+demo tools — for factory calibration, see `tools/hvb_factory_tool` and
+[`docs/guide/calibration-guide.md`](../../docs/guide/calibration-guide.md).
 
 ## Build
 
-### CLI Only (no Qt required)
+From the `tools/` directory (not this subdirectory — `hvb_demo_app` is one
+of several targets under the shared `tools/` CMake project):
 
 ```sh
-cd tools/modbus_debug_tool
-
-# Configure
-cmake --preset linux-release
-
-# Build
-cmake --build build/linux-release --target hvbctrl
-
-# Binary at: build/linux-release/cli/hvbctrl
+cmake -S tools -B tools/build
+cmake --build tools/build --target hvb_demo_cli hvb_tui -j
 ```
 
-### CLI Only — Windows
-
-```bat
-cmake --preset win-release
-cmake --build build/win-release --config Release --target hvbctrl
-```
-
-### With GUI
+Binaries land in `tools/bin/`. The GUI is opt-in and requires Qt 6:
 
 ```sh
-# Linux — set Qt path
-cmake -B build/linux-gui -G Ninja -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_GUI=ON -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x/gcc_64
-
-cmake --build build/linux-gui --target hvb_gui
+cmake -S tools -B tools/build -DBUILD_GUI=ON \
+    -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x/gcc_64
+cmake --build tools/build --target hvb_demo_gui -j
 ```
 
-```bat
-REM Windows — Qt path may vary
-cmake -B build/win-gui -G "Visual Studio 17 2022" ^
-    -DBUILD_GUI=ON -DCMAKE_PREFIX_PATH=C:/Qt/6.x/msvc2022_64
+| Target | Binary | Requires |
+|---|---|---|
+| `hvb_demo_cli` | `tools/bin/hvb_demo_cli` | — |
+| `hvb_tui` | `tools/bin/hvb_tui` | — |
+| `hvb_demo_gui` | `tools/bin/hvb_demo_gui` | Qt 6 (`-DBUILD_GUI=ON`) |
 
-cmake --build build/win-gui --config Release --target hvb_gui
-```
+## hvb_tui — interactive dashboard
 
-### Build Targets
-
-| Target | Type | Dependencies |
-|--------|------|-------------|
-| `hvb_modbus_core` | Static library | ModbusLib, toml++ |
-| `hvbctrl` | Executable | `hvb_modbus_core`, CLI11 |
-| `hvb_gui` | Executable | `hvb_modbus_core`, Qt 6 (Core, Quick, QuickControls2) |
-
-## Quick Start
+Live monitoring and control over a connected board: per-channel target
+voltage, ramp, current protection, and recovery policy, plus system-level
+config. Full walkthrough (screen layout, every panel, a typical workflow):
+[`docs/guide/demo-tui-guide.md`](../../docs/guide/demo-tui-guide.md) /
+[`.zh.md`](../../docs/guide/demo-tui-guide.zh.md).
 
 ```sh
-# List serial ports
-./hvbctrl list ports
-
-# Connect and read system info
-./hvbctrl -p /dev/ttyUSB0 info
-
-# Channel 0 status
-./hvbctrl -p /dev/ttyUSB0 status
-
-# Enable channel 0 at 500 V
-./hvbctrl -p /dev/ttyUSB0 channel 0 voltage 500
-./hvbctrl -p /dev/ttyUSB0 channel 0 output ENABLE
-
-# Live polling every 2 seconds
-./hvbctrl -p /dev/ttyUSB0 monitor 2
-
-# Save connection for next session
-./hvbctrl -p /dev/ttyUSB0 --save info
-
-# From now on, just:
-./hvbctrl info
-./hvbctrl status
+tools/bin/hvb_tui -p /dev/ttyUSB0
 ```
 
-## Configuration
-
-Connection settings persist to `~/.hvb_modbus_tool.toml`:
-
-```toml
-[connection]
-port = "/dev/ttyUSB0"
-baud_rate = 115200
-slave_id = 1
-timeout_ms = 500
-
-[display]
-poll_interval_ms = 2000
-```
-
-Priority: CLI arguments (`-p`, `-b`, `-i`) > config file. Use `--save` to persist.
-
-## CLI Reference
-
-### Connection
-
-```
--p, --port PORT       Serial port
--b, --baud RATE       Baud rate (9600, 115200, default: 115200)
--i, --id N            Slave ID (0-247, default: 1)
--t, --timeout MS      Timeout ms (default: 500)
---save                Persist to config file
-```
-
-### Discovery
-
-```
-list ports             List serial ports
-list regs              Print register catalog from metadata
-describe <ADDR>        Show register metadata (hex PDU address)
-```
-
-### Read-Only
-
-```
-info                   System info dump (protocol, variant, temp, uptime, opmode)
-status                 CH0 + CH1 V/I/status summary
-monitor [INTERVAL_S]   Live polling table, Ctrl-C to stop (default: 2s)
-```
-
-### System Config
-
-```
-system config          Read system configuration
-
-system mode <NORMAL|AUTO>
-system recovery <POLICY> <DELAY> <MAX> <WINDOW>
-    POLICY: MANUAL-LATCH | AUTO-RETRY | AUTO-DERATE | NEVER-RETRY
-system safe-bands <V-PCT> <I-PCT>    Range: 0-50
-system addr <ADDR>                    Range: 0-247
-system baud <0|1>                    0=115200, 1=9600
-system save / load / factory
-```
-
-### Channel
-
-```
-channel <CH> info                          Measurements (V, I, status, faults)
-channel <CH> config                        Full configuration
-channel <CH> cal                           Calibration coefficients
-
-channel <CH> voltage <V>                   Configured target voltage
-channel <CH> output <ACTION>
-    ACTION: NONE | ENABLE | DISABLE-GRACEFUL | DISABLE-IMMEDIATE
-channel <CH> fault <CMD>
-    CMD: CLEAR-ACTIVE | CLEAR-HISTORY
-
-channel <CH> ramp-up <STEP_V> <INTERVAL_S>
-channel <CH> ramp-down <STEP_V> <INTERVAL_S>
-
-channel <CH> prot-v <MODE> <ACTION> <THRESHOLD_V>
-    MODE:   DISABLED | FLAG-ONLY | APPLY-ACTION
-    ACTION: NONE | DISABLE-GRACEFUL | DISABLE-IMMEDIATE | FORCE-ZERO | CLAMP
-channel <CH> prot-i <MODE> <ACTION> <THRESHOLD_A>
-    ACTION: NONE | DISABLE-GRACEFUL | DISABLE-IMMEDIATE | FORCE-ZERO
-
-channel <CH> derate <STEP_V>
-channel <CH> cal-out <K_UINT16> <B_INT16>
-channel <CH> cal-meas-v <K_UINT16> <B_INT16>
-channel <CH> cal-meas-i <K_UINT16> <B_INT16>
-
-channel <CH> save / load / factory
-```
-
-### Debug
-
-```
-reset                   Software reset
-
-raw fc04 <ADDR> <COUNT>     Raw FC04 read, hex dump
-raw fc03 <ADDR> <COUNT>     Raw FC03 read, hex dump
-raw fc06 <ADDR> <VALUE>     Raw FC06 write (uint16)
-```
-
-## GUI
-
-### Layout
-
-```
-┌──────────────────────────────────────────────────────┐
-│ [Port ▼] [Baud ▼] [ID] [● Connect] [↻ 2s]           │
-├──────────────────────────────────────────────────────┤
-│ ┌ System Info ┬ System Config ┬ Channel 0 ┬ Ch 1 ┐  │
-│ │             │               │           │       │  │
-│ │ Protocol    │ OpMode        │ Vmeas V   │ same  │  │
-│ │ Variant ID  │ Slave Addr    │ Imeas A   │       │  │
-│ │ Board Temp  │ Baud Rate     │ Status    │       │  │
-│ │ Uptime      │ Recovery      │ Faults    │       │  │
-│ │ FW Version  │ Safe Bands    │ Target V  │       │  │
-│ │ OpMode      │ [Save] [Load] │ Output    │       │  │
-│ │ Cap Flags   │ [Factory]     │ Ramping   │       │  │
-│ │             │ [Reset]       │ Protection│       │  │
-│ │             │               │ Calibratn │       │  │
-│ └─────────────┴───────────────┴───────────┴───────┘  │
-├──────────────────────────────────────────────────────┤
-│ [Status: Connected]      [Debug] [Refresh]           │
-├──────────────────────────────────────────────────────┤
-│ 14:32:01 Tx: 01 04 00 00 00 10 F1 CD                │
-│ 14:32:01 Rx: 01 04 20 00 02 00 00 ...               │
-└──────────────────────────────────────────────────────┘
-```
-
-### Tabs
-
-| Tab | Content |
-|-----|---------|
-| System Info | Protocol version, variant, temp/humidity, uptime, FW version, operating mode, system status/fault, capability flags |
-| System Config | Operating mode selector, slave address, baud rate, recovery policy + params (delay/max/window), voltage/current safe bands, save/load/factory/reset buttons |
-| Channel 0/1 | Measurements (V/I/operational target), status bits, fault causes, capabilities; config: target voltage, output action, fault clear, ramping, voltage/current protection (mode + action + threshold), derate step, calibration (K/B per path), channel persistence |
-
-### Debug Dialog
-
-Raw Modbus access: FC03/FC04 read with hex output, FC06 write. Accessible via "Debug" button on status bar.
-
-## Packaging
-
-### CLI — Static Binary
-
-ModbusLib is a shared library by default. For a portable CLI binary, build with static linking:
+## hvb_demo_cli — scriptable one-shot commands
 
 ```sh
-# CMake config with static ModbusLib
-cmake -B build/static -G Ninja -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_SHARED_LIBS=OFF
-cmake --build build/static --target hvbctrl
+# Discovery
+hvb_demo_cli list ports
+hvb_demo_cli list regs
+hvb_demo_cli describe <hex-addr>
 
-# Result: single binary, copy anywhere
-cp build/static/cli/hvbctrl /usr/local/bin/
+# Connect + read
+hvb_demo_cli -p /dev/ttyUSB0 info
+hvb_demo_cli -p /dev/ttyUSB0 status
+hvb_demo_cli -p /dev/ttyUSB0 monitor [interval_s]
+
+# Persist the connection for later commands
+hvb_demo_cli -p /dev/ttyUSB0 --save info
+hvb_demo_cli info                       # reuses ~/.hvb_demo_app.toml
+
+# System
+hvb_demo_cli system config
+hvb_demo_cli system mode <NORMAL|AUTO>
+hvb_demo_cli system startup-policy <0|1>        # 0=load-nvs, 1=factory-default
+hvb_demo_cli system addr <0-247>
+hvb_demo_cli system baud <0|1>                  # 0=115200, 1=9600
+hvb_demo_cli system save|load|factory
+
+# Channel (0 or 1 on the HVB variant)
+hvb_demo_cli channel <ch> info
+hvb_demo_cli channel <ch> config
+hvb_demo_cli channel <ch> cal
+hvb_demo_cli channel <ch> voltage <raw-lsb>
+hvb_demo_cli channel <ch> output <NONE|ENABLE|DISABLE-GRACEFUL|DISABLE-IMMEDIATE>
+hvb_demo_cli channel <ch> fault <CLEAR-ACTIVE|CLEAR-HISTORY>
+hvb_demo_cli channel <ch> ramp-up <step-raw> <interval-x10s>
+hvb_demo_cli channel <ch> ramp-down <step-raw> <interval-x10s>
+hvb_demo_cli channel <ch> prot-i <DISABLED|FLAG-ONLY|APPLY-ACTION> <NONE|DISABLE-GRACEFUL|DISABLE-IMMEDIATE|FORCE-ZERO> <threshold-raw>
+hvb_demo_cli channel <ch> recovery <MANUAL-LATCH|AUTO-RETRY|AUTO-DERATE|NEVER-RETRY> <delay-s> <max> <window-s>
+hvb_demo_cli channel <ch> safe-band <0-50>
+hvb_demo_cli channel <ch> derate <step-raw>
+hvb_demo_cli channel <ch> save|load|factory
+
+# Calibration session (started/unlocked via hvb_factory_tui; this only exits it)
+hvb_demo_cli cal exit
+
+# Raw Modbus debug
+hvb_demo_cli raw fc04 <addr> [count]    # input registers, hex dump
+hvb_demo_cli raw fc03 <addr> [count]    # holding registers, hex dump
+hvb_demo_cli raw fc06 <addr> <value>    # single-register write
+
+# Reset
+hvb_demo_cli reset
 ```
 
-### GUI — Linux AppImage
+`voltage`, `ramp-up`/`ramp-down`, and `prot-i`'s threshold all take **raw
+register LSB values**, not physical units — the CLI does not do V/nA
+conversion for writes (only for display in `info`/`status`/`config`). See
+[`docs/guide/parameter-reference.md`](../../docs/guide/parameter-reference.md)
+for the raw-to-physical formulas (0.1 V/LSB, 0.1 nA/LSB).
 
-```sh
-# Requires: linuxdeployqt
-# Build with install prefix in build tree
-cmake -B build/appimage -G Ninja -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_GUI=ON -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x/gcc_64 \
-    -DCMAKE_INSTALL_PREFIX=/usr
+Connection settings (`-p`/`-b`/`-i`/`-t`) persist to `~/.hvb_demo_app.toml`
+with `--save`; later invocations without `-p` reuse them. `hvb_tui` reads
+the same file at startup but never writes it.
 
-cmake --build build/appimage --target hvb_gui
+## Related documentation
 
-# Package
-linuxdeployqt build/appimage/gui/hvb_gui \
-    -qmldir=gui/resources/qml \
-    -appimage
+- [`docs/guide/demo-tui-guide.md`](../../docs/guide/demo-tui-guide.md) — `hvb_tui` full user guide (EN/ZH)
+- [`docs/guide/calibration-guide.md`](../../docs/guide/calibration-guide.md) — factory calibration procedure (`hvb_factory_tui`)
+- [`docs/guide/operating-mode-guide.md`](../../docs/guide/operating-mode-guide.md) — Normal vs. Automatic mode, protection and recovery policy
+- [`docs/guide/modbus-reference.md`](../../docs/guide/modbus-reference.md) — protocol register map
+- [`docs/guide/parameter-reference.md`](../../docs/guide/parameter-reference.md) — field-by-field defaults, units, raw/physical scaling
 
-# Result: HVB_Modbus_Tool-*.AppImage
-```
-
-### GUI — Windows
-
-```bat
-REM Requires: windeployqt (ships with Qt)
-cmake -B build/win-gui -G "Visual Studio 17 2022" ^
-    -DBUILD_GUI=ON -DCMAKE_PREFIX_PATH=C:/Qt/6.x/msvc2022_64
-
-cmake --build build/win-gui --config Release --target hvb_gui
-
-REM Package
-windeployqt build/win-gui/gui/Release/hvb_gui.exe ^
-    --qmldir gui/resources/qml
-
-REM Distribute the Release folder as a zip
-```
-
-## File Structure
+## File structure
 
 ```
-tools/modbus_debug_tool/
-├── CMakeLists.txt              # Top-level: FetchContent deps, targets
-├── CMakePresets.json           # Build presets
-├── README.md
-├── core/                       # Layer 1: static library
-│   ├── types.h                 # Enums, structs, scaling helpers
-│   ├── register_map.h          # constexpr register addresses
-│   ├── register_meta.h/.cpp    # RegDesc metadata tables
-│   ├── hvb_modbus_client.h/.cpp# ModbusLib RTU client wrapper
-│   └── config_manager.h/.cpp   # TOML config (~/.hvb_modbus_tool.toml)
-├── cli/                        # Layer 2: CLI frontend
-│   └── main.cpp                # CLI11 subcommands → HvbModbusClient
-├── gui/                        # Layer 3: QML frontend
-│   ├── main.cpp                # QML engine + backend registration
-│   ├── modbus_backend.h/.cpp   # QML-exposed QObject
-│   ├── modbus_worker.h/.cpp    # QThread: owns HvbModbusClient
-│   └── resources/
-│       ├── qml.qrc
-│       └── qml/                # 10 QML files + components
-└── scripts/                    # Deployment scripts
+tools/hvb_demo_app/
+├── cli/            hvb_demo_cli — CLI11 subcommands over HvbModbusClient
+├── tui/             hvb_tui — FTXUI interactive dashboard
+└── gui/             hvb_demo_gui — Qt Quick GUI (BUILD_GUI=ON only)
 ```
 
-## Implementation Notes
-
-- **Register map**: Follows `ref/modbus_interface.md` v2 (system block + channel blocks, FC03/04/06)
-- **Scaling**: Voltage in 100 mV/LSB, current in 1 nA/LSB, intervals in seconds x10, calibration K as UINT16 x10000, B as INT16 x1000
-- **Output action context**: The `OutputAction` enum has context-specific validity — `Enable` is host-only, `ForceOutputZero` is protection-only, `Clamp` is voltage-protection-only. CLI and GUI validate per context.
-- **All registers 16-bit**: All registers are single UINT16 or INT16. Uptime and timestamp values are split across _HI/_LO 16-bit registers and reassembled on read. No FC10 required.
-- **Command registers**: Output Action, Fault Command, and Param Action registers are self-clearing (read back 0 after execution).
-- **Thread safety**: GUI uses a QThread worker for all Modbus I/O. Blocking calls never block the QML render thread.
-- **Config persistence**: Connection preferences saved to `~/.hvb_modbus_tool.toml` via toml++. Auto-created on first `--save`.
-
-## Compliance
-
-- [x] Protocol v2 register map (`ref/modbus_interface.md`)
-- [x] Domain terminology (`UBIQUITOUS_LANGUAGE.md`, `CONTEXT.md`)
-- [x] Output action context validation (§8.2)
-- [x] Protection mode + action separation (§8.5)
-- [x] System-wide recovery policy (§10.1)
-- [x] Safe band percentages (§10.1)
-- [x] UINT16 calibration K, INT16 calibration B (§5)
-- [x] All-16-bit registers, _HI/_LO split for uptime/timestamps (§5)
-- [x] FC06 single-register writes (§4)
-- [x] Self-clearing command registers (§10.2)
-- [x] Modbus exception mapping (§12)
+`hvb_modbus_core` (the shared Modbus client, register map, and config
+manager) lives at `tools/hvb_modbus_core`, one level up — it's a sibling
+target shared with `hvb_factory_tool`, not part of this directory.
