@@ -178,7 +178,7 @@ retry forever.
 
 ---
 
-## 7. Known gap, and a proposed fix
+## 7. Known gap, and the fix (implemented)
 
 The design intent (`docs/superpowers/specs/2026-06-15-voltage-control-domain-behavior.md`)
 states automatic recovery should apply *"only to faults detected while
@@ -252,14 +252,17 @@ one faulted channel blocks the whole board's transition), while
 `recovery_policy_mode` itself is per-channel. On this 2-channel HVB variant
 that's a minor concern; on a future 16-channel LVB variant, one faulted
 channel blocking Automatic entry for fifteen healthy ones is a more visible
-tradeoff worth a deliberate decision, not an accident of implementation. I
-don't think it changes the recommendation, but it's worth having decided on
-purpose.
+tradeoff worth a deliberate decision, not an accident of implementation. This
+was implemented as-is (system-wide), matching the recommendation above — if
+the LVB variant needs per-channel granularity instead, that's a deliberate
+follow-up decision, not something this change silently precluded.
 
-I checked this against the existing test suite: no current test exercises
-"switch to Automatic while a channel is already faulted and expect `VC_OK`,"
-so adding this restriction wouldn't break anything already committed — it's
-additive, not a breaking change to existing behavior.
-
-**This is not yet implemented.** If you'd like it built, it fits naturally
-as a follow-up task on top of `docs/superpowers/plans/2026-07-03-automatic-recovery-policy.md`.
+**Implemented** in `vc_controller_set_operating_mode()`
+(`lib/voltage_control/vc_controller.c`), guarded by three new tests in
+`tests/voltage_control/vc_controller/src/main.c`:
+`test_normal_to_automatic_rejected_when_channel_faulted`,
+`test_normal_to_automatic_allowed_when_no_channel_faulted`, and
+`test_automatic_to_normal_allowed_when_channel_faulted`. No existing test
+exercised "switch to Automatic while a channel is already faulted and expect
+`VC_OK`," so this was additive — nothing already committed changed
+behavior.
