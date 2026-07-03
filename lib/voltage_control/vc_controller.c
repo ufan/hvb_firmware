@@ -180,6 +180,21 @@ enum vc_status vc_controller_set_operating_mode(
 		return VC_OK;
 	}
 
+	/* NORMAL → AUTOMATIC: refuse while any channel is still faulted, so a
+	 * fault latched in Normal mode can never ride along into Automatic
+	 * recovery eligibility. The reverse direction (→ NORMAL) is always
+	 * allowed, since it's the safe-retreat move an operator would want
+	 * to make because of a fault, not in spite of one.
+	 */
+	if (mode == VC_OPERATING_MODE_AUTOMATIC &&
+	    ctrl->operating_mode == VC_OPERATING_MODE_NORMAL) {
+		for (size_t i = 0; i < ctrl->channel_count; i++) {
+			if (ctrl->channels[i].active_fault_cause != 0) {
+				return VC_ERR_UNSAFE_STATE;
+			}
+		}
+	}
+
 	/* AUTO → NORMAL: gracefully disable all outputs */
 	if (mode == VC_OPERATING_MODE_NORMAL &&
 	    ctrl->operating_mode == VC_OPERATING_MODE_AUTOMATIC) {

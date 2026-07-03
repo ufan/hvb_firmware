@@ -135,6 +135,35 @@ ZTEST(vc_controller, test_mode_transition_auto_to_normal_clears_cooldown)
 	zassert_equal(ctrl->channels[0].cooldown_remaining_ms, 0);
 }
 
+ZTEST(vc_controller, test_normal_to_automatic_rejected_when_channel_faulted)
+{
+	ctrl->channels[0].active_fault_cause = VC_FAULT_CURRENT;
+
+	zassert_equal(vc_controller_set_operating_mode(ctrl,
+		VC_OPERATING_MODE_AUTOMATIC), VC_ERR_UNSAFE_STATE);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_NORMAL);
+}
+
+ZTEST(vc_controller, test_normal_to_automatic_allowed_when_no_channel_faulted)
+{
+	zassert_equal(vc_controller_set_operating_mode(ctrl,
+		VC_OPERATING_MODE_AUTOMATIC), VC_OK);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_AUTOMATIC);
+}
+
+ZTEST(vc_controller, test_automatic_to_normal_allowed_when_channel_faulted)
+{
+	vc_controller_set_operating_mode(ctrl, VC_OPERATING_MODE_AUTOMATIC);
+	ctrl->channels[0].active_fault_cause = VC_FAULT_CURRENT;
+
+	zassert_equal(vc_controller_set_operating_mode(ctrl,
+		VC_OPERATING_MODE_NORMAL), VC_OK);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_NORMAL);
+}
+
 ZTEST(vc_controller, test_calibration_entry_resets_channels)
 {
 	struct vc_channel_snapshot snap;
