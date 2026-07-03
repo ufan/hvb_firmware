@@ -1,0 +1,35 @@
+sequenceDiagram
+  participant Op as Operator (host)
+  participant C as Channel domain
+  participant HW as HV hardware
+
+  Note over C: operating_mode = Normal
+
+  loop every fresh ADC sample
+    C->>C: consume_current(raw)
+    C->>C: tick_current_protection()
+  end
+
+  C->>C: measured_current > current_limit_threshold
+  C->>C: active_fault_cause |= CURRENT
+  C->>HW: apply protection action (e.g. DisableImmediate)
+  Note over C: state = FaultLatched
+
+  C->>C: tick_recovery() runs every tick
+  Note over C: operating_mode != Automatic -> return immediately.<br/>No auto-retry, no cooldown, ever.
+
+  rect rgb(245, 245, 245)
+    Note over Op,HW: Channel stays FaultLatched indefinitely<br/>until an operator acts.
+  end
+
+  Op->>C: Fault Command = Clear Active
+  C->>C: is_safe_to_clear_active()?
+  alt still unsafe (current still above safe band)
+    C-->>Op: VC_ERR_UNSAFE_STATE
+  else safe now
+    C->>C: active_fault_cause = 0, state = DisabledSafe
+    C-->>Op: VC_OK
+    Op->>C: Output Action = Enable
+    C->>HW: ramp up to configured_target_voltage
+    Note over C: state = Ramping -> EnabledHolding
+  end

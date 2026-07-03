@@ -1,0 +1,49 @@
+sequenceDiagram
+  participant Ctl as Controller tick
+  participant C as Channel domain
+  participant HW as HV hardware
+
+  Note over C: operating_mode = Automatic<br/>recovery_policy_mode = AUTO_RETRY (or AUTO_DERATE_RETRY)
+
+  Ctl->>C: consume_current(raw)
+  C->>C: tick_current_protection() trips
+  C->>C: active_fault_cause |= CURRENT
+  C->>HW: apply protection action
+  Note over C: state = FaultLatched
+
+  Ctl->>C: tick_recovery() (same tick, right after)
+  Note over C: mode Automatic + policy allows + not ramping<br/>-> arm cooldown, state = RetryCooldown
+
+  loop each tick while cooldown_remaining_ms > 0
+    Ctl->>C: tick_recovery()
+    C->>C: cooldown_remaining_ms -= dt_ms
+  end
+
+  Note over C: cooldown elapsed
+
+  loop each tick until safe
+    Ctl->>C: tick_recovery()
+    C->>C: is_safe_to_clear_active()?
+    alt still unsafe
+      C->>C: stay in RetryCooldown, re-check next tick
+    end
+  end
+
+  Note over C: measured_current now within safe band
+
+  C->>C: count_active_retries() in sliding window
+  alt retries remain (< auto_retry_max_count)
+    C->>C: record_retry_attempt()
+    C->>C: target = configured_target_voltage<br/>(or derated, for AUTO_DERATE_RETRY)
+    C->>C: active_fault_cause = 0, recovering = true
+    C->>HW: output re-enabled
+    Note over C: state = Ramping
+    loop tick_ramp() each tick
+      Ctl->>C: tick_ramp() steps operational_target_voltage
+    end
+    C->>C: target reached -> recovering = false
+    Note over C: state = EnabledHolding
+  else max retries exhausted, or derated target <= 0
+    C->>C: active_fault_cause |= RETRY_EXHAUST
+    Note over C: state = FaultLatched (stays,<br/>manual clear now required)
+  end

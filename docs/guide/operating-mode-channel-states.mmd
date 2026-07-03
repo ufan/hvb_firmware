@@ -1,0 +1,35 @@
+stateDiagram-v2
+  direction LR
+  [*] --> DisabledSafe: init
+
+  DisabledSafe --> Ramping: Enable
+  Ramping --> EnabledHolding: at target
+  EnabledHolding --> Ramping: new target
+
+  EnabledHolding --> DisabledHvOn: DisableImmediate
+  Ramping --> DisabledHvOn: DisableImmediate
+  EnabledHolding --> DisabledSafe: DisableForce
+  Ramping --> DisabledSafe: DisableForce
+  DisabledHvOn --> DisabledSafe: DisableForce
+
+  EnabledHolding --> Ramping: fault + DisableGraceful action
+  Ramping --> FaultLatched: fault + Immediate/Force action
+  EnabledHolding --> FaultLatched: fault + Immediate/Force action
+  Ramping --> DisabledSafe: graceful ramp-to-zero done
+
+  FaultLatched --> DisabledSafe: manual Clear Active, any mode
+  FaultLatched --> RetryCooldown: Automatic + AUTO_RETRY/AUTO_DERATE_RETRY
+
+  state RetryCooldown {
+    [*] --> Waiting
+    Waiting --> Waiting: cooldown or unsafe
+  }
+
+  RetryCooldown --> Ramping: safe now, retries remain
+  RetryCooldown --> FaultLatched: retries exhausted
+
+  note right of RetryCooldown
+    Only reachable in Automatic mode.
+    Normal mode: FaultLatched only
+    exits via manual Clear Active.
+  end note
