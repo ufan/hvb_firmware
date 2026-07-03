@@ -9,6 +9,8 @@ offsets below are generated from `include/reg_store/reg_map.h` and
 `include/reg_store/modbus_view.def`, which remain the single source of
 truth; this document should never drift from them.
 
+*(中文版本: [modbus-reference.zh.md](modbus-reference.zh.md))*
+
 Related documents, once you have a working connection:
 [`calibration-guide.md`](calibration-guide.md) (factory calibration
 workflow), [`operating-mode-guide.md`](operating-mode-guide.md) (Normal vs.
