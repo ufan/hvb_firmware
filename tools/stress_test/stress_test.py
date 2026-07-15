@@ -60,8 +60,67 @@ CH_IN_COUNT    = 12       # offsets 0..11 available in normal mode (12-15 cal-on
 CH_IN_CAL_ONLY = [12, 13, 14, 15]  # raw ADC offsets — exception 0x02 in normal mode
 
 # Channel holding offsets (defined, not reserved)
-CH_HOLDING_RW_OFFSETS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25, 30, 31, 34]
+# offset 17 (CFG_OUTPUT_ENABLED) is capability-gated the opposite way from the
+# DAC-only fields below — see CH_HOLDING_GATE.
+CH_HOLDING_RW_OFFSETS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 30, 31, 34]
 CH_HOLDING_WO_OFFSETS = [0, 1, 2, 32, 33]  # self-clearing write-only
+
+# Channel offsets 3, 17 have dedicated write+readback test blocks in
+# qa_channel()/ci_config_write() below and are excluded from the generic
+# bulk-read applicability table (CH_HOLDING_GATE) to avoid double-testing.
+CFG_TARGET_VOLTAGE_OFFSET = 3
+CFG_OUTPUT_ENABLED_OFFSET = 17
+
+# ---------------------------------------------------------------------------
+# Channel capability flags (dt-bindings/voltage_control/capabilities.h) and
+# the per-register applicability rules from vc_catalog_supported() in
+# lib/voltage_control/vc_runtime.c. A holding/input register that isn't
+# applicable to a channel's capability set is REJECTED by the firmware (FC03
+# read or FC06 write both return a Modbus exception), not silently ignored —
+# so every check below asserts the capability-correct outcome for whatever
+# channel it's given, rather than assuming every channel looks like HVB's.
+# ---------------------------------------------------------------------------
+CH_CAP_OUTPUT_ENABLE       = 0x0001
+CH_CAP_RAW_OUTPUT_DRIVE    = 0x0002
+CH_CAP_VOLTAGE_MEASUREMENT = 0x0004
+CH_CAP_CURRENT_MEASUREMENT = 0x0008
+CH_CAP_HARDWARE_STATUS     = 0x0010
+
+def chan_has(capabilities, cap):
+    return (capabilities & cap) == cap
+
+def target_voltage_applicable(capabilities):
+    return chan_has(capabilities, CH_CAP_RAW_OUTPUT_DRIVE)
+
+def output_enabled_applicable(capabilities):
+    # Mirrors vc_catalog_supported()'s REG_VC_FIELD_CFG_OUTPUT_ENABLED case:
+    # fixed-voltage channels that can actually be disabled.
+    return (not chan_has(capabilities, CH_CAP_RAW_OUTPUT_DRIVE) and
+            chan_has(capabilities, CH_CAP_OUTPUT_ENABLE))
+
+# offset -> predicate(capabilities) deciding whether this holding register
+# applies to a given channel. Offsets not listed here (e.g. 8-12, the
+# recovery/retry fields) have no capability gate and always apply.
+CH_HOLDING_GATE = {
+    3:  target_voltage_applicable,                        # CFG_TARGET_VOLTAGE
+    4:  lambda c: chan_has(c, CH_CAP_RAW_OUTPUT_DRIVE),   # RAMP_UP_STEP
+    5:  lambda c: chan_has(c, CH_CAP_RAW_OUTPUT_DRIVE),   # RAMP_UP_INTERVAL
+    6:  lambda c: chan_has(c, CH_CAP_RAW_OUTPUT_DRIVE),   # RAMP_DOWN_STEP
+    7:  lambda c: chan_has(c, CH_CAP_RAW_OUTPUT_DRIVE),   # RAMP_DOWN_INTERVAL
+    13: lambda c: chan_has(c, CH_CAP_CURRENT_MEASUREMENT),  # CURRENT_PROTECTION_MODE
+    14: lambda c: chan_has(c, CH_CAP_CURRENT_MEASUREMENT),  # CURRENT_PROT_OUT_ACTION
+    15: lambda c: chan_has(c, CH_CAP_CURRENT_MEASUREMENT),  # CURRENT_LIMIT_THRESHOLD
+    16: lambda c: chan_has(c, CH_CAP_RAW_OUTPUT_DRIVE | CH_CAP_VOLTAGE_MEASUREMENT),  # AUTO_DERATE_STEP
+    17: output_enabled_applicable,                        # CFG_OUTPUT_ENABLED
+    20: lambda c: chan_has(c, CH_CAP_RAW_OUTPUT_DRIVE),   # OUTPUT_CAL_K
+    21: lambda c: chan_has(c, CH_CAP_RAW_OUTPUT_DRIVE),   # OUTPUT_CAL_B
+    22: lambda c: chan_has(c, CH_CAP_VOLTAGE_MEASUREMENT),  # MEASURED_V_CAL_K
+    23: lambda c: chan_has(c, CH_CAP_VOLTAGE_MEASUREMENT),  # MEASURED_V_CAL_B
+    24: lambda c: chan_has(c, CH_CAP_CURRENT_MEASUREMENT),  # MEASURED_I_CAL_K
+    25: lambda c: chan_has(c, CH_CAP_CURRENT_MEASUREMENT),  # MEASURED_I_CAL_B
+    30: lambda c: chan_has(c, CH_CAP_RAW_OUTPUT_DRIVE),   # CAL_OUTPUT_ENABLE
+    31: lambda c: chan_has(c, CH_CAP_RAW_OUTPUT_DRIVE),   # CAL_DAC_CODE
+}
 
 # Extension block (FC03/FC06, addr 680+)
 EXT_CAL_UNLOCK  = 680
@@ -170,12 +229,45 @@ def ci_block_read(instr, rounds=50):
     print(f"  block_read (sys input, {SYS_IN_COUNT} regs): {rounds} rounds, {errors} errors, avg={avg:.0f}us")
     return ok, samples, errors
 
-def ci_config_write(instr, channel=0):
-    """Single config write + verify — CI minimal."""
-    addr = CH_BLOCK_BASE(channel) + 3  # CFG_TARGET_VOLTAGE
-    _, initial = read_reg_fc03(instr, addr)
-    test_vals = [0, 1000, 0]
+def ci_config_write(instr, channel=0, capabilities=0):
+    """Single config write + verify — CI minimal.
+
+    Adapts to the channel's actual capabilities instead of assuming every
+    channel has a DAC (true on HVB, false on LVB): DAC channels
+    (CH_CAP_RAW_OUTPUT_DRIVE) test CFG_TARGET_VOLTAGE; fixed-voltage channels
+    that support on/off (CH_CAP_OUTPUT_ENABLE) test CFG_OUTPUT_ENABLED
+    instead; a channel with neither (locked always-on, e.g. jw_lvb ch0) has
+    no writable config-write register at all, so the test asserts the write
+    is correctly rejected rather than forcing a check that can never pass.
+    """
+    base = CH_BLOCK_BASE(channel)
     errors = 0
+
+    if target_voltage_applicable(capabilities):
+        addr = base + CFG_TARGET_VOLTAGE_OFFSET
+        reg_name = "target_v"
+        test_vals = [0, 1000, 0]
+    elif output_enabled_applicable(capabilities):
+        addr = base + CFG_OUTPUT_ENABLED_OFFSET
+        reg_name = "output_enabled"
+        _, initial = read_reg_fc03(instr, addr)
+        restore = initial if initial in (0, 1) else 1
+        test_vals = [0, 1, restore]
+    else:
+        # No configurable output at all (e.g. locked always-on channel) —
+        # both candidate registers must be rejected, not silently untested.
+        addr = base + CFG_TARGET_VOLTAGE_OFFSET
+        _, ok = write_reg_fc06(instr, addr, 0)
+        if ok:
+            errors += 1
+        addr17 = base + CFG_OUTPUT_ENABLED_OFFSET
+        _, ok17 = write_reg_fc06(instr, addr17, 0)
+        if ok17:
+            errors += 1
+        print(f"  config_write (ch{channel} locked, no output config): "
+              f"{errors} errors (expected both rejected)")
+        return errors == 0, errors
+
     for val in test_vals:
         e_w, ok = write_reg_fc06(instr, addr, val)
         if not ok:
@@ -185,18 +277,22 @@ def ci_config_write(instr, channel=0):
         _, rb = read_reg_fc03(instr, addr)
         if rb != val:
             errors += 1
-    print(f"  config_write (ch{channel} target_v): {errors} errors")
+    print(f"  config_write (ch{channel} {reg_name}): {errors} errors")
     return errors == 0, errors
 
-def ci_cmd_write(instr, channel=0):
-    """Single cmd write + self-clear check — CI minimal."""
+def ci_cmd_write(instr, channel=0, capabilities=0):
+    """Single cmd write + self-clear check — CI minimal.
+
+    OUTPUT_ACTION's DISABLE_IMMEDIATE(3) is only valid on channels that
+    support CH_CAP_OUTPUT_ENABLE; on a locked always-on channel it's
+    correctly rejected, so ENABLE(1) — always accepted regardless of
+    capability — is used instead to still exercise the register.
+    FAULT_CMD and PARAM_ACTION have no capability gate.
+    """
     base = CH_BLOCK_BASE(channel)
     errors = 0
-    # Values chosen to succeed regardless of board state:
-    #   OUTPUT_ACTION=3 (DISABLE_IMMEDIATE) — safe even with active fault
-    #   FAULT_CMD=1 (CLEAR_ACTIVE) — always accepted
-    #   PARAM_ACTION=1 (SAVE) — always accepted
-    cmd_values = {0: 3, 1: 1, 2: 1}  # off -> value
+    output_action_val = 3 if chan_has(capabilities, CH_CAP_OUTPUT_ENABLE) else 1
+    cmd_values = {0: output_action_val, 1: 1, 2: 1}  # off -> value
     for off in [0, 1, 2]:  # OUTPUT_ACTION, FAULT_CMD, PARAM_ACTION
         addr = base + off
         _, ok = write_reg_fc06(instr, addr, cmd_values[off])
@@ -350,12 +446,25 @@ def qa_channel(instr, qa, ch, capabilities):
         qa.add(f"{label} input off={off} (reserved) read", v is not None, f"val={v} (expected 0)")
 
     # --- Holding registers (FC03/FC06) ---
-    # Read all RW config registers
+    # Read all RW config registers. Capability-gated ones (CH_HOLDING_GATE)
+    # must be REJECTED on a channel lacking the required capability — that's
+    # the firmware's actual, tested behavior (vc_catalog_supported()), not a
+    # skip condition.
     for off in CH_HOLDING_RW_OFFSETS:
         addr = base + off
-        e, v = read_reg_fc03(instr, addr)
-        qa.add(f"{label} holding off={off} (addr={addr}) read",
-               v is not None, f"val={v} {e:.0f}us")
+        gate = CH_HOLDING_GATE.get(off)
+        if gate is None or gate(capabilities):
+            e, v = read_reg_fc03(instr, addr)
+            qa.add(f"{label} holding off={off} (addr={addr}) read",
+                   v is not None, f"val={v} {e:.0f}us")
+        else:
+            try:
+                instr.read_registers(addr, 1, 3)
+                qa.add(f"{label} holding off={off} (addr={addr}) — "
+                       f"expected rejection (capability absent)", False)
+            except Exception:
+                qa.add(f"{label} holding off={off} (addr={addr}) — "
+                       f"correctly rejected (capability absent)", True)
 
     # Read WO command registers (should return 0)
     for off in CH_HOLDING_WO_OFFSETS:
@@ -364,8 +473,9 @@ def qa_channel(instr, qa, ch, capabilities):
         qa.add(f"{label} holding off={off} (addr={addr}) WO readback",
                v == 0, f"val={v} (expected 0)")
 
-    # Read reserved holding offsets — should reject or return 0
-    for off in [17, 26, 35]:
+    # Read genuinely reserved holding offsets — should reject or return 0.
+    # (offset 17 is CFG_OUTPUT_ENABLED — capability-gated above, not reserved.)
+    for off in [26, 35]:
         addr = base + off
         try:
             e, v = read_reg_fc03(instr, addr)
@@ -375,16 +485,39 @@ def qa_channel(instr, qa, ch, capabilities):
             qa.add(f"{label} holding off={off} (reserved) — exception", True)
 
     # --- Config write + verify ---
-    # CFG_TARGET_VOLTAGE (offset 3)
-    addr = base + 3
-    _, orig = read_reg_fc03(instr, addr)
-    for val in [0, 1000, 2000, orig]:
-        _, ok = write_reg_fc06(instr, addr, val)
-        time.sleep(0.02)
-        _, rb = read_reg_fc03(instr, addr)
-        qa.add(f"{label} CFG_TARGET_VOLTAGE write {val}", ok and rb == val)
+    # CFG_TARGET_VOLTAGE (DAC channels) and CFG_OUTPUT_ENABLED (fixed-voltage
+    # switchable channels) are mutually exclusive by capability. A channel
+    # with neither (e.g. a locked always-on channel) must reject both.
+    addr_tv = base + CFG_TARGET_VOLTAGE_OFFSET
+    if target_voltage_applicable(capabilities):
+        _, orig = read_reg_fc03(instr, addr_tv)
+        for val in [0, 1000, 2000, orig]:
+            _, ok = write_reg_fc06(instr, addr_tv, val)
+            time.sleep(0.02)
+            _, rb = read_reg_fc03(instr, addr_tv)
+            qa.add(f"{label} CFG_TARGET_VOLTAGE write {val}", ok and rb == val)
+    else:
+        _, ok = write_reg_fc06(instr, addr_tv, 1000)
+        qa.add(f"{label} CFG_TARGET_VOLTAGE write — correctly rejected (no DAC)",
+               not ok)
 
-    # RECOVERY_POLICY_MODE (offset 8): cycle through values
+    addr_oe = base + CFG_OUTPUT_ENABLED_OFFSET
+    if output_enabled_applicable(capabilities):
+        _, orig_oe = read_reg_fc03(instr, addr_oe)
+        restore = orig_oe if orig_oe in (0, 1) else 1
+        for val in [0, 1, restore]:
+            _, ok = write_reg_fc06(instr, addr_oe, val)
+            time.sleep(0.02)
+            _, rb = read_reg_fc03(instr, addr_oe)
+            qa.add(f"{label} CFG_OUTPUT_ENABLED write {val}", ok and rb == val)
+    else:
+        reason = "has DAC" if chan_has(capabilities, CH_CAP_RAW_OUTPUT_DRIVE) \
+            else "locked always-on"
+        _, ok = write_reg_fc06(instr, addr_oe, 0)
+        qa.add(f"{label} CFG_OUTPUT_ENABLED write — correctly rejected ({reason})",
+               not ok)
+
+    # RECOVERY_POLICY_MODE (offset 8): cycle through values — ungated
     addr = base + 8
     _, orig_rp = read_reg_fc03(instr, addr)
     for rp in [0, 1, 3, orig_rp]:  # Manual, Auto, Never, restore
@@ -393,7 +526,7 @@ def qa_channel(instr, qa, ch, capabilities):
         _, rb = read_reg_fc03(instr, addr)
         qa.add(f"{label} RECOVERY_POLICY write {rp}", ok and rb == rp)
 
-    # CURRENT_SAFE_BAND_PCT (offset 12)
+    # CURRENT_SAFE_BAND_PCT (offset 12): cycle through values — ungated
     addr = base + 12
     _, orig_sb = read_reg_fc03(instr, addr)
     for sb in [10, 20, orig_sb]:
@@ -403,16 +536,24 @@ def qa_channel(instr, qa, ch, capabilities):
         qa.add(f"{label} CURRENT_SAFE_BAND write {sb}", ok and rb == sb)
 
     # --- Command writes (self-clearing WO) ---
+    # OUTPUT_ACTION's DISABLE_* values (cmd_val=2) require CH_CAP_OUTPUT_ENABLE;
+    # ENABLE (cmd_val=1) is always accepted regardless of capability.
+    has_output_enable = chan_has(capabilities, CH_CAP_OUTPUT_ENABLE)
     for off, action_name in [(0, "OUTPUT_ACTION"), (1, "FAULT_CMD"), (2, "PARAM_ACTION")]:
         addr = base + off
         for cmd_val in [1, 2]:
+            if off == 0 and cmd_val == 2 and not has_output_enable:
+                _, ok = write_reg_fc06(instr, addr, cmd_val)
+                qa.add(f"{label} {action_name} write {cmd_val} (DISABLE) — "
+                       f"correctly rejected (locked always-on)", not ok)
+                continue
             _, ok = write_reg_fc06(instr, addr, cmd_val)
             time.sleep(0.01)
             _, rb = read_reg_fc03(instr, addr)
             qa.add(f"{label} {action_name} write {cmd_val} -> self-clear",
                    ok and rb == 0, f"readback={rb}")
 
-    # PARAM_ACTION Save/Load/Factory
+    # PARAM_ACTION Save/Load/Factory — ungated
     addr_pa = base + 2
     for pa in [1, 2]:  # Save, Load
         _, ok = write_reg_fc06(instr, addr_pa, pa)
@@ -420,8 +561,9 @@ def qa_channel(instr, qa, ch, capabilities):
         _, rb = read_reg_fc03(instr, addr_pa)
         qa.add(f"{label} PARAM_ACTION {pa}", ok and rb == 0, f"readback={rb}")
 
-    # Try writing to reserved offsets — should reject
-    for off in [17, 35]:
+    # Try writing to genuinely reserved offsets — should reject.
+    # (offset 17 is tested above, not reserved.)
+    for off in [35]:
         addr = base + off
         try:
             instr.write_register(addr, 0, number_of_decimals=0, functioncode=6, signed=False)
@@ -622,10 +764,14 @@ def main():
         avg = statistics.mean(br_samples) if br_samples else 0
         ci_checks.append(("block_read", ok, f"{len(br_samples)} reads, avg={avg:.0f}us, {br_err} err"))
 
-        ok, cw_err = ci_config_write(instr, channel=present_channels[0] if present_channels else 0)
+        test_channel = present_channels[0] if present_channels else 0
+        _, ch_caps = read_reg_fc04(instr, CH_BLOCK_BASE(test_channel) + 9)  # CAPABILITY_FLAGS
+        ch_caps = ch_caps or 0
+
+        ok, cw_err = ci_config_write(instr, channel=test_channel, capabilities=ch_caps)
         ci_checks.append(("config_write", ok, f"{cw_err} errors"))
 
-        ok, cmd_err = ci_cmd_write(instr, channel=present_channels[0] if present_channels else 0)
+        ok, cmd_err = ci_cmd_write(instr, channel=test_channel, capabilities=ch_caps)
         ci_checks.append(("cmd_write", ok, f"{cmd_err} errors"))
 
         ok, bust_samples, bust_err = ci_burst(instr, duration_s=args.burst_duration)
