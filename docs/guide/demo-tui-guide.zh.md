@@ -1,6 +1,6 @@
-# HVB Demo TUI 用户指南
+# PSB Demo TUI 用户指南
 
-`hvb_tui` 是一个交互式终端面板，用于通过 Modbus RTU 对 Jianwei 高压控制板进行
+`psb_demo_tui` 是一个交互式终端面板，用于通过 Modbus RTU 对 Jianwei 高压控制板进行
 实时监控和控制，本文是它的快速上手参考。这是一款**工程调试 / 上电联调 / 演示
 工具**，不是出厂校准工具——它没有校准模式界面。板卡校准请参阅
 [`calibration-guide.zh.md`](calibration-guide.zh.md)。
@@ -13,8 +13,8 @@
 
 ```bash
 cmake -S tools -B tools/build
-cmake --build tools/build --target hvb_tui -j
-tools/bin/hvb_tui [-p PORT] [-b BAUD] [-i SLAVE_ID] [-t TIMEOUT_MS] [-s POLL_S]
+cmake --build tools/build --target psb_demo_tui -j
+tools/bin/psb_demo_tui [-p PORT] [-b BAUD] [-i SLAVE_ID] [-t TIMEOUT_MS] [-s POLL_S]
 ```
 
 | 参数 | 含义 | 默认值 |
@@ -25,7 +25,7 @@ tools/bin/hvb_tui [-p PORT] [-b BAUD] [-i SLAVE_ID] [-t TIMEOUT_MS] [-s POLL_S]
 | `-t` | 连接超时（毫秒） | 3000 |
 | `-s` | 后台轮询间隔（秒） | 1 |
 
-如果 `~/.hvb_demo_app.toml` 已存在（由配套的 CLI 工具 `hvb_demo_cli --save`
+如果 `~/.psb_demo_app.toml` 已存在（由配套的 CLI 工具 `psb_demo_cli --save`
 写入），其中的 `[connection]` 部分会为你未在命令行传入的参数提供默认值。
 **TUI 本身从不写入该文件**——你在连接弹窗中输入的连接参数只对当前会话有效，
 下次启动不会自动记住，除非你再次传入 `-p`/`-b`/`-i`，或用其他方式维护该
@@ -36,7 +36,7 @@ TOML 文件。
 ## 2. 界面布局
 
 ```
-┌ HVB │ 2 Channels │ [Normal ▾] │ [ Save ]      ● 1234s | T:24.1C H:41.2%      [ Connect ] [ Quit ] ┐
+┌ PSB │ 2 Channels │ [Normal ▾] │ [ Save ]      ● 1234s | T:24.1C H:41.2%      [ Connect ] [ Quit ] ┐
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │  Monitor    CH0    CH1                                                                             │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
@@ -265,9 +265,9 @@ TOML 文件。
 
 | 工具 | 可执行文件 | 用途 |
 |---|---|---|
-| Demo TUI（本文档） | `hvb_tui` | 交互式监控/控制，用于工程调试与演示 |
-| Demo CLI | `hvb_demo_cli` | 可脚本化的一次性命令；`--save` 会写入 `~/.hvb_demo_app.toml` |
-| Factory TUI | `hvb_factory_tui` | 出厂校准——见 [`calibration-guide.zh.md`](calibration-guide.zh.md) |
+| Demo TUI（本文档） | `psb_demo_tui` | 交互式监控/控制，用于工程调试与演示 |
+| Demo CLI | `psb_demo_cli` | 可脚本化的一次性命令；`--save` 会写入 `~/.psb_demo_app.toml` |
+| Factory TUI | `psb_factory_tui` | 出厂校准——见 [`calibration-guide.zh.md`](calibration-guide.zh.md) |
 
 ---
 
@@ -275,9 +275,9 @@ TOML 文件。
 
 | 现象 | 原因 / 处理方法 |
 |---|---|
-| 连接立即失败 | 端口错误、板卡未上电，或另一个进程（如 `hvb_demo_cli`、`hvb_factory_tui`）已占用该串口——同一时刻只能有一个工具占用该端口。 |
+| 连接立即失败 | 端口错误、板卡未上电，或另一个进程（如 `psb_demo_cli`、`psb_factory_tui`）已占用该串口——同一时刻只能有一个工具占用该端口。 |
 | 输入新值后又变回原值 | 在按 **Enter** 之前切换了焦点，导致修改未被发送。重新输入并按 Enter。 |
 | 选择器显示了新值，但板卡上没有任何变化 | 切换了 Mode/Action/Policy 选择器却没有按 Enter——除菜单栏的工作模式选择器外，其他选择器都不会自动生效（见第 6 节）。 |
 | 通道标签页消失 | 连接已断开——`reconcileDisconnectedTabs` 会收起为只剩 `Monitor`。重新连接即可。 |
-| 启动时输入的端口/波特率/从站地址下次没有记住 | TUI 从不写入 `~/.hvb_demo_app.toml`——请再次传入 `-p`/`-b`/`-i`，或通过 `hvb_demo_cli --save` 维护该文件。 |
+| 启动时输入的端口/波特率/从站地址下次没有记住 | TUI 从不写入 `~/.psb_demo_app.toml`——请再次传入 `-p`/`-b`/`-i`，或通过 `psb_demo_cli --save` 维护该文件。 |
 | 修改了从站地址或波特率后板卡失去响应 | 这些修改仅在复位后生效（见第 7 节）——板卡重启后请使用*新*参数重新连接。 |

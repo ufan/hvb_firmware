@@ -68,10 +68,10 @@ Total: ~117 register-level checks per channel. Exit 0 on all-pass, exit 1 otherw
 |--------|--------|------------|-----|
 | `stress_test.py --mode ci` | `minimalmodbus` (Python) | Persistent | CI pipeline |
 | `stress_test.py --mode qa` | `minimalmodbus` (Python) | Persistent | Production QA |
-| `stress_test_native.sh` | `hvb_demo_cli` (C++ / libmodbus) | Per-invocation | Functional smoke test |
+| `stress_test_native.sh` | `psb_demo_cli` (C++ / libmodbus) | Per-invocation | Functional smoke test |
 
 The Python script uses a persistent connection for accurate latency measurement. The
-native CLI wrapper uses the project's own `hvb_demo_cli` binary but adds ~50ms
+native CLI wrapper uses the project's own `psb_demo_cli` binary but adds ~50ms
 process-spawn overhead per transaction — use it for smoke/functional validation,
 not latency profiling.
 
@@ -133,7 +133,7 @@ bash tools/stress_test/stress_test_native.sh \
 | `--slave` | `1` | Modbus slave ID |
 | `--rounds` | `500` | Iterations for read tests |
 | `--burst` | `10` | Sustained burst duration (seconds) |
-| `--cli` | `tools/bin/hvb_demo_cli` | Path to CLI binary |
+| `--cli` | `tools/bin/psb_demo_cli` | Path to CLI binary |
 | `--report` | `reports/stress_test_native_<ts>.md` | Output report path |
 
 ## Report Output
@@ -148,7 +148,7 @@ Both CI and QA modes generate a Markdown report:
 CI report example:
 
 ```
-# HVB CI Stress Test — PASS
+# PSB CI Stress Test — PASS
 
 | Test | Result | Detail |
 |------|--------|--------|
@@ -165,7 +165,7 @@ CI report example:
 QA report includes every check:
 
 ```
-# HVB QA Stress Test — PASS
+# PSB QA Stress Test — PASS
 
 ## Summary: 117/117 passed, 0 failed
 
@@ -215,4 +215,4 @@ Results from a 1-channel HVB board at 115200 baud over USB-serial:
 - Python 3.10+ with `minimalmodbus` and `pyserial`
 - HVB board connected via USB-serial at `/dev/ttyUSB0`
 - Board flashed with `applications/psb_controller` firmware
-- For native CLI: pre-built `hvb_demo_cli` binary in `tools/bin/`
+- For native CLI: pre-built `psb_demo_cli` binary in `tools/bin/`

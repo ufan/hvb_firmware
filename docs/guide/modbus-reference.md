@@ -3,7 +3,7 @@
 This is the authoritative wire-protocol reference for the Jianwei
 voltage-control board: transport, register map, encoding, and enumerations.
 It's written for **third-party developers implementing their own host
-tooling** (not reusing `tools/hvb_modbus_core`) — no familiarity with this
+tooling** (not reusing `tools/psb_modbus_core`) — no familiarity with this
 repo's C++ code is assumed. If you *are* working in this repo, the register
 offsets below are generated from `include/reg_store/reg_map.h` and
 `include/reg_store/modbus_view.def`, which remain the single source of

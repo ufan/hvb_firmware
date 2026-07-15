@@ -1,6 +1,6 @@
-# HVB Demo TUI User Guide
+# PSB Demo TUI User Guide
 
-A quick-start reference for `hvb_tui`, the interactive terminal dashboard for
+A quick-start reference for `psb_demo_tui`, the interactive terminal dashboard for
 live monitoring and control of a Jianwei voltage-control board over Modbus
 RTU. This is an **engineering / bring-up / demo tool**, not the factory
 calibration tool — it has no calibration-mode UI. For calibrating a board,
@@ -14,8 +14,8 @@ see [`calibration-guide.md`](calibration-guide.md).
 
 ```bash
 cmake -S tools -B tools/build
-cmake --build tools/build --target hvb_tui -j
-tools/bin/hvb_tui [-p PORT] [-b BAUD] [-i SLAVE_ID] [-t TIMEOUT_MS] [-s POLL_S]
+cmake --build tools/build --target psb_demo_tui -j
+tools/bin/psb_demo_tui [-p PORT] [-b BAUD] [-i SLAVE_ID] [-t TIMEOUT_MS] [-s POLL_S]
 ```
 
 | Flag | Meaning | Default |
@@ -26,7 +26,7 @@ tools/bin/hvb_tui [-p PORT] [-b BAUD] [-i SLAVE_ID] [-t TIMEOUT_MS] [-s POLL_S]
 | `-t` | Connection timeout, ms | 3000 |
 | `-s` | Background poll interval, seconds | 1 |
 
-If `~/.hvb_demo_app.toml` exists (written by `hvb_demo_cli --save`, the
+If `~/.psb_demo_app.toml` exists (written by `psb_demo_cli --save`, the
 companion CLI tool), its `[connection]` section supplies the defaults for any
 flag you don't pass. **The TUI itself never writes this file** — connection
 settings you type into the Connect modal apply only to the current session
@@ -38,7 +38,7 @@ or maintain the TOML file some other way.
 ## 2. Screen layout
 
 ```
-┌ HVB │ 2 Channels │ [Normal ▾] │ [ Save ]      ● 1234s | T:24.1C H:41.2%      [ Connect ] [ Quit ] ┐
+┌ PSB │ 2 Channels │ [Normal ▾] │ [ Save ]      ● 1234s | T:24.1C H:41.2%      [ Connect ] [ Quit ] ┐
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │  Monitor    CH0    CH1                                                                             │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
@@ -280,9 +280,9 @@ Bring channel 0 up to 500 V, watch it, then take it back down:
 
 | Tool | Binary | Purpose |
 |---|---|---|
-| Demo TUI (this guide) | `hvb_tui` | Interactive monitoring/control, engineering + demo use |
-| Demo CLI | `hvb_demo_cli` | Scriptable one-shot commands; writes `~/.hvb_demo_app.toml` with `--save` |
-| Factory TUI | `hvb_factory_tui` | Production calibration — see [`calibration-guide.md`](calibration-guide.md) |
+| Demo TUI (this guide) | `psb_demo_tui` | Interactive monitoring/control, engineering + demo use |
+| Demo CLI | `psb_demo_cli` | Scriptable one-shot commands; writes `~/.psb_demo_app.toml` with `--save` |
+| Factory TUI | `psb_factory_tui` | Production calibration — see [`calibration-guide.md`](calibration-guide.md) |
 
 ---
 
@@ -290,9 +290,9 @@ Bring channel 0 up to 500 V, watch it, then take it back down:
 
 | Symptom | Cause / fix |
 |---|---|
-| Connect fails immediately | Wrong port, board not powered, or another process (e.g. `hvb_demo_cli`, `hvb_factory_tui`) already holds the serial port. Only one tool can hold the port at a time. |
+| Connect fails immediately | Wrong port, board not powered, or another process (e.g. `psb_demo_cli`, `psb_factory_tui`) already holds the serial port. Only one tool can hold the port at a time. |
 | A field reverts after you type a new value | You navigated away or the field lost focus before pressing **Enter** — nothing was sent. Re-enter the value and press Enter. |
 | Cycler shows a new value but nothing happened on the board | You cycled the Mode/Action/Policy selector but never pressed Enter — cyclers other than the menu-bar mode selector don't auto-commit (see §6). |
 | Channel tabs disappear | The connection dropped — `reconcileDisconnectedTabs` collapses back to just `Monitor`. Reconnect. |
-| Port/baud/slave typed at launch don't come back next time | The TUI never writes `~/.hvb_demo_app.toml` — pass `-p`/`-b`/`-i` again, or maintain that file via `hvb_demo_cli --save`. |
+| Port/baud/slave typed at launch don't come back next time | The TUI never writes `~/.psb_demo_app.toml` — pass `-p`/`-b`/`-i` again, or maintain that file via `psb_demo_cli --save`. |
 | Changed slave address or baud but board stopped responding | Those changes only take effect after a reset (§7) — reconnect using the *new* settings once it reboots. |

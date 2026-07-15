@@ -1,7 +1,7 @@
-# Factory Calibration Guide — hvb_factory_tui
+# Factory Calibration Guide — psb_factory_tui
 
 Quick-start reference for calibrating a Jianwei voltage-control board using
-the **factory TUI** (`hvb_factory_tui`), the host-side tool intended for
+the **factory TUI** (`psb_factory_tui`), the host-side tool intended for
 production/technician use. The Qt factory GUI exists in this repo but is not
 yet release-ready — use the TUI described here.
 
@@ -41,7 +41,7 @@ is to replace them with real per-unit numbers:
 
 - Board powered and connected via USB-serial Modbus RTU adapter (e.g.
   `/dev/ttyUSB0`, 115200 8N1, slave id 1 — all defaults).
-- `hvb_factory_tui` built and available (see §3).
+- `psb_factory_tui` built and available (see §3).
 - A calibrated external reference: a DMM for the voltage axis, a reference
   current source or precision load for the current axis. The board's own
   ADC readings are what you're calibrating — don't use them as ground truth.
@@ -54,12 +54,12 @@ is to replace them with real per-unit numbers:
 
 ```bash
 cmake -S tools -B tools/build       # BUILD_FACTORY is ON by default
-cmake --build tools/build --target hvb_factory_tui -j
-tools/bin/hvb_factory_tui -p /dev/ttyUSB0
+cmake --build tools/build --target psb_factory_tui -j
+tools/bin/psb_factory_tui -p /dev/ttyUSB0
 ```
 
 ```
-Usage: hvb_factory_tui -p <port> [-b <baud>] [-i <slaveId>]
+Usage: psb_factory_tui -p <port> [-b <baud>] [-i <slaveId>]
   -p, --port   Serial port to connect to (required, e.g. /dev/ttyUSB0)
   -b, --baud   Baud rate (default 115200)
   -i, --id     Modbus slave id (default 1)
@@ -278,7 +278,7 @@ disconnecting, or they're lost on the next reboot.
 ## Quick reference
 
 ```
-tools/bin/hvb_factory_tui -p /dev/ttyUSB0
+tools/bin/psb_factory_tui -p /dev/ttyUSB0
 
 cal unlock
   cal ch <n>

@@ -1,6 +1,6 @@
-# 出厂校准指南 — hvb_factory_tui
+# 出厂校准指南 — psb_factory_tui
 
-本指南面向使用 **工厂 TUI**（`hvb_factory_tui`）对 Jianwei 高压控制板进行校准的
+本指南面向使用 **工厂 TUI**（`psb_factory_tui`）对 Jianwei 高压控制板进行校准的
 生产/技术人员，是快速上手参考。仓库中也有 Qt 工厂 GUI，但尚未达到发布状态——
 请使用本文介绍的 TUI 工具。
 
@@ -39,7 +39,7 @@
 
 - 板卡已上电，并通过 USB 转串口 Modbus RTU 适配器连接（例如
   `/dev/ttyUSB0`，115200 8N1，从站地址 1——均为默认值）。
-- 已编译好的 `hvb_factory_tui`（见第 3 节）。
+- 已编译好的 `psb_factory_tui`（见第 3 节）。
 - 一台经过校准的外部基准表：电压轴用高精度万用表（DMM），电流轴用基准
   电流源或精密负载。板卡自身的 ADC 读数正是被校准的对象，不能作为基准。
 - 一次只校准一个通道；固件本身也只允许同一时刻只有一个通道的校准输出
@@ -51,12 +51,12 @@
 
 ```bash
 cmake -S tools -B tools/build       # BUILD_FACTORY 默认已开启
-cmake --build tools/build --target hvb_factory_tui -j
-tools/bin/hvb_factory_tui -p /dev/ttyUSB0
+cmake --build tools/build --target psb_factory_tui -j
+tools/bin/psb_factory_tui -p /dev/ttyUSB0
 ```
 
 ```
-Usage: hvb_factory_tui -p <port> [-b <baud>] [-i <slaveId>]
+Usage: psb_factory_tui -p <port> [-b <baud>] [-i <slaveId>]
   -p, --port   串口设备（必填，如 /dev/ttyUSB0）
   -b, --baud   波特率（默认 115200）
   -i, --id     Modbus 从站地址（默认 1）
@@ -262,7 +262,7 @@ factory> output off
 ## 速查表
 
 ```
-tools/bin/hvb_factory_tui -p /dev/ttyUSB0
+tools/bin/psb_factory_tui -p /dev/ttyUSB0
 
 cal unlock
   cal ch <n>

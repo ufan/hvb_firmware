@@ -2,7 +2,7 @@
 
 本文档是 Jianwei 高压控制板的权威线协议参考：传输层、寄存器地图、编码方式与
 枚举定义。面向**自行实现主机端工具的第三方开发者**（不复用
-`tools/hvb_modbus_core`）——不假设你熟悉本仓库的 C++ 代码。如果你正在本仓库内
+`tools/psb_modbus_core`）——不假设你熟悉本仓库的 C++ 代码。如果你正在本仓库内
 开发，下面的寄存器偏移量是从 `include/reg_store/reg_map.h` 和
 `include/reg_store/modbus_view.def` 生成的，它们才是唯一的真实来源；本文档不
 应与它们产生偏差。
