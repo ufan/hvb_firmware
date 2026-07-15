@@ -4,7 +4,7 @@ set -euo pipefail
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$TEST_DIR/../../.." && pwd)"
 RUNNER="$ROOT_DIR/tools/dac_sweep_test/dac_sweep_test.sh"
-MOCK="$TEST_DIR/mock_hvb_demo_cli.sh"
+MOCK="$TEST_DIR/mock_psb_demo_cli.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

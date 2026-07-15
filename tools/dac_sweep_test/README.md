@@ -1,7 +1,7 @@
 # DAC Sweep Test
 
 `dac_sweep_test.sh` characterizes every DAC-capable channel through the Modbus
-interface using `tools/bin/hvb_demo_cli`.
+interface using `tools/bin/psb_demo_cli`.
 
 ## Run
 
@@ -16,7 +16,7 @@ Options:
 --baud RATE       Baud rate (default: 115200)
 --slave ID        Modbus slave ID (default: 1)
 --timeout MS      CLI timeout in milliseconds (default: 3000)
---cli PATH        hvb_demo_cli executable
+--cli PATH        psb_demo_cli executable
 --report PATH     Markdown report path
 ```
 

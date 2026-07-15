@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HVB Board Modbus Stress Test
+PSB Board Modbus Stress Test
 
 Two operational modes:
   --mode ci   CI pipeline integration test: single channel, minimal register set,
@@ -670,7 +670,7 @@ def report_ci(args, results, started_at, ended_at, major, minor, channels,
     """Generate CI pass/fail report."""
     overall = results["overall_pass"]
     lines = []
-    lines.append(f"# HVB CI Stress Test — {'PASS' if overall else 'FAIL'}\n\n")
+    lines.append(f"# PSB CI Stress Test — {'PASS' if overall else 'FAIL'}\n\n")
     lines.append(f"- **Time**: {started_at.isoformat()}\n")
     lines.append(f"- **Port**: {args.port}  baud={args.baud}  slave={args.slave}\n")
     lines.append(f"- **Firmware**: v{major}.{minor}  channels={channels}  mask=0x{active_mask:04X}\n")
@@ -702,7 +702,7 @@ def report_qa(args, results, started_at, ended_at, major, minor, channels,
     failed = total - passed
 
     lines = []
-    lines.append(f"# HVB QA Stress Test — {'PASS' if overall else 'FAIL'}\n\n")
+    lines.append(f"# PSB QA Stress Test — {'PASS' if overall else 'FAIL'}\n\n")
     lines.append(f"- **Time**: {started_at.isoformat()}\n")
     lines.append(f"- **Duration**: {int((ended_at - started_at).total_seconds())}s\n")
     lines.append(f"- **Port**: {args.port}  baud={args.baud}  slave={args.slave}\n")
@@ -730,7 +730,7 @@ def report_qa(args, results, started_at, ended_at, major, minor, channels,
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="HVB Modbus Stress Test")
+    parser = argparse.ArgumentParser(description="PSB Modbus Stress Test")
     parser.add_argument("--mode", choices=["ci", "qa"], default="ci",
                         help="ci: fast CI pipeline (default); qa: exhaustive production QA")
     parser.add_argument("--port", default="/dev/ttyUSB0", help="Serial port")

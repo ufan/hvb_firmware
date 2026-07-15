@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# deploy_linux.sh — Build and package hvb_tui, hvb_demo_cli, and
-# hvb_factory_tui for Linux.
+# deploy_linux.sh — Build and package psb_demo_tui, psb_demo_cli, and
+# psb_factory_tui for Linux.
 #
 # Usage:
 #   ./deploy_linux.sh              # build + create tarballs in deploy/
@@ -9,7 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOOLS_DIR="$SCRIPT_DIR"
-APP_NAMES=("hvb_tui" "hvb_demo_cli" "hvb_factory_tui")
+APP_NAMES=("psb_demo_tui" "psb_demo_cli" "psb_factory_tui")
 VERSION="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || echo "dev")"
 ARCH="linux-x86_64"
 
@@ -26,7 +26,7 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-echo "=== HVB CLI/TUI tools — Linux package ==="
+echo "=== PSB CLI/TUI tools — Linux package ==="
 echo "    Version : $VERSION"
 echo "    Build   : $BUILD_DIR"
 echo "    Output  : $DEPLOY_DIR"

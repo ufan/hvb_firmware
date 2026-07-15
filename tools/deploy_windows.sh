@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# deploy_windows.sh — Cross-compile and package hvb_tui, hvb_demo_cli, and
-# hvb_factory_tui for Windows (MinGW).
+# deploy_windows.sh — Cross-compile and package psb_demo_tui, psb_demo_cli, and
+# psb_factory_tui for Windows (MinGW).
 #
 # Uses MinGW-w64 cross-compiler on Linux to produce statically-linked .exe
 # files. Each is self-contained: copy to any Windows 10/11 machine and run
@@ -19,7 +19,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOOLS_DIR="$SCRIPT_DIR"
-APP_NAMES=("hvb_tui" "hvb_demo_cli" "hvb_factory_tui")
+APP_NAMES=("psb_demo_tui" "psb_demo_cli" "psb_factory_tui")
 VERSION="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || echo "dev")"
 ARCH="win-x86_64"
 
@@ -27,7 +27,7 @@ BUILD_DIR="${TOOLS_DIR}/build/mingw-release"
 BIN_DIR="${TOOLS_DIR}/bin"
 DEPLOY_DIR="${SCRIPT_DIR}/deploy"
 
-echo "=== HVB CLI/TUI tools — Windows cross-compile package ==="
+echo "=== PSB CLI/TUI tools — Windows cross-compile package ==="
 echo "    Version : $VERSION"
 echo "    Build   : $BUILD_DIR"
 echo "    Output  : $DEPLOY_DIR"
@@ -69,5 +69,5 @@ echo ""
 echo "Done. Packages in: $DEPLOY_DIR"
 echo ""
 echo "To run on Windows:"
-echo "  1. Unzip the .exe you want (e.g. hvb_tui-${VERSION}-${ARCH}.zip)"
+echo "  1. Unzip the .exe you want (e.g. psb_demo_tui-${VERSION}-${ARCH}.zip)"
 echo "  2. Double-click the .exe"

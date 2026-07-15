@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(hvb_tools LANGUAGES CXX)
+project(psb_tools LANGUAGES CXX)
 
 option(BUILD_GUI "Build Qt Quick GUIs (requires Qt 6.x)" OFF)
 option(BUILD_FACTORY "Build factory calibration tool" ON)
@@ -116,9 +116,9 @@ if(BUILD_FACTORY)
     endif()
 endif()
 
-add_subdirectory(hvb_modbus_core)
-add_subdirectory(hvb_demo_app)
+add_subdirectory(psb_modbus_core)
+add_subdirectory(psb_demo_app)
 
 if(BUILD_FACTORY)
-    add_subdirectory(hvb_factory_tool)
+    add_subdirectory(psb_factory_tool)
 endif()

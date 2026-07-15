@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # stress_test_native.sh — HVB Board Modbus Stress Test (native CLI)
 #
-# Uses the project's native hvb_demo_cli binary.
+# Uses the project's native psb_demo_cli binary.
 # Each test measures per-invocation blocking time via date +%s%N.
 #
 # Source of truth for register addresses:
@@ -25,7 +25,7 @@ SLAVE="${SLAVE:-1}"
 TIMEOUT_MS=500
 ROUNDS="${ROUNDS:-500}"
 BURST_DURATION="${BURST_DURATION:-10}"
-CLI="${CLI:-$(cd "$(dirname "$0")/../.." && pwd)/tools/bin/hvb_demo_cli}"
+CLI="${CLI:-$(cd "$(dirname "$0")/../.." && pwd)/tools/bin/psb_demo_cli}"
 REPORT_DIR="${REPORT_DIR:-reports}"
 TIMESTAMP=$(date -u +%Y%m%d_%H%M%S)
 REPORT="${REPORT:-${REPORT_DIR}/stress_test_native_${TIMESTAMP}.md}"
@@ -372,7 +372,7 @@ generate_report() {
 
 ## Metadata
 - **Generated**: $(date -u -Iseconds)
-- **Tool**: \`hvb_demo_cli\` (\`$CLI\`)
+- **Tool**: \`psb_demo_cli\` (\`$CLI\`)
 - **Port**: $PORT
 - **Baud rate**: $BAUD
 - **Slave ID**: $SLAVE
@@ -389,7 +389,7 @@ generate_report() {
 
 | Aspect | \`stress_test.py\` | \`stress_test_native.sh\` |
 |---|---|---|
-| Modbus library | \`minimalmodbus\` (Python) | \`hvb_demo_cli\` → \`libmodbus\` (C) |
+| Modbus library | \`minimalmodbus\` (Python) | \`psb_demo_cli\` → \`libmodbus\` (C) |
 | Connection | Persistent (one serial open) | Per-invocation (connects on each call) |
 | Process overhead | None (~0us) | ~50ms (binary load + connect + exit) |
 | Per-call latency | ~6.7ms | ~60ms |
@@ -437,7 +437,7 @@ Verify errors: $cw_err
 
 The native CLI adds ~50ms process-spawn overhead per Modbus transaction.
 For high-frequency polling (>10 Hz), use a persistent connection approach
-(Python \`stress_test.py\` or directly use \`HvbModbusClient\` C++ library).
+(Python \`stress_test.py\` or directly use \`PsbModbusClient\` C++ library).
 The native CLI is suitable for one-shot config/cmd writes and low-frequency monitoring.
 
 ---

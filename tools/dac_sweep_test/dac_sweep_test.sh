@@ -6,7 +6,7 @@ PORT="/dev/ttyUSB0"
 BAUD=115200
 SLAVE=1
 TIMEOUT_MS=3000
-CLI="$SCRIPT_DIR/../bin/hvb_demo_cli"
+CLI="$SCRIPT_DIR/../bin/psb_demo_cli"
 REPORT=""
 
 SWEEP_CODES=(0 5000 10000 15000 20000 25000 30000 35000 40000 45000 50000 55000 60000)
@@ -20,7 +20,7 @@ Usage: $(basename "$0") [options]
   --baud RATE       Baud rate (default: 115200)
   --slave ID        Modbus slave ID (default: 1)
   --timeout MS      CLI timeout in milliseconds (default: 3000)
-  --cli PATH        hvb_demo_cli executable
+  --cli PATH        psb_demo_cli executable
   --report PATH     Markdown report path
   -h, --help        Show this help
 EOF
