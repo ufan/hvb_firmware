@@ -9,4 +9,17 @@ config LVB_VC_CHANNEL
 config VC_VARIANT_ID
 	default 2
 
+# All 10 channels are fixed-voltage (no DAC); the reference firmware drives
+# every channel active at boot, individually switchable afterward except
+# channel 1 (locked always-on, see jw_lvb.dts vc_ch0's capabilities).
+config VC_DEFAULT_OUTPUT_ENABLED
+	default y
+
+# Needed for the above to take effect at boot: the AUTOMATIC-mode invariant
+# (which honors VC_DEFAULT_OUTPUT_ENABLED for fixed-voltage channels) only
+# runs on a detected mode transition, so the board must default into
+# AUTOMATIC rather than NORMAL.
+config VC_DEFAULT_OPERATING_MODE
+	default 1
+
 endif # BOARD_JW_LVB

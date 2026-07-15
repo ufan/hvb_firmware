@@ -9,6 +9,7 @@
 #include <st/f1/stm32f103Xe.dtsi>
 #include <zephyr/dt-bindings/gpio/gpio.h>
 #include <zephyr/dt-bindings/pinctrl/stm32f1-pinctrl.h>
+#include <zephyr/dt-bindings/adc/adc.h>
 #include <zephyr/dt-bindings/adc/stm32_adc.h>
 #include <zephyr/dt-bindings/adc/stm32f1_adc.h>
 #include <dt-bindings/voltage_control/capabilities.h>
@@ -17,12 +18,11 @@
 	model = "Jianwei Low Voltage Board";
 	compatible = "jianwei,jw-lvb";
 
+	/* No debug UART is accessible on this board — console and shell run
+	 * over Segger RTT instead (see applications/psb_controller/boards/jw_lvb.conf). */
 	chosen {
-		zephyr,console    = &usart3;
-		zephyr,shell-uart = &usart3;
 		zephyr,sram       = &sram0;
 		zephyr,flash      = &flash0;
-		zephyr,watchdog0  = &iwdg;
 	};
 
 	vc_controller: vc-controller {
@@ -37,10 +37,19 @@
 			compatible = "jianwei,lvb-vc-channel";
 			reg = <0>;
 			label = "LV1";
-			capabilities = <(CH_CAP_OUTPUT_ENABLE |
-					 CH_CAP_VOLTAGE_MEASUREMENT |
+			/* CH_CAP_OUTPUT_ENABLE intentionally omitted: this channel must
+			 * always stay on. vc_channel_output_action() rejects DISABLE_*
+			 * commands for channels lacking this capability. The GPIO is
+			 * still wired below so the driver can drive it active at init. */
+			capabilities = <(CH_CAP_VOLTAGE_MEASUREMENT |
 					 CH_CAP_CURRENT_MEASUREMENT)>;
-			enable-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+			/* enable-gpios intentionally swapped with vc_ch2: the reference
+			 * firmware's board-tested power.c drives its always-on channel
+			 * via DT_ALIAS(pwr2) (gpiof14), not DT_ALIAS(pwr0) (gpiog1), due
+			 * to a documented PCB-level CH1/CH3 crossing found during
+			 * bring-up ("[bug]: ch1 and ch3 swaped"). This keeps the
+			 * physically-labeled CH1 connector as the always-on one. */
+			enable-gpios = <&gpiof 14 GPIO_ACTIVE_HIGH>;
 			io-channels = <&adc1 7>, <&adc1 6>;
 			io-channel-names = "voltage", "current";
 			calib-current-b = <(-1822)>;
@@ -66,7 +75,9 @@
 			capabilities = <(CH_CAP_OUTPUT_ENABLE |
 					 CH_CAP_VOLTAGE_MEASUREMENT |
 					 CH_CAP_CURRENT_MEASUREMENT)>;
-			enable-gpios = <&gpiof 14 GPIO_ACTIVE_HIGH>;
+			/* see vc_ch0 comment: swapped with vc_ch0 per the reference
+			 * firmware's validated CH1/CH3 GPIO crossing workaround. */
+			enable-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
 			io-channels = <&adc1 5>, <&adc1 4>;
 			io-channel-names = "voltage", "current";
 			calib-current-b = <(-1640)>;
@@ -196,15 +207,6 @@
 &gpiof { status = "okay"; };
 &gpiog { status = "okay"; };
 
-/* ---- USART3 — console / debug shell (PB10/PB11, no remap) ---- */
-
-&usart3 {
-	pinctrl-0 = <&usart3_tx_pb10 &usart3_rx_pb11>;
-	pinctrl-names = "default";
-	current-speed = <115200>;
-	status = "okay";
-};
-
 /* ---- USART1 — Modbus RTU (PA9/PA10), DE on PG3 (active-low) ---- */
 
 &usart1 {
@@ -223,6 +225,9 @@
 /* ---- ADC1 — 12-channel internal ADC ---- */
 
 &adc1 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
 	pinctrl-0 = <
 		&adc1_in1_pa1  &adc1_in2_pa2  &adc1_in3_pa3
 		&adc1_in4_pa4  &adc1_in5_pa5  &adc1_in6_pa6
@@ -232,11 +237,123 @@
 	>;
 	pinctrl-names = "default";
 	status = "okay";
+
+	/* Per-channel config required for adc_sequence_init_dt() to succeed —
+	 * without a matching channel@N node, channel_cfg_dt_node_exists is
+	 * false and adc_read_dt() fails with "No channels selected". */
+	channel@1 {
+		reg = <1>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@2 {
+		reg = <2>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@3 {
+		reg = <3>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@4 {
+		reg = <4>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@5 {
+		reg = <5>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@6 {
+		reg = <6>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@7 {
+		reg = <7>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@8 {
+		reg = <8>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@9 {
+		reg = <9>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@a {
+		reg = <10>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@b {
+		reg = <11>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@c {
+		reg = <12>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@d {
+		reg = <13>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@e {
+		reg = <14>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@f {
+		reg = <15>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
 };
 
 /* ---- ADC3 — 5-channel (PF6–PF10, ADC3-only) ---- */
 
 &adc3 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
 	pinctrl-0 = <
 		&adc3_in4_pf6 &adc3_in5_pf7
 		&adc3_in6_pf8 &adc3_in7_pf9 &adc3_in8_pf10
@@ -248,13 +365,57 @@
 	resolutions = <STM32F1_ADC_RES(12)>;
 	sampling-times = <2 8 14 29 42 56 72 240>;
 	st,adc-sequencer = <FULLY_CONFIGURABLE>;
+
+	/* Per-channel config required for adc_sequence_init_dt() to succeed —
+	 * see the matching comment on &adc1. */
+	channel@4 {
+		reg = <4>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@5 {
+		reg = <5>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@6 {
+		reg = <6>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@7 {
+		reg = <7>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+	channel@8 {
+		reg = <8>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
 	status = "okay";
 };
 
-/* ---- Watchdog ---- */
-
+/* ---- Watchdog ----
+ * Left disabled: the STM32 IWDG driver auto-arms itself at boot (with a
+ * 100 ms default timeout, CONFIG_IWDG_STM32_INITIAL_TIMEOUT) whenever
+ * CONFIG_WATCHDOG=y, regardless of whether the application ever calls
+ * wdt_setup()/wdt_feed() — nothing in this firmware feeds it, so enabling
+ * it here reset the board in a ~100 ms loop from first boot. The reference
+ * firmware never enabled CONFIG_WATCHDOG either. Re-enable only alongside
+ * an explicit wdt_setup()+periodic wdt_feed() with a real timeout. */
 &iwdg {
-	status = "okay";
+	status = "disabled";
 };
 
 /* ---- NVS storage — last 8 KB of 512 KB flash (4 × 2 KB pages) ---- */
@@ -281,15 +442,6 @@
 	};
 	usart1_rx_pa10: usart1_rx_pa10 {
 		pinmux = <STM32F1_PINMUX('A', 10, GPIO_IN, NO_REMAP)>;
-		bias-pull-up;
-	};
-
-	/* USART3 (console, no remap — PB10/PB11) */
-	usart3_tx_pb10: usart3_tx_pb10 {
-		pinmux = <STM32F1_PINMUX('B', 10, ALTERNATE, NO_REMAP)>;
-	};
-	usart3_rx_pb11: usart3_rx_pb11 {
-		pinmux = <STM32F1_PINMUX('B', 11, GPIO_IN, NO_REMAP)>;
 		bias-pull-up;
 	};
 
