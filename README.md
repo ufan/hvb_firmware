@@ -31,10 +31,12 @@ west update
 
 ## Builds
 
-Build the product firmware skeleton:
+Build the product firmware skeleton (board-agnostic — works for any
+`jianwei,vc-controller`-based board, e.g. `jw_hvb` or `jw_lvb`):
 
 ```sh
-west build -b jw_hvb applications/hvb_controller
+west build -b jw_hvb applications/psb_controller
+west build -b jw_lvb applications/psb_controller
 ```
 
 Build the current Modbus RTU smoke demo:
@@ -52,6 +54,6 @@ west build -b jw_hvb demos/modbus_sim
 Use a separate build directory when switching between applications:
 
 ```sh
-west build -b jw_hvb -d build/hvb_controller applications/hvb_controller
+west build -b jw_hvb -d build/psb_controller applications/psb_controller
 west build -b jw_hvb -d build/modbus_smoke demos/modbus_smoke
 ```

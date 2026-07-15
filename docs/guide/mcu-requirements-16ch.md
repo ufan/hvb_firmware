@@ -2,7 +2,7 @@
 
 ## 1. Firmware Resource Estimate (16 channels)
 
-Based on current `hvb_controller` build (STM32F429, 2ch) with per-channel scaling
+Based on current `psb_controller` build (STM32F429, 2ch) with per-channel scaling
 analysis of `struct vc_channel` (138 B), `vc_catalog_channel_regs[40]` (24 B each),
 and `vc_channel_buffer` (24 B each). All other structures are shared/constant.
 

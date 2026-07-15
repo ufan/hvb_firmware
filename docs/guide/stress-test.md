@@ -214,5 +214,5 @@ Results from a 1-channel HVB board at 115200 baud over USB-serial:
 
 - Python 3.10+ with `minimalmodbus` and `pyserial`
 - HVB board connected via USB-serial at `/dev/ttyUSB0`
-- Board flashed with `applications/hvb_controller` firmware
+- Board flashed with `applications/psb_controller` firmware
 - For native CLI: pre-built `hvb_demo_cli` binary in `tools/bin/`

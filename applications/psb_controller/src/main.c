@@ -44,6 +44,6 @@ int main(void)
 	vc_shell_init();
 #endif
 
-	printk("hvb_controller ready\n");
+	printk("psb_controller ready\n");
 	return 0;
 }
