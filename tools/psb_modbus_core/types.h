@@ -8,7 +8,7 @@
 // Channel capability bits — from capabilities.h
 #include "dt-bindings/voltage_control/capabilities.h"
 
-namespace hvb {
+namespace psb {
 
 // ============================================================================
 //  Enumerations — synced with firmware include/voltage_control/vc_types.h
@@ -146,7 +146,10 @@ struct SystemConfig {
 };
 
 struct ChannelConfig {
-    int16_t configuredTargetVRaw = 0;                // INT16, raw LSB
+    int16_t configuredTargetVRaw = 0;                // INT16, raw LSB — DAC channels only (CH_CAP_RAW_OUTPUT_DRIVE)
+    bool outputEnabledCfg = false;                   // CFG_OUTPUT_ENABLED — fixed-voltage channels only
+                                                       // (CH_CAP_OUTPUT_ENABLE, no CH_CAP_RAW_OUTPUT_DRIVE);
+                                                       // startup/AUTOMATIC-mode desired on/off state
     OutputAction outputAction = OutputAction::None;
     ChannelFaultCommand faultCommand = ChannelFaultCommand::None;
     uint16_t rampUpStepRaw = 0;       // UINT16, raw LSB
@@ -268,4 +271,4 @@ inline const char* paramActionName(ParamAction a) {
     return "?";
 }
 
-} // namespace hvb
+} // namespace psb

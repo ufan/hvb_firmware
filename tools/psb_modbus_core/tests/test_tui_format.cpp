@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
-#include "../../hvb_demo_app/tui/tui_format.h"
+#include "../../psb_demo_app/tui/tui_format.h"
 
-using namespace hvb::tui;
-using namespace hvb;
+using namespace psb::tui;
+using namespace psb;
 
 TEST_CASE("statusBadge") {
     CHECK(statusBadge(0x0000) == "OFF");

@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace hvb {
+namespace psb {
 
 class ConfigManager {
 public:
@@ -21,4 +21,4 @@ public:
     void setFromArgs(const std::string& p, int baud, int id, int timeout);
 };
 
-} // namespace hvb
+} // namespace psb

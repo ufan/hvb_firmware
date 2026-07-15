@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
-#include "../../hvb_demo_app/tui/tui_policy.h"
+#include "../../psb_demo_app/tui/tui_policy.h"
 
-using namespace hvb::tui;
+using namespace psb::tui;
 
 TEST_CASE("port selection preserves an available port") {
     CHECK(selectedPortIndex({"A", "B"}, "B") == 1);

@@ -1,10 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
-#include "hvb_modbus_client.h"
+#include "psb_modbus_client.h"
 #include "register_map.h"
 #include "types.h"
 #include <cstring>
 
-using namespace hvb;
+using namespace psb;
 
 static constexpr int MAX_ADDR = EXT_BLOCK_BASE + EXT_BLOCK_SIZE;
 
@@ -30,7 +30,7 @@ TEST_CASE("Protocol v3 system info", "[calibration]") {
     uint16_t input[MAX_ADDR], holding[MAX_ADDR];
     initBoard(input, holding);
 
-    HvbModbusClient client;
+    PsbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
     auto info = client.readSystemInfo();
@@ -58,7 +58,7 @@ TEST_CASE("Calibration unlock write", "[calibration]") {
     uint16_t input[MAX_ADDR], holding[MAX_ADDR];
     initBoard(input, holding);
 
-    HvbModbusClient client;
+    PsbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
     REQUIRE(client.unlockCalibrationStep(CAL_UNLOCK_STEP1));
@@ -74,7 +74,7 @@ TEST_CASE("Calibration output enable and raw DAC code", "[calibration]") {
     uint16_t input[MAX_ADDR], holding[MAX_ADDR];
     initBoard(input, holding);
 
-    HvbModbusClient client;
+    PsbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
     REQUIRE(client.writeCalibrationOutputEnable(0, true));
@@ -93,7 +93,7 @@ TEST_CASE("Calibration sample and commit commands", "[calibration]") {
     uint16_t input[MAX_ADDR], holding[MAX_ADDR];
     initBoard(input, holding);
 
-    HvbModbusClient client;
+    PsbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
     REQUIRE(client.sendCalibrationSampleCommand(0));
@@ -119,7 +119,7 @@ TEST_CASE("CalibrationSnapshot round-trip", "[calibration]") {
     holding[base_hold + CH_CAL_OUTPUT_ENABLE] = 1;
     holding[base_hold + CH_CAL_DAC_CODE] = 2048;
 
-    HvbModbusClient client;
+    PsbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
     auto snap = client.readCalibrationSnapshot(0);
@@ -144,7 +144,7 @@ TEST_CASE("readCalibrationSnapshot reads raw ADC input registers", "[calibration
     input[base + CH_RAW_ADC_CURRENT_LO] = 0x5678;
     /* v3: raw ADC reads belong in readCalibrationSnapshot, not readChannelInfo */
 
-    HvbModbusClient client;
+    PsbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
     auto snap = client.readCalibrationSnapshot(0);
@@ -162,7 +162,7 @@ TEST_CASE("readCalibrationSnapshot includes cal session fields", "[calibration]"
     holding[base + CH_CAL_OUTPUT_ENABLE] = 1;
     holding[base + CH_CAL_DAC_CODE] = 3000;
 
-    HvbModbusClient client;
+    PsbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
     auto snap = client.readCalibrationSnapshot(0);
@@ -184,7 +184,7 @@ TEST_CASE("readChannelCalConfig reads cal coefficients", "[calibration]") {
     holding[base + CH_MEASURED_I_CAL_K] = 9980;
     holding[base + CH_MEASURED_I_CAL_B] = static_cast<uint16_t>(static_cast<int16_t>(-2));
 
-    HvbModbusClient client;
+    PsbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
     auto cal = client.readChannelCalConfig(0);
@@ -202,7 +202,7 @@ TEST_CASE("exitCalibrationMode writes EXT_CAL_EXIT", "[calibration]") {
     uint16_t input[MAX_ADDR], holding[MAX_ADDR];
     initBoard(input, holding);
 
-    HvbModbusClient client;
+    PsbModbusClient client;
     client.attachTestArrays(input, holding, MAX_ADDR);
 
     REQUIRE(client.exitCalibrationMode());

@@ -1,4 +1,4 @@
-#include "hvb_modbus_client.h"
+#include "psb_modbus_client.h"
 #include "types.h"
 #include "register_map.h"
 
@@ -7,9 +7,9 @@
 TEST_CASE("Write — target voltage", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
-    inputRegs[hvb::reg::chAddr(0, CH_CAPABILITY_FLAGS)] = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE;
+    inputRegs[psb::reg::chAddr(0, CH_CAPABILITY_FLAGS)] = CH_CAP_OUTPUT_ENABLE | CH_CAP_RAW_OUTPUT_DRIVE;
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     REQUIRE(client.writeConfiguredTargetVoltage(0, 5000));
@@ -21,11 +21,11 @@ TEST_CASE("Write — output action write succeeds", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     REQUIRE(client.writeConfiguredTargetVoltage(0, 5000));
-    REQUIRE(client.sendOutputAction(0, hvb::OutputAction::Enable));
+    REQUIRE(client.sendOutputAction(0, psb::OutputAction::Enable));
 
     // The write succeeded (client API returns true)
     // Self-clearing is real-board behavior, not simulated in test arrays
@@ -36,19 +36,19 @@ TEST_CASE("Write — fault command clear active", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
-    REQUIRE(client.sendChannelFaultCommand(0, hvb::ChannelFaultCommand::ClearActiveFaultBlock));
+    REQUIRE(client.sendChannelFaultCommand(0, psb::ChannelFaultCommand::ClearActiveFaultBlock));
 }
 
 TEST_CASE("Write — calibration", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
-    inputRegs[hvb::reg::chAddr(0, CH_CAPABILITY_FLAGS)] = CH_CAP_RAW_OUTPUT_DRIVE;
-    inputRegs[hvb::reg::chAddr(1, CH_CAPABILITY_FLAGS)] = CH_CAP_VOLTAGE_MEASUREMENT;
+    inputRegs[psb::reg::chAddr(0, CH_CAPABILITY_FLAGS)] = CH_CAP_RAW_OUTPUT_DRIVE;
+    inputRegs[psb::reg::chAddr(1, CH_CAPABILITY_FLAGS)] = CH_CAP_VOLTAGE_MEASUREMENT;
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     REQUIRE(client.writeCalibrationOutput(0, 10123, -5));
@@ -67,13 +67,13 @@ TEST_CASE("Write — channel recovery", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
-    REQUIRE(client.writeChannelRecovery(0, hvb::RecoveryPolicy::AutoRetry, 30, 5, 600));
+    REQUIRE(client.writeChannelRecovery(0, psb::RecoveryPolicy::AutoRetry, 30, 5, 600));
 
     auto cfg = client.readChannelConfig(0);
-    CHECK(cfg.recoveryPolicyMode == hvb::RecoveryPolicy::AutoRetry);
+    CHECK(cfg.recoveryPolicyMode == psb::RecoveryPolicy::AutoRetry);
     CHECK(cfg.autoRetryDelay == 30);
     CHECK(cfg.autoRetryMaxCount == 5);
     CHECK(cfg.autoRetryWindow == 600);
@@ -83,7 +83,7 @@ TEST_CASE("Write — channel safe band", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     REQUIRE(client.writeChannelSafeBand(0, 25));
@@ -94,9 +94,9 @@ TEST_CASE("Write — channel safe band", "[writes]") {
 TEST_CASE("Write — read-back consistency", "[writes]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
-    inputRegs[hvb::reg::chAddr(0, CH_CAPABILITY_FLAGS)] = CH_CAP_RAW_OUTPUT_DRIVE | CH_CAP_VOLTAGE_MEASUREMENT;
+    inputRegs[psb::reg::chAddr(0, CH_CAPABILITY_FLAGS)] = CH_CAP_RAW_OUTPUT_DRIVE | CH_CAP_VOLTAGE_MEASUREMENT;
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     // Write then read back — verify round-trip
@@ -118,14 +118,14 @@ TEST_CASE("Write — parameter actions preserve system and channel scope", "[wri
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
-    REQUIRE(client.sendParamAction(-1, hvb::ParamAction::Save));
-    CHECK(holdingRegs[hvb::reg::sysAddr(SYS_PARAM_ACTION)] ==
-          static_cast<uint16_t>(hvb::ParamAction::Save));
+    REQUIRE(client.sendParamAction(-1, psb::ParamAction::Save));
+    CHECK(holdingRegs[psb::reg::sysAddr(SYS_PARAM_ACTION)] ==
+          static_cast<uint16_t>(psb::ParamAction::Save));
 
-    REQUIRE(client.sendParamAction(1, hvb::ParamAction::Save));
-    CHECK(holdingRegs[hvb::reg::chAddr(1, CH_PARAM_ACTION)] ==
-          static_cast<uint16_t>(hvb::ParamAction::Save));
+    REQUIRE(client.sendParamAction(1, psb::ParamAction::Save));
+    CHECK(holdingRegs[psb::reg::chAddr(1, CH_PARAM_ACTION)] ==
+          static_cast<uint16_t>(psb::ParamAction::Save));
 }

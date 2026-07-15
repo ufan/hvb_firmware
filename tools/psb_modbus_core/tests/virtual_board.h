@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace hvb::test {
+namespace psb::test {
 
 // Full Modbus RTU server emulating HVB board register map (hvb_regs.h)
 class VirtualBoard {
@@ -36,4 +36,4 @@ private:
     uint16_t holdingRegs[280] = {};
 };
 
-} // namespace hvb::test
+} // namespace psb::test

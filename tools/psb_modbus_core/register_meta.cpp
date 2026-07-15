@@ -4,15 +4,15 @@
 #include <iomanip>
 #include <stdexcept>
 
-namespace hvb::meta {
+namespace psb::meta {
 
-using Cat = hvb::reg::PollCat;
-namespace vscale = hvb::reg::scale;
+using Cat = psb::reg::PollCat;
+namespace vscale = psb::reg::scale;
 
 // Divisor for the register catalog's "raw (converted unit)" display — the same
 // x0.1 convention documented for both voltage and current (see
 // docs/guide/parameter-reference.md). Named here, rather than a literal 10.0,
-// so it can never silently diverge from hvb::reg::scale::VOLTAGE_LSB_TO_V /
+// so it can never silently diverge from psb::reg::scale::VOLTAGE_LSB_TO_V /
 // CURRENT_LSB_TO_A.
 constexpr double kVoltageDisplayDivisor = 1.0 / vscale::VOLTAGE_LSB_TO_V;       // -> V
 constexpr double kCurrentDisplayDivisor = 1.0 / (vscale::CURRENT_LSB_TO_A * 1e9); // -> nA
@@ -97,7 +97,8 @@ const std::vector<RegDesc> CHANNEL_HOLDING = {
         {"None", "DisableGraceful", "DisableImmediate", "ForceZero"}, Cat::Config},
     {15, "Current Limit Threshold","int16", "nA",      "Current limit", kCurrentDisplayDivisor, true, false, -1, {}, Cat::Config},
     {16, "Auto Derate Step",      "uint16", "V",       "Target reduction per derate retry", kVoltageDisplayDivisor, true, false, -1, {}, Cat::Config},
-    /* 17..19 reserved — CH_SAVE_TARGET_POLICY removed in v3 */
+    {17, "Configured Output Enabled","uint16","bool",  "Fixed-voltage channel startup/AUTOMATIC-mode desired on/off (no DAC)", 1.0, true, false, -1, {}, Cat::Config},
+    /* 18..19 reserved */
     /* Cal config — readable any mode, writable in cal mode only */
     {20, "Output Calibration K",  "uint16", "x",       "Output path slope (unity = 10000)", vscale::OUTPUT_CAL_DIVISOR, true, false, -1, {}, Cat::Config},
     {21, "Output Calibration B",  "int16",  "dac",     "Output path offset (DAC counts)", 1.0, true, false, -1, {}, Cat::Config},
@@ -119,14 +120,14 @@ const std::vector<RegDesc> CHANNEL_HOLDING = {
 const RegDesc* findDesc(uint16_t absAddr, bool holding) {
     const auto& sysVec = holding ? SYSTEM_HOLDING : SYSTEM_INPUT;
     for (const auto& d : sysVec) {
-        if (d.address == absAddr - hvb::reg::sysAddr(0)) {
+        if (d.address == absAddr - psb::reg::sysAddr(0)) {
             return &d;
         }
     }
     const auto& chVec = holding ? CHANNEL_HOLDING : CHANNEL_INPUT;
     for (const auto& d : chVec) {
-        for (int ch = 0; ch < 4; ++ch) {
-            if (d.address == absAddr - hvb::reg::chAddr(ch, 0)) {
+        for (int ch = 0; ch < static_cast<int>(psb::reg::MAX_CHANNELS); ++ch) {
+            if (d.address == absAddr - psb::reg::chAddr(ch, 0)) {
                 return &d;
             }
         }
@@ -193,4 +194,4 @@ std::string formatRegisterCatalog() {
     return ss.str();
 }
 
-} // namespace hvb::meta
+} // namespace psb::meta

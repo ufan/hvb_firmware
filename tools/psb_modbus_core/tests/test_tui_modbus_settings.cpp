@@ -3,15 +3,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../../hvb_demo_app/tui/modbus_settings.h"
+#include "../../psb_demo_app/tui/modbus_settings.h"
 
 #include <string>
 #include <utility>
 #include <vector>
 
-using hvb::tui::ModbusSettingsSaveResult;
-using hvb::tui::modbusSettingsStatusMessage;
-using hvb::tui::saveModbusSettings;
+using psb::tui::ModbusSettingsSaveResult;
+using psb::tui::modbusSettingsStatusMessage;
+using psb::tui::saveModbusSettings;
 
 TEST_CASE("Modbus settings save result has a status-bar message") {
     CHECK(modbusSettingsStatusMessage(ModbusSettingsSaveResult::Success, "") ==
@@ -26,7 +26,7 @@ TEST_CASE("Modbus settings save result has a status-bar message") {
 }
 
 TEST_CASE("unchanged Modbus settings perform no writes") {
-    hvb::SystemConfig current{};
+    psb::SystemConfig current{};
     current.slaveAddr = 1;
     current.baudRateCode = 0;
     int writes = 0;
@@ -41,7 +41,7 @@ TEST_CASE("unchanged Modbus settings perform no writes") {
 }
 
 TEST_CASE("changed Modbus fields are written in protocol order") {
-    hvb::SystemConfig current{};
+    psb::SystemConfig current{};
     current.slaveAddr = 1;
     current.baudRateCode = 0;
     std::vector<std::pair<std::string, uint16_t>> calls;
@@ -57,7 +57,7 @@ TEST_CASE("changed Modbus fields are written in protocol order") {
 }
 
 TEST_CASE("only changed Modbus settings are written") {
-    hvb::SystemConfig current{};
+    psb::SystemConfig current{};
     current.slaveAddr = 3;
     current.baudRateCode = 1;
     std::vector<std::pair<std::string, uint16_t>> calls;
@@ -82,7 +82,7 @@ TEST_CASE("only changed Modbus settings are written") {
 }
 
 TEST_CASE("invalid Modbus settings perform no writes") {
-    hvb::SystemConfig current{};
+    psb::SystemConfig current{};
     int writes = 0;
     auto write = [&](uint16_t) { ++writes; return true; };
 
@@ -96,7 +96,7 @@ TEST_CASE("invalid Modbus settings perform no writes") {
 }
 
 TEST_CASE("failed Modbus writes stop the save sequence") {
-    hvb::SystemConfig current{};
+    psb::SystemConfig current{};
     current.slaveAddr = 1;
     current.baudRateCode = 0;
     int baudWrites = 0;

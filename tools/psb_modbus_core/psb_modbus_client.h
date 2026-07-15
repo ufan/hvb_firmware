@@ -7,14 +7,14 @@
 #include <vector>
 #include "types.h"
 
-namespace hvb {
+namespace psb {
 
-class HvbModbusClient {
+class PsbModbusClient {
 public:
     using FrameCallback = std::function<void(bool tx, const std::vector<uint8_t>& data)>;
 
-    HvbModbusClient();
-    ~HvbModbusClient();
+    PsbModbusClient();
+    ~PsbModbusClient();
 
     bool connect(const std::string& port, int baud = 115200, int slaveId = 1, int timeoutMs = 500);
     void disconnect();
@@ -47,6 +47,7 @@ public:
 
     // High-level writes — channel
     bool writeConfiguredTargetVoltage(int ch, int16_t raw);
+    bool writeOutputEnabled(int ch, bool enabled);
     bool sendOutputAction(int ch, OutputAction action);
     bool sendChannelFaultCommand(int ch, ChannelFaultCommand cmd);
     bool writeRampUp(int ch, uint16_t stepRaw, uint16_t interval);
@@ -91,4 +92,4 @@ private:
     bool checkConnected();
 };
 
-} // namespace hvb
+} // namespace psb

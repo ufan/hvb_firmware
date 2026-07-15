@@ -5,7 +5,7 @@
 // Shared register map from firmware — single UINT16 registers, raw LSB values
 #include "reg_store/reg_map.h"
 
-namespace hvb::reg {
+namespace psb::reg {
 
 inline constexpr uint16_t MAX_CHANNELS = VC_PROTOCOL_MAX_CHANNELS;
 
@@ -81,8 +81,8 @@ namespace scale {
 
     // Calibration coefficient (Cal K) fixed-point divisors — calibrated = raw * k / DIVISOR + b.
     // Single source of truth: every host-tool call site that scales a Cal K
-    // value (register_meta.cpp's catalog, hvb_factory_tool's CalibrationBackend/
-    // ReportEngine, hvb_demo_cli) must use these constants, not a literal
+    // value (register_meta.cpp's catalog, psb_factory_tool's CalibrationBackend/
+    // ReportEngine, psb_demo_cli) must use these constants, not a literal
     // 10000/1000000, so the three can never drift apart again.
     inline constexpr double OUTPUT_CAL_DIVISOR = 10000.0;    // output_calib_k; unity = 10000
     inline constexpr double MEAS_CAL_DIVISOR   = 1000000.0;  // measured_{voltage,current}_calib_k;
@@ -111,4 +111,4 @@ inline uint16_t intervalFromS(double s) {
     return static_cast<uint16_t>(s * 10.0 + 0.5);
 }
 
-} // namespace hvb::reg
+} // namespace psb::reg

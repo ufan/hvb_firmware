@@ -1,20 +1,20 @@
-#include "hvb_modbus_client.h"
+#include "psb_modbus_client.h"
 #include "types.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <string>
 
-extern std::string renderMonitorTable(const hvb::SystemInfo& sys,
-                                      const std::vector<hvb::ChannelInfo>& channels);
+extern std::string renderMonitorTable(const psb::SystemInfo& sys,
+                                      const std::vector<psb::ChannelInfo>& channels);
 
 TEST_CASE("Monitor — table includes protocol version and uptime", "[monitor]") {
-    hvb::SystemInfo sys;
+    psb::SystemInfo sys;
     sys.protoMajor = 3;
     sys.protoMinor = 0;
     sys.uptimeSec = 3600;
-    sys.activeOpMode = hvb::OpMode::Normal;
+    sys.activeOpMode = psb::OpMode::Normal;
 
-    std::vector<hvb::ChannelInfo> channels(2);
+    std::vector<psb::ChannelInfo> channels(2);
     channels[0].voltageRaw = 5000;
     channels[0].status = 0x0003;
 
@@ -24,12 +24,12 @@ TEST_CASE("Monitor — table includes protocol version and uptime", "[monitor]")
 }
 
 TEST_CASE("Monitor — table includes channel data", "[monitor]") {
-    hvb::SystemInfo sys;
+    psb::SystemInfo sys;
     sys.protoMajor = 3;
     sys.uptimeSec = 100;
-    sys.activeOpMode = hvb::OpMode::Normal;
+    sys.activeOpMode = psb::OpMode::Normal;
 
-    std::vector<hvb::ChannelInfo> channels(2);
+    std::vector<psb::ChannelInfo> channels(2);
     channels[0].voltageRaw = 5000;   // 500.0 V
     channels[0].currentRaw = 1234;   // 1.234 uA
     channels[0].operationalTargetVoltageRaw = 5000;
@@ -45,14 +45,14 @@ TEST_CASE("Monitor — table includes channel data", "[monitor]") {
 }
 
 TEST_CASE("Monitor — shows fault status", "[monitor]") {
-    hvb::SystemInfo sys;
+    psb::SystemInfo sys;
     sys.protoMajor = 3;
     sys.uptimeSec = 60;
-    sys.activeOpMode = hvb::OpMode::Automatic;
+    sys.activeOpMode = psb::OpMode::Automatic;
 
-    std::vector<hvb::ChannelInfo> channels(1);
+    std::vector<psb::ChannelInfo> channels(1);
     channels[0].voltageRaw = 6000;
-    channels[0].activeFault = hvb::FaultCause::CURRENT;
+    channels[0].activeFault = psb::FaultCause::CURRENT;
     channels[0].status = 0x000B; // OutputDrive + ActiveFault
 
     auto output = renderMonitorTable(sys, channels);

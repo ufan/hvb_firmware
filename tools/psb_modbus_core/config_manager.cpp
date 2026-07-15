@@ -13,7 +13,7 @@
 #include <pwd.h>
 #endif
 
-namespace hvb {
+namespace psb {
 
 static std::string homeDir() {
 #if defined(_WIN32)
@@ -28,7 +28,7 @@ static std::string homeDir() {
 }
 
 std::string ConfigManager::defaultPath() {
-    return homeDir() + "/.hvb_demo_app.toml";
+    return homeDir() + "/.psb_demo_app.toml";
 }
 
 bool ConfigManager::load() {
@@ -86,4 +86,4 @@ void ConfigManager::setFromArgs(const std::string& p, int baud, int id, int time
     timeoutMs = timeout;
 }
 
-} // namespace hvb
+} // namespace psb

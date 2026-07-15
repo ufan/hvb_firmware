@@ -1,4 +1,4 @@
-#include "hvb_modbus_client.h"
+#include "psb_modbus_client.h"
 #include "register_map.h"
 
 #include <ModbusClientPort.h>
@@ -9,9 +9,9 @@
 #include <cstring>
 #include <sstream>
 
-namespace hvb {
+namespace psb {
 
-struct HvbModbusClient::Impl {
+struct PsbModbusClient::Impl {
     ModbusClientPort* port = nullptr;
     int slaveId = 1;
     bool connected = false;
@@ -30,14 +30,14 @@ struct HvbModbusClient::Impl {
     }
 };
 
-HvbModbusClient::HvbModbusClient() : m_impl(std::make_unique<Impl>()) {}
-HvbModbusClient::~HvbModbusClient() = default;
+PsbModbusClient::PsbModbusClient() : m_impl(std::make_unique<Impl>()) {}
+PsbModbusClient::~PsbModbusClient() = default;
 
 // ============================================================================
 //  Connection
 // ============================================================================
 
-bool HvbModbusClient::connect(const std::string& portName, int baud, int slaveId, int timeoutMs) {
+bool PsbModbusClient::connect(const std::string& portName, int baud, int slaveId, int timeoutMs) {
     m_impl->disconnect();
     m_impl->slaveId = slaveId;
 
@@ -83,19 +83,19 @@ bool HvbModbusClient::connect(const std::string& portName, int baud, int slaveId
     return true;
 }
 
-void HvbModbusClient::disconnect()    { m_impl->disconnect(); }
-bool HvbModbusClient::isConnected() const { return m_impl->connected || m_impl->testInputRegs; }
-std::string HvbModbusClient::lastError() const { return m_impl->errorText; }
-int HvbModbusClient::slaveId() const { return m_impl->slaveId; }
+void PsbModbusClient::disconnect()    { m_impl->disconnect(); }
+bool PsbModbusClient::isConnected() const { return m_impl->connected || m_impl->testInputRegs; }
+std::string PsbModbusClient::lastError() const { return m_impl->errorText; }
+int PsbModbusClient::slaveId() const { return m_impl->slaveId; }
 
-void HvbModbusClient::attachTestArrays(uint16_t* inputRegs, uint16_t* holdingRegs, int maxAddr) {
+void PsbModbusClient::attachTestArrays(uint16_t* inputRegs, uint16_t* holdingRegs, int maxAddr) {
     m_impl->testInputRegs = inputRegs;
     m_impl->testHoldingRegs = holdingRegs;
     m_impl->testMaxAddr = maxAddr;
     m_impl->connected = true;
 }
 
-void HvbModbusClient::detachTestArrays() {
+void PsbModbusClient::detachTestArrays() {
     m_impl->testInputRegs = nullptr;
     m_impl->testHoldingRegs = nullptr;
     m_impl->testMaxAddr = 0;
@@ -106,7 +106,7 @@ void HvbModbusClient::detachTestArrays() {
 //  Internal
 // ============================================================================
 
-bool HvbModbusClient::checkConnected() {
+bool PsbModbusClient::checkConnected() {
     if (m_impl->testInputRegs || m_impl->testHoldingRegs) return true;
     if (!m_impl->connected || !m_impl->port) {
         m_impl->errorText = "not connected";
@@ -115,7 +115,7 @@ bool HvbModbusClient::checkConnected() {
     return true;
 }
 
-bool HvbModbusClient::readRegsInternal(bool holding, uint16_t addr, uint16_t count, uint16_t* out) {
+bool PsbModbusClient::readRegsInternal(bool holding, uint16_t addr, uint16_t count, uint16_t* out) {
     // Test mode — direct array access
     if (m_impl->testInputRegs || m_impl->testHoldingRegs) {
         uint16_t* src = holding ? m_impl->testHoldingRegs : m_impl->testInputRegs;
@@ -169,7 +169,7 @@ private:
 };
 } // namespace
 
-bool HvbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uint16_t* values,
+bool PsbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uint16_t* values,
                                          int timeoutOverrideMs) {
     // Test mode — direct array access
     if (m_impl->testHoldingRegs) {
@@ -201,7 +201,7 @@ bool HvbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uin
 //  Lightweight poll helpers — read only dynamic registers
 // ============================================================================
 
-void HvbModbusClient::readSystemStatus(SystemInfo& info) {
+void PsbModbusClient::readSystemStatus(SystemInfo& info) {
     if (!checkConnected()) return;
 
     /* Read the dynamic tail of the system input block:
@@ -219,7 +219,7 @@ void HvbModbusClient::readSystemStatus(SystemInfo& info) {
     info.faultCause       = buf[SYS_FAULT_CAUSE         - SYS_BOARD_TEMPERATURE];
 }
 
-void HvbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info) {
+void PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info) {
     if (!checkConnected()) return;
 
     uint16_t base = reg::chAddr(ch, 0);
@@ -268,7 +268,7 @@ void HvbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info
 //  High-level reads — all single UINT16, no INT32 packing
 // ============================================================================
 
-SystemInfo HvbModbusClient::readSystemInfo() {
+SystemInfo PsbModbusClient::readSystemInfo() {
     SystemInfo info;
     if (!checkConnected()) return info;
 
@@ -291,7 +291,7 @@ SystemInfo HvbModbusClient::readSystemInfo() {
     return info;
 }
 
-ChannelInfo HvbModbusClient::readChannelInfo(int ch, uint16_t caps) {
+ChannelInfo PsbModbusClient::readChannelInfo(int ch, uint16_t caps) {
     ChannelInfo info;
     if (!checkConnected()) return info;
 
@@ -360,7 +360,7 @@ ChannelInfo HvbModbusClient::readChannelInfo(int ch, uint16_t caps) {
     return info;
 }
 
-SystemConfig HvbModbusClient::readSystemConfig() {
+SystemConfig PsbModbusClient::readSystemConfig() {
     SystemConfig cfg;
     if (!checkConnected()) return cfg;
 
@@ -375,7 +375,7 @@ SystemConfig HvbModbusClient::readSystemConfig() {
     return cfg;
 }
 
-ChannelConfig HvbModbusClient::readChannelConfig(int ch, uint16_t caps) {
+ChannelConfig PsbModbusClient::readChannelConfig(int ch, uint16_t caps) {
     ChannelConfig cfg;
     if (!checkConnected()) return cfg;
 
@@ -387,9 +387,10 @@ ChannelConfig HvbModbusClient::readChannelConfig(int ch, uint16_t caps) {
             caps = 0;
     }
 
-    bool haveDrive = (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
-    bool haveV     = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
-    bool haveI     = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
+    bool haveDrive  = (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
+    bool haveV      = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+    bool haveI      = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
+    bool haveOutput = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
 
     /* Offsets 0-2 (commands) + optionally 3-7 (ramp/target, need RAW_OUTPUT_DRIVE) */
     if (haveDrive) {
@@ -437,10 +438,20 @@ ChannelConfig HvbModbusClient::readChannelConfig(int ch, uint16_t caps) {
             cfg.derateStepRaw = d;
     }
 
+    /* Offset 17: CFG_OUTPUT_ENABLED — fixed-voltage channels only (no DAC,
+       but can be switched). Mutually exclusive with configuredTargetVRaw
+       above; the firmware rejects this register on DAC channels and rejects
+       CFG_TARGET_VOLTAGE on channels that lack RAW_OUTPUT_DRIVE. */
+    if (!haveDrive && haveOutput) {
+        uint16_t e = 0;
+        if (readRegsInternal(true, base + CH_CFG_OUTPUT_ENABLED, 1, &e))
+            cfg.outputEnabledCfg = (e != 0);
+    }
+
     return cfg;
 }
 
-ChannelCalConfig HvbModbusClient::readChannelCalConfig(int ch, uint16_t caps) {
+ChannelCalConfig PsbModbusClient::readChannelCalConfig(int ch, uint16_t caps) {
     ChannelCalConfig cfg;
     if (!checkConnected()) return cfg;
 
@@ -502,16 +513,16 @@ ChannelCalConfig HvbModbusClient::readChannelCalConfig(int ch, uint16_t caps) {
 #define WR1(addr,val)  writeRegsInternal(reg::sysAddr(addr), 1, (val))
 #define WR(addr,n,val) writeRegsInternal(reg::sysAddr(addr), n, (val))
 
-bool HvbModbusClient::writeOperatingMode(OpMode m) {
+bool PsbModbusClient::writeOperatingMode(OpMode m) {
     uint16_t v = static_cast<uint16_t>(m);
     return WR1(SYS_OPERATING_MODE, &v);
 }
-bool HvbModbusClient::writeStartupChannelPolicy(uint16_t policy) {
+bool PsbModbusClient::writeStartupChannelPolicy(uint16_t policy) {
     return WR1(SYS_STARTUP_CHANNEL_POLICY, &policy);
 }
-bool HvbModbusClient::writeSlaveAddress(uint16_t a)  { return WR1(SYS_SLAVE_ADDRESS, &a); }
-bool HvbModbusClient::writeBaudRateCode(uint16_t c)   { return WR1(SYS_BAUD_RATE_CODE, &c); }
-bool HvbModbusClient::sendParamAction(int chScope, ParamAction action) {
+bool PsbModbusClient::writeSlaveAddress(uint16_t a)  { return WR1(SYS_SLAVE_ADDRESS, &a); }
+bool PsbModbusClient::writeBaudRateCode(uint16_t c)   { return WR1(SYS_BAUD_RATE_CODE, &c); }
+bool PsbModbusClient::sendParamAction(int chScope, ParamAction action) {
     uint16_t v = static_cast<uint16_t>(action);
     uint16_t addr = chScope < 0 ? reg::sysAddr(SYS_PARAM_ACTION)
                                 : reg::chAddr(chScope, CH_PARAM_ACTION);
@@ -527,11 +538,16 @@ bool HvbModbusClient::sendParamAction(int chScope, ParamAction action) {
 #define CHW(a,val) writeRegsInternal(reg::chAddr(ch, a), 1, (val))
 #define CHWN(a,n,val) writeRegsInternal(reg::chAddr(ch, a), n, (val))
 
-bool HvbModbusClient::writeConfiguredTargetVoltage(int ch, int16_t raw) {
+bool PsbModbusClient::writeConfiguredTargetVoltage(int ch, int16_t raw) {
     uint16_t v = static_cast<uint16_t>(raw);
     return CHW(CH_CFG_TARGET_VOLTAGE, &v);
 }
-bool HvbModbusClient::sendOutputAction(int ch, OutputAction action) {
+
+bool PsbModbusClient::writeOutputEnabled(int ch, bool enabled) {
+    uint16_t v = enabled ? 1 : 0;
+    return CHW(CH_CFG_OUTPUT_ENABLED, &v);
+}
+bool PsbModbusClient::sendOutputAction(int ch, OutputAction action) {
     if (!isValidOutputAction(action, ActionContext::Host)) {
         m_impl->errorText = "invalid output action for host context";
         return false;
@@ -539,27 +555,27 @@ bool HvbModbusClient::sendOutputAction(int ch, OutputAction action) {
     uint16_t v = static_cast<uint16_t>(action);
     return CHW(CH_OUTPUT_ACTION, &v);
 }
-bool HvbModbusClient::sendChannelFaultCommand(int ch, ChannelFaultCommand cmd) {
+bool PsbModbusClient::sendChannelFaultCommand(int ch, ChannelFaultCommand cmd) {
     uint16_t v = static_cast<uint16_t>(cmd);
     return CHW(CH_FAULT_CMD, &v);
 }
-bool HvbModbusClient::writeRampUp(int ch, uint16_t stepRaw, uint16_t interval) {
+bool PsbModbusClient::writeRampUp(int ch, uint16_t stepRaw, uint16_t interval) {
     uint16_t buf[2] = { stepRaw, interval };
     return CHWN(CH_RAMP_UP_STEP, 2, buf);
 }
-bool HvbModbusClient::writeRampDown(int ch, uint16_t stepRaw, uint16_t interval) {
+bool PsbModbusClient::writeRampDown(int ch, uint16_t stepRaw, uint16_t interval) {
     uint16_t buf[2] = { stepRaw, interval };
     return CHWN(CH_RAMP_DOWN_STEP, 2, buf);
 }
-bool HvbModbusClient::writeChannelRecovery(int ch, RecoveryPolicy policy, int delay, int max, int window) {
+bool PsbModbusClient::writeChannelRecovery(int ch, RecoveryPolicy policy, int delay, int max, int window) {
     uint16_t buf[4] = { static_cast<uint16_t>(policy), static_cast<uint16_t>(delay),
                         static_cast<uint16_t>(max),    static_cast<uint16_t>(window) };
     return CHWN(CH_RECOVERY_POLICY_MODE, 4, buf);
 }
-bool HvbModbusClient::writeChannelSafeBand(int ch, uint16_t pct) {
+bool PsbModbusClient::writeChannelSafeBand(int ch, uint16_t pct) {
     return CHW(CH_CURRENT_SAFE_BAND_PCT, &pct);
 }
-bool HvbModbusClient::writeCurrentProtection(int ch, ProtectionMode mode, OutputAction action, int16_t thresholdRaw) {
+bool PsbModbusClient::writeCurrentProtection(int ch, ProtectionMode mode, OutputAction action, int16_t thresholdRaw) {
     if (!isValidOutputAction(action, ActionContext::Protection)) {
         m_impl->errorText = "invalid output action for protection context";
         return false;
@@ -567,18 +583,18 @@ bool HvbModbusClient::writeCurrentProtection(int ch, ProtectionMode mode, Output
     uint16_t buf[3] = { static_cast<uint16_t>(mode), static_cast<uint16_t>(action), static_cast<uint16_t>(thresholdRaw) };
     return CHWN(CH_CURRENT_PROTECTION_MODE, 3, buf);
 }
-bool HvbModbusClient::writeDerateStep(int ch, uint16_t stepRaw) {
+bool PsbModbusClient::writeDerateStep(int ch, uint16_t stepRaw) {
     return CHW(CH_AUTO_DERATE_STEP, &stepRaw);
 }
-bool HvbModbusClient::writeCalibrationOutput(int ch, uint16_t k, int16_t b) {
+bool PsbModbusClient::writeCalibrationOutput(int ch, uint16_t k, int16_t b) {
     uint16_t buf[2] = { k, static_cast<uint16_t>(b) };
     return CHWN(CH_OUTPUT_CAL_K, 2, buf);
 }
-bool HvbModbusClient::writeCalibrationMeasV(int ch, uint16_t k, int16_t b) {
+bool PsbModbusClient::writeCalibrationMeasV(int ch, uint16_t k, int16_t b) {
     uint16_t buf[2] = { k, static_cast<uint16_t>(b) };
     return CHWN(CH_MEASURED_V_CAL_K, 2, buf);
 }
-bool HvbModbusClient::writeCalibrationMeasI(int ch, uint16_t k, int16_t b) {
+bool PsbModbusClient::writeCalibrationMeasI(int ch, uint16_t k, int16_t b) {
     uint16_t buf[2] = { k, static_cast<uint16_t>(b) };
     return CHWN(CH_MEASURED_I_CAL_K, 2, buf);
 }
@@ -590,29 +606,29 @@ bool HvbModbusClient::writeCalibrationMeasI(int ch, uint16_t k, int16_t b) {
 //  Calibration Mode operations (v2.1)
 // ============================================================================
 
-bool HvbModbusClient::unlockCalibrationStep(uint16_t value) {
+bool PsbModbusClient::unlockCalibrationStep(uint16_t value) {
     return writeRegsInternal(reg::extAddr(EXT_CAL_UNLOCK), 1, &value);
 }
 
-bool HvbModbusClient::enterCalibrationMode() {
+bool PsbModbusClient::enterCalibrationMode() {
     return writeOperatingMode(OpMode::Calibration);
 }
 
-bool HvbModbusClient::exitCalibrationMode() {
+bool PsbModbusClient::exitCalibrationMode() {
     uint16_t v = 1;
     return writeRegsInternal(reg::extAddr(EXT_CAL_EXIT), 1, &v);
 }
 
-bool HvbModbusClient::writeCalibrationOutputEnable(int ch, bool enable) {
+bool PsbModbusClient::writeCalibrationOutputEnable(int ch, bool enable) {
     uint16_t v = enable ? 1 : 0;
     return writeRegsInternal(reg::chAddr(ch, CH_CAL_OUTPUT_ENABLE), 1, &v);
 }
 
-bool HvbModbusClient::writeRawDacCode(int ch, uint16_t code) {
+bool PsbModbusClient::writeRawDacCode(int ch, uint16_t code) {
     return writeRegsInternal(reg::chAddr(ch, CH_CAL_DAC_CODE), 1, &code);
 }
 
-bool HvbModbusClient::sendCalibrationSampleCommand(int ch) {
+bool PsbModbusClient::sendCalibrationSampleCommand(int ch) {
     // The firmware blocks its Modbus response for up to
     // CONFIG_VC_CAL_SAMPLE_TIMEOUT_MS (1000 ms default, see lib/voltage_control/
     // Kconfig) while it waits for a fresh ADC reading, which can exceed the
@@ -624,12 +640,12 @@ bool HvbModbusClient::sendCalibrationSampleCommand(int ch) {
     return writeRegsInternal(reg::chAddr(ch, CH_CAL_SAMPLE_CMD), 1, &v, kCalSampleTimeoutMs);
 }
 
-bool HvbModbusClient::sendCalibrationCommitCommand(int ch) {
+bool PsbModbusClient::sendCalibrationCommitCommand(int ch) {
     uint16_t v = CAL_COMMAND_EXECUTE;
     return writeRegsInternal(reg::chAddr(ch, CH_CAL_COMMIT_CMD), 1, &v);
 }
 
-CalibrationSnapshot HvbModbusClient::readCalibrationSnapshot(int ch) {
+CalibrationSnapshot PsbModbusClient::readCalibrationSnapshot(int ch) {
     CalibrationSnapshot snap;
     if (!checkConnected()) return snap;
 
@@ -654,21 +670,21 @@ CalibrationSnapshot HvbModbusClient::readCalibrationSnapshot(int ch) {
 //  Low-level
 // ============================================================================
 
-bool HvbModbusClient::readInputRegs(uint16_t addr, uint16_t count, uint16_t* out) {
+bool PsbModbusClient::readInputRegs(uint16_t addr, uint16_t count, uint16_t* out) {
     return readRegsInternal(false, addr, count, out);
 }
-bool HvbModbusClient::readHoldingRegs(uint16_t addr, uint16_t count, uint16_t* out) {
+bool PsbModbusClient::readHoldingRegs(uint16_t addr, uint16_t count, uint16_t* out) {
     return readRegsInternal(true, addr, count, out);
 }
-bool HvbModbusClient::writeReg16(uint16_t addr, uint16_t value) {
+bool PsbModbusClient::writeReg16(uint16_t addr, uint16_t value) {
     return writeRegsInternal(addr, 1, &value);
 }
 
-void HvbModbusClient::setFrameCallback(FrameCallback cb) {
+void PsbModbusClient::setFrameCallback(FrameCallback cb) {
     m_impl->frameCb = std::move(cb);
 }
 
-std::vector<std::string> HvbModbusClient::scanPorts() {
+std::vector<std::string> PsbModbusClient::scanPorts() {
     std::vector<std::string> result;
     for (const auto& p : Modbus::availableSerialPorts()) {
         std::string path(p);
@@ -683,11 +699,11 @@ std::vector<std::string> HvbModbusClient::scanPorts() {
     return result;
 }
 
-std::vector<int> HvbModbusClient::availableBaudRates() {
+std::vector<int> PsbModbusClient::availableBaudRates() {
     std::vector<int> result;
     for (auto r : Modbus::availableBaudRate())
         result.push_back(static_cast<int>(r));
     return result;
 }
 
-} // namespace hvb
+} // namespace psb

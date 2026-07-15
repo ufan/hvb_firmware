@@ -6,7 +6,7 @@
 
 #include "register_map.h"
 
-namespace hvb::meta {
+namespace psb::meta {
 
 struct RegDesc {
     uint16_t address = 0;
@@ -24,7 +24,7 @@ struct RegDesc {
     bool selfClearing = false;
     int channelIndex = -1;           // -1 = system, 0+ = channel
     std::vector<const char*> enumLabels;
-    hvb::reg::PollCat pollCat = hvb::reg::PollCat::Fixed;
+    psb::reg::PollCat pollCat = psb::reg::PollCat::Fixed;
 };
 
 extern const std::vector<RegDesc> SYSTEM_INPUT;
@@ -37,4 +37,4 @@ std::string formatValue(uint16_t raw, const RegDesc& d);
 uint16_t parseEnum(const std::string& s, const RegDesc& d);
 std::string formatRegisterCatalog();
 
-} // namespace hvb::meta
+} // namespace psb::meta

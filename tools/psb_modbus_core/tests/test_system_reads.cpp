@@ -1,4 +1,4 @@
-#include "hvb_modbus_client.h"
+#include "psb_modbus_client.h"
 #include "types.h"
 #include "register_map.h"
 
@@ -36,7 +36,7 @@ TEST_CASE("SystemInfo — defaults", "[system-reads]") {
     uint16_t holdingRegs[280] = {};
     fillDefaultInputRegs(inputRegs);
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     auto info = client.readSystemInfo();
@@ -47,7 +47,7 @@ TEST_CASE("SystemInfo — defaults", "[system-reads]") {
     CHECK(info.activeChMask == 0x0003);
     CHECK(info.boardTempRaw == 254);
     CHECK(info.boardHumidityRaw == 452);
-    CHECK(info.activeOpMode == hvb::OpMode::Normal);
+    CHECK(info.activeOpMode == psb::OpMode::Normal);
     CHECK(info.sysStatus == 0);
     CHECK(info.faultCause == 0);
 }
@@ -57,11 +57,11 @@ TEST_CASE("SystemConfig — defaults", "[system-reads]") {
     uint16_t holdingRegs[280] = {};
     fillDefaultHoldingRegs(holdingRegs);
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     auto cfg = client.readSystemConfig();
-    CHECK(cfg.operatingMode == hvb::OpMode::Normal);
+    CHECK(cfg.operatingMode == psb::OpMode::Normal);
     CHECK(cfg.startupChannelPolicy == 0);
     CHECK(cfg.slaveAddr == 1);
     CHECK(cfg.baudRateCode == 0);
@@ -72,10 +72,10 @@ TEST_CASE("SystemInfo — capability flags decoded", "[system-reads]") {
     uint16_t holdingRegs[280] = {};
     fillDefaultInputRegs(inputRegs);
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     auto info = client.readSystemInfo();
-    CHECK((info.sysCapFlags & hvb::SysCap::AUTOMATIC_MODE) != 0);
-    CHECK((info.sysCapFlags & hvb::SysCap::ENV_SENSOR) != 0);
+    CHECK((info.sysCapFlags & psb::SysCap::AUTOMATIC_MODE) != 0);
+    CHECK((info.sysCapFlags & psb::SysCap::ENV_SENSOR) != 0);
 }

@@ -2,7 +2,7 @@
 #include "register_meta.h"
 #include "register_map.h"
 
-using namespace hvb::meta;
+using namespace psb::meta;
 
 namespace {
 const RegDesc& channelInputDesc(const char* name) {
@@ -71,14 +71,14 @@ TEST_CASE("register_map.h calibration divisors match register_meta.cpp's scaleTo
     // exact same named constants as the write path (CalibrationBackend.cpp)
     // and the read/display path (register_map.h's scale namespace), not an
     // independently hand-copied literal that could drift.
-    CHECK(channelHoldingDesc("Output Calibration K").scaleTo == hvb::reg::scale::OUTPUT_CAL_DIVISOR);
-    CHECK(channelHoldingDesc("Meas V Calibration K").scaleTo == hvb::reg::scale::MEAS_CAL_DIVISOR);
-    CHECK(channelHoldingDesc("Meas I Calibration K").scaleTo == hvb::reg::scale::MEAS_CAL_DIVISOR);
+    CHECK(channelHoldingDesc("Output Calibration K").scaleTo == psb::reg::scale::OUTPUT_CAL_DIVISOR);
+    CHECK(channelHoldingDesc("Meas V Calibration K").scaleTo == psb::reg::scale::MEAS_CAL_DIVISOR);
+    CHECK(channelHoldingDesc("Meas I Calibration K").scaleTo == psb::reg::scale::MEAS_CAL_DIVISOR);
 }
 
 TEST_CASE("findDesc resolves channel registers across channel indices") {
     for (int ch = 0; ch < 4; ++ch) {
-        uint16_t addr = hvb::reg::chAddr(ch, 10); // Measured Voltage offset
+        uint16_t addr = psb::reg::chAddr(ch, 10); // Measured Voltage offset
         const RegDesc* d = findDesc(addr, false);
         REQUIRE(d != nullptr);
         CHECK(std::string(d->name) == "Measured Voltage");

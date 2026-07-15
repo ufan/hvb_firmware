@@ -7,7 +7,7 @@
 #include <thread>
 #include <chrono>
 
-namespace hvb::test {
+namespace psb::test {
 
 struct VirtualBoard::Impl {
     ModbusServerPort* server = nullptr;
@@ -175,4 +175,4 @@ void VirtualBoard::writeHoldingReg(uint16_t addr, uint16_t value) {
     holdingRegs[addr] = value;
 }
 
-} // namespace hvb::test
+} // namespace psb::test

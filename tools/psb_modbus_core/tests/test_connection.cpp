@@ -1,9 +1,9 @@
-#include "hvb_modbus_client.h"
+#include "psb_modbus_client.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 TEST_CASE("Connection — scanPorts returns only USB", "[connection]") {
-    auto ports = hvb::HvbModbusClient::scanPorts();
+    auto ports = psb::PsbModbusClient::scanPorts();
     for (const auto& p : ports) {
         INFO("Port: " << p);
         CHECK(p.find("/dev/ttyUSB") == 0);
@@ -11,7 +11,7 @@ TEST_CASE("Connection — scanPorts returns only USB", "[connection]") {
 }
 
 TEST_CASE("Connection — attach/detach test arrays", "[connection]") {
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
 

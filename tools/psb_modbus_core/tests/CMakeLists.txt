@@ -1,4 +1,4 @@
-add_executable(hvb_tests
+add_executable(psb_tests
     test_connection.cpp
     test_system_reads.cpp
     test_channel_reads.cpp
@@ -13,17 +13,17 @@ add_executable(hvb_tests
     test_register_meta.cpp
 )
 
-target_include_directories(hvb_tests PRIVATE
+target_include_directories(psb_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${MODBUSLIB_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../include
 )
 
-target_link_libraries(hvb_tests PRIVATE
-    hvb_modbus_core
+target_link_libraries(psb_tests PRIVATE
+    psb_modbus_core
     Catch2::Catch2WithMain
 )
 
-target_compile_features(hvb_tests PRIVATE cxx_std_17)
-target_compile_options(hvb_tests PRIVATE -Wall -Wextra)
+target_compile_features(psb_tests PRIVATE cxx_std_17)
+target_compile_options(psb_tests PRIVATE -Wall -Wextra)

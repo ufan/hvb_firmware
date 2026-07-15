@@ -1,4 +1,4 @@
-#include "hvb_modbus_client.h"
+#include "psb_modbus_client.h"
 #include "types.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -20,7 +20,7 @@ TEST_CASE("ChannelInfo — defaults both channels", "[channel-reads]") {
     uint16_t holdingRegs[280] = {};
     fillChannelDefaults(inputRegs, holdingRegs);
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     for (int ch = 0; ch < 2; ++ch) {
@@ -45,7 +45,7 @@ TEST_CASE("ChannelInfo — enabled channel has measurements", "[channel-reads]")
     inputRegs[40 + 8]  = 5000;    // CH_OPER_TARGET_VOLTAGE
     inputRegs[40 + 0]  = 0x0003;  // CH_STATUS_BITS
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     auto ci = client.readChannelInfo(0);
@@ -60,13 +60,13 @@ TEST_CASE("ChannelConfig — defaults", "[channel-reads]") {
     uint16_t holdingRegs[280] = {};
     fillChannelDefaults(inputRegs, holdingRegs);
 
-    hvb::HvbModbusClient client;
+    psb::PsbModbusClient client;
     client.attachTestArrays(inputRegs, holdingRegs, 280);
 
     auto cfg = client.readChannelConfig(0);
     CHECK(cfg.configuredTargetVRaw == 0);
-    CHECK(cfg.outputAction == hvb::OutputAction::None);
-    CHECK(cfg.recoveryPolicyMode == hvb::RecoveryPolicy::ManualLatch);
+    CHECK(cfg.outputAction == psb::OutputAction::None);
+    CHECK(cfg.recoveryPolicyMode == psb::RecoveryPolicy::ManualLatch);
     CHECK(cfg.currentSafeBandPct == 10);
 
     auto cal = client.readChannelCalConfig(0);
