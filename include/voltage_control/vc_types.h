@@ -80,7 +80,10 @@ struct vc_system_config {
 
 /* Channel operational config — no cal coefficients (moved to vc_channel_cal_config) */
 struct vc_channel_config {
-	int16_t configured_target_voltage;                    /* mV */
+	int16_t configured_target_voltage;                    /* mV; DAC channels only (CH_CAP_RAW_OUTPUT_DRIVE) */
+	bool configured_output_enabled;                        /* fixed-voltage channels only (no CH_CAP_RAW_OUTPUT_DRIVE);
+								 * startup/AUTOMATIC-mode desired on/off state, since
+								 * such channels have no target to gate on instead */
 	uint16_t ramp_up_step;                                 /* mV per interval */
 	uint16_t ramp_up_interval;                             /* seconds */
 	uint16_t ramp_down_step;                               /* mV per interval */
@@ -156,6 +159,7 @@ enum vc_config_field {
 
 	/* Channel fields (including recovery, moved from system) */
 	VC_FIELD_CONFIGURED_TARGET_VOLTAGE,
+	VC_FIELD_CONFIGURED_OUTPUT_ENABLED,
 	VC_FIELD_RAMP_UP_STEP,
 	VC_FIELD_RAMP_UP_INTERVAL,
 	VC_FIELD_RAMP_DOWN_STEP,

@@ -49,7 +49,7 @@ struct vc_controller vc_controller_canonical_state;
 static struct vc_system_config default_system_config(void)
 {
 	return (struct vc_system_config){
-		.operating_mode = VC_OPERATING_MODE_NORMAL,
+		.operating_mode = (enum vc_operating_mode)CONFIG_VC_DEFAULT_OPERATING_MODE,
 		.startup_channel_policy = 0,
 	};
 }
@@ -77,6 +77,13 @@ struct vc_controller *vc_controller_init(
 	struct vc_controller *ctrl = &vc_controller_canonical_state;
 
 	memset(ctrl, 0, sizeof(*ctrl));
+	/* ctrl->operating_mode (the live/applied mode) always starts NORMAL,
+	 * regardless of CONFIG_VC_DEFAULT_OPERATING_MODE: vc_runtime_auto_load()'s
+	 * phase 3 applies sys_cfg via vc_controller_set_system_config(), which
+	 * only runs the AUTOMATIC-mode enable-all invariant when it detects a
+	 * transition (cfg->operating_mode != ctrl->operating_mode). Pre-seeding
+	 * operating_mode to match sys_cfg here would make that a no-op transition
+	 * and the invariant would never fire at boot. */
 	ctrl->operating_mode = VC_OPERATING_MODE_NORMAL;
 	ctrl->sys_cfg = default_system_config();
 
@@ -204,13 +211,21 @@ enum vc_status vc_controller_set_operating_mode(
 		}
 	}
 
-	/* → AUTOMATIC: enable all non-faulted channels with non-zero configured target */
+	/* → AUTOMATIC: enable all non-faulted channels that want output. DAC
+	 * channels (CH_CAP_RAW_OUTPUT_DRIVE) express that via a non-zero
+	 * configured target voltage; fixed-voltage channels have no target to
+	 * gate on, so they use the persisted configured_output_enabled flag
+	 * instead (see vc_types.h). The two criteria are mutually exclusive by
+	 * capability, so this doesn't change existing DAC-channel behavior. */
 	if (mode == VC_OPERATING_MODE_AUTOMATIC) {
 		for (size_t i = 0; i < ctrl->channel_count; i++) {
-			if (ctrl->channels[i].config.configured_target_voltage != 0 &&
-			    ctrl->channels[i].active_fault_cause == 0) {
-				(void)vc_channel_output_action(&ctrl->channels[i],
-							       VC_OUTPUT_ACTION_ENABLE);
+			struct vc_channel *ch = &ctrl->channels[i];
+			bool wants_output = (ch->capabilities & CH_CAP_RAW_OUTPUT_DRIVE)
+				? (ch->config.configured_target_voltage != 0)
+				: ch->config.configured_output_enabled;
+
+			if (wants_output && ch->active_fault_cause == 0) {
+				(void)vc_channel_output_action(ch, VC_OUTPUT_ACTION_ENABLE);
 			}
 		}
 	}

@@ -21,6 +21,7 @@ static const struct smf_state vc_channel_states[VC_CHANNEL_SMF_COUNT] = {
 struct vc_channel_config vc_channel_default_config(void)
 {
 	return (struct vc_channel_config){
+		.configured_output_enabled = IS_ENABLED(CONFIG_VC_DEFAULT_OUTPUT_ENABLED),
 		.ramp_up_step = CONFIG_VC_DEFAULT_RAMP_STEP,
 		.ramp_up_interval = 1,
 		.ramp_down_step = CONFIG_VC_DEFAULT_RAMP_STEP,
@@ -194,6 +195,15 @@ static enum vc_status validate_capability_config(
 		    new_cfg->ramp_down_interval != old_cfg->ramp_down_interval) {
 			return VC_ERR_UNSUPPORTED_CAPABILITY;
 		}
+	} else if (new_cfg->configured_output_enabled != old_cfg->configured_output_enabled) {
+		/* DAC channels express AUTOMATIC-mode intent via target voltage only. */
+		return VC_ERR_UNSUPPORTED_CAPABILITY;
+	}
+	if (!channel_has_cap(ch, CH_CAP_OUTPUT_ENABLE) &&
+	    new_cfg->configured_output_enabled != old_cfg->configured_output_enabled) {
+		/* Locked-always-on channels can't have their startup policy changed
+		 * either, even though the live disable action is already refused. */
+		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
 	if (!channel_has_cap(ch, CH_CAP_CURRENT_MEASUREMENT)) {
 		if (new_cfg->current_protection_mode != VC_PROTECTION_MODE_DISABLED ||
@@ -522,6 +532,18 @@ enum vc_status vc_channel_set_field(struct vc_channel *ch,
 		}
 		ch->config.configured_target_voltage = (int16_t)value;
 		break;
+	case VC_FIELD_CONFIGURED_OUTPUT_ENABLED:
+		/* Fixed-voltage channels only (no target to gate the AUTOMATIC-mode
+		 * invariant on instead); also refused when CH_CAP_OUTPUT_ENABLE is
+		 * absent, so a locked-always-on channel's startup policy can't be
+		 * flipped off via config even though the live disable action is
+		 * already refused — see vc_channel_output_action(). */
+		if (channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE) ||
+		    !channel_has_cap(ch, CH_CAP_OUTPUT_ENABLE)) {
+			return VC_ERR_UNSUPPORTED_CAPABILITY;
+		}
+		ch->config.configured_output_enabled = (value != 0);
+		break;
 	case VC_FIELD_RAMP_UP_STEP:
 		if (!channel_has_cap(ch, CH_CAP_RAW_OUTPUT_DRIVE)) {
 			return VC_ERR_UNSUPPORTED_CAPABILITY;
@@ -644,6 +666,17 @@ enum vc_status vc_channel_output_action(struct vc_channel *ch,
 		    action == VC_OUTPUT_ACTION_DISABLE_IMMEDIATE) {
 			action = VC_OUTPUT_ACTION_DISABLE_FORCE;
 		}
+	}
+
+	/* Locked-always-on channels (no CH_CAP_OUTPUT_ENABLE) refuse explicit
+	 * disable commands. This only gates the user-facing command path here —
+	 * internal fault/overcurrent-protection force-disable (apply_protection_action)
+	 * is untouched, so hardware protection still works on these channels. */
+	if (!channel_has_cap(ch, CH_CAP_OUTPUT_ENABLE) &&
+	    (action == VC_OUTPUT_ACTION_DISABLE_GRACEFUL ||
+	     action == VC_OUTPUT_ACTION_DISABLE_IMMEDIATE ||
+	     action == VC_OUTPUT_ACTION_DISABLE_FORCE)) {
+		return VC_ERR_UNSUPPORTED_CAPABILITY;
 	}
 
 	switch (action) {

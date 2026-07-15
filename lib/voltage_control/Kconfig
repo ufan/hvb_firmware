@@ -1,5 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
+config VC_DEFAULT_OPERATING_MODE
+	int "Factory-default boot operating mode"
+	default 0
+	range 0 2
+	help
+	  Factory default for vc_system_config.operating_mode (0=NORMAL,
+	  1=AUTOMATIC, 2=CALIBRATION), used before any NVS-persisted system
+	  config is loaded. Boards whose channels rely on the AUTOMATIC-mode
+	  enable-all invariant to reach their startup state (e.g. jw_lvb,
+	  where every channel is a fixed-voltage output with no other startup
+	  path — see configured_output_enabled) override this to 1.
+
 config VC_VARIANT_ID
 	int "Voltage-control variant identifier reported over Modbus"
 	default 1
@@ -141,6 +153,18 @@ config VC_DEFAULT_RAMP_STEP
 	  Factory default for ramp_up_step and ramp_down_step. Unit matches the
 	  configured_target_voltage field (×100 mV per ramp interval).
 
+config VC_DEFAULT_OUTPUT_ENABLED
+	bool "Default startup output state for fixed-voltage channels"
+	default n
+	help
+	  Factory default for configured_output_enabled, the AUTOMATIC-mode/
+	  startup desired-on-off state used by channels without
+	  CH_CAP_RAW_OUTPUT_DRIVE (which have no target voltage to gate on
+	  instead). Off by default, matching the conservative
+	  disabled-until-configured precedent used for configured_target_voltage;
+	  boards whose reference hardware powers all channels up by default
+	  (e.g. jw_lvb) override this to y.
+
 config VC_DEFAULT_CURRENT_SAFE_BAND_PCT
 	int "Default current safe-band percentage"
 	default 10
@@ -183,7 +207,10 @@ config VC_SHELL
 	default n
 	depends on VC_RUNTIME
 	select SHELL
-	select SHELL_BACKEND_SERIAL
+	# Boards with no debug UART (e.g. jw_lvb) select SHELL_BACKEND_RTT
+	# themselves in their app board .conf instead; don't force the serial
+	# backend on top of that.
+	select SHELL_BACKEND_SERIAL if !SHELL_BACKEND_RTT
 	help
 	  Enable interactive shell commands under the "vc" top-level
 	  command for controlling and monitoring the voltage-control

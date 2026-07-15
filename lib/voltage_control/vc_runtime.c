@@ -56,7 +56,7 @@ static atomic_t catalog_lifecycle = ATOMIC_INIT(VC_CATALOG_STOPPED);
 static atomic_t catalog_active_operations;
 K_SEM_DEFINE(catalog_quiesced, 0, 1);
 
-static const uint16_t vc_variant_id = 1U;
+static const uint16_t vc_variant_id = CONFIG_VC_VARIANT_ID;
 static const uint16_t vc_capability_flags =
 	SYS_CAP_AUTOMATIC_MODE | SYS_CAP_CALIBRATION_MODE |
 	(IS_ENABLED(CONFIG_SYS_STATUS) ? SYS_CAP_ENV_SENSOR : 0U);
@@ -142,6 +142,11 @@ static bool vc_catalog_supported(uint16_t field, uint16_t caps)
 		return (caps & (CH_CAP_RAW_OUTPUT_DRIVE |
 				CH_CAP_VOLTAGE_MEASUREMENT)) ==
 		       (CH_CAP_RAW_OUTPUT_DRIVE | CH_CAP_VOLTAGE_MEASUREMENT);
+	case REG_VC_FIELD_CFG_OUTPUT_ENABLED:
+		/* Fixed-voltage channels (no DAC) that can actually be disabled —
+		 * mirrors the two rejection rules in validate_capability_config(). */
+		return (caps & CH_CAP_RAW_OUTPUT_DRIVE) == 0U &&
+		       (caps & CH_CAP_OUTPUT_ENABLE) != 0U;
 	case REG_VC_FIELD_CAL_SAMPLE_CMD:
 		return (caps & (CH_CAP_VOLTAGE_MEASUREMENT |
 				CH_CAP_CURRENT_MEASUREMENT)) != 0U;
@@ -267,6 +272,8 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 		break;
 	case REG_VC_FIELD_CFG_TARGET_VOLTAGE:
 		value->s16 = ch->config.configured_target_voltage; break;
+	case REG_VC_FIELD_CFG_OUTPUT_ENABLED:
+		value->u16 = ch->config.configured_output_enabled ? 1U : 0U; break;
 	case REG_VC_FIELD_RAMP_UP_STEP: value->u16 = ch->config.ramp_up_step; break;
 	case REG_VC_FIELD_RAMP_UP_INTERVAL: value->u16 = ch->config.ramp_up_interval; break;
 	case REG_VC_FIELD_RAMP_DOWN_STEP: value->u16 = ch->config.ramp_down_step; break;
@@ -313,6 +320,7 @@ static bool vc_catalog_field(uint16_t field, enum vc_config_field *out)
 {
 	switch (field) {
 	case REG_VC_FIELD_CFG_TARGET_VOLTAGE: *out = VC_FIELD_CONFIGURED_TARGET_VOLTAGE; break;
+	case REG_VC_FIELD_CFG_OUTPUT_ENABLED: *out = VC_FIELD_CONFIGURED_OUTPUT_ENABLED; break;
 	case REG_VC_FIELD_RAMP_UP_STEP: *out = VC_FIELD_RAMP_UP_STEP; break;
 	case REG_VC_FIELD_RAMP_UP_INTERVAL: *out = VC_FIELD_RAMP_UP_INTERVAL; break;
 	case REG_VC_FIELD_RAMP_DOWN_STEP: *out = VC_FIELD_RAMP_DOWN_STEP; break;
@@ -525,6 +533,7 @@ DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, VC_ASSERT_CONTIGUOUS_CHANNEL)
 #define VC_VALUE_PARAM_ACTION(node_id) NULL
 #define VC_VALUE_CFG_TARGET_VOLTAGE(node_id) \
 	(&VC_CH(node_id).config.configured_target_voltage)
+#define VC_VALUE_CFG_OUTPUT_ENABLED(node_id) NULL
 #define VC_VALUE_RAMP_UP_STEP(node_id) (&VC_CH(node_id).config.ramp_up_step)
 #define VC_VALUE_RAMP_UP_INTERVAL(node_id) (&VC_CH(node_id).config.ramp_up_interval)
 #define VC_VALUE_RAMP_DOWN_STEP(node_id) (&VC_CH(node_id).config.ramp_down_step)

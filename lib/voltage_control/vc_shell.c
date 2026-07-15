@@ -140,6 +140,9 @@ static int read_channel_config(uint8_t ch, struct vc_channel_config *c,
 				 c->ramp_down_step, u16);
 		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RAMP_DOWN_INTERVAL),
 				 c->ramp_down_interval, u16);
+	} else if (*caps & CH_CAP_OUTPUT_ENABLE) {
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_CFG_OUTPUT_ENABLED),
+				 c->configured_output_enabled, u16);
 	}
 	VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_RECOVERY_POLICY_MODE),
 		 c->recovery_policy_mode, u16);
@@ -346,6 +349,7 @@ static const struct field_entry sys_fields[] = {
 
 static const struct field_entry ch_fields[] = {
 	{"target",       VC_FIELD_CONFIGURED_TARGET_VOLTAGE},
+	{"startup",      VC_FIELD_CONFIGURED_OUTPUT_ENABLED},
 	{"ramp_up_step", VC_FIELD_RAMP_UP_STEP},
 	{"ramp_up_int",  VC_FIELD_RAMP_UP_INTERVAL},
 	{"ramp_dn_step", VC_FIELD_RAMP_DOWN_STEP},
@@ -421,6 +425,8 @@ static reg_id_t channel_config_id(uint8_t ch, enum vc_config_field field)
 	switch (field) {
 	case VC_FIELD_CONFIGURED_TARGET_VOLTAGE:
 		return REG_VC_ID(ch, REG_VC_FIELD_CFG_TARGET_VOLTAGE);
+	case VC_FIELD_CONFIGURED_OUTPUT_ENABLED:
+		return REG_VC_ID(ch, REG_VC_FIELD_CFG_OUTPUT_ENABLED);
 	case VC_FIELD_RAMP_UP_STEP: return REG_VC_ID(ch, REG_VC_FIELD_RAMP_UP_STEP);
 	case VC_FIELD_RAMP_UP_INTERVAL:
 		return REG_VC_ID(ch, REG_VC_FIELD_RAMP_UP_INTERVAL);
@@ -555,6 +561,11 @@ static void print_ch_config(const struct shell *sh, uint8_t ch,
 			    c->ramp_up_step, c->ramp_up_interval);
 		shell_print(sh, "  ramp_down:    step=%d interval=%d",
 			    c->ramp_down_step, c->ramp_down_interval);
+	} else if (caps & CH_CAP_OUTPUT_ENABLE) {
+		shell_print(sh, "  startup:      %s",
+			    c->configured_output_enabled ? "on" : "off");
+	} else {
+		shell_print(sh, "  startup:      locked-on");
 	}
 	shell_print(sh, "  recovery:     %s", recovery_str(c->recovery_policy_mode));
 	shell_print(sh, "  retry:        delay=%d max=%d window=%d",
