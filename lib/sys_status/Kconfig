@@ -17,11 +17,13 @@ config SYS_RESET_DELAY_MS
 	  response.
 
 config SYS_STATUS
-	bool "System status module (heartbeat, environment sensor, uptime)"
+	bool "System status module (heartbeat, environment sensor)"
 	default n
 	help
-	  Self-contained module: SYS_RUN heartbeat LED, SHT3x temp/humidity,
-	  uptime. Initialized via SYS_INIT, runs its own thread.
+	  Self-contained module: SYS_RUN heartbeat LED, SHT3x temp/humidity.
+	  Initialized via SYS_INIT, runs its own thread. Uptime and firmware
+	  version have no hardware dependency and are always available
+	  regardless of this option — see sys_uptime.c.
 
 if SYS_STATUS
 
@@ -53,12 +55,13 @@ config SYS_STATUS_THREAD_PRIORITY
 	help
 	  Zephyr thread priority for the sys_status worker.
 
+endif # SYS_STATUS
+
 config SYS_STATUS_SHELL
 	bool "Shell commands for system status"
 	default n
 	select SHELL
 	help
-	  Enable "ss" shell command to display uptime, board
-	  temperature, humidity, and firmware version.
-
-endif # SYS_STATUS
+	  Enable "ss" shell command to display uptime and firmware version.
+	  Also shows board temperature/humidity when CONFIG_SYS_STATUS is
+	  enabled. Does not depend on CONFIG_SYS_STATUS itself.

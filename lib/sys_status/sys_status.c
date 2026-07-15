@@ -20,9 +20,6 @@
 
 LOG_MODULE_REGISTER(sys_status, LOG_LEVEL_INF);
 
-#define SYS_STATUS_FW_VERSION_HIGH 0
-#define SYS_STATUS_FW_VERSION_LOW  1
-
 #define SYS_STATUS_TEMP_SENTINEL  INT16_MIN
 #define SYS_STATUS_HUMID_SENTINEL 0xFFFF
 
@@ -34,16 +31,11 @@ static const struct device *sht31_dev = DEVICE_DT_GET_OR_NULL(SHT31_NODE);
 
 static atomic_t env_temperature = ATOMIC_INIT(SYS_STATUS_TEMP_SENTINEL);
 static atomic_t env_humidity = ATOMIC_INIT(SYS_STATUS_HUMID_SENTINEL);
-static const uint32_t firmware_version =
-	((uint32_t)SYS_STATUS_FW_VERSION_HIGH << 16) | SYS_STATUS_FW_VERSION_LOW;
 
 static enum reg_status sys_status_reg_read(const struct reg_descriptor *desc,
 					   union reg_value *value)
 {
 	switch (REG_ID_FIELD(desc->id)) {
-	case REG_SYS_STATUS_FIELD_UPTIME:
-		value->u32 = (uint32_t)(k_uptime_get() / 1000);
-		return REG_OK;
 	case REG_SYS_STATUS_FIELD_BOARD_TEMPERATURE:
 		value->s16 = (int16_t)atomic_get(&env_temperature);
 		return REG_OK;
@@ -65,12 +57,6 @@ REG_DESCRIPTOR_DEFINE(sys_status_temperature_reg,
 REG_DESCRIPTOR_DEFINE(sys_status_humidity_reg,
 	REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_HUMIDITY),
 	REG_U16, REG_RO, REG_MEASUREMENT_RAW, NULL, &sys_status_reg_owner);
-REG_DESCRIPTOR_DEFINE(sys_status_uptime_reg,
-	REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_UPTIME),
-	REG_U32, REG_RO, REG_RUNTIME_STATE, NULL, &sys_status_reg_owner);
-REG_DESCRIPTOR_DEFINE(sys_status_firmware_version_reg,
-	REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_FW_VERSION),
-	REG_U32, REG_RO, REG_FIXED, &firmware_version, NULL);
 
 static K_KERNEL_STACK_DEFINE(sys_status_stack,
 			     CONFIG_SYS_STATUS_THREAD_STACK_SIZE);

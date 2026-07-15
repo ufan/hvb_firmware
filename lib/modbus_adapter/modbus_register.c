@@ -137,11 +137,15 @@ extern const struct reg_descriptor modbus_protocol_minor_reg;
 extern const struct reg_descriptor modbus_NEXT_BOOT_SLAVE_ADDRESS_reg;
 extern const struct reg_descriptor modbus_NEXT_BOOT_BAUD_RATE_CODE_reg;
 
+/* Uptime and firmware version have no hardware dependency (see
+ * sys_uptime.c) and are always compiled in, unlike the SYS_RUN-LED/SHT3x
+ * pieces of sys_status.c which require CONFIG_SYS_STATUS. */
+extern const struct reg_descriptor sys_status_uptime_reg;
+extern const struct reg_descriptor sys_status_firmware_version_reg;
+
 #if defined(CONFIG_SYS_STATUS)
 extern const struct reg_descriptor sys_status_temperature_reg;
 extern const struct reg_descriptor sys_status_humidity_reg;
-extern const struct reg_descriptor sys_status_uptime_reg;
-extern const struct reg_descriptor sys_status_firmware_version_reg;
 #define SYS_STATUS_HANDLE(name) (&sys_status_##name##_reg)
 #else
 #define SYS_STATUS_HANDLE(name) NULL
@@ -164,8 +168,8 @@ static struct {
 #define SYS_VIEW_HANDLE_ACTIVE_CHANNEL_MASK VC_GLOBAL_HANDLE(ACTIVE_CHANNEL_MASK)
 #define SYS_VIEW_HANDLE_BOARD_TEMPERATURE SYS_STATUS_HANDLE(temperature)
 #define SYS_VIEW_HANDLE_BOARD_HUMIDITY SYS_STATUS_HANDLE(humidity)
-#define SYS_VIEW_HANDLE_UPTIME SYS_STATUS_HANDLE(uptime)
-#define SYS_VIEW_HANDLE_FW_VERSION SYS_STATUS_HANDLE(firmware_version)
+#define SYS_VIEW_HANDLE_UPTIME (&sys_status_uptime_reg)
+#define SYS_VIEW_HANDLE_FW_VERSION (&sys_status_firmware_version_reg)
 #define SYS_VIEW_HANDLE_ACTIVE_OPERATING_MODE VC_GLOBAL_HANDLE(ACTIVE_OPERATING_MODE)
 #define SYS_VIEW_HANDLE_STATUS VC_GLOBAL_HANDLE(STATUS)
 #define SYS_VIEW_HANDLE_FAULT_CAUSE VC_GLOBAL_HANDLE(FAULT_CAUSE)

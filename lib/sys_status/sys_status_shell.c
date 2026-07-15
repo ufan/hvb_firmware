@@ -17,16 +17,13 @@ static int cmd_ss(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	union reg_value temp = {};
-	union reg_value humidity = {};
 	union reg_value uptime = {};
 	union reg_value version = {};
 
-	if (reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_TEMPERATURE),
-		     &temp) != REG_OK ||
-	    reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_HUMIDITY),
-		     &humidity) != REG_OK ||
-	    reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_UPTIME),
+	/* Uptime and firmware version have no hardware dependency and are
+	 * always available (see sys_uptime.c) — a genuine failure here is
+	 * a real error, unlike temp/humidity below. */
+	if (reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_UPTIME),
 		     &uptime) != REG_OK ||
 	    reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_FW_VERSION),
 		     &version) != REG_OK) {
@@ -34,10 +31,22 @@ static int cmd_ss(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	shell_print(sh, "uptime:  %u s", uptime.u32);
-	shell_print(sh, "temp:    %d.%d C",
-		    temp.s16 / 10, abs(temp.s16) % 10);
-	shell_print(sh, "humid:   %d.%d %%RH",
-		    humidity.u16 / 10, humidity.u16 % 10);
+
+	if (IS_ENABLED(CONFIG_SYS_STATUS)) {
+		union reg_value temp = {};
+		union reg_value humidity = {};
+
+		if (reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_TEMPERATURE),
+			     &temp) == REG_OK &&
+		    reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_HUMIDITY),
+			     &humidity) == REG_OK) {
+			shell_print(sh, "temp:    %d.%d C",
+				    temp.s16 / 10, abs(temp.s16) % 10);
+			shell_print(sh, "humid:   %d.%d %%RH",
+				    humidity.u16 / 10, humidity.u16 % 10);
+		}
+	}
+
 	shell_print(sh, "fw:      %d.%d",
 		    (uint16_t)(version.u32 >> 16), (uint16_t)version.u32);
 	return 0;
@@ -69,4 +78,4 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_ss,
 #endif
 
 SHELL_CMD_REGISTER(ss, SS_SUBCOMMANDS,
-		   "System status (uptime, temp, humidity, fw)", cmd_ss);
+		   "System status (uptime, fw, +temp/humidity if fitted)", cmd_ss);
