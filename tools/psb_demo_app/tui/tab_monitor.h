@@ -7,11 +7,11 @@
 #include <string>
 #include <vector>
 
-namespace hvb::tui {
+namespace psb::tui {
 
 struct MonitorRow {
     Component row;  // Container::Horizontal — focus chain
-    Component statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn;
+    Component statusBtn, vsetInp, outputEnabledCyc, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn;
 };
 
 // Build one row — creates all widgets, returns them in a MonitorRow.
@@ -25,7 +25,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         syncDataToInputs(s.data, inputs);
     };
 
-    // ---- Vset Input ----
+    // ---- Vset Input (DAC channels — CH_CAP_RAW_OUTPUT_DRIVE) ----
     auto vsetInp = CommitInput(&inputs.targetV[ch], "+0.0", [&s, &inputs, ch, refreshCh] {
         try {
             auto raw = reg::voltageFromV(std::stod(inputs.targetV[ch]));
@@ -34,6 +34,17 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
                 refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
     });
+
+    // ---- Output Enabled cycler (fixed-voltage channels — CH_CAP_OUTPUT_ENABLE
+    // without CH_CAP_RAW_OUTPUT_DRIVE). Occupies the same table slot as vsetInp;
+    // the two are mutually exclusive per channel — see the render loop below. ----
+    auto outputEnabledCyc = InlineCycler({"Off", "On"}, &inputs.outputEnabledIdx[ch],
+        [&s, &inputs, ch, refreshCh] {
+            bool on = inputs.outputEnabledIdx[ch] != 0;
+            postWrite(s, inputs, "Output Enabled",
+                [&s, ch, on] { return s.client.writeOutputEnabled(ch, on); },
+                refreshCh);
+        }, /*autoCommit=*/true);
 
     // ---- Status toggle button ----
     auto bopt = ButtonOption{};
@@ -126,7 +137,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     });
 
     auto rowWidgets = Container::Horizontal({
-        vsetInp, statusBtn, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
+        vsetInp, outputEnabledCyc, statusBtn, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
     });
 
     return MonitorRow{
@@ -134,7 +145,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             if (e.is_mouse()) return false;  // let mouse events pass; parent checks bounds
             return !s.data.valid || ch >= s.data.numChannels();
         }),
-        statusBtn, vsetInp, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
+        statusBtn, vsetInp, outputEnabledCyc, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
     };
 }
 
@@ -149,7 +160,9 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
     auto tableContainer = Container::Vertical(rowComps);
 
     static const std::vector<std::string> kHeaders = {
-        "", "Vset", "Status", "Vop", "V (V)", "I (nA)",
+        // "Vset" is dual-purpose: target voltage on DAC channels, on/off
+        // cycler on fixed-voltage switchable channels — see the render loop.
+        "", "Vset/En", "Status", "Vop", "V (V)", "I (nA)",
         "Ru", "Rd", "Limit", "Fault", "Clear", "Save",
     };
 
@@ -180,17 +193,25 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
         for (int ch = 0; ch < n; ++ch) {
             const auto& ci = s.data.chInfo[ch];
             const uint16_t caps = ci.chCapFlags;
-            bool hasOut  = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
-            bool hasVolt = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
-            bool hasCurr = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
+            bool hasOut   = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
+            bool hasDrive = (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
+            bool hasVolt  = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+            bool hasCurr  = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
 
             char chLabel[8];
             snprintf(chLabel, sizeof(chLabel), "CH%-2d", ch);
 
             std::vector<Element> cells;
             cells.push_back(text(chLabel) | center);
-            cells.push_back(hasOut ? rows->at(ch).vsetInp->Render() | center
-                                   : text(" -- ") | dim | center);
+            // Vset slot: target-voltage input (DAC channels), on/off cycler
+            // (fixed-voltage switchable channels), or "--" (locked always-on,
+            // e.g. jw_lvb ch0 — no CH_CAP_OUTPUT_ENABLE at all).
+            if (hasDrive)
+                cells.push_back(rows->at(ch).vsetInp->Render() | center);
+            else if (hasOut)
+                cells.push_back(rows->at(ch).outputEnabledCyc->Render() | center);
+            else
+                cells.push_back(text(" -- ") | dim | center);
             cells.push_back(hasOut ? rows->at(ch).statusBtn->Render() | center
                                    : text(" -- ") | dim | center);
             cells.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | center);
@@ -198,10 +219,10 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
                                     : text(" -- ") | dim | center);
             cells.push_back(hasCurr ? text(fmtCurrentNA(ci.currentRaw)) | center
                                     : text(" -- ") | dim | center);
-            cells.push_back(hasOut ? rows->at(ch).rampUpInp->Render() | center
-                                   : text(" -- ") | dim | center);
-            cells.push_back(hasOut ? rows->at(ch).rampDownInp->Render() | center
-                                   : text(" -- ") | dim | center);
+            cells.push_back(hasDrive ? rows->at(ch).rampUpInp->Render() | center
+                                     : text(" -- ") | dim | center);
+            cells.push_back(hasDrive ? rows->at(ch).rampDownInp->Render() | center
+                                     : text(" -- ") | dim | center);
             cells.push_back(hasCurr ? rows->at(ch).iLimitInp->Render() | center
                                     : text(" -- ") | dim | center);
             // Fault column is mode-dependent: ApplyOutputAction shows the active
@@ -245,4 +266,4 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
     });
 }
 
-} // namespace hvb::tui
+} // namespace psb::tui

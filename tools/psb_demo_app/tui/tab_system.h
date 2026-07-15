@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-namespace hvb::tui {
+namespace psb::tui {
 
 inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
     static const std::vector<std::string> kOpModes       = {"Normal", "Automatic"};
@@ -103,4 +103,4 @@ inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
     });
 }
 
-} // namespace hvb::tui
+} // namespace psb::tui

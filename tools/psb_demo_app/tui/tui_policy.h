@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace hvb::tui {
+namespace psb::tui {
 
 enum class StatusClickAction {
     None,
@@ -54,4 +54,4 @@ inline bool reconcileDisconnectedTabs(bool connected,
     return true;
 }
 
-} // namespace hvb::tui
+} // namespace psb::tui

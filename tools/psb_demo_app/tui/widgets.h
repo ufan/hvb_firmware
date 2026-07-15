@@ -1,6 +1,6 @@
 #pragma once
 #include "tui_format.h"
-#include "hvb_modbus_client.h"
+#include "psb_modbus_client.h"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_options.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -15,12 +15,12 @@
 #include <thread>
 #include <vector>
 
-namespace hvb::tui {
+namespace psb::tui {
 
 using namespace ftxui;
 
 struct AppState {
-    hvb::HvbModbusClient&                    client;
+    psb::PsbModbusClient&                    client;
     std::atomic<bool>&                       connected;
     ScannedData&                             data;
     std::string&                             statusMsg;
@@ -36,7 +36,10 @@ struct AppState {
 // Each tab's Input/InlineCycler widgets bind to fields in this struct.
 struct ConfigInputs {
     // Monitor table editable columns
-    std::string targetV [MAX_CHANNELS];  // Vset  — configured target voltage in V
+    std::string targetV [MAX_CHANNELS];  // Vset  — configured target voltage in V — DAC channels
+    int outputEnabledIdx[MAX_CHANNELS]{}; // Vset slot for fixed-voltage channels — 0=Off, 1=On
+                                          // (CH_CAP_OUTPUT_ENABLE without CH_CAP_RAW_OUTPUT_DRIVE;
+                                          // mutually exclusive with targetV — see tab_monitor.h)
     std::string ruStep  [MAX_CHANNELS];  // Ramp↑ — ramp-up step raw LSB
     std::string rdStep  [MAX_CHANNELS];  // Ramp↓ — ramp-down step raw LSB
     std::string iThr    [MAX_CHANNELS];  // I-limit — current threshold in nA
@@ -93,6 +96,7 @@ inline void syncDataToInputs(const ScannedData& data, ConfigInputs& cfg) {
             snprintf(buf, sizeof(buf), "%+.1f", v);
             cfg.targetV[ch] = buf;
         }
+        cfg.outputEnabledIdx[ch] = cc.outputEnabledCfg ? 1 : 0;
         {
             double v = reg::voltageToV(cc.rampUpStepRaw);
             char buf[16];
@@ -222,4 +226,4 @@ inline Component ActionButton(const std::string& label, std::function<void()> on
     return Button(label, std::move(onClick), bopt);
 }
 
-} // namespace hvb::tui
+} // namespace psb::tui

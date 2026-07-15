@@ -11,7 +11,7 @@
 #include <string>
 #include <string_view>
 
-namespace hvb::tui {
+namespace psb::tui {
 
 enum class ModbusSettingsSaveResult {
     Success,
@@ -77,4 +77,4 @@ inline ModbusSettingsSaveResult saveModbusSettings(
     return ModbusSettingsSaveResult::Success;
 }
 
-} // namespace hvb::tui
+} // namespace psb::tui

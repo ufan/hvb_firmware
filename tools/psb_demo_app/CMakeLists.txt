@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(hvb_tools)
+project(psb_tools)
 add_subdirectory(cli)
 add_subdirectory(tui)
 

@@ -28,7 +28,7 @@ int main(int argc, char* argv[])
     ModbusBackend backend;
     engine.rootContext()->setContextProperty("backend", &backend);
 
-    const QUrl url("qrc:/HvbTool/qml/main.qml");
+    const QUrl url("qrc:/PsbTool/qml/main.qml");
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
         &app, []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);

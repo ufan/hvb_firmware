@@ -1,4 +1,4 @@
-#include "hvb_modbus_client.h"
+#include "psb_modbus_client.h"
 #include "config_manager.h"
 #include "tab_monitor.h"
 #include "tab_channel.h"
@@ -21,12 +21,12 @@
 
 using namespace ftxui;
 
-static hvb::HvbModbusClient g_client;
-static hvb::ConfigManager   g_cfg;
+static psb::PsbModbusClient g_client;
+static psb::ConfigManager   g_cfg;
 static std::atomic<bool>    g_connected{false};
 static int g_pollInterval = 1;
 
-static void doFullScan(hvb::tui::ScannedData& data) {
+static void doFullScan(psb::tui::ScannedData& data) {
     data.sysInfo = g_client.readSystemInfo();
     int n = data.numChannels();
     for (int ch = 0; ch < n; ++ch) data.chInfo[ch]   = g_client.readChannelInfo(ch);
@@ -35,7 +35,7 @@ static void doFullScan(hvb::tui::ScannedData& data) {
     for (int ch = 0; ch < n; ++ch) data.chCalCfg[ch] = g_client.readChannelCalConfig(ch, data.chInfo[ch].chCapFlags);
 }
 
-static void doPollScan(hvb::tui::ScannedData& data) {
+static void doPollScan(psb::tui::ScannedData& data) {
     g_client.readSystemStatus(data.sysInfo);
     uint16_t activeMask = data.sysInfo.activeChMask;
     int n = data.numChannels();
@@ -78,7 +78,7 @@ int main(int argc, char** argv) {
     std::chrono::steady_clock::time_point connectStart;
     std::string statusMsg;
     std::mutex  statusMutex;
-    hvb::tui::ScannedData data;
+    psb::tui::ScannedData data;
     std::atomic<bool> running{true};
     std::atomic<int>  pendingChannelCount{-1};
     std::atomic<bool> pendingSync{false};
@@ -86,8 +86,8 @@ int main(int argc, char** argv) {
     std::mutex                        workMutex;
     std::condition_variable           workCv;
 
-    hvb::tui::AppState appState{g_client, g_connected, data, statusMsg, statusMutex, workQueue, workMutex, workCv, screen};
-    hvb::tui::ConfigInputs inputs;
+    psb::tui::AppState appState{g_client, g_connected, data, statusMsg, statusMutex, workQueue, workMutex, workCv, screen};
+    psb::tui::ConfigInputs inputs;
 
     // ---- Modbus worker thread — serialises all serial I/O ----
     std::thread modbusWorker([&] {
@@ -130,8 +130,8 @@ int main(int argc, char** argv) {
     int portIdx = -1;
 
     auto doScanPorts = [&] {
-        *portList = hvb::HvbModbusClient::scanPorts();
-        portIdx = hvb::tui::selectedPortIndex(*portList, portVal);
+        *portList = psb::PsbModbusClient::scanPorts();
+        portIdx = psb::tui::selectedPortIndex(*portList, portVal);
         portVal = portIdx >= 0 ? (*portList)[portIdx] : std::string{};
         screen.PostEvent(Event::Custom);
     };
@@ -220,10 +220,10 @@ int main(int argc, char** argv) {
     }, connBtnOpt);
 
     // ---- Connection modal ----
-    auto bConnInModal = hvb::tui::ActionButton("Connect", [&] {
+    auto bConnInModal = psb::tui::ActionButton("Connect", [&] {
         if (!portVal.empty() && !connecting) { doConnect(); showConnModal = false; }
     });
-    auto bCancelConn = hvb::tui::ActionButton("Cancel", [&] {
+    auto bCancelConn = psb::tui::ActionButton("Cancel", [&] {
         showConnModal = false; screen.PostEvent(Event::Custom);
     });
     auto connModalForm   = Container::Vertical({visiblePortDropdown, bScan, baudInp, slaveInp, bConnInModal, bCancelConn});
@@ -244,7 +244,7 @@ int main(int argc, char** argv) {
         }) | border | size(WIDTH, EQUAL, 42);
     });
 
-    auto bQuit = hvb::tui::ActionButton("Quit", [&] {
+    auto bQuit = psb::tui::ActionButton("Quit", [&] {
         running = false; workCv.notify_all(); screen.ExitLoopClosure()();
     });
 
@@ -253,28 +253,28 @@ int main(int argc, char** argv) {
     static const std::vector<std::string> kStartPol = {"Load NVS Config", "Factory Default"};
     static const std::vector<std::string> kBaudNames = {"115200", "9600"};
 
-    auto bSysCfg = hvb::tui::ActionButton("Setting", [&] {
-        if (!showSysCfg && data.valid) hvb::tui::syncDataToInputs(data, inputs);
+    auto bSysCfg = psb::tui::ActionButton("Setting", [&] {
+        if (!showSysCfg && data.valid) psb::tui::syncDataToInputs(data, inputs);
         showSysCfg = !showSysCfg; screen.PostEvent(Event::Custom);
     });
 
     // scOpMode shares inputs.opModeIdx with menuModeC; autoCommit=true writes on every click.
-    auto scOpMode  = hvb::tui::InlineCycler(kOpModes, &inputs.opModeIdx, [&] {
-        hvb::tui::postWrite(appState, inputs, "OpMode",
-            [&] { return g_client.writeOperatingMode(static_cast<hvb::OpMode>(inputs.opModeIdx)); },
+    auto scOpMode  = psb::tui::InlineCycler(kOpModes, &inputs.opModeIdx, [&] {
+        psb::tui::postWrite(appState, inputs, "OpMode",
+            [&] { return g_client.writeOperatingMode(static_cast<psb::OpMode>(inputs.opModeIdx)); },
             [&] { data.sysCfg = g_client.readSystemConfig(); });
     }, /*autoCommit=*/true);
-    auto scStartup = hvb::tui::InlineCycler(kStartPol, &inputs.startupIdx, [&] {
-        hvb::tui::postWrite(appState, inputs, "StartupPol",
+    auto scStartup = psb::tui::InlineCycler(kStartPol, &inputs.startupIdx, [&] {
+        psb::tui::postWrite(appState, inputs, "StartupPol",
             [&] { return g_client.writeStartupChannelPolicy((uint16_t)inputs.startupIdx); },
             [&] { data.sysCfg = g_client.readSystemConfig(); });
     });
     auto scSlave = Input(&inputs.slaveAddr, "1-247");
-    auto scBaud = hvb::tui::InlineCycler(kBaudNames, &inputs.baudIdx, [] {});
+    auto scBaud = psb::tui::InlineCycler(kBaudNames, &inputs.baudIdx, [] {});
 
-    auto scSaveModbus = hvb::tui::ActionButton("Save Modbus", [&] {
+    auto scSaveModbus = psb::tui::ActionButton("Save Modbus", [&] {
         uint16_t slaveAddress = 0;
-        if (!hvb::tui::parseModbusSlaveAddress(inputs.slaveAddr, slaveAddress)) {
+        if (!psb::tui::parseModbusSlaveAddress(inputs.slaveAddr, slaveAddress)) {
             {
                 std::lock_guard<std::mutex> lk(statusMutex);
                 statusMsg = "Error: slave address must be 1-247";
@@ -293,7 +293,7 @@ int main(int argc, char** argv) {
 
         const std::string stagedSlave = inputs.slaveAddr;
         const int stagedBaud = inputs.baudIdx;
-        const hvb::SystemConfig current = data.sysCfg;
+        const psb::SystemConfig current = data.sysCfg;
         {
             std::lock_guard<std::mutex> lk(statusMutex);
             statusMsg = "Writing Modbus config...";
@@ -301,17 +301,17 @@ int main(int argc, char** argv) {
         screen.PostEvent(Event::Custom);
 
         std::function<void()> item = [&, stagedSlave, stagedBaud, current] {
-            auto result = hvb::tui::saveModbusSettings(
+            auto result = psb::tui::saveModbusSettings(
                 stagedSlave, stagedBaud, current,
                 [&](uint16_t value) { return g_client.writeSlaveAddress(value); },
                 [&](uint16_t value) { return g_client.writeBaudRateCode(value); });
 
-            if (result == hvb::tui::ModbusSettingsSaveResult::Success) {
+            if (result == psb::tui::ModbusSettingsSaveResult::Success) {
                 data.sysCfg = g_client.readSystemConfig();
-                hvb::tui::syncDataToInputs(data, inputs);
+                psb::tui::syncDataToInputs(data, inputs);
             }
             std::string resultMessage =
-                hvb::tui::modbusSettingsStatusMessage(result, g_client.lastError());
+                psb::tui::modbusSettingsStatusMessage(result, g_client.lastError());
             {
                 std::lock_guard<std::mutex> lk(statusMutex);
                 statusMsg = std::move(resultMessage);
@@ -327,19 +327,19 @@ int main(int argc, char** argv) {
     });
 
     auto saveSystemConfig = [&] {
-        hvb::tui::postWrite(appState, inputs, "Save",
-            [&] { return g_client.sendParamAction(-1, hvb::ParamAction::Save); },
+        psb::tui::postWrite(appState, inputs, "Save",
+            [&] { return g_client.sendParamAction(-1, psb::ParamAction::Save); },
             [&] { data.sysCfg = g_client.readSystemConfig(); });
     };
     auto scSave    = Button("Save", saveSystemConfig);
-    auto scLoad    = Button("Load",    [&] { hvb::tui::postWrite(appState, inputs, "Load",
-        [&] { return g_client.sendParamAction(-1, hvb::ParamAction::Load);         }, [&] { data.sysCfg = g_client.readSystemConfig(); }); });
-    auto scFactory = Button("Factory", [&] { hvb::tui::postWrite(appState, inputs, "Factory",
-        [&] { return g_client.sendParamAction(-1, hvb::ParamAction::FactoryReset); }, [&] { data.sysCfg = g_client.readSystemConfig(); }); });
+    auto scLoad    = Button("Load",    [&] { psb::tui::postWrite(appState, inputs, "Load",
+        [&] { return g_client.sendParamAction(-1, psb::ParamAction::Load);         }, [&] { data.sysCfg = g_client.readSystemConfig(); }); });
+    auto scFactory = Button("Factory", [&] { psb::tui::postWrite(appState, inputs, "Factory",
+        [&] { return g_client.sendParamAction(-1, psb::ParamAction::FactoryReset); }, [&] { data.sysCfg = g_client.readSystemConfig(); }); });
     // SoftwareReset: send reset and mark disconnected — device will reboot.
     auto scReset   = Button("Reset",   [&] {
-        hvb::tui::postWrite(appState, inputs, "SysReset",
-            [&] { return g_client.sendParamAction(-1, hvb::ParamAction::SoftwareReset); },
+        psb::tui::postWrite(appState, inputs, "SysReset",
+            [&] { return g_client.sendParamAction(-1, psb::ParamAction::SoftwareReset); },
             [&] { g_connected = false; data.valid = false; g_client.disconnect(); });
         showSysCfg = false;
     });
@@ -370,13 +370,13 @@ int main(int argc, char** argv) {
     });
 
     // ---- Menu bar mode cycler (shares opModeIdx with scOpMode) ----
-    auto menuModeC = hvb::tui::InlineCycler(kOpModes, &inputs.opModeIdx, [&] {
-        hvb::tui::postWrite(appState, inputs, "OpMode",
-            [&] { return g_client.writeOperatingMode(static_cast<hvb::OpMode>(inputs.opModeIdx)); },
+    auto menuModeC = psb::tui::InlineCycler(kOpModes, &inputs.opModeIdx, [&] {
+        psb::tui::postWrite(appState, inputs, "OpMode",
+            [&] { return g_client.writeOperatingMode(static_cast<psb::OpMode>(inputs.opModeIdx)); },
             [&] { data.sysCfg = g_client.readSystemConfig(); });
     }, /*autoCommit=*/true);
 
-    auto menuSave = hvb::tui::ActionButton("Save", saveSystemConfig);
+    auto menuSave = psb::tui::ActionButton("Save", saveSystemConfig);
     auto connectedMenuSave = Maybe(menuSave, [&] { return g_connected.load(); });
     auto menuBar = Container::Horizontal({menuModeC, connectedMenuSave, bConnToggle, bQuit});
 
@@ -392,9 +392,9 @@ int main(int argc, char** argv) {
     auto tabBar = Menu(&tabTitles, &activeTab, tabOpt);
 
     // ---- Tab content: Monitor + CH0..CH15 ----
-    Components tabComponents = { hvb::tui::makeMonitorTab(appState, inputs) };
-    for (int ch = 0; ch < hvb::tui::MAX_CHANNELS; ++ch)
-        tabComponents.push_back(hvb::tui::makeChannelTab(appState, inputs, ch));
+    Components tabComponents = { psb::tui::makeMonitorTab(appState, inputs) };
+    for (int ch = 0; ch < psb::tui::MAX_CHANNELS; ++ch)
+        tabComponents.push_back(psb::tui::makeChannelTab(appState, inputs, ch));
     auto tabContent = Container::Tab(tabComponents, &activeTab);
 
     // ---- Status bar (connection details + SysConfig; Connect lives in the menu) ----
@@ -408,10 +408,10 @@ int main(int argc, char** argv) {
                 rebuildChannelTitles(tabTitles, nc);
                 int maxTab = static_cast<int>(tabTitles.size()) - 1;
                 if (activeTab > maxTab) activeTab = maxTab;
-                hvb::tui::syncDataToInputs(data, inputs);
+                psb::tui::syncDataToInputs(data, inputs);
             }
         }
-        hvb::tui::reconcileDisconnectedTabs(
+        psb::tui::reconcileDisconnectedTabs(
             g_connected.load() && data.valid, tabTitles, activeTab);
 
         std::string msg;
@@ -471,7 +471,7 @@ int main(int argc, char** argv) {
             ? connectedMenuSave->Render()
             : text("[ Save ]") | dim;
         auto menuBarEl = hbox({
-            text(" HVB ") | bold,
+            text(" PSB ") | bold,
             separator(),
             text(" " + chTxt + " Channels "),
             separator(),

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "hvb_modbus_client.h"
+#include "psb_modbus_client.h"
 #include "types.h"
 
 #include <QObject>
@@ -62,18 +62,18 @@ signals:
     void rawFrameLog(const QString& msg);
 
 private:
-    hvb::HvbModbusClient m_client;
+    psb::PsbModbusClient m_client;
 
     // Cached structs for realtime poll — populated by doRefreshSystemInfo/doRefreshChannelInfo
     static constexpr int WORKER_MAX_CH = 16;
-    hvb::SystemInfo  m_cachedSysInfo{};
-    hvb::ChannelInfo m_cachedChInfo[WORKER_MAX_CH]{};
+    psb::SystemInfo  m_cachedSysInfo{};
+    psb::ChannelInfo m_cachedChInfo[WORKER_MAX_CH]{};
     int m_channelCount = 0;
 
-    QVariantMap systemInfoToMap(const hvb::SystemInfo& info);
-    QVariantMap channelInfoToMap(int ch, const hvb::ChannelInfo& info);
-    QVariantMap systemConfigToMap(const hvb::SystemConfig& cfg);
-    QVariantMap channelConfigToMap(int ch, const hvb::ChannelConfig& cfg);
+    QVariantMap systemInfoToMap(const psb::SystemInfo& info);
+    QVariantMap channelInfoToMap(int ch, const psb::ChannelInfo& info);
+    QVariantMap systemConfigToMap(const psb::SystemConfig& cfg);
+    QVariantMap channelConfigToMap(int ch, const psb::ChannelConfig& cfg);
 
     void onFrame(bool tx, const std::vector<uint8_t>& data);
 };

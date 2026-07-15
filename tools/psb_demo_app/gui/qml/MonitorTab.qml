@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import HvbTool
+import PsbTool
 
 Item {
     id: root
@@ -23,16 +23,16 @@ Item {
             if (caps & 0x0008) hasCurr  = true
         }
         var cols = []
-        cols.push({ key: "ch",     label: "CH",        width: HvbTheme.colCh })
-        if (hasOutEn) cols.push({ key: "vset",   label: "Vset (V)", width: HvbTheme.colVset })
-        if (hasOutEn) cols.push({ key: "status", label: "Status",   width: HvbTheme.colStatus })
-        cols.push(    { key: "vop",    label: "Vop (V)",   width: HvbTheme.colVop })
-        if (hasVolt)  cols.push({ key: "v",      label: "V (V)",    width: HvbTheme.colV })
-        if (hasCurr)  cols.push({ key: "i",      label: "I (nA)",   width: HvbTheme.colI })
-        if (hasOutEn) cols.push({ key: "ru",     label: "Ru (V)",   width: HvbTheme.colRamp })
-        if (hasOutEn) cols.push({ key: "rd",     label: "Rd (V)",   width: HvbTheme.colRamp })
-        if (hasCurr)  cols.push({ key: "limit",  label: "Lim(nA)",  width: HvbTheme.colLimit })
-        cols.push(    { key: "fault",  label: "Fault",     width: HvbTheme.colFault })
+        cols.push({ key: "ch",     label: "CH",        width: PsbTheme.colCh })
+        if (hasOutEn) cols.push({ key: "vset",   label: "Vset (V)", width: PsbTheme.colVset })
+        if (hasOutEn) cols.push({ key: "status", label: "Status",   width: PsbTheme.colStatus })
+        cols.push(    { key: "vop",    label: "Vop (V)",   width: PsbTheme.colVop })
+        if (hasVolt)  cols.push({ key: "v",      label: "V (V)",    width: PsbTheme.colV })
+        if (hasCurr)  cols.push({ key: "i",      label: "I (nA)",   width: PsbTheme.colI })
+        if (hasOutEn) cols.push({ key: "ru",     label: "Ru (V)",   width: PsbTheme.colRamp })
+        if (hasOutEn) cols.push({ key: "rd",     label: "Rd (V)",   width: PsbTheme.colRamp })
+        if (hasCurr)  cols.push({ key: "limit",  label: "Lim(nA)",  width: PsbTheme.colLimit })
+        cols.push(    { key: "fault",  label: "Fault",     width: PsbTheme.colFault })
 
         // Column set is derived from hardware capability flags, which are
         // fixed for the lifetime of a connection — only replace the array

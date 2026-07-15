@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
-import HvbTool
+import PsbTool
 import "components"
 
 ApplicationWindow {
@@ -204,8 +204,8 @@ ApplicationWindow {
                 Label {
                     id: statusLabel
                     text: backend.statusMessage
-                    color: backend.statusMessage.startsWith("✓") ? HvbTheme.colorOk
-                         : backend.statusMessage.startsWith("✗") ? HvbTheme.colorError
+                    color: backend.statusMessage.startsWith("✓") ? PsbTheme.colorOk
+                         : backend.statusMessage.startsWith("✗") ? PsbTheme.colorError
                          : Material.foreground
                     Layout.preferredWidth: 300
                     elide: Text.ElideRight

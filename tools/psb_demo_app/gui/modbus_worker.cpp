@@ -46,7 +46,7 @@ void ModbusWorker::doDisconnect()
 
 void ModbusWorker::doScanPorts()
 {
-    auto ports = hvb::HvbModbusClient::scanPorts();
+    auto ports = psb::PsbModbusClient::scanPorts();
     QStringList list;
     for (const auto& p : ports) list << QString::fromStdString(p);
     emit portsScanned(list);
@@ -56,7 +56,7 @@ void ModbusWorker::doScanPorts()
 //  Reads
 // ---------------------------------------------------------------------------
 
-QVariantMap ModbusWorker::systemInfoToMap(const hvb::SystemInfo& info)
+QVariantMap ModbusWorker::systemInfoToMap(const psb::SystemInfo& info)
 {
     QVariantMap m;
     m["protoMajor"] = info.protoMajor;
@@ -73,20 +73,20 @@ QVariantMap ModbusWorker::systemInfoToMap(const hvb::SystemInfo& info)
     m["faultCause"] = info.faultCause;
     m["sysCapFlags"] = info.sysCapFlags;
 
-    m["capAutoMode"] = (info.sysCapFlags & hvb::SysCap::AUTOMATIC_MODE) != 0;
-    m["capEnvSensor"] = (info.sysCapFlags & hvb::SysCap::ENV_SENSOR) != 0;
+    m["capAutoMode"] = (info.sysCapFlags & psb::SysCap::AUTOMATIC_MODE) != 0;
+    m["capEnvSensor"] = (info.sysCapFlags & psb::SysCap::ENV_SENSOR) != 0;
     return m;
 }
 
-QVariantMap ModbusWorker::channelInfoToMap(int /*ch*/, const hvb::ChannelInfo& info)
+QVariantMap ModbusWorker::channelInfoToMap(int /*ch*/, const psb::ChannelInfo& info)
 {
     QVariantMap m;
     m["voltageRaw"] = info.voltageRaw;
     m["currentRaw"] = info.currentRaw;
     m["operationalTargetVRaw"] = info.operationalTargetVoltageRaw;
-    m["voltageV"] = hvb::reg::voltageToV(info.voltageRaw);
-    m["currentA"] = hvb::reg::currentToA(info.currentRaw);
-    m["operationalTargetV"] = hvb::reg::voltageToV(info.operationalTargetVoltageRaw);
+    m["voltageV"] = psb::reg::voltageToV(info.voltageRaw);
+    m["currentA"] = psb::reg::currentToA(info.currentRaw);
+    m["operationalTargetV"] = psb::reg::voltageToV(info.operationalTargetVoltageRaw);
     m["status"] = info.status;
     m["activeFault"] = info.activeFault;
     m["faultHistory"] = info.faultHistory;
@@ -96,21 +96,21 @@ QVariantMap ModbusWorker::channelInfoToMap(int /*ch*/, const hvb::ChannelInfo& i
     m["lastFaultTimestamp"] = info.lastFaultTimestamp;
     m["chCapFlags"] = info.chCapFlags;
 
-    m["statusOutDrive"] = (info.status & hvb::ChStatus::OUTPUT_DRIVE_NONZERO) != 0;
-    m["statusOutEn"] = (info.status & hvb::ChStatus::OUTPUT_ENABLE_ACTIVE) != 0;
-    m["statusRamping"] = (info.status & hvb::ChStatus::RAMPING_ACTIVE) != 0;
-    m["statusActiveFault"] = (info.status & hvb::ChStatus::ACTIVE_FAULT) != 0;
-    m["statusFaultHistory"] = (info.status & hvb::ChStatus::FAULT_HISTORY) != 0;
-    m["statusCooldown"] = (info.status & hvb::ChStatus::COOLDOWN_ACTIVE) != 0;
-    m["statusMeasStale"] = (info.status & hvb::ChStatus::MEASUREMENT_STALE) != 0;
+    m["statusOutDrive"] = (info.status & psb::ChStatus::OUTPUT_DRIVE_NONZERO) != 0;
+    m["statusOutEn"] = (info.status & psb::ChStatus::OUTPUT_ENABLE_ACTIVE) != 0;
+    m["statusRamping"] = (info.status & psb::ChStatus::RAMPING_ACTIVE) != 0;
+    m["statusActiveFault"] = (info.status & psb::ChStatus::ACTIVE_FAULT) != 0;
+    m["statusFaultHistory"] = (info.status & psb::ChStatus::FAULT_HISTORY) != 0;
+    m["statusCooldown"] = (info.status & psb::ChStatus::COOLDOWN_ACTIVE) != 0;
+    m["statusMeasStale"] = (info.status & psb::ChStatus::MEASUREMENT_STALE) != 0;
 
-    m["faultILimit"] = (info.activeFault & hvb::FaultCause::CURRENT) != 0;
-    m["faultMeasInvalid"] = (info.activeFault & hvb::FaultCause::MEASUREMENT) != 0;
-    m["faultHw"] = (info.activeFault & hvb::FaultCause::HARDWARE) != 0;
-    m["faultInterlock"] = (info.activeFault & hvb::FaultCause::INTERLOCK) != 0;
-    m["faultRetryExhausted"] = (info.activeFault & hvb::FaultCause::RETRY_EXHAUST) != 0;
-    m["faultConfigInvalid"] = (info.activeFault & hvb::FaultCause::CFG_INVALID) != 0;
-    m["faultMeasStale"] = (info.activeFault & hvb::FaultCause::STALE) != 0;
+    m["faultILimit"] = (info.activeFault & psb::FaultCause::CURRENT) != 0;
+    m["faultMeasInvalid"] = (info.activeFault & psb::FaultCause::MEASUREMENT) != 0;
+    m["faultHw"] = (info.activeFault & psb::FaultCause::HARDWARE) != 0;
+    m["faultInterlock"] = (info.activeFault & psb::FaultCause::INTERLOCK) != 0;
+    m["faultRetryExhausted"] = (info.activeFault & psb::FaultCause::RETRY_EXHAUST) != 0;
+    m["faultConfigInvalid"] = (info.activeFault & psb::FaultCause::CFG_INVALID) != 0;
+    m["faultMeasStale"] = (info.activeFault & psb::FaultCause::STALE) != 0;
 
     m["capOutEn"] = (info.chCapFlags & CH_CAP_OUTPUT_ENABLE) != 0;
     m["capRawDrive"] = (info.chCapFlags & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
@@ -119,7 +119,7 @@ QVariantMap ModbusWorker::channelInfoToMap(int /*ch*/, const hvb::ChannelInfo& i
     return m;
 }
 
-QVariantMap ModbusWorker::systemConfigToMap(const hvb::SystemConfig& cfg)
+QVariantMap ModbusWorker::systemConfigToMap(const psb::SystemConfig& cfg)
 {
     QVariantMap m;
     m["operatingMode"]        = static_cast<int>(cfg.operatingMode);
@@ -129,11 +129,11 @@ QVariantMap ModbusWorker::systemConfigToMap(const hvb::SystemConfig& cfg)
     return m;
 }
 
-QVariantMap ModbusWorker::channelConfigToMap(int /*ch*/, const hvb::ChannelConfig& cfg)
+QVariantMap ModbusWorker::channelConfigToMap(int /*ch*/, const psb::ChannelConfig& cfg)
 {
     QVariantMap m;
     m["configuredTargetVRaw"]  = cfg.configuredTargetVRaw;
-    m["configuredTargetV"]     = hvb::reg::voltageToV(cfg.configuredTargetVRaw);
+    m["configuredTargetV"]     = psb::reg::voltageToV(cfg.configuredTargetVRaw);
     m["outputAction"]          = static_cast<int>(cfg.outputAction);
     m["faultCommand"]          = static_cast<int>(cfg.faultCommand);
     m["rampUpStepRaw"]         = cfg.rampUpStepRaw;
@@ -148,9 +148,9 @@ QVariantMap ModbusWorker::channelConfigToMap(int /*ch*/, const hvb::ChannelConfi
     m["iProtMode"]             = static_cast<int>(cfg.iProtMode);
     m["iProtOutputAction"]     = static_cast<int>(cfg.iProtOutputAction);
     m["iLimitThresholdRaw"]    = cfg.iLimitThresholdRaw;
-    m["iLimitThresholdA"]      = hvb::reg::currentToA(cfg.iLimitThresholdRaw);
+    m["iLimitThresholdA"]      = psb::reg::currentToA(cfg.iLimitThresholdRaw);
     m["derateStepRaw"]         = cfg.derateStepRaw;
-    m["derateStepV"]           = hvb::reg::voltageToV(cfg.derateStepRaw);
+    m["derateStepV"]           = psb::reg::voltageToV(cfg.derateStepRaw);
     return m;
 }
 
@@ -206,7 +206,7 @@ void ModbusWorker::doReadChannelConfig(int ch)
 // ---------------------------------------------------------------------------
 
 void ModbusWorker::doWriteOperatingMode(int mode) {
-    bool ok = m_client.writeOperatingMode(static_cast<hvb::OpMode>(mode));
+    bool ok = m_client.writeOperatingMode(static_cast<psb::OpMode>(mode));
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
@@ -230,12 +230,12 @@ void ModbusWorker::doWriteBaudRate(int code) {
 // ---------------------------------------------------------------------------
 
 void ModbusWorker::doSendOutputAction(int ch, int action) {
-    bool ok = m_client.sendOutputAction(ch, static_cast<hvb::OutputAction>(action));
+    bool ok = m_client.sendOutputAction(ch, static_cast<psb::OutputAction>(action));
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doSendFaultCmd(int ch, int cmd) {
-    bool ok = m_client.sendChannelFaultCommand(ch, static_cast<hvb::ChannelFaultCommand>(cmd));
+    bool ok = m_client.sendChannelFaultCommand(ch, static_cast<psb::ChannelFaultCommand>(cmd));
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
@@ -256,7 +256,7 @@ void ModbusWorker::doWriteRampDown(int ch, int stepRaw, int interval) {
 
 void ModbusWorker::doWriteChannelRecovery(int ch, int policy, int delay, int max, int window) {
     bool ok = m_client.writeChannelRecovery(ch,
-        static_cast<hvb::RecoveryPolicy>(policy), delay, max, window);
+        static_cast<psb::RecoveryPolicy>(policy), delay, max, window);
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
@@ -267,7 +267,7 @@ void ModbusWorker::doWriteChannelSafeBand(int ch, int pct) {
 
 void ModbusWorker::doWriteCurrentProtection(int ch, int mode, int action, int thresholdRaw) {
     bool ok = m_client.writeCurrentProtection(ch,
-        static_cast<hvb::ProtectionMode>(mode), static_cast<hvb::OutputAction>(action), static_cast<int16_t>(thresholdRaw));
+        static_cast<psb::ProtectionMode>(mode), static_cast<psb::OutputAction>(action), static_cast<int16_t>(thresholdRaw));
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
@@ -297,7 +297,7 @@ void ModbusWorker::doExitCalibrationMode() {
 }
 
 void ModbusWorker::doSendParamAction(int chScope, int action) {
-    bool ok = m_client.sendParamAction(chScope, static_cast<hvb::ParamAction>(action));
+    bool ok = m_client.sendParamAction(chScope, static_cast<psb::ParamAction>(action));
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 

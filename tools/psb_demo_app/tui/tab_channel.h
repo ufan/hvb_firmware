@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-namespace hvb::tui {
+namespace psb::tui {
 
 inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     static const std::vector<std::string> kProtModes  = {"Disabled","FlagOnly","Apply-Action"};
@@ -48,6 +48,16 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     auto tgtInp    = CommitInput(&inputs.targetV[ch],   "+0.0", onTarget);
     auto ruStepInp = CommitInput(&inputs.ruStep[ch],    "0.0",  onRampUp);
     auto rdStepInp = CommitInput(&inputs.rdStep[ch],    "0.0",  onRampDown);
+
+    // Fixed-voltage channel counterpart to tgtInp (CH_CAP_OUTPUT_ENABLE
+    // without CH_CAP_RAW_OUTPUT_DRIVE — no DAC, no ramp, just on/off).
+    auto onOutputEnabledCfg = [&s, &inputs, refreshCh, ch] {
+        bool on = inputs.outputEnabledIdx[ch] != 0;
+        postWrite(s, inputs, "Output Enabled",
+            [&s, ch, on] { return s.client.writeOutputEnabled(ch, on); }, refreshCh);
+    };
+    auto outputEnabledCyc = InlineCycler({"Off", "On"}, &inputs.outputEnabledIdx[ch],
+        onOutputEnabledCfg, /*autoCommit=*/true);
 
     auto bEnable  = ActionButton("Enable",    [&s, &inputs, refreshCh, ch]{
         postWrite(s, inputs, "Enable", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::Enable); }, refreshCh); });
@@ -118,6 +128,18 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         return !s.data.valid ||
                (s.data.chInfo[ch].chCapFlags & CH_CAP_OUTPUT_ENABLE) != 0;
     };
+    auto hasDrive = [&s, ch] {
+        return !s.data.valid ||
+               (s.data.chInfo[ch].chCapFlags & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
+    };
+    auto hasFixedOutputCfg = [&s, ch] {
+        // CH_CAP_OUTPUT_ENABLE without CH_CAP_RAW_OUTPUT_DRIVE — a
+        // switchable channel with no DAC (jw_lvb ch1-9), as opposed to a
+        // locked always-on channel (jw_lvb ch0, neither capability).
+        if (!s.data.valid) return false;
+        uint16_t caps = s.data.chInfo[ch].chCapFlags;
+        return (caps & CH_CAP_OUTPUT_ENABLE) != 0 && (caps & CH_CAP_RAW_OUTPUT_DRIVE) == 0;
+    };
     auto hasProtection = [&s, ch] {
         return !s.data.valid ||
                hasProtectionPolicy(s.data.chInfo[ch].chCapFlags);
@@ -125,14 +147,18 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
 
     auto outputControls = Container::Horizontal({bEnable, bDisGra, bKill});
     auto visibleOutputControls = Maybe(outputControls, hasOutput);
+    auto visibleTgtInp = Maybe(tgtInp, hasDrive);
+    auto visibleRuStepInp = Maybe(ruStepInp, hasDrive);
+    auto visibleRdStepInp = Maybe(rdStepInp, hasDrive);
+    auto visibleOutputEnabledCyc = Maybe(outputEnabledCyc, hasFixedOutputCfg);
     auto protectionControls = Container::Vertical({
         iModeC, iActC, iThrInp, bClrAct, bClrHist,
     });
     auto visibleProtectionControls = Maybe(protectionControls, hasProtection);
 
     auto container = Container::Vertical({
-        visibleOutputControls, tgtInp,
-        ruStepInp, rdStepInp,
+        visibleOutputControls, visibleTgtInp,
+        visibleRuStepInp, visibleRdStepInp, visibleOutputEnabledCyc,
         visibleProtectionControls,
         recovC, delayInp, maxInp, winInp, derInp, iBandInp,
         bSave, bLoad, bFactory,
@@ -167,17 +193,25 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         });
 
         // Control panel
-        auto controlPanel = window(text(" Control "), vbox({
-            emptyElement(),
+        Elements controlRows;
+        controlRows.push_back(emptyElement());
+        controlRows.push_back(
             hasOutput()
                 ? hbox({ bEnable->Render(), text(" "), bDisGra->Render(),
                          text(" "), bKill->Render() })
-                : text(" output control not supported ") | dim,
-            hbox({ text("Vset    : "), tgtInp->Render() | flex, text(" V") }),
-            hbox({ text("Ramp up : "), ruStepInp->Render() | flex, text(" V/s") }),
-            hbox({ text("Ramp dn : "), rdStepInp->Render() | flex, text(" V/s") }),
-            filler(),
-        }));
+                : text(" output control not supported ") | dim);
+        if (hasDrive()) {
+            controlRows.push_back(hbox({ text("Vset    : "), tgtInp->Render() | flex, text(" V") }));
+            controlRows.push_back(hbox({ text("Ramp up : "), ruStepInp->Render() | flex, text(" V/s") }));
+            controlRows.push_back(hbox({ text("Ramp dn : "), rdStepInp->Render() | flex, text(" V/s") }));
+        } else if (hasFixedOutputCfg()) {
+            controlRows.push_back(hbox({ text("Startup : "), outputEnabledCyc->Render() | flex,
+                                         text(" (AUTOMATIC-mode desired state)") }));
+        } else {
+            controlRows.push_back(text(" fixed output, always on — no configurable setpoint ") | dim);
+        }
+        controlRows.push_back(filler());
+        auto controlPanel = window(text(" Control "), vbox(std::move(controlRows)));
 
         // Protection panel
         Element protPanel = emptyElement();
@@ -230,4 +264,4 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     });
 }
 
-} // namespace hvb::tui
+} // namespace psb::tui
