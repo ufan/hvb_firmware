@@ -37,10 +37,9 @@ static void doFullScan(psb::tui::ScannedData& data) {
 
 static void doPollScan(psb::tui::ScannedData& data) {
     g_client.readSystemStatus(data.sysInfo);
-    uint16_t activeMask = data.sysInfo.activeChMask;
     int n = data.numChannels();
     for (int ch = 0; ch < n; ++ch) {
-        if ((activeMask & (1u << ch)) == 0) continue;
+        if (!psb::tui::shouldPollChannel(ch, n)) continue;
         g_client.readChannelStatus(ch, data.chInfo[ch].chCapFlags, data.chInfo[ch]);
     }
 }

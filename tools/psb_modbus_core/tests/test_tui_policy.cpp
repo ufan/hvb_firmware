@@ -31,6 +31,17 @@ TEST_CASE("protection requires both measurement capabilities") {
                               CH_CAP_CURRENT_MEASUREMENT));
 }
 
+TEST_CASE("TUI poll refreshes every discovered channel, not only active outputs") {
+    CHECK(shouldPollChannel(0, 10));
+    CHECK(shouldPollChannel(9, 10));
+    CHECK_FALSE(shouldPollChannel(10, 10));
+    CHECK_FALSE(shouldPollChannel(-1, 10));
+}
+
+TEST_CASE("unsupported monitor cells use a visible neutral placeholder") {
+    CHECK(unsupportedMonitorCellLabel() == std::string("n/a"));
+}
+
 TEST_CASE("disconnected UI retains only Monitor") {
     std::vector<std::string> titles = {"Monitor", "CH0", "CH1"};
     int active = 2;

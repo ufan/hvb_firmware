@@ -42,6 +42,14 @@ inline bool hasProtectionPolicy(uint16_t caps) {
     return (caps & required) == required;
 }
 
+inline bool shouldPollChannel(int ch, int numChannels) {
+    return ch >= 0 && ch < numChannels;
+}
+
+inline std::string unsupportedMonitorCellLabel() {
+    return "n/a";
+}
+
 inline bool reconcileDisconnectedTabs(bool connected,
                                       std::vector<std::string>& titles,
                                       int& active) {

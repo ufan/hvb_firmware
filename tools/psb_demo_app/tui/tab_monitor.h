@@ -204,27 +204,27 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
             std::vector<Element> cells;
             cells.push_back(text(chLabel) | center);
             // Vset slot: target-voltage input (DAC channels), on/off cycler
-            // (fixed-voltage switchable channels), or "--" (locked always-on,
+            // (fixed-voltage switchable channels), or "n/a" (locked always-on,
             // e.g. jw_lvb ch0 — no CH_CAP_OUTPUT_ENABLE at all).
             if (hasDrive)
                 cells.push_back(rows->at(ch).vsetInp->Render() | center);
             else if (hasOut)
                 cells.push_back(rows->at(ch).outputEnabledCyc->Render() | center);
             else
-                cells.push_back(text(" -- ") | dim | center);
+                cells.push_back(text(unsupportedMonitorCellLabel()) | center);
             cells.push_back(hasOut ? rows->at(ch).statusBtn->Render() | center
-                                   : text(" -- ") | dim | center);
+                                   : text(unsupportedMonitorCellLabel()) | center);
             cells.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | center);
             cells.push_back(hasVolt ? text(fmtVoltage(ci.voltageRaw)) | center
-                                    : text(" -- ") | dim | center);
+                                    : text(unsupportedMonitorCellLabel()) | center);
             cells.push_back(hasCurr ? text(fmtCurrentNA(ci.currentRaw)) | center
-                                    : text(" -- ") | dim | center);
+                                    : text(unsupportedMonitorCellLabel()) | center);
             cells.push_back(hasDrive ? rows->at(ch).rampUpInp->Render() | center
-                                     : text(" -- ") | dim | center);
+                                     : text(unsupportedMonitorCellLabel()) | center);
             cells.push_back(hasDrive ? rows->at(ch).rampDownInp->Render() | center
-                                     : text(" -- ") | dim | center);
+                                     : text(unsupportedMonitorCellLabel()) | center);
             cells.push_back(hasCurr ? rows->at(ch).iLimitInp->Render() | center
-                                    : text(" -- ") | dim | center);
+                                    : text(unsupportedMonitorCellLabel()) | center);
             // Fault column is mode-dependent: ApplyOutputAction shows the active
             // fault (protection took effect), FlagOnly shows fault history (the
             // only trace it leaves, since output is untouched), Disabled shows a
@@ -233,7 +233,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
                 ProtectionMode mode = s.data.chCfg[ch].iProtMode;
                 Element faultEl;
                 if (!hasCurr) {
-                    faultEl = text(" -- ") | dim;
+                    faultEl = text(unsupportedMonitorCellLabel());
                 } else if (mode == ProtectionMode::FlagOnly) {
                     faultEl = text(faultStr(ci.faultHistory));
                 } else if (mode == ProtectionMode::ApplyOutputAction) {
@@ -244,7 +244,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
                 cells.push_back(faultEl | center);
             }
             cells.push_back(hasCurr ? rows->at(ch).clearFaultBtn->Render() | center
-                                    : text(" -- ") | dim | center);
+                                    : text(unsupportedMonitorCellLabel()) | center);
             cells.push_back(rows->at(ch).saveBtn->Render() | center);
 
             grid.push_back(std::move(cells));
