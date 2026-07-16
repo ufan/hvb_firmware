@@ -141,13 +141,29 @@ int cmdStatus() {
 
 int cmdMonitor(int intervalSec) {
     if (!g_client->isConnected()) { std::cerr << "Not connected\n"; return 1; }
+
+    // Read the full protocol/channel-count/capability info once — these
+    // are fixed/static for the session, unlike everything the polling loop
+    // below refreshes every cycle.
+    auto info = g_client->readSystemInfo();
+    if (!g_client->isConnected()) { std::cerr << "Error\n"; return 1; }
+    std::vector<psb::ChannelInfo> channels;
+    for (int ch = 0; ch < info.supportedChannels; ++ch)
+        channels.push_back(g_client->readChannelInfo(ch));
+
     g_running = 1;
     ::signal(SIGINT, sigintHandler);
     while (g_running) {
-        auto info = g_client->readSystemInfo();
-        std::vector<psb::ChannelInfo> channels;
-        for (int ch = 0; ch < info.supportedChannels; ++ch)
-            channels.push_back(g_client->readChannelInfo(ch));
+        // Merge-on-success: readSystemInfo()/readChannelInfo() (above) would
+        // silently reset every field to its zero/default on any single
+        // transient read failure, flashing a bogus "Uptime: 0s, Protocol
+        // 0.0, all channels OFF" frame — the same bug class already fixed
+        // in psb_demo_tui. readSystemStatus()/readChannelStatus() only
+        // touch the dynamic fields and leave everything else (including the
+        // previous cycle's values, on failure) untouched.
+        g_client->readSystemStatus(info);
+        for (int ch = 0; ch < static_cast<int>(channels.size()); ++ch)
+            g_client->readChannelStatus(ch, channels[ch].chCapFlags, channels[ch]);
         std::cout << "\033[2J\033[H" << renderMonitorTable(info, channels) << std::flush;
         for (int i = 0; i < intervalSec && g_running; ++i)
             std::this_thread::sleep_for(std::chrono::seconds(1));
