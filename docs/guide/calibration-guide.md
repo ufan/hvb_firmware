@@ -12,28 +12,41 @@ yet release-ready — use the TUI described here.
 ## 1. What calibration does
 
 Each channel converts raw hardware codes to physical units through a linear
-coefficient pair, `y = x × k/D + b`, on three independent axes:
+coefficient triple, `y = x × k × 10^exp + b`, on three independent axes:
 
-| Axis | Coefficient fields | D | Meaning |
-|---|---|---|---|
-| Output | `out_cal_k` / `out_cal_b` | 10000 | `raw_dac = target × k/10000 + b` |
-| Voltage measurement | `v_cal_k` / `v_cal_b` | 1000000 | `measured_v = raw_adc_v × k/1000000 + b` |
-| Current measurement | `i_cal_k` / `i_cal_b` | 1000000 | `measured_i = raw_adc_i × k/1000000 + b` |
+| Axis | Coefficient fields | Meaning |
+|---|---|---|
+| Output | `out_cal_k` / `out_cal_k_exp` / `out_cal_b` | `raw_dac = target × k × 10^exp + b` |
+| Voltage measurement | `v_cal_k` / `v_cal_k_exp` / `v_cal_b` | `measured_v = raw_adc_v × k × 10^exp + b` |
+| Current measurement | `i_cal_k` / `i_cal_k_exp` / `i_cal_b` | `measured_i = raw_adc_i × k × 10^exp + b` |
 
-The measurement axes use a much larger divisor because they scale down a
-small, attenuated raw ADC reading (gain ≈ 0.001–0.01); unity gain isn't
-representable there (max is 65535/1000000 ≈ 0.0655). The output axis is
-near-unity, so it uses the smaller divisor. See
-`docs/guide/parameter-reference.md` for the full derivation.
+`k` is a `uint16_t` mantissa (1–65535); `exp` is an `int16_t` decimal exponent
+in the range **-9 to 4**; `b` is an `int16_t` offset, unchanged from before.
+Gain is `k × 10^exp` — this is a decimal floating-point representation, not a
+fixed divisor, so the same field can express both a sub-unity attenuating
+front-end (jw_hvb's measurement axes, gain ≈ 0.001–0.015) and a super-unity
+amplifying one (a board with no divider ahead of the ADC, or a low-voltage-max
+output stage needing more DAC-code resolution per volt than a 2000V board
+does). See `docs/guide/parameter-reference.md` for the full derivation,
+including why `exp` exists (a fixed single divisor per axis couldn't cover
+both directions in a `uint16_t`).
+
+Each axis's default `exp` reproduces the pre-v3.1 fixed-divisor formula
+exactly: `-4` for output (was `/10000`), `-6` for both measurement axes (was
+`/1000000`). If you're calibrating a board whose default `exp` values were
+never touched, you can ignore `exp` entirely and follow this guide exactly as
+you would have before — nothing about the two-point-fit workflow in §5-§6
+changes unless a channel's gain falls outside what the legacy divisor could
+reach.
 
 **Factory (pre-calibration) defaults** — the board ships with these; your job
 is to replace them with real per-unit numbers:
 
 | Field | Default | Note |
 |---|---|---|
-| `out_cal_k` / `out_cal_b` | 32768 / 0 | Nominal 1:1-ish DAC gain, uncalibrated |
-| `v_cal_k` / `v_cal_b` | 1 / 0 (jw_hvb board: 2387 / 0) | Deliberately near-zero until calibrated |
-| `i_cal_k` / `i_cal_b` | 1 / 0 (jw_hvb board: 14901 / 0) | Deliberately near-zero until calibrated |
+| `out_cal_k` / `out_cal_k_exp` / `out_cal_b` | 32768 / -4 / 0 | Nominal 1:1-ish DAC gain, uncalibrated |
+| `v_cal_k` / `v_cal_k_exp` / `v_cal_b` | 1 / -6 / 0 (jw_hvb: 2387 / -6 / 0) | Deliberately near-zero until calibrated |
+| `i_cal_k` / `i_cal_k_exp` / `i_cal_b` | 1 / -6 / 0 (jw_hvb: 14901 / -6 / 0) | Deliberately near-zero until calibrated |
 
 ---
 
@@ -102,7 +115,8 @@ Commands are used at the `factory>` prompt after launch.
 | `cal dac <code>` | Write raw DAC code (0–65535, or lower if fixture-limited) |
 | `cal sample` | Trigger a fresh sample, print `dac` / `adc_v` / `adc_i` |
 | `cal read` | Print the last snapshot without triggering a new sample |
-| `cal coeff out\|meas-v\|meas-i <k> <b>` | Write a coefficient pair |
+| `cal coeff out\|meas-v\|meas-i <k> <b>` | Write a coefficient pair, leaving `exp` untouched |
+| `cal coeff out\|meas-v\|meas-i <k> <b> <exp>` | Write `k`, `b`, and the decimal exponent together |
 | `cal coeff show` | Print current coefficients for the active channel |
 | `cal commit` | Persist the active channel's coefficients to NVS |
 | `cal status` | Mode + per-channel output/dac/adc overview |
@@ -123,9 +137,13 @@ Commands are used at the `factory>` prompt after launch.
    - For at least two DAC codes (more points give a better fit): `cal dac
      <code>`, then `cal sample` to trigger and print the raw readings. Record
      the external reference meter's reading alongside each sample.
-   - Compute `k` and `b` per axis offline (spreadsheet, script — see §6).
+   - Compute `k` (and `exp`, if the fitted gain doesn't fit under the
+     channel's current `exp`) and `b` per axis offline (spreadsheet, script —
+     see §6).
    - Write them back: `cal coeff out <k> <b>`, `cal coeff meas-v <k> <b>`,
-     `cal coeff meas-i <k> <b>`. Confirm with `cal coeff show`.
+     `cal coeff meas-i <k> <b>` (leaves `exp` at its current value), or
+     `cal coeff out <k> <b> <exp>` etc. if `exp` also needs to change.
+     Confirm with `cal coeff show`.
    - `cal disable` (required before commit — commit is rejected while output
      is enabled or the DAC code is non-zero), then `cal commit`.
 3. **Exit**: `cal exit-cal` returns to the operating mode that was active
@@ -133,19 +151,34 @@ Commands are used at the `factory>` prompt after launch.
 
 ---
 
-## 6. Worked example: computing k and b
+## 6. Worked example: computing k, exp, and b
 
 All three axes use the same two-point linear fit. Given two `(x, y)` pairs,
 where `x` is what the tool reports and `y` is your reference measurement,
-converted to the register's raw units:
+converted to the register's raw units, and letting `D = 10^(-exp)` (the
+channel's *current* `exp` — normally its factory default, `-4` for output and
+`-6` for both measurement axes, unless you've deliberately changed it):
 
 ```
 k = D × (y2 − y1) / (x2 − x1)
 b = y1 − x1 × k / D
 ```
 
-Round `k` and `b` to integers before writing them back (`k` is `uint16_t`,
-`b` is `int16_t`).
+This is exactly the pre-v3.1 formula, with `D` now derived from `exp` instead
+of hardcoded — if you're using each axis's default `exp`, the arithmetic and
+the resulting `k`/`b` values are identical to before.
+
+**If the fitted `k` doesn't land in `1..65535`** (out of `uint16_t` range),
+`exp` needs to change: pick a new `exp` so `k` lands roughly in `10000..65535`
+(a few significant digits of precision), i.e. `exp_new ≈ exp_old +
+floor(log10(k_old / 60000))`, then recompute `k = D_new × (y2 − y1) / (x2 −
+x1)` with `D_new = 10^(-exp_new)`. This is the case that motivated `exp`
+existing at all — a board whose gain the legacy fixed divisor couldn't reach
+(e.g. a super-unity measurement front-end, or an output stage needing much
+more DAC-code resolution per volt than a 2000V board does).
+
+Round `k`, `exp`, and `b` to integers before writing them back (`k` is
+`uint16_t`, `exp` is `int16_t` in range -9..4, `b` is `int16_t`).
 
 **Output axis worked example** (`x` = commanded DAC code, `y` = DMM-measured
 output voltage, converted to raw target units at 0.1 V/LSB):
@@ -159,6 +192,9 @@ output voltage, converted to raw target units at 0.1 V/LSB):
 k = 10000 × (49152 − 32768) / (14900 − 9950) = 10000 × 16384 / 4950 ≈ 33108
 b = 32768 − 9950 × 33108 / 10000 ≈ −174
 ```
+
+`k` fits comfortably in `uint16_t` at the output axis's default `exp = -4`
+(`D = 10000`), so there's nothing to adjust — write it with the 3-arg form:
 
 → `cal coeff out 33108 -174`
 
@@ -175,7 +211,14 @@ k = 1000000 × (14900 − 9950) / (6205000 − 4140000) ≈ 2397
 b = 9950 − 4140000 × 2397 / 1000000 ≈ 26
 ```
 
+Fits at the measurement axes' default `exp = -6` (`D = 1000000`) — 3-arg form:
+
 → `cal coeff meas-v 2397 26`
+
+If this channel instead had a super-unity front-end (no attenuating divider)
+and the fit came out to, say, `k ≈ 2,397,000` (out of range at `exp = -6`),
+you'd raise `exp` to `-3` and recompute with `D = 1000` instead, landing `k`
+back in range — then write both together: `cal coeff meas-v <k> <b> -3`.
 
 **Current-measurement axis worked example** (`x` = `adc_i` from `cal sample`,
 `y` = reference current source reading, in raw units at 0.1 nA/LSB):
@@ -190,13 +233,17 @@ k = 1000000 × (20000 − 5000) / (1342000 − 335000) ≈ 14896
 b = 5000 − 335000 × 14896 / 1000000 ≈ 10
 ```
 
+Fits at the default `exp = -6` — 3-arg form:
+
 → `cal coeff meas-i 14896 10`
 
 **The numbers above are illustrative** — substitute your fixture's actual
 `cal sample` output and reference-meter readings. Note how close the fitted
 `k` values land to the jw_hvb board's factory defaults (2387, 14901) —
 that's expected; a healthy board needs only a small correction, not a wildly
-different gain.
+different gain. A board with a different front-end topology (no attenuating
+divider ahead of the ADC) would fit a `k` far outside that range and need a
+different `exp`, per the note above.
 
 ---
 

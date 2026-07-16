@@ -99,14 +99,30 @@ struct vc_channel_config {
 	uint16_t auto_derate_step;                             /* mV per derate */
 };
 
-/* Calibration coefficients — separate from operational config */
+/* Calibration coefficients — separate from operational config.
+ *
+ * Gain is mantissa x 10^exp (decimal floating-point), not a fixed divisor:
+ * calibrated = raw * k * 10^k_exp + b. This lets one field span both
+ * sub-unity (attenuated ADC front-end) and super-unity (amplifying front-end,
+ * or a low-voltage-max output stage) gains. k_exp defaults reproduce the
+ * legacy fixed-divisor formulas exactly (output: -4 = /10000, measurement:
+ * -6 = /1000000) — see lib/voltage_control/Kconfig.
+ *
+ * New _k_exp fields are appended at the end: this struct is persisted as a
+ * raw fixed-size blob (see vc_storage_settings.c) with no version/migration
+ * mechanism, so reordering existing fields would silently misread old
+ * records under the new layout. Appending only means old (smaller) records
+ * just fail the size check and fall back to defaults instead. */
 struct vc_channel_cal_config {
-	uint16_t output_calib_k;                               /* ×10⁻⁴ gain (10000 = 1.0×) */
+	uint16_t output_calib_k;                               /* mantissa, unity = 10000 at k_exp=-4 */
 	int16_t  output_calib_b;                               /* DAC counts offset */
-	uint16_t measured_voltage_calib_k;                     /* ×10⁻⁶ gain (unity not representable) */
+	uint16_t measured_voltage_calib_k;                     /* mantissa, unity = 1000000 at k_exp=-6 */
 	int16_t  measured_voltage_calib_b;                     /* mV offset */
-	uint16_t measured_current_calib_k;                     /* ×10⁻⁶ gain (unity not representable) */
+	uint16_t measured_current_calib_k;                     /* mantissa, unity = 1000000 at k_exp=-6 */
 	int16_t  measured_current_calib_b;                     /* raw ADC counts offset */
+	int16_t  output_calib_k_exp;                           /* decimal exponent, valid range [-9, 4] */
+	int16_t  measured_voltage_calib_k_exp;                 /* decimal exponent, valid range [-9, 4] */
+	int16_t  measured_current_calib_k_exp;                 /* decimal exponent, valid range [-9, 4] */
 };
 
 /* Cal field selector for SET_CHANNEL_CAL_FIELD command */
@@ -117,6 +133,9 @@ enum vc_cal_field {
 	VC_CAL_FIELD_MEASURED_V_B,
 	VC_CAL_FIELD_MEASURED_I_K,
 	VC_CAL_FIELD_MEASURED_I_B,
+	VC_CAL_FIELD_OUTPUT_K_EXP,
+	VC_CAL_FIELD_MEASURED_V_K_EXP,
+	VC_CAL_FIELD_MEASURED_I_K_EXP,
 };
 
 struct vc_channel_snapshot {

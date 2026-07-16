@@ -85,7 +85,17 @@ ZTEST(cal_verify, test_full_cal_sequence)
 	ret = run("vc cal 0 set out_cal_k 10000");
 	zassert_equal(ret, 0, "vc cal set out_cal_k failed: %d", ret);
 
-	/* --- 9. cal config to verify stored values --- */
+	/* --- 8b. set the decimal exponent (v3.1) --- */
+	printk("\n--- 8b. vc cal 0 set out_cal_k_exp -4 ---\n");
+	ret = run("vc cal 0 set out_cal_k_exp -4");
+	zassert_equal(ret, 0, "vc cal set out_cal_k_exp failed: %d", ret);
+
+	/* --- 8c. out-of-range exponent must be rejected --- */
+	printk("\n--- 8c. vc cal 0 set out_cal_k_exp -10 (expect rejection) ---\n");
+	ret = run("vc cal 0 set out_cal_k_exp -10");
+	zassert_not_equal(ret, 0, "vc cal set out_cal_k_exp -10 should have been rejected");
+
+	/* --- 9. cal config to verify stored values (should show k=10000 exp=-4) --- */
 	printk("\n--- 9. vc cal 0 config ---\n");
 	ret = run("vc cal 0 config");
 	zassert_equal(ret, 0, "vc cal config failed: %d", ret);

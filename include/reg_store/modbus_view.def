@@ -93,7 +93,15 @@ MODBUS_VC16(MEASURED_V_CAL_K,        HOLDING, 22, CONFIG)
 MODBUS_VC16(MEASURED_V_CAL_B,        HOLDING, 23, CONFIG)
 MODBUS_VC16(MEASURED_I_CAL_K,        HOLDING, 24, CONFIG)
 MODBUS_VC16(MEASURED_I_CAL_B,        HOLDING, 25, CONFIG)
-/* 26..29 reserved for future calibration coefficient fields */
+/* Decimal exponent for the K mantissa above: gain = k * 10^k_exp. Added in
+ * v3.1, additive-only — default k_exp values reproduce the legacy fixed
+ * /10000 (output) and /1000000 (measurement) divisors exactly, so existing
+ * calibrated k/b values are unaffected unless k_exp is deliberately changed.
+ * See docs/guide/channel-capability-model.md and calibration-guide.md. */
+MODBUS_VC16(OUTPUT_CAL_K_EXP,        HOLDING, 26, CONFIG)
+MODBUS_VC16(MEASURED_V_CAL_K_EXP,    HOLDING, 27, CONFIG)
+MODBUS_VC16(MEASURED_I_CAL_K_EXP,    HOLDING, 28, CONFIG)
+/* 29 reserved for future calibration coefficient fields */
 /* Calibration session commands (offsets 30..34) */
 MODBUS_VC16(CAL_OUTPUT_ENABLE,       HOLDING, 30, COMMAND)
 MODBUS_VC16(CAL_DAC_CODE,            HOLDING, 31, COMMAND)

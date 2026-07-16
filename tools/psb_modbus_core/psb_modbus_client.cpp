@@ -477,17 +477,22 @@ ChannelCalConfig PsbModbusClient::readChannelCalConfig(int ch, uint16_t caps) {
     bool haveV     = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
     bool haveI     = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
 
-    /* Offsets 20-25: calibration coefficients. Each pair is gated by a
-       different capability; read contiguous supported blocks. */
+    /* Offsets 20-28: calibration coefficients (K/B pairs at 20-25, decimal
+       exponents at 26-28 — contiguous, so the fast path below reads all 9 in
+       one transaction). Each triplet (K, B, K_EXP) is gated by a different
+       capability; read contiguous supported blocks. */
     if (haveDrive && haveV && haveI) {
-        uint16_t buf[6] = {};
-        if (readRegsInternal(true, base + CH_OUTPUT_CAL_K, 6, buf)) {
-            cfg.outCalK   = buf[0];
-            cfg.outCalB   = static_cast<int16_t>(buf[1]);
-            cfg.measVCalK = buf[2];
-            cfg.measVCalB = static_cast<int16_t>(buf[3]);
-            cfg.measICalK = buf[4];
-            cfg.measICalB = static_cast<int16_t>(buf[5]);
+        uint16_t buf[9] = {};
+        if (readRegsInternal(true, base + CH_OUTPUT_CAL_K, 9, buf)) {
+            cfg.outCalK      = buf[0];
+            cfg.outCalB      = static_cast<int16_t>(buf[1]);
+            cfg.measVCalK    = buf[2];
+            cfg.measVCalB    = static_cast<int16_t>(buf[3]);
+            cfg.measICalK    = buf[4];
+            cfg.measICalB    = static_cast<int16_t>(buf[5]);
+            cfg.outCalKExp   = static_cast<int16_t>(buf[6]);
+            cfg.measVCalKExp = static_cast<int16_t>(buf[7]);
+            cfg.measICalKExp = static_cast<int16_t>(buf[8]);
         }
     } else {
         if (haveDrive) {
@@ -496,6 +501,10 @@ ChannelCalConfig PsbModbusClient::readChannelCalConfig(int ch, uint16_t caps) {
                 cfg.outCalK = buf[0];
                 cfg.outCalB = static_cast<int16_t>(buf[1]);
             }
+            uint16_t expBuf = 0;
+            if (readRegsInternal(true, base + CH_OUTPUT_CAL_K_EXP, 1, &expBuf)) {
+                cfg.outCalKExp = static_cast<int16_t>(expBuf);
+            }
         }
         if (haveV) {
             uint16_t buf[2] = {};
@@ -503,12 +512,20 @@ ChannelCalConfig PsbModbusClient::readChannelCalConfig(int ch, uint16_t caps) {
                 cfg.measVCalK = buf[0];
                 cfg.measVCalB = static_cast<int16_t>(buf[1]);
             }
+            uint16_t expBuf = 0;
+            if (readRegsInternal(true, base + CH_MEASURED_V_CAL_K_EXP, 1, &expBuf)) {
+                cfg.measVCalKExp = static_cast<int16_t>(expBuf);
+            }
         }
         if (haveI) {
             uint16_t buf[2] = {};
             if (readRegsInternal(true, base + CH_MEASURED_I_CAL_K, 2, buf)) {
                 cfg.measICalK = buf[0];
                 cfg.measICalB = static_cast<int16_t>(buf[1]);
+            }
+            uint16_t expBuf = 0;
+            if (readRegsInternal(true, base + CH_MEASURED_I_CAL_K_EXP, 1, &expBuf)) {
+                cfg.measICalKExp = static_cast<int16_t>(expBuf);
             }
         }
     }
@@ -607,6 +624,18 @@ bool PsbModbusClient::writeCalibrationMeasV(int ch, uint16_t k, int16_t b) {
 bool PsbModbusClient::writeCalibrationMeasI(int ch, uint16_t k, int16_t b) {
     uint16_t buf[2] = { k, static_cast<uint16_t>(b) };
     return CHWN(CH_MEASURED_I_CAL_K, 2, buf);
+}
+bool PsbModbusClient::writeCalibrationOutputExp(int ch, int16_t exp) {
+    uint16_t reg = static_cast<uint16_t>(exp);
+    return CHW(CH_OUTPUT_CAL_K_EXP, &reg);
+}
+bool PsbModbusClient::writeCalibrationMeasVExp(int ch, int16_t exp) {
+    uint16_t reg = static_cast<uint16_t>(exp);
+    return CHW(CH_MEASURED_V_CAL_K_EXP, &reg);
+}
+bool PsbModbusClient::writeCalibrationMeasIExp(int ch, int16_t exp) {
+    uint16_t reg = static_cast<uint16_t>(exp);
+    return CHW(CH_MEASURED_I_CAL_K_EXP, &reg);
 }
 
 #undef CHW

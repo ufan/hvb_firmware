@@ -9,6 +9,11 @@
 
 *(English version: [modbus-reference.md](modbus-reference.md))*
 
+> **⚠ 内容已过期 (outdated):** 协议 v3.1 在通道保持寄存器偏移 26–28 新增了三个
+> 校准十进制指数寄存器（`*_CAL_K_EXP`），并将校准公式从固定除数改为
+> `raw × K × 10^K_EXP + B`。本翻译尚未更新，请以英文版
+> [modbus-reference.md](modbus-reference.md) §10 为准。
+
 建立连接后可能还需要参考：[`calibration-guide.zh.md`](calibration-guide.zh.md)
 （出厂校准流程）、[`operating-mode-guide.md`](operating-mode-guide.md)
 （Normal 与 Automatic 模式、保护/恢复语义）、

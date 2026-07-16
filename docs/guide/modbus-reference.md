@@ -25,7 +25,7 @@ the wire format needed to talk to it.
 
 | | |
 |---|---|
-| Protocol version | **3.0** (`Protocol Major`=3, `Protocol Minor`=0 — read and check before interpreting anything else) |
+| Protocol version | **3.1** (`Protocol Major`=3, `Protocol Minor`=1 — read and check before interpreting anything else) |
 | Transport | Modbus RTU |
 | Physical layer | RS-485 half-duplex (current variants) |
 | Serial format | 8N1 |
@@ -39,6 +39,12 @@ and added registers throughout); a client built against this document must
 refuse to talk to a board reporting `Protocol Major` ≠ 3. A minor-version
 bump is additive only (new registers in previously-reserved space); it's
 safe to ignore fields you don't recognize.
+
+**v3.1** (additive): added the three calibration decimal-exponent registers
+at channel holding offsets 26–28 (§10) — a client that only knows v3.0 can
+keep working unmodified, since every pre-3.1 register kept its offset, width,
+and meaning, and each axis's exponent defaults to reproducing the old
+fixed-divisor formula exactly.
 
 ---
 
@@ -88,9 +94,8 @@ addresses, encoding, and semantics — which is transport-agnostic.
   seconds with no ×10 factor — check the per-field description, the
   convention differs between "interval" and "delay/window" fields.
 - **Percentages**: plain `UINT16`, e.g. 10 = 10%. Not scaled.
-- **Calibration coefficients**: see §9's dedicated formula — the divisor
-  differs between the output axis and the two measurement axes, and is not
-  the simple ×0.1 pattern used elsewhere.
+- **Calibration coefficients**: see §10's dedicated formula — gain is
+  mantissa × decimal exponent, not the simple ×0.1 pattern used elsewhere.
 - **Reserved registers**: always read as `0`, always reject writes with
   exception `0x02`. Never assume a meaning for a reserved offset, even if
   it happens to read back a non-zero value on some firmware build — that
@@ -286,29 +291,36 @@ power-cycled while calibrating.
 | 16 | Auto Derate Step | RAW_OUTPUT_DRIVE + VOLTAGE_MEASUREMENT | ×0.1 V subtracted from target per retry attempt under AutoDerateRetry |
 | 17–19 | Reserved | — | Read as 0, reject writes |
 
-### Calibration coefficients (offsets 20–25)
+### Calibration coefficients (offsets 20–28)
 
 Readable in any mode. **Writable only in Calibration mode** — a write
 attempt outside Calibration mode returns exception `0x03`.
 
 | Offset | Register | Guard | Description |
 |---:|---|---|---|
-| 20 | Output Cal K | RAW_OUTPUT_DRIVE | `UINT16`, ÷10000 — see §9 formula. Default 32768 |
+| 20 | Output Cal K | RAW_OUTPUT_DRIVE | `UINT16` mantissa — see §10 formula. Default 32768 |
 | 21 | Output Cal B | RAW_OUTPUT_DRIVE | `INT16`, raw offset in DAC-code units. Default 0 |
-| 22 | Measured Voltage Cal K | VOLTAGE_MEASUREMENT | `UINT16`, ÷1000000 — see §9 formula |
+| 22 | Measured Voltage Cal K | VOLTAGE_MEASUREMENT | `UINT16` mantissa — see §10 formula |
 | 23 | Measured Voltage Cal B | VOLTAGE_MEASUREMENT | `INT16`, raw offset in ×0.1 V units |
-| 24 | Measured Current Cal K | CURRENT_MEASUREMENT | `UINT16`, ÷1000000 — see §9 formula |
+| 24 | Measured Current Cal K | CURRENT_MEASUREMENT | `UINT16` mantissa — see §10 formula |
 | 25 | Measured Current Cal B | CURRENT_MEASUREMENT | `INT16`, raw offset in ×0.1 nA units |
-| 26–29 | Reserved | — | Read as 0, reject writes |
+| 26 | Output Cal K Exp | RAW_OUTPUT_DRIVE | `INT16` decimal exponent, valid range -9..4. Default -4 (added v3.1) |
+| 27 | Measured Voltage Cal K Exp | VOLTAGE_MEASUREMENT | `INT16` decimal exponent, valid range -9..4. Default -6 (added v3.1) |
+| 28 | Measured Current Cal K Exp | CURRENT_MEASUREMENT | `INT16` decimal exponent, valid range -9..4. Default -6 (added v3.1) |
+| 29 | Reserved | — | Read as 0, reject writes |
 
-**Calibration formula:** `calibrated = raw × K / D + B`, where `raw` is the
-uncalibrated ADC code (measurement axes) or the target value being converted
-to a DAC code (output axis), and `D` is **10000 for the output axis** or
-**1000000 for both measurement axes**. The measurement axes need the finer
-divisor because they scale down a small, attenuated raw ADC gain — unity
-gain (1.0×) isn't representable there (max representable is 65535/1000000 ≈
-0.0655); see [`parameter-reference.md`](parameter-reference.md) for the full
-derivation. Full calibration walkthrough:
+**Calibration formula:** `calibrated = raw × K × 10^K_EXP + B`, where `raw` is
+the uncalibrated ADC code (measurement axes) or the target value being
+converted to a DAC code (output axis). This is a decimal floating-point
+representation (mantissa `K` × decimal exponent `K_EXP`), not a fixed divisor
+— added in protocol v3.1, purely additive (registers 20–25 keep their
+pre-v3.1 offsets, widths, and meaning; each axis's default `K_EXP` reproduces
+the old fixed-divisor formula exactly, so pre-v3.1 calibration values compute
+identically once `K_EXP` is at its default). The measurement axes default to
+a large negative exponent because they typically scale down a small,
+attenuated raw ADC gain, but `K_EXP` can go positive for a front-end that
+amplifies instead — see [`parameter-reference.md`](parameter-reference.md)
+for the full derivation. Full calibration walkthrough:
 [`calibration-guide.md`](calibration-guide.md).
 
 ### Calibration session (offsets 30–33)
@@ -320,7 +332,7 @@ derivation. Full calibration walkthrough:
 | 30 | Cal Output Enable | RAW_OUTPUT_DRIVE | 1=on, 0=off. Firmware allows only one channel board-wide to have this set at a time — enabling a second channel while another is still enabled is rejected |
 | 31 | Cal DAC Code | RAW_OUTPUT_DRIVE | Raw DAC code, 0–65535 (or lower if a build-time ceiling is configured — that ceiling is **not** a Modbus register; it's compiled into firmware and isn't discoverable over the wire) |
 | 32 | Cal Sample Command | VOLTAGE_MEASUREMENT or CURRENT_MEASUREMENT | Write 1 to trigger a fresh ADC sample on every measurement path this channel supports; reads back 0 once complete (synchronous, see §5) |
-| 33 | Cal Commit Command | any cal-capable | Write 1 to persist this channel's calibration coefficients (offsets 20–25) to NVS |
+| 33 | Cal Commit Command | any cal-capable | Write 1 to persist this channel's calibration coefficients (offsets 20–28) to NVS |
 | 34–39 | Reserved | — | Read as 0, reject writes — **note:** an earlier protocol draft placed a "Cal Max Raw DAC Limit" register at offset 34; it was never shipped as a Modbus register (the DAC ceiling is firmware-internal session state only) |
 
 ---

@@ -22,4 +22,22 @@ config VC_DEFAULT_OUTPUT_ENABLED
 config VC_DEFAULT_OPERATING_MODE
 	default 1
 
+# Pre-calibration plausible-reading defaults, derived from the pwb_firmware
+# reference measure.c conversion (voltage gain ~5.6x, current gain ~16x).
+# jw_lvb has no attenuating divider ahead of the ADC the way jw_hvb does, so
+# these gains are super-unity — only representable with the k_exp decimal
+# exponent (see lib/voltage_control/Kconfig), not the legacy fixed-divisor
+# format. Real per-unit calibration supersedes these once run.
+config VC_DEFAULT_MEASURED_V_CAL_K
+	default 56000
+
+config VC_DEFAULT_MEASURED_V_CAL_K_EXP
+	default -4
+
+config VC_DEFAULT_MEASURED_I_CAL_K
+	default 16000
+
+config VC_DEFAULT_MEASURED_I_CAL_K_EXP
+	default -3
+
 endif # BOARD_JW_LVB

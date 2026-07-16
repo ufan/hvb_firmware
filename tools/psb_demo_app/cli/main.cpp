@@ -241,14 +241,16 @@ int cmdChannelCal(int ch) {
     auto cal = g_client->readChannelCalConfig(ch);
     if (!g_client->isConnected()) return 1;
     std::cout << "=== Channel " << ch << " Calibration ===\n";
-    auto divisorTag = [](double divisor) {
-        return " (x" + std::to_string(static_cast<long long>(divisor)) + ")";
+    // Gain is k * 10^k_exp (decimal floating-point, v3.1+) - not a fixed
+    // divisor, so display the live exponent rather than a hardcoded label.
+    auto expTag = [](int16_t exp) {
+        return " (x10^" + std::to_string(exp) + ")";
     };
-    printSep("Output:", "K=" + std::to_string(cal.outCalK) + divisorTag(psb::reg::scale::OUTPUT_CAL_DIVISOR)
+    printSep("Output:", "K=" + std::to_string(cal.outCalK) + expTag(cal.outCalKExp)
              + "  B=" + std::to_string(cal.outCalB) + " (x1000)");
-    printSep("Meas V:", "K=" + std::to_string(cal.measVCalK) + divisorTag(psb::reg::scale::MEAS_CAL_DIVISOR)
+    printSep("Meas V:", "K=" + std::to_string(cal.measVCalK) + expTag(cal.measVCalKExp)
              + "  B=" + std::to_string(cal.measVCalB) + " (x1000)");
-    printSep("Meas I:", "K=" + std::to_string(cal.measICalK) + divisorTag(psb::reg::scale::MEAS_CAL_DIVISOR)
+    printSep("Meas I:", "K=" + std::to_string(cal.measICalK) + expTag(cal.measICalKExp)
              + "  B=" + std::to_string(cal.measICalB) + " (x1000)");
     return 0;
 }

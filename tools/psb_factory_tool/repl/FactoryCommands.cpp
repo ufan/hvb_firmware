@@ -472,16 +472,63 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
         },
         "Write calibration coefficients", {"out|meas-v|meas-i", "k", "b"});
 
+    // 4-arg overload: also write the decimal exponent (gain = k * 10^exp).
+    // Kept separate from the 3-arg form above rather than adding a default
+    // parameter, so existing scripts calling the 3-arg form continue to
+    // leave the exponent register untouched (defaults reproduce the legacy
+    // fixed-divisor formula exactly — see calibration-guide.md).
+    calMenu->Insert("coeff",
+        [&session](std::ostream& out, const std::string& type, double k, double b, int exp) {
+            requireCalChannel(session, out, [&] {
+                if (k < 0 || k > 65535) { out << "Error: k must be 0-65535\n"; return; }
+                if (b < -32768 || b > 32767) { out << "Error: b must be -32768..32767\n"; return; }
+                if (exp < -9 || exp > 4) { out << "Error: exp must be -9..4\n"; return; }
+                int ch = session.activeChannel();
+                uint16_t caps = session.client().readChannelInfo(ch).chCapFlags;
+                auto kRaw = static_cast<uint16_t>(k);
+                auto bRaw = static_cast<int16_t>(b);
+                auto expRaw = static_cast<int16_t>(exp);
+                bool ok = false;
+                if (type == "out") {
+                    if (!(caps & CH_CAP_RAW_OUTPUT_DRIVE)) {
+                        out << "Error: CH" << ch << " has no DAC — 'out' coefficients don't apply\n"; return;
+                    }
+                    ok = session.client().writeCalibrationOutput(ch, kRaw, bRaw) &&
+                         session.client().writeCalibrationOutputExp(ch, expRaw);
+                } else if (type == "meas-v") {
+                    if (!(caps & CH_CAP_VOLTAGE_MEASUREMENT)) {
+                        out << "Error: CH" << ch << " has no voltage measurement\n"; return;
+                    }
+                    ok = session.client().writeCalibrationMeasV(ch, kRaw, bRaw) &&
+                         session.client().writeCalibrationMeasVExp(ch, expRaw);
+                } else if (type == "meas-i") {
+                    if (!(caps & CH_CAP_CURRENT_MEASUREMENT)) {
+                        out << "Error: CH" << ch << " has no current measurement\n"; return;
+                    }
+                    ok = session.client().writeCalibrationMeasI(ch, kRaw, bRaw) &&
+                         session.client().writeCalibrationMeasIExp(ch, expRaw);
+                } else { out << "Error: type must be out|meas-v|meas-i\n"; return; }
+                if (ok) out << "CH" << ch << " " << type << " K=" << kRaw << " Exp=" << expRaw
+                            << " B=" << bRaw << "\n";
+                else out << "Error: " << session.lastError() << "\n";
+            });
+        },
+        "Write calibration coefficients with decimal exponent (gain = k*10^exp)",
+        {"out|meas-v|meas-i", "k", "b", "exp"});
+
     calMenu->Insert("coeff",
         [&session](std::ostream& out, const std::string& subcmd) {
-            if (subcmd != "show") { out << "Usage: coeff show | coeff <type> <k> <b>\n"; return; }
+            if (subcmd != "show") { out << "Usage: coeff show | coeff <type> <k> <b> [exp]\n"; return; }
             requireCalChannel(session, out, [&] {
                 int ch = session.activeChannel();
                 auto cal = session.client().readChannelCalConfig(ch);
                 out << "CH" << ch << " coefficients:\n"
-                    << "  Output:  K=" << cal.outCalK << " B=" << cal.outCalB << "\n"
-                    << "  Meas V:  K=" << cal.measVCalK << " B=" << cal.measVCalB << "\n"
-                    << "  Meas I:  K=" << cal.measICalK << " B=" << cal.measICalB << "\n";
+                    << "  Output:  K=" << cal.outCalK << " Exp=" << cal.outCalKExp
+                    << " B=" << cal.outCalB << "\n"
+                    << "  Meas V:  K=" << cal.measVCalK << " Exp=" << cal.measVCalKExp
+                    << " B=" << cal.measVCalB << "\n"
+                    << "  Meas I:  K=" << cal.measICalK << " Exp=" << cal.measICalKExp
+                    << " B=" << cal.measICalB << "\n";
             });
         },
         "Show current coefficients", {"show"});

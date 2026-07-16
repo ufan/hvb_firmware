@@ -34,6 +34,13 @@
  *   - Protection fields shifted to 13-16
  *   - Cal config (k/b) moved to channel holding 20-25
  *   - Cal session commands moved to channel holding 30-34
+ *
+ * Additive changes in v3.1 (non-breaking):
+ *   - CH_OUTPUT_CAL_K_EXP / CH_MEASURED_V_CAL_K_EXP / CH_MEASURED_I_CAL_K_EXP
+ *     added at channel holding 26-28 (previously reserved). Calibration gain
+ *     is now k * 10^k_exp rather than a fixed-divisor k alone; k_exp defaults
+ *     reproduce the old fixed divisors exactly, so existing k/b values are
+ *     unaffected unless k_exp is deliberately changed.
  */
 
 #ifndef REG_STORE_REG_MAP_H
@@ -42,7 +49,7 @@
 #include "dt-bindings/voltage_control/capabilities.h"
 
 #define VC_PROTOCOL_MAJOR             3
-#define VC_PROTOCOL_MINOR             0
+#define VC_PROTOCOL_MINOR             1
 #define VC_PROTOCOL_MAX_CHANNELS      16
 
 /* System capability flags (SYS_CAPABILITY_FLAGS input register) */

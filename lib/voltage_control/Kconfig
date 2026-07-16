@@ -91,39 +91,73 @@ config VC_CAL_MAX_RAW_DAC
 	  65535 = full 16-bit range.
 
 config VC_DEFAULT_OUTPUT_CAL_K
-	int "Default output calibration gain (×10⁻⁴, unit: 1/(100 mV))"
+	int "Default output calibration gain mantissa (unity = 10000 at exp=-4)"
 	default 32768
 	range 1 65535
 	help
 	  Factory default for output_calib_k. The DAC drive formula is
-	  raw = (target × k) / 10000 + b. At k=32768 a target of 20000 (2000 V)
-	  maps to DAC code 65536, filling the full 16-bit range.
+	  raw = target * k * 10^k_exp + b (see VC_DEFAULT_OUTPUT_CAL_K_EXP).
+	  At k=32768, exp=-4 a target of 20000 (2000 V) maps to DAC code
+	  65536, filling the full 16-bit range — this is the legacy
+	  raw = (target × k) / 10000 + b formula, unchanged.
+
+config VC_DEFAULT_OUTPUT_CAL_K_EXP
+	int "Default output calibration gain decimal exponent"
+	default -4
+	range -9 4
+	help
+	  Decimal exponent paired with VC_DEFAULT_OUTPUT_CAL_K: gain =
+	  k * 10^k_exp. Default -4 reproduces the legacy fixed /10000
+	  divisor exactly. A board whose max output voltage is much lower
+	  than 2000 V (less analog gain headroom before the DAC saturates)
+	  needs a larger effective gain than k alone can represent in
+	  uint16_t — raise k_exp instead of trying to push k past 65535.
 
 config VC_DEFAULT_MEASURED_V_CAL_K
-	int "Default measured-voltage calibration gain (×10⁻⁶, unit: 1/(100 mV))"
+	int "Default measured-voltage calibration gain mantissa (unity = 1000000 at exp=-6)"
 	default 1
 	range 1 65535
 	help
 	  Factory default for measured_voltage_calib_k, applied before a real
-	  per-unit calibration is loaded. The gain is raw_adc * k / 1000000,
-	  so the maximum representable gain is 65535/1000000 (~0.0655) and
-	  unity (1.0×) is not representable — this field only ever scales
-	  down an attenuated raw ADC reading, never passes it through
-	  unchanged. The default of 1 yields an intentionally negligible
-	  reading until the board is calibrated.
+	  per-unit calibration is loaded. The gain is
+	  raw_adc * k * 10^k_exp (see VC_DEFAULT_MEASURED_V_CAL_K_EXP). The
+	  default k=1 at the default exp=-6 yields an intentionally
+	  negligible reading until the board is calibrated. Unlike the old
+	  fixed-divisor format, gain here is not limited to sub-unity —
+	  raise k_exp for a board whose measurement front-end amplifies
+	  rather than attenuates (e.g. no resistive divider ahead of the ADC).
+
+config VC_DEFAULT_MEASURED_V_CAL_K_EXP
+	int "Default measured-voltage calibration gain decimal exponent"
+	default -6
+	range -9 4
+	help
+	  Decimal exponent paired with VC_DEFAULT_MEASURED_V_CAL_K: gain =
+	  k * 10^k_exp. Default -6 reproduces the legacy fixed /1000000
+	  divisor exactly.
 
 config VC_DEFAULT_MEASURED_I_CAL_K
-	int "Default measured-current calibration gain (×10⁻⁶, unit: 1/(10000 nA))"
+	int "Default measured-current calibration gain mantissa (unity = 1000000 at exp=-6)"
 	default 1
 	range 1 65535
 	help
 	  Factory default for measured_current_calib_k, applied before a real
-	  per-unit calibration is loaded. The gain is raw_adc * k / 1000000,
-	  so the maximum representable gain is 65535/1000000 (~0.0655) and
-	  unity (1.0×) is not representable — this field only ever scales
-	  down an attenuated raw ADC reading, never passes it through
-	  unchanged. The default of 1 yields an intentionally negligible
-	  reading until the board is calibrated.
+	  per-unit calibration is loaded. The gain is
+	  raw_adc * k * 10^k_exp (see VC_DEFAULT_MEASURED_I_CAL_K_EXP). The
+	  default k=1 at the default exp=-6 yields an intentionally
+	  negligible reading until the board is calibrated. Unlike the old
+	  fixed-divisor format, gain here is not limited to sub-unity —
+	  raise k_exp for a board whose measurement front-end amplifies
+	  rather than attenuates.
+
+config VC_DEFAULT_MEASURED_I_CAL_K_EXP
+	int "Default measured-current calibration gain decimal exponent"
+	default -6
+	range -9 4
+	help
+	  Decimal exponent paired with VC_DEFAULT_MEASURED_I_CAL_K: gain =
+	  k * 10^k_exp. Default -6 reproduces the legacy fixed /1000000
+	  divisor exactly.
 
 config VC_MAX_TARGET_VOLTAGE
 	int "Maximum configurable target voltage (×100 mV)"

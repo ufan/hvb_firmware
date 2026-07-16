@@ -185,18 +185,24 @@ static int read_cal_config(uint8_t ch, struct vc_channel_cal_config *c,
 				 c->output_calib_k, u16);
 		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_B),
 				 c->output_calib_b, s16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_K_EXP),
+				 c->output_calib_k_exp, s16);
 	}
 	if (*caps & CH_CAP_VOLTAGE_MEASUREMENT) {
 		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_K),
 				 c->measured_voltage_calib_k, u16);
 		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_B),
 				 c->measured_voltage_calib_b, s16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_K_EXP),
+				 c->measured_voltage_calib_k_exp, s16);
 	}
 	if (*caps & CH_CAP_CURRENT_MEASUREMENT) {
 		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_K),
 				 c->measured_current_calib_k, u16);
 		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_B),
 				 c->measured_current_calib_b, s16);
+		VC_SHELL_READ_REG(REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_K_EXP),
+				 c->measured_current_calib_k_exp, s16);
 	}
 	return 0;
 }
@@ -371,12 +377,15 @@ struct cal_field_entry {
 };
 
 static const struct cal_field_entry cal_fields[] = {
-	{"out_cal_k", VC_CAL_FIELD_OUTPUT_K},
-	{"out_cal_b", VC_CAL_FIELD_OUTPUT_B},
-	{"v_cal_k",   VC_CAL_FIELD_MEASURED_V_K},
-	{"v_cal_b",   VC_CAL_FIELD_MEASURED_V_B},
-	{"i_cal_k",   VC_CAL_FIELD_MEASURED_I_K},
-	{"i_cal_b",   VC_CAL_FIELD_MEASURED_I_B},
+	{"out_cal_k",     VC_CAL_FIELD_OUTPUT_K},
+	{"out_cal_b",     VC_CAL_FIELD_OUTPUT_B},
+	{"out_cal_k_exp", VC_CAL_FIELD_OUTPUT_K_EXP},
+	{"v_cal_k",       VC_CAL_FIELD_MEASURED_V_K},
+	{"v_cal_b",       VC_CAL_FIELD_MEASURED_V_B},
+	{"v_cal_k_exp",   VC_CAL_FIELD_MEASURED_V_K_EXP},
+	{"i_cal_k",       VC_CAL_FIELD_MEASURED_I_K},
+	{"i_cal_b",       VC_CAL_FIELD_MEASURED_I_B},
+	{"i_cal_k_exp",   VC_CAL_FIELD_MEASURED_I_K_EXP},
 };
 
 static int lookup_cal_field(const struct shell *sh, const char *name,
@@ -461,14 +470,20 @@ static reg_id_t cal_config_id(uint8_t ch, enum vc_cal_field field)
 	switch (field) {
 	case VC_CAL_FIELD_OUTPUT_K: return REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_K);
 	case VC_CAL_FIELD_OUTPUT_B: return REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_B);
+	case VC_CAL_FIELD_OUTPUT_K_EXP:
+		return REG_VC_ID(ch, REG_VC_FIELD_OUTPUT_CAL_K_EXP);
 	case VC_CAL_FIELD_MEASURED_V_K:
 		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_K);
 	case VC_CAL_FIELD_MEASURED_V_B:
 		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_B);
+	case VC_CAL_FIELD_MEASURED_V_K_EXP:
+		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_V_CAL_K_EXP);
 	case VC_CAL_FIELD_MEASURED_I_K:
 		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_K);
 	case VC_CAL_FIELD_MEASURED_I_B:
 		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_B);
+	case VC_CAL_FIELD_MEASURED_I_K_EXP:
+		return REG_VC_ID(ch, REG_VC_FIELD_MEASURED_I_CAL_K_EXP);
 	default: return 0U;
 	}
 }
@@ -598,17 +613,20 @@ static void print_cal_config(const struct shell *sh, uint8_t ch,
 {
 	shell_print(sh, "Channel %d Calibration Config", ch);
 	if (caps & CH_CAP_RAW_OUTPUT_DRIVE) {
-		shell_print(sh, "  out_cal:  k=%d b=%d",
-			    c->output_calib_k, c->output_calib_b);
+		shell_print(sh, "  out_cal:  k=%d exp=%d b=%d",
+			    c->output_calib_k, c->output_calib_k_exp,
+			    c->output_calib_b);
 	}
 	if (caps & CH_CAP_VOLTAGE_MEASUREMENT) {
-		shell_print(sh, "  v_cal:    k=%d b=%d",
+		shell_print(sh, "  v_cal:    k=%d exp=%d b=%d",
 			    c->measured_voltage_calib_k,
+			    c->measured_voltage_calib_k_exp,
 			    c->measured_voltage_calib_b);
 	}
 	if (caps & CH_CAP_CURRENT_MEASUREMENT) {
-		shell_print(sh, "  i_cal:    k=%d b=%d",
+		shell_print(sh, "  i_cal:    k=%d exp=%d b=%d",
 			    c->measured_current_calib_k,
+			    c->measured_current_calib_k_exp,
 			    c->measured_current_calib_b);
 	}
 }

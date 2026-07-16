@@ -360,8 +360,10 @@ static void apply_hw(struct vc_channel *ch) {
 
 The `raw_drive_from_target()` function at `vc_channel.c:73` applies the output calibration:
 ```c
-raw_dac = (target_mV * output_calib_k) / 10000 + output_calib_b
+raw_dac = target_mV * output_calib_k * 10^output_calib_k_exp + output_calib_b
 ```
+(default `output_calib_k_exp = -4`, equivalent to the pre-v3.1 `/10000` — see
+`docs/guide/channel-capability-model.md` for why a variable exponent exists.)
 
 ### 2.8 Calibration Override
 

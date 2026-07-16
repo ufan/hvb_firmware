@@ -59,6 +59,10 @@ public:
     bool writeCalibrationOutput(int ch, uint16_t k, int16_t b);
     bool writeCalibrationMeasV(int ch, uint16_t k, int16_t b);
     bool writeCalibrationMeasI(int ch, uint16_t k, int16_t b);
+    // Decimal exponent (k_exp): gain = k * 10^k_exp. Valid range [-9, 4].
+    bool writeCalibrationOutputExp(int ch, int16_t exp);
+    bool writeCalibrationMeasVExp(int ch, int16_t exp);
+    bool writeCalibrationMeasIExp(int ch, int16_t exp);
 
     // Calibration Mode operations (v2.1)
     bool unlockCalibrationStep(uint16_t value);

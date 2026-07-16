@@ -37,9 +37,36 @@ static struct vc_channel_cal_config default_cal_config(void)
 {
 	return (struct vc_channel_cal_config){
 		.output_calib_k = CONFIG_VC_DEFAULT_OUTPUT_CAL_K,
+		.output_calib_k_exp = CONFIG_VC_DEFAULT_OUTPUT_CAL_K_EXP,
 		.measured_voltage_calib_k = CONFIG_VC_DEFAULT_MEASURED_V_CAL_K,
+		.measured_voltage_calib_k_exp = CONFIG_VC_DEFAULT_MEASURED_V_CAL_K_EXP,
 		.measured_current_calib_k = CONFIG_VC_DEFAULT_MEASURED_I_CAL_K,
+		.measured_current_calib_k_exp = CONFIG_VC_DEFAULT_MEASURED_I_CAL_K_EXP,
 	};
+}
+
+/* Calibration gain is mantissa x 10^exp (decimal floating-point), not a fixed
+ * divisor - this is what lets the same field represent both jw_hvb's
+ * sub-unity attenuated-ADC gains and a future variant's super-unity gains
+ * (e.g. jw_lvb's ~5.6x/~16x) without widening the wire register. exp is
+ * range-checked to [-9, 4] at the write site (vc_channel_set_cal_field) -
+ * that range is what keeps this multiply/divide inside int64_t even at
+ * worst-case type extremes; see docs/guide/channel-capability-model.md
+ * calibration section for the derivation. */
+static const int64_t vc_pow10_table[] = {
+	1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000,
+};
+
+static int64_t apply_gain(int64_t raw, uint16_t mantissa, int16_t exp)
+{
+	int64_t scaled = raw * (int64_t)mantissa;
+
+	if (exp > 0) {
+		scaled *= vc_pow10_table[exp];
+	} else if (exp < 0) {
+		scaled /= vc_pow10_table[-exp];
+	}
+	return scaled;
 }
 
 static void set_smf_state(struct vc_channel *ch, enum vc_channel_smf_state state)
@@ -70,7 +97,8 @@ static int16_t clamp_int16(int64_t value)
 
 static uint16_t raw_drive_from_target(const struct vc_channel *ch, int32_t target)
 {
-	int64_t raw = ((int64_t)target * ch->cal_config.output_calib_k) / 10000 +
+	int64_t raw = apply_gain(target, ch->cal_config.output_calib_k,
+				  ch->cal_config.output_calib_k_exp) +
 		      ch->cal_config.output_calib_b;
 
 	if (raw <= 0) {
@@ -751,8 +779,9 @@ void vc_channel_consume_voltage(struct vc_channel *ch, int32_t raw_voltage)
 {
 	ch->raw_adc_voltage = raw_voltage;
 	ch->measured_voltage = clamp_int16(
-		((int64_t)raw_voltage * ch->cal_config.measured_voltage_calib_k) /
-		1000000 + ch->cal_config.measured_voltage_calib_b);
+		apply_gain(raw_voltage, ch->cal_config.measured_voltage_calib_k,
+			   ch->cal_config.measured_voltage_calib_k_exp) +
+		ch->cal_config.measured_voltage_calib_b);
 
 	update_status_bits(ch);
 }
@@ -761,8 +790,9 @@ void vc_channel_consume_current(struct vc_channel *ch, int32_t raw_current)
 {
 	ch->raw_adc_current = raw_current;
 	ch->measured_current = clamp_int16(
-		((int64_t)raw_current * ch->cal_config.measured_current_calib_k) /
-		1000000 + ch->cal_config.measured_current_calib_b);
+		apply_gain(raw_current, ch->cal_config.measured_current_calib_k,
+			   ch->cal_config.measured_current_calib_k_exp) +
+		ch->cal_config.measured_current_calib_b);
 
 	if (!ch->ramping) {
 		tick_current_protection(ch);
@@ -987,6 +1017,19 @@ enum vc_status vc_channel_get_cal_config(const struct vc_channel *ch,
 	return VC_OK;
 }
 
+/* Bounds the apply_gain() multiply/divide to stay inside int64_t even at
+ * worst-case raw/mantissa type extremes - see the comment on vc_pow10_table
+ * above. Every identified real-world need (jw_hvb, jw_lvb, a hypothetical
+ * 3.3V-2000V output variant) fits with several decades of margin inside this
+ * range. */
+#define VC_CAL_K_EXP_MIN (-9)
+#define VC_CAL_K_EXP_MAX (4)
+
+static bool cal_k_exp_in_range(int16_t exp)
+{
+	return exp >= VC_CAL_K_EXP_MIN && exp <= VC_CAL_K_EXP_MAX;
+}
+
 enum vc_status vc_channel_set_cal_field(struct vc_channel *ch,
 					 enum vc_cal_field field, uint16_t value)
 {
@@ -997,17 +1040,35 @@ enum vc_status vc_channel_set_cal_field(struct vc_channel *ch,
 	case VC_CAL_FIELD_OUTPUT_B:
 		ch->cal_config.output_calib_b = (int16_t)value;
 		break;
+	case VC_CAL_FIELD_OUTPUT_K_EXP:
+		if (!cal_k_exp_in_range((int16_t)value)) {
+			return VC_ERR_INVALID_VALUE;
+		}
+		ch->cal_config.output_calib_k_exp = (int16_t)value;
+		break;
 	case VC_CAL_FIELD_MEASURED_V_K:
 		ch->cal_config.measured_voltage_calib_k = value;
 		break;
 	case VC_CAL_FIELD_MEASURED_V_B:
 		ch->cal_config.measured_voltage_calib_b = (int16_t)value;
 		break;
+	case VC_CAL_FIELD_MEASURED_V_K_EXP:
+		if (!cal_k_exp_in_range((int16_t)value)) {
+			return VC_ERR_INVALID_VALUE;
+		}
+		ch->cal_config.measured_voltage_calib_k_exp = (int16_t)value;
+		break;
 	case VC_CAL_FIELD_MEASURED_I_K:
 		ch->cal_config.measured_current_calib_k = value;
 		break;
 	case VC_CAL_FIELD_MEASURED_I_B:
 		ch->cal_config.measured_current_calib_b = (int16_t)value;
+		break;
+	case VC_CAL_FIELD_MEASURED_I_K_EXP:
+		if (!cal_k_exp_in_range((int16_t)value)) {
+			return VC_ERR_INVALID_VALUE;
+		}
+		ch->cal_config.measured_current_calib_k_exp = (int16_t)value;
 		break;
 	default:
 		return VC_ERR_INVALID_VALUE;

@@ -17,9 +17,12 @@ audiences:
 |-----------|---------------|---------|------|-------|
 | Max target voltage (validation bound) | `CONFIG_VC_MAX_TARGET_VOLTAGE` | 20000 | ×100 mV | 1–32767 |
 | Cal DAC ceiling (build-time) | `CONFIG_VC_CAL_MAX_RAW_DAC` | 65535 | raw DAC count | 1–65535 |
-| Output cal gain | `CONFIG_VC_DEFAULT_OUTPUT_CAL_K` | 32768 | ×10⁻⁴ | 1–65535 |
-| Voltage measurement cal gain | `CONFIG_VC_DEFAULT_MEASURED_V_CAL_K` | 1 | ×10⁻⁶ | 1–65535 |
-| Current measurement cal gain | `CONFIG_VC_DEFAULT_MEASURED_I_CAL_K` | 1 | ×10⁻⁶ | 1–65535 |
+| Output cal gain mantissa | `CONFIG_VC_DEFAULT_OUTPUT_CAL_K` | 32768 | mantissa | 1–65535 |
+| Output cal gain exponent | `CONFIG_VC_DEFAULT_OUTPUT_CAL_K_EXP` | -4 | decimal exponent | -9..4 |
+| Voltage measurement cal gain mantissa | `CONFIG_VC_DEFAULT_MEASURED_V_CAL_K` | 1 | mantissa | 1–65535 |
+| Voltage measurement cal gain exponent | `CONFIG_VC_DEFAULT_MEASURED_V_CAL_K_EXP` | -6 | decimal exponent | -9..4 |
+| Current measurement cal gain mantissa | `CONFIG_VC_DEFAULT_MEASURED_I_CAL_K` | 1 | mantissa | 1–65535 |
+| Current measurement cal gain exponent | `CONFIG_VC_DEFAULT_MEASURED_I_CAL_K_EXP` | -6 | decimal exponent | -9..4 |
 | Current limit threshold | `CONFIG_VC_DEFAULT_CURRENT_LIMIT` | 10000 | ×0.1 nA (post-cal) | 1–32767 |
 | Ramp step | `CONFIG_VC_DEFAULT_RAMP_STEP` | 50000 | ×100 mV | 1–65535 |
 | Ramp interval | — (hardcoded) | 1 | seconds | — |
@@ -46,32 +49,59 @@ Current values are in **×0.1 nA per count** after factory calibration (see §4)
 — the same ×0.1 scaling convention as voltage. There is no unity-gain default
 for this axis; see below.
 
-Calibration gain coefficients are **not** on a single shared scale — the
-output axis and the two measurement axes use different fixed-point encodings
-because they operate at very different magnitudes:
+Calibration gain is a decimal floating-point value, `gain = k × 10^k_exp` —
+a `uint16_t` mantissa (`k`, 1–65535) paired with an `int16_t` decimal
+exponent (`k_exp`, range -9..4), not a single fixed divisor. This replaced a
+pre-v3.1 format where each axis had a hardcoded divisor baked into the C
+formula (`÷10000` for output, `÷1000000` for both measurement axes) — that
+older format is still exactly what you get if you never touch `k_exp`, since
+each axis's default `k_exp` reproduces the old divisor precisely
+(`k_exp=-4` ⟺ `÷10000`, `k_exp=-6` ⟺ `÷1000000`). The reason a variable
+exponent exists at all: a single fixed divisor per axis can't cover both a
+sub-unity attenuating front-end *and* a super-unity amplifying one (or an
+output stage needing far more DAC-code resolution per volt than a 2000 V
+board does) in a 16-bit mantissa — see "Why a variable exponent" below.
 
-- **Output** (`output_calib_k`) uses **×10⁻⁴** (divide by 10000). This axis
-  operates near unity (mapping ~100 mV target units to ~1 DAC count), so a
-  1-in-10000 step size gives fine relative resolution and `k = 10000` is an
-  exact, representable identity gain.
+- **Output** (`output_calib_k` / `output_calib_k_exp`) defaults to `k_exp =
+  -4` (÷10000 equivalent). This axis operates near unity (mapping ~100 mV
+  target units to ~1 DAC count), so a 1-in-10000 step size gives fine
+  relative resolution at the default exponent, and `k = 10000` is an exact,
+  representable identity gain there.
 
-  | Stored value | Effective multiplier |
+  | Stored k (at default k_exp=-4) | Effective multiplier |
   |-------------|---------------------|
   | 10000 | 1.0000× (unity, no scaling) |
   | 32768 | 3.2768× |
   | 5000 | 0.5000× |
 
-- **Measurement** (`measured_voltage_calib_k`, `measured_current_calib_k`)
-  uses **×10⁻⁶** (divide by 1000000). These axes convert an attenuated raw
-  ADC reading (typically a gain around 0.001–0.01, per the HVB sense
-  network) into physical units, so they need much finer resolution than
-  the output axis at a much smaller magnitude. Because `uint16_t` tops out
-  at 65535, unity gain (`k = 1000000`) is **not representable** on this
-  axis — it can only ever scale a raw reading *down*, never pass it through
-  unchanged. See "Measurement Calibration" below for the derivation.
+- **Measurement** (`measured_voltage_calib_k`/`_k_exp`,
+  `measured_current_calib_k`/`_k_exp`) defaults to `k_exp = -6` (÷1000000
+  equivalent). These axes typically convert an attenuated raw ADC reading
+  (a gain around 0.001–0.01, per the HVB sense network) into physical units,
+  so they need much finer resolution than the output axis at a much smaller
+  magnitude at that default. Unlike the pre-v3.1 format, unity gain (or a
+  super-unity gain, for a front-end with no attenuating divider) **is**
+  representable here — raise `k_exp` instead of trying to push `k` past
+  65535. See "Measurement Calibration" below for the derivation.
 
-Offset (b) terms for the output axis are raw DAC counts; for measurement axes,
-they are in the same units as the calibrated output (×100 mV or ×0.1 nA).
+Offset (b) terms are unaffected by this change — output axis in raw DAC
+counts, measurement axes in the same units as the calibrated output (×100 mV
+or ×0.1 nA).
+
+### Why a variable exponent
+
+A single fixed divisor per axis (the pre-v3.1 design) has a hard ceiling: the
+maximum representable gain is `65535 / D`. For the measurement axes at
+`D = 1000000`, that's ≈0.0655 — fine for jw_hvb's attenuating sense network,
+but it means **no board with an amplifying (super-unity) front-end could ever
+be calibrated correctly**, regardless of `k`. Widening `k` itself to 32-bit
+was considered and rejected — this repo's register-write plumbing has no
+existing support for atomic multi-register writes (every current 32-bit
+register is read-only), and building that from scratch is disproportionate
+to the problem. A second, independently-writable 16-bit exponent register
+solves the same range problem without that risk: `k` and `k_exp` are two
+independently meaningful values, exactly like `k` and `b` already are today,
+so there's no atomicity concern in writing them separately.
 
 ---
 
@@ -87,7 +117,7 @@ Operator sets target voltage (×100 mV)
   operational_target_voltage  (×100 mV, int16)
         │
         ▼
-  output_calib formula:  raw_dac = (target × out_cal_k) / 10000 + out_cal_b
+  output_calib formula:  raw_dac = target × out_cal_k × 10^out_cal_k_exp + out_cal_b
         │
         ▼
   16-bit DAC code (0–65535)
@@ -99,8 +129,8 @@ Operator sets target voltage (×100 mV)
   [ADC raw readings: raw_adc_voltage, raw_adc_current]
         │
         ▼
-  voltage_calib formula:  measured_voltage = (raw_v × v_cal_k) / 1000000 + v_cal_b
-  current_calib formula:  measured_current = (raw_i × i_cal_k) / 1000000 + i_cal_b
+  voltage_calib formula:  measured_voltage = raw_v × v_cal_k × 10^v_cal_k_exp + v_cal_b
+  current_calib formula:  measured_current = raw_i × i_cal_k × 10^i_cal_k_exp + i_cal_b
         │
         ▼
   [current protection, snapshots, Modbus reporting]
@@ -116,21 +146,22 @@ overflow at intermediate values.
 ### DAC Drive Formula
 
 ```
-raw_dac = (int64_t)(target_voltage × out_cal_k) / 10000 + out_cal_b
+raw_dac = (int64_t)(target_voltage × out_cal_k) × 10^out_cal_k_exp + out_cal_b
 ```
 
 Result is clamped to [0, 65535] before being sent to the DAC driver.
 
-| Field | Type | Default | Unit |
+| Field | Type | Default | Notes |
 |-------|------|---------|------|
-| `out_cal_k` | `uint16_t` | 32768 | ×10⁻⁴ |
+| `out_cal_k` | `uint16_t` | 32768 | mantissa |
+| `out_cal_k_exp` | `int16_t` | -4 | decimal exponent; -4 ⟺ pre-v3.1 ÷10000 |
 | `out_cal_b` | `int16_t` | 0 | raw DAC counts |
 
-**Why k = 32768 by default:** at the HVB design point of 2000 V full scale
-(`target = 20000`) with a 16-bit DAC:
+**Why k = 32768, k_exp = -4 by default:** at the HVB design point of 2000 V
+full scale (`target = 20000`) with a 16-bit DAC:
 
 ```
-raw = (20000 × 32768) / 10000 = 65536 ≈ 65535  (full DAC range)
+raw = 20000 × 32768 × 10^-4 = 65536 ≈ 65535  (full DAC range)
 ```
 
 This gives approximately 1 DAC count per 100 mV = 1 DAC count per 1 target unit,
@@ -150,31 +181,33 @@ maximum.
 
 ## Measurement Calibration
 
-Both voltage and current measurement use the same linear formula, but on a
-**finer fixed-point scale than the output axis** (÷1000000, not ÷10000):
+Both voltage and current measurement use the same linear formula, defaulting
+to a **finer decimal exponent than the output axis** (`k_exp = -6`, versus
+the output axis's `-4`):
 
 ```
-measured = (int64_t)(raw_adc × cal_k) / 1000000 + cal_b
+measured = (int64_t)(raw_adc × cal_k) × 10^cal_k_exp + cal_b
 ```
 
-This axis converts a raw, attenuated ADC reading (e.g. HVB's sense network
-produces roughly 129 raw counts per DAC code, or a gain on the order of
-0.001–0.01 once referred to physical units) into physical units. A ÷10000
-divisor — fine enough for the near-unity output axis — only gives k about two
-significant digits of resolution at this magnitude, which was measured to
-produce ~0.5–0.7% systematic gain error on jw_hvb hardware. ÷1000000 pushes
-that down to roughly 0.01%. The trade-off: `uint16_t cal_k` tops out at
-65535, so the maximum representable gain is 65535/1000000 ≈ 0.0655, and
-**unity gain (k = 1000000) cannot be represented** — this axis can only ever
-scale a raw reading down, never pass it through unchanged. The Kconfig
-default (`k = 1`) intentionally yields a near-zero reading until real
-per-unit calibration is loaded.
+At the default exponent, this axis converts a raw, attenuated ADC reading
+(e.g. HVB's sense network produces roughly 129 raw counts per DAC code, or a
+gain on the order of 0.001–0.01 once referred to physical units) into
+physical units. The output axis's coarser default exponent (`-4`) only gives
+`k` about two significant digits of resolution at this magnitude, which was
+measured to produce ~0.5–0.7% systematic gain error on jw_hvb hardware;
+`-6` pushes that down to roughly 0.01%. Unlike the pre-v3.1 fixed-÷1000000
+format, unity gain (or higher — a super-unity front-end with no attenuating
+divider) **is** representable on this axis: raise `k_exp` rather than trying
+to push `k` past 65535. The Kconfig default (`k = 1`, `k_exp = -6`)
+intentionally yields a near-zero reading until real per-unit calibration is
+loaded.
 
 ### Voltage Measurement
 
-| Field | Type | Default | Unit |
+| Field | Type | Default | Notes |
 |-------|------|---------|------|
-| `v_cal_k` | `uint16_t` | 1 | ×10⁻⁶ |
+| `v_cal_k` | `uint16_t` | 1 | mantissa |
+| `v_cal_k_exp` | `int16_t` | -6 | decimal exponent; -6 ⟺ pre-v3.1 ÷1000000 |
 | `v_cal_b` | `int16_t` | 0 | ×100 mV |
 
 Factory calibration derives k and b from a DAC sweep against a reference
@@ -183,9 +216,10 @@ ratio and offset.
 
 ### Current Measurement
 
-| Field | Type | Default | Unit |
+| Field | Type | Default | Notes |
 |-------|------|---------|------|
-| `i_cal_k` | `uint16_t` | 1 | ×10⁻⁶ |
+| `i_cal_k` | `uint16_t` | 1 | mantissa |
+| `i_cal_k_exp` | `int16_t` | -6 | decimal exponent; -6 ⟺ pre-v3.1 ÷1000000 |
 | `i_cal_b` | `int16_t` | 0 | ×0.1 nA |
 
 Factory calibration adjusts k to match the shunt resistor value and ADC
@@ -314,13 +348,20 @@ vc ch <ch> status        # print measured voltage and current
 ### Setting Coefficients
 
 ```
-vc cal <ch> set out_cal_k <value>   # output gain
-vc cal <ch> set out_cal_b <value>   # output offset (DAC counts)
-vc cal <ch> set v_cal_k <value>     # voltage measurement gain
-vc cal <ch> set v_cal_b <value>     # voltage measurement offset
-vc cal <ch> set i_cal_k <value>     # current measurement gain
-vc cal <ch> set i_cal_b <value>     # current measurement offset
+vc cal <ch> set out_cal_k <value>       # output gain mantissa
+vc cal <ch> set out_cal_k_exp <value>   # output gain decimal exponent (-9..4)
+vc cal <ch> set out_cal_b <value>       # output offset (DAC counts)
+vc cal <ch> set v_cal_k <value>         # voltage measurement gain mantissa
+vc cal <ch> set v_cal_k_exp <value>     # voltage measurement decimal exponent (-9..4)
+vc cal <ch> set v_cal_b <value>         # voltage measurement offset
+vc cal <ch> set i_cal_k <value>         # current measurement gain mantissa
+vc cal <ch> set i_cal_k_exp <value>     # current measurement decimal exponent (-9..4)
+vc cal <ch> set i_cal_b <value>         # current measurement offset
 ```
+
+Leave `*_k_exp` untouched (at its factory default, -4 for output, -6 for both
+measurement axes) unless the fitted `k` below doesn't fit in `uint16_t` at
+that exponent.
 
 Then commit and exit:
 
@@ -339,16 +380,23 @@ k = (ref₂ − ref₁) × D / (raw₂ − raw₁)
 b = ref₁ − (raw₁ × k) / D
 ```
 
-where `D` is the axis's divisor: **10000 for output calibration**, **1000000
-for voltage/current measurement calibration** (see "Measurement Calibration"
-above for why the two axes differ).
+where `D = 10^(-k_exp)`, using the channel's *current* `k_exp` — normally its
+factory default (**-4** ⟹ `D=10000` for output, **-6** ⟹ `D=1000000` for
+voltage/current measurement; see "Measurement Calibration" above for why the
+two axes differ by default). This is exactly the pre-v3.1 formula with `D`
+now derived from `k_exp` rather than hardcoded — if you're using each axis's
+default `k_exp`, the arithmetic is unchanged from before.
 
 `k` must be stored as an integer (round to nearest) and fit in `uint16_t`
-(1–65535) — for the measurement axes this caps the representable gain at
-65535/1000000 ≈ 0.0655, so `k` will always be a small integer relative to
-`D`. `b` must fit in `int16_t` (−32768 to 32767). For output calibration, ref
-is in ×100 mV and raw is the DAC code; for measurement calibration, ref is in
-×0.1 nA or ×100 mV depending on axis, and raw is the ADC reading.
+(1–65535). **If it doesn't fit at the current `k_exp`**, adjust `k_exp` (a
+few steps in either direction is usually enough — see "Why a variable
+exponent" above) and recompute `k` with the new `D`; this is the case a fixed
+divisor couldn't handle before v3.1 (a super-unity measurement front-end, or
+an output stage needing far more DAC-code resolution per volt than a 2000 V
+board does). `b` must fit in `int16_t` (−32768 to 32767) — unaffected by
+`k_exp`. For output calibration, ref is in ×100 mV and raw is the DAC code;
+for measurement calibration, ref is in ×0.1 nA or ×100 mV depending on axis,
+and raw is the ADC reading.
 
 ---
 

@@ -170,13 +170,20 @@ struct ChannelConfig {
     /* v3: cal coefficients moved to ChannelCalConfig; cal session fields in CalibrationSnapshot */
 };
 
-/* Calibration coefficients — separate read via readChannelCalConfig() */
+/* Calibration coefficients — separate read via readChannelCalConfig().
+ * Gain is kExp*10^kExp (decimal floating-point), not a fixed divisor:
+ * calibrated = raw * k * 10^kExp + b. Defaults below are placeholders
+ * overwritten by the first readChannelCalConfig() call; they carry no
+ * special "unity" meaning. */
 struct ChannelCalConfig {
-    uint16_t outCalK = 10000;    // UINT16, x10000
+    uint16_t outCalK = 1;        // UINT16 mantissa
+    int16_t outCalKExp = 0;      // INT16 decimal exponent, valid range [-9, 4]
     int16_t outCalB = 0;         // INT16, DAC counts offset
-    uint16_t measVCalK = 10000;  // UINT16, x1000000 (default is a placeholder; unity not representable)
+    uint16_t measVCalK = 1;      // UINT16 mantissa
+    int16_t measVCalKExp = 0;    // INT16 decimal exponent, valid range [-9, 4]
     int16_t measVCalB = 0;       // INT16, x100 mV offset
-    uint16_t measICalK = 10000;  // UINT16, x1000000 (default is a placeholder; unity not representable)
+    uint16_t measICalK = 1;      // UINT16 mantissa
+    int16_t measICalKExp = 0;    // INT16 decimal exponent, valid range [-9, 4]
     int16_t measICalB = 0;       // INT16, x0.1 nA offset
 };
 

@@ -100,13 +100,18 @@ const std::vector<RegDesc> CHANNEL_HOLDING = {
     {17, "Configured Output Enabled","uint16","bool",  "Fixed-voltage channel startup/AUTOMATIC-mode desired on/off (no DAC)", 1.0, true, false, -1, {}, Cat::Config},
     /* 18..19 reserved */
     /* Cal config — readable any mode, writable in cal mode only */
-    {20, "Output Calibration K",  "uint16", "x",       "Output path slope (unity = 10000)", vscale::OUTPUT_CAL_DIVISOR, true, false, -1, {}, Cat::Config},
+    {20, "Output Calibration K",  "uint16", "x",       "Output path slope mantissa; gain = K * 10^K_Exp", vscale::OUTPUT_CAL_DIVISOR, true, false, -1, {}, Cat::Config},
     {21, "Output Calibration B",  "int16",  "dac",     "Output path offset (DAC counts)", 1.0, true, false, -1, {}, Cat::Config},
-    {22, "Meas V Calibration K",  "uint16", "x",       "Voltage measurement slope (unity not representable)", vscale::MEAS_CAL_DIVISOR, true, false, -1, {}, Cat::Config},
+    {22, "Meas V Calibration K",  "uint16", "x",       "Voltage measurement slope mantissa; gain = K * 10^K_Exp", vscale::MEAS_CAL_DIVISOR, true, false, -1, {}, Cat::Config},
     {23, "Meas V Calibration B",  "int16",  "V",       "Voltage measurement offset", kVoltageDisplayDivisor, true, false, -1, {}, Cat::Config},
-    {24, "Meas I Calibration K",  "uint16", "x",       "Current measurement slope (unity not representable)", vscale::MEAS_CAL_DIVISOR, true, false, -1, {}, Cat::Config},
+    {24, "Meas I Calibration K",  "uint16", "x",       "Current measurement slope mantissa; gain = K * 10^K_Exp", vscale::MEAS_CAL_DIVISOR, true, false, -1, {}, Cat::Config},
     {25, "Meas I Calibration B",  "int16",  "nA",      "Current measurement offset", kCurrentDisplayDivisor, true, false, -1, {}, Cat::Config},
-    /* 26..29 reserved */
+    /* v3.1: gain = k * 10^k_exp, additive-only. Default exp (-4/-6) reproduces
+     * the fixed-divisor formula above exactly; see calibration-guide.md. */
+    {26, "Output Calibration K Exp", "int16", "",      "Output path decimal exponent, valid [-9,4]", 1.0, true, false, -1, {}, Cat::Config},
+    {27, "Meas V Calibration K Exp", "int16", "",      "Voltage measurement decimal exponent, valid [-9,4]", 1.0, true, false, -1, {}, Cat::Config},
+    {28, "Meas I Calibration K Exp", "int16", "",      "Current measurement decimal exponent, valid [-9,4]", 1.0, true, false, -1, {}, Cat::Config},
+    /* 29 reserved */
     /* Cal session commands — cal mode only */
     {30, "Cal Output Enable",     "uint16", "bool",    "Calibration Mode — raw output gate", 1.0, true, false, -1, {}, Cat::Command},
     {31, "Raw DAC Code",          "uint16", "lsb",     "Calibration Mode — native DAC code", 1.0, true, false, -1, {}, Cat::Command},

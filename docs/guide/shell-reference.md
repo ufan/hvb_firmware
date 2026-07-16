@@ -60,7 +60,7 @@ Detailed system snapshot.
 
 ```
 uart:~$ vc sys status
-Protocol:    3.0
+Protocol:    3.1
 Variant:     1
 Caps:        0x0007
 Channels:    2
@@ -315,20 +315,32 @@ Set a calibration coefficient field. Only writable in calibration mode. Availabl
 
 | Shell Field | Description | Formula |
 |-------------|-------------|---------|
-| `out_cal_k` | DAC gain (÷10000) | DAC = target × k/10000 + b |
+| `out_cal_k` | DAC gain mantissa | DAC = target × k × 10^exp + b |
+| `out_cal_k_exp` | DAC gain decimal exponent (default -4, valid -9..4) | |
 | `out_cal_b` | DAC offset | |
-| `v_cal_k` | Voltage measurement gain (÷1000000) | Measured = raw_adc × k/1000000 + b |
+| `v_cal_k` | Voltage measurement gain mantissa | Measured = raw_adc × k × 10^exp + b |
+| `v_cal_k_exp` | Voltage measurement decimal exponent (default -6, valid -9..4) | |
 | `v_cal_b` | Voltage measurement offset | |
-| `i_cal_k` | Current measurement gain (÷1000000) | Measured = raw_adc × k/1000000 + b |
+| `i_cal_k` | Current measurement gain mantissa | Measured = raw_adc × k × 10^exp + b |
+| `i_cal_k_exp` | Current measurement decimal exponent (default -6, valid -9..4) | |
 | `i_cal_b` | Current measurement offset | |
 | `max_dac` | Safety DAC ceiling (uint16) | Same as `vc cal max_dac <ch> <limit>` |
 
+Gain is a decimal floating-point value (`k × 10^exp`), not a fixed divisor —
+each axis's default exponent reproduces the pre-v3.1 fixed-divisor formula
+exactly (`-4` ⟺ `÷10000`, `-6` ⟺ `÷1000000`); leave `*_k_exp` untouched unless
+calibrating a board whose gain the old fixed divisor couldn't reach. See
+`docs/guide/channel-capability-model.md`.
+
 ```
 vc cal set 0 out_cal_k 10000
+vc cal set 0 out_cal_k_exp -4
 vc cal set 0 out_cal_b 0
 vc cal set 0 v_cal_k   2387
+vc cal set 0 v_cal_k_exp -6
 vc cal set 0 v_cal_b   0
 vc cal set 0 i_cal_k   14901
+vc cal set 0 i_cal_k_exp -6
 vc cal set 0 i_cal_b   0
 ```
 

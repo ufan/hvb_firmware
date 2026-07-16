@@ -124,11 +124,13 @@ static bool vc_catalog_supported(uint16_t field, uint16_t caps)
 	case REG_VC_FIELD_RAW_ADC_VOLTAGE:
 	case REG_VC_FIELD_MEASURED_V_CAL_K:
 	case REG_VC_FIELD_MEASURED_V_CAL_B:
+	case REG_VC_FIELD_MEASURED_V_CAL_K_EXP:
 		return (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0U;
 	case REG_VC_FIELD_MEASURED_CURRENT:
 	case REG_VC_FIELD_RAW_ADC_CURRENT:
 	case REG_VC_FIELD_MEASURED_I_CAL_K:
 	case REG_VC_FIELD_MEASURED_I_CAL_B:
+	case REG_VC_FIELD_MEASURED_I_CAL_K_EXP:
 	case REG_VC_FIELD_CURRENT_PROTECTION_MODE:
 	case REG_VC_FIELD_CURRENT_PROT_OUT_ACTION:
 	case REG_VC_FIELD_CURRENT_LIMIT_THRESHOLD:
@@ -140,6 +142,7 @@ static bool vc_catalog_supported(uint16_t field, uint16_t caps)
 	case REG_VC_FIELD_RAMP_DOWN_INTERVAL:
 	case REG_VC_FIELD_OUTPUT_CAL_K:
 	case REG_VC_FIELD_OUTPUT_CAL_B:
+	case REG_VC_FIELD_OUTPUT_CAL_K_EXP:
 	case REG_VC_FIELD_CAL_OUTPUT_ENABLE:
 	case REG_VC_FIELD_CAL_DAC_CODE:
 		return (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0U;
@@ -308,6 +311,12 @@ static enum reg_status vc_catalog_read(const struct reg_descriptor *desc,
 		value->u16 = ch->cal_config.measured_current_calib_k; break;
 	case REG_VC_FIELD_MEASURED_I_CAL_B:
 		value->s16 = ch->cal_config.measured_current_calib_b; break;
+	case REG_VC_FIELD_OUTPUT_CAL_K_EXP:
+		value->s16 = ch->cal_config.output_calib_k_exp; break;
+	case REG_VC_FIELD_MEASURED_V_CAL_K_EXP:
+		value->s16 = ch->cal_config.measured_voltage_calib_k_exp; break;
+	case REG_VC_FIELD_MEASURED_I_CAL_K_EXP:
+		value->s16 = ch->cal_config.measured_current_calib_k_exp; break;
 	case REG_VC_FIELD_CAL_OUTPUT_ENABLE: value->u16 = ch->cal_output_enabled; break;
 	case REG_VC_FIELD_CAL_DAC_CODE: value->u16 = ch->raw_dac_readback; break;
 	default:
@@ -353,6 +362,9 @@ static bool vc_catalog_cal_field(uint16_t field, enum vc_cal_field *out)
 	case REG_VC_FIELD_MEASURED_V_CAL_B: *out = VC_CAL_FIELD_MEASURED_V_B; break;
 	case REG_VC_FIELD_MEASURED_I_CAL_K: *out = VC_CAL_FIELD_MEASURED_I_K; break;
 	case REG_VC_FIELD_MEASURED_I_CAL_B: *out = VC_CAL_FIELD_MEASURED_I_B; break;
+	case REG_VC_FIELD_OUTPUT_CAL_K_EXP: *out = VC_CAL_FIELD_OUTPUT_K_EXP; break;
+	case REG_VC_FIELD_MEASURED_V_CAL_K_EXP: *out = VC_CAL_FIELD_MEASURED_V_K_EXP; break;
+	case REG_VC_FIELD_MEASURED_I_CAL_K_EXP: *out = VC_CAL_FIELD_MEASURED_I_K_EXP; break;
 	default: return false;
 	}
 	return true;
@@ -566,6 +578,12 @@ DT_FOREACH_CHILD_STATUS_OKAY(VC_CONTROLLER_NODE, VC_ASSERT_CONTIGUOUS_CHANNEL)
 	(&VC_CH(node_id).cal_config.measured_current_calib_k)
 #define VC_VALUE_MEASURED_I_CAL_B(node_id) \
 	(&VC_CH(node_id).cal_config.measured_current_calib_b)
+#define VC_VALUE_OUTPUT_CAL_K_EXP(node_id) \
+	(&VC_CH(node_id).cal_config.output_calib_k_exp)
+#define VC_VALUE_MEASURED_V_CAL_K_EXP(node_id) \
+	(&VC_CH(node_id).cal_config.measured_voltage_calib_k_exp)
+#define VC_VALUE_MEASURED_I_CAL_K_EXP(node_id) \
+	(&VC_CH(node_id).cal_config.measured_current_calib_k_exp)
 #define VC_VALUE_CAL_OUTPUT_ENABLE(node_id) (&VC_CH(node_id).cal_output_enabled)
 #define VC_VALUE_CAL_DAC_CODE(node_id) (&VC_CH(node_id).raw_dac_readback)
 #define VC_VALUE_CAL_SAMPLE_CMD(node_id) NULL

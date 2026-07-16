@@ -6,6 +6,11 @@
 
 *(English version: [calibration-guide.md](calibration-guide.md))*
 
+> **⚠ 内容已过期 (outdated):** 固件 v3.1 将校准增益公式从固定除数
+> `y = x × k/D + b` 改为十进制浮点形式 `y = x × k × 10^exp + b`（新增
+> `*_cal_k_exp` 寄存器/字段）。本翻译尚未更新，请以英文版
+> [calibration-guide.md](calibration-guide.md) 为准。
+
 ---
 
 ## 1. 校准的作用

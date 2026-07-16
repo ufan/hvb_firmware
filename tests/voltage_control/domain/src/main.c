@@ -275,6 +275,76 @@ ZTEST(vc_domain, test_output_calibration_gain)
 	zassert_equal(stub->last_output_code, 200);
 }
 
+/* ---- Calibration gain decimal exponent (v3.1) ---- */
+
+ZTEST(vc_domain, test_output_calibration_gain_custom_exp)
+{
+	/* Same nominal gain as test_output_calibration_gain (k=20000 at the
+	 * default exp=-4 gives raw=200 for target=100), reached instead via
+	 * k=2000 at exp=-3 (2000*100*10^-3 = 200) - exercises k_exp != default. */
+	make_fresh();
+	struct vc_channel_config cfg;
+	struct vc_stub_data *stub = ctrl->channels[0].dev->data;
+
+	enter_calibration_mode(ctrl);
+	zassert_equal(vc_controller_channel_set_cal_field(ctrl, 0,
+			 VC_CAL_FIELD_OUTPUT_K, 2000), VC_OK);
+	zassert_equal(vc_controller_channel_set_cal_field(ctrl, 0,
+			 VC_CAL_FIELD_OUTPUT_K_EXP, (uint16_t)(int16_t)-3), VC_OK);
+	vc_controller_set_operating_mode(ctrl, VC_OPERATING_MODE_NORMAL);
+
+	vc_controller_get_channel_config(ctrl, 0, &cfg);
+	cfg.configured_target_voltage = 100;
+	cfg.ramp_up_step = 0;
+	vc_channel_set_config(&ctrl->channels[0], &cfg);
+	vc_controller_channel_output_action(ctrl, 0, VC_OUTPUT_ACTION_ENABLE);
+
+	vc_channel_tick_ramp(&ctrl->channels[0], 100, &ctrl->sys_cfg);
+
+	zassert_equal(stub->last_output_code, 200);
+}
+
+ZTEST(vc_domain, test_measured_voltage_super_unity_gain)
+{
+	/* Exercises the case a fixed /1000000 divisor could never reach: a
+	 * gain > 1.0 (jw_lvb-style unattenuated front-end). k=56000, exp=-4
+	 * gives gain=5.6, matching the jw_lvb Kconfig default derived from
+	 * the pwb_firmware reference conversion. */
+	make_fresh();
+	struct vc_channel_snapshot snap;
+
+	enter_calibration_mode(ctrl);
+	zassert_equal(vc_controller_channel_set_cal_field(ctrl, 0,
+			 VC_CAL_FIELD_MEASURED_V_K, 56000), VC_OK);
+	zassert_equal(vc_controller_channel_set_cal_field(ctrl, 0,
+			 VC_CAL_FIELD_MEASURED_V_K_EXP, (uint16_t)(int16_t)-4), VC_OK);
+	vc_controller_set_operating_mode(ctrl, VC_OPERATING_MODE_NORMAL);
+
+	vc_channel_consume_voltage(&ctrl->channels[0], 100);
+	zassert_equal(vc_controller_get_channel_snapshot(ctrl, 0, &snap), VC_OK);
+	/* 100 * 56000 * 10^-4 = 560 */
+	zassert_equal(snap.measured_voltage, 560);
+}
+
+ZTEST(vc_domain, test_cal_k_exp_rejects_out_of_range)
+{
+	make_fresh();
+
+	enter_calibration_mode(ctrl);
+	zassert_equal(vc_controller_channel_set_cal_field(ctrl, 0,
+			 VC_CAL_FIELD_OUTPUT_K_EXP, (uint16_t)(int16_t)-10),
+		      VC_ERR_INVALID_VALUE);
+	zassert_equal(vc_controller_channel_set_cal_field(ctrl, 0,
+			 VC_CAL_FIELD_OUTPUT_K_EXP, (uint16_t)(int16_t)5),
+		      VC_ERR_INVALID_VALUE);
+	zassert_equal(vc_controller_channel_set_cal_field(ctrl, 0,
+			 VC_CAL_FIELD_OUTPUT_K_EXP, (uint16_t)(int16_t)-9),
+		      VC_OK);
+	zassert_equal(vc_controller_channel_set_cal_field(ctrl, 0,
+			 VC_CAL_FIELD_OUTPUT_K_EXP, (uint16_t)(int16_t)4),
+		      VC_OK);
+}
+
 ZTEST(vc_domain, test_output_drive_clamps_low)
 {
 	make_fresh();
@@ -480,10 +550,13 @@ ZTEST(vc_domain, test_channel_config_defaults)
 	zassert_equal(vc_controller_get_channel_cal_config(ctrl, 0, &cal), VC_OK);
 	zassert_equal(cal.output_calib_k, 32768);
 	zassert_equal(cal.output_calib_b, 0);
+	zassert_equal(cal.output_calib_k_exp, -4);
 	zassert_equal(cal.measured_voltage_calib_k, 1);
 	zassert_equal(cal.measured_voltage_calib_b, 0);
+	zassert_equal(cal.measured_voltage_calib_k_exp, -6);
 	zassert_equal(cal.measured_current_calib_k, 1);
 	zassert_equal(cal.measured_current_calib_b, 0);
+	zassert_equal(cal.measured_current_calib_k_exp, -6);
 }
 
 /* ---- Config validation ---- */

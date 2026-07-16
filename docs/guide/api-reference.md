@@ -299,7 +299,7 @@ The authoritative mutable state owned by the runtime worker thread. Consists of:
 - **Cal config** loaded from NVS per-channel on boot or load. Persisted on `VC_PARAM_ACTION_SAVE` or `vc cal commit`.
 - **Channel runtime** derived from config + hardware input at every tick (`vc_channel_run()` in `vc_channel.c:335`):
   1. Consume fresh raw ADC data from measurement buffer (Layer 2) via timestamp comparison
-  2. Apply calibration: `measured = raw × k/1000000 + b` (measurement axes; output axis uses ÷10000)
+  2. Apply calibration: `measured = raw × k × 10^k_exp + b` (default k_exp: -6 measurement axes, -4 output axis — see `channel-capability-model.md`)
   3. Run current protection check (`tick_current_protection()` at `vc_channel.c:239`)
   4. Advance ramping state machine (`vc_channel_tick_ramp()` at `vc_channel.c:619`)
   5. Apply output to hardware via `apply_hw()` (`vc_channel.c:87`)
@@ -575,32 +575,39 @@ struct vc_channel_config {
 
 ```c
 struct vc_channel_cal_config {
-    uint16_t output_calib_k;              /* DAC gain (÷10000, default 10000) */
-    int16_t  output_calib_b;              /* DAC offset (default 0) */
-    uint16_t measured_voltage_calib_k;    /* Voltage meas gain (÷1000000) */
-    int16_t  measured_voltage_calib_b;    /* Voltage meas offset */
-    uint16_t measured_current_calib_k;    /* Current meas gain (÷1000000) */
-    int16_t  measured_current_calib_b;    /* Current meas offset */
+    uint16_t output_calib_k;                  /* DAC gain mantissa (default 32768) */
+    int16_t  output_calib_b;                  /* DAC offset (default 0) */
+    uint16_t measured_voltage_calib_k;        /* Voltage meas gain mantissa */
+    int16_t  measured_voltage_calib_b;        /* Voltage meas offset */
+    uint16_t measured_current_calib_k;        /* Current meas gain mantissa */
+    int16_t  measured_current_calib_b;        /* Current meas offset */
+    int16_t  output_calib_k_exp;              /* Decimal exponent, default -4, valid [-9,4] */
+    int16_t  measured_voltage_calib_k_exp;    /* Decimal exponent, default -6, valid [-9,4] */
+    int16_t  measured_current_calib_k_exp;    /* Decimal exponent, default -6, valid [-9,4] */
 };
 ```
 
 ## Calibration Formula
 
 ```
-calibrated = raw × k / D + b
+calibrated = raw × k × 10^k_exp + b
 ```
 
-Three independent axes, each with its own divisor `D`:
-- **Output**: `raw_dac = target_voltage × output_calib_k / 10000 + output_calib_b`.
-  Identity: `k = 10000`, `b = 0`.
-- **Voltage measurement**: `measured_v = raw_adc_voltage × measured_voltage_calib_k / 1000000 + measured_voltage_calib_b`
-- **Current measurement**: `measured_i = raw_adc_current × measured_current_calib_k / 1000000 + measured_current_calib_b`
+Three independent axes, each with its own mantissa/exponent pair (gain is a
+decimal floating-point value, not a fixed divisor — added v3.1, see
+`docs/guide/channel-capability-model.md` for why):
+- **Output**: `raw_dac = target_voltage × output_calib_k × 10^output_calib_k_exp + output_calib_b`.
+  Default: `k = 32768`, `k_exp = -4` (equivalent to the pre-v3.1 `÷10000`).
+- **Voltage measurement**: `measured_v = raw_adc_voltage × measured_voltage_calib_k × 10^measured_voltage_calib_k_exp + measured_voltage_calib_b`
+- **Current measurement**: `measured_i = raw_adc_current × measured_current_calib_k × 10^measured_current_calib_k_exp + measured_current_calib_b`
 
-The measurement axes use a finer ÷1000000 scale (vs. output's ÷10000) because
-they convert a small, attenuated raw ADC gain (~0.001–0.01) rather than a
-near-unity output gain; see `docs/guide/parameter-reference.md` for the
-derivation. Unity gain is not representable on the measurement axes — the
-maximum gain a `uint16_t` k can express there is 65535/1000000 ≈ 0.0655.
+The measurement axes default to a finer exponent (`k_exp = -6`, vs. output's
+`-4`) because they typically convert a small, attenuated raw ADC gain
+(~0.001–0.01) rather than a near-unity output gain; see
+`docs/guide/parameter-reference.md` for the derivation. Unlike the pre-v3.1
+fixed-divisor format, unity (or super-unity) gain **is** representable on
+the measurement axes — raise `k_exp` instead of trying to push `k` past
+65535.
 
 ## Channel Capability Bitmask
 
@@ -681,7 +688,7 @@ struct sys_status_snapshot {
 
 - **VC Runtime & Channel Execution**: `docs/guide/vc-runtime-execution.md` — worker thread, SMF state machine, mode logic, writing HW drivers
 - **Shell Reference**: `docs/guide/shell-reference.md` — complete `vc`, `mb`, `ss` command tree
-- **Modbus Register Map**: `docs/guide/modbus-reference.md` — protocol v3.0 register layout
+- **Modbus Register Map**: `docs/guide/modbus-reference.md` — protocol v3.1 register layout
 - **Calibration Guide**: `docs/guide/calibration-guide.md` — factory calibration procedure
 - **Demo TUI Guide**: `docs/guide/demo-tui-guide.md` — interactive monitoring/control dashboard user guide
 - **Operating Mode Guide**: `docs/guide/operating-mode-guide.md` — Normal vs. Automatic mode, protection and recovery policy
