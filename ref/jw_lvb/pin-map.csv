@@ -1,0 +1,46 @@
+net,mcu_ref,mcu_pin_number,mcu_pin_name,function,confidence,notes
+EN8,U54,1,PE2,Channel enable,high,
+EN10,U54,2,PE3,Channel enable,high,
+EN9,U54,3,PE4,Channel enable,high,
+EN7,U54,4,PE5,Channel enable,high,
+EN5,U54,5,PE6,Channel enable,high,
+V7,U54,18,PF6,Analog feedback,high,
+I7,U54,19,PF7,Analog feedback,medium,"The I prefix is visually clipped but aligns with the channel feedback naming pattern."
+V9,U54,20,PF8,Analog feedback,high,
+I9,U54,21,PF9,Analog feedback,high,
+I10,U54,22,PF10,Analog feedback,high,
+I5,U54,26,PC0,Analog feedback,high,
+V5,U54,27,PC1,Analog feedback,high,
+V10,U54,28,PC2,Analog feedback,high,
+I8,U54,29,PC3,Analog feedback,high,Matches current jw_lvb.dts.
+V8,U54,35,PA1,Analog feedback,high,Corrected to match current jw_lvb.dts; PA0-WKUP is not used by the firmware mapping.
+I6,U54,36,PA2,Analog feedback,high,Corrected to match current jw_lvb.dts.
+V6,U54,37,PA3,Analog feedback,high,Corrected to match current jw_lvb.dts.
+I3,U54,40,PA4,Analog feedback,high,
+V3,U54,41,PA5,Analog feedback,high,
+I1,U54,42,PA6,Analog feedback,high,
+V1,U54,43,PA7,Analog feedback,high,
+I2,U54,44,PC4,Analog feedback,high,
+V2,U54,45,PC5,Analog feedback,high,
+V4,U54,46,PB0,Analog feedback,high,
+I4,U54,47,PB1,Analog feedback,high,
+EN1,U54,54,PF14,Channel enable,high,Corrected to match current jw_lvb.dts CH1/CH3 crossing workaround.
+EN3,U54,57,PG1,Channel enable,high,Corrected to match current jw_lvb.dts CH1/CH3 crossing workaround.
+EN2,U54,59,PE8,Channel enable,high,
+EN4,U54,64,PE11,Channel enable,high,
+COM1_CTRL,U54,88,PG3,RS485 direction/control,high,
+SCL_TXDB,U54,101,PA9,RS485 UART TX,high,Connected to U53 TXD.
+SCL_RXDB,U54,102,PA10,RS485 UART RX,high,Connected to U53 RXD.
+EN6,U54,104,PA12,Channel enable,high,
+SWDIO,U54,105,PA13,SWD debug,high,Also routed to X1.
+SWCLK,U54,109,PA14,SWD debug,high,Also routed to X1.
+SWCLK,X1,2,,SWD debug connector,high,
+SWDIO,X1,3,,SWD debug connector,high,
++3.3V,X1,4,,SWD debug connector power,high,
+GND,X1,1,,SWD debug connector ground,medium,"Header orientation inferred from rendered schematic."
+SCL_TXDB,U53,4,TXD,RS485 transceiver TX input,high,
+SCL_RXDB,U53,3,RXD,RS485 transceiver RX output,high,
+COM1_CTRL,U53,5,CON,RS485 transceiver direction/control,high,
+RS485_A,U53,9,A,RS485 bus A,high,Through L1 to external bus.
+RS485_B,U53,8,B,RS485 bus B,high,Through L1 to external bus.
+485G,U53,10,BGND,RS485 bus ground,high,

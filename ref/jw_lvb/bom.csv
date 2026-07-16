@@ -1,0 +1,50 @@
+category,references,value_or_part,quantity,description,confidence,notes
+Assembly,DRAWING,BY/ADC60010-22012-YL-001A0,1,Drawing identifier,high,Visible in the title block.
+Assembly,MODEL,ADC60010-22012,1,Board/model identifier,high,Visible in the title block.
+MCU,U54,STM32F103ZET6,1,Main controller,high,Exact part number supplied by project owner after schematic extraction.
+Crystal,Y1,X53F-8M,1,8 MHz crystal/resonator,high,
+RS485 transceiver,U53,RSM3485CHT,1,RS485 interface transceiver,high,
+RS485 choke,L1,485G,1,RS485 common-mode choke,high,
+RS485 TVS,V41,SMC24,1,RS485 surge/TVS protection,high,
+RS485 termination,R166,120,1,RS485 bus termination,high,
+RS485 resistors,"R164 R165",1k,2,RS485-side pull/bias resistors,high,
+Debug connector,X1,4-pin SWD header,1,SWDIO/SWCLK/+3.3V/GND connector,high,
+Debug resistors,"R168 R170",10k,2,SWDIO/SWCLK bias resistors,high,
+Boot resistor,R161,10k,1,BOOT0 pull resistor,high,
+Reset resistor,R169,10,1,Reset network resistor,high,
+Reset capacitor,C190,10U/50V,1,Reset network capacitor,high,
+Reset capacitor,C189,0.1U/50V,1,Reset/VDDA local capacitor,high,
+MCU decoupling,"C171 C172 C179 C180 C184 C185 C193 C194 C197 C198 C201 C202 C203 C204",0.1U/50V,14,MCU supply decoupling capacitors,high,
+MCU/analog capacitor,C178,0.1U/50V,1,Local 3.3 V decoupling near MCU,high,
+MCU/analog capacitor,C181,0.1U/50V,1,Local 3.3 V decoupling near MCU,high,
+MCU crystal capacitors,"C182 C183",22pF,2,Crystal load capacitors,high,
+MCU crystal resistor,R163,1M,1,Crystal feedback resistor,high,
+MCU/analog capacitor,C188,1U/50V,1,Analog supply/filter capacitor,high,
+MCU/analog capacitor,C192,0.1U/50V,1,Analog supply/filter capacitor,high,
+MCU/analog capacitor,"C195 C196 C199 C200",0.1U/50V,4,Additional MCU decoupling,high,
+Channel AC/DC modules,"U2 U6 U12 U16 U22 U26 U32 U36 U42 U46",LD60-23B12R2,10,Isolated AC to 12 V DC modules,high,
+Channel voltage isolation amplifiers,"E1 E2 E3 E4 E5 E6 E7 E8 E9 E10",NSI1312D-DSPR,10,Isolated voltage measurement amplifiers,high,One per repeated channel voltage measurement path.
+Channel current sensors,"U1 U5 U11 U15 U21 U25 U31 U35 U41 U44",20A-ACS712,10,Hall current sensors,high,
+Channel op amps,"U4 U9 U14 U19 U24 U29 U34 U39 U45 U49",RS8412XK,10,Analog signal conditioning op amps,high,
+Channel optocouplers,"U7 U10 U17 U20 U27 U30 U38 U40 U48 U50",TLP291,10,Enable isolation optocouplers,high,
+Channel regulators,"U3 U8 U13 U18 U23 U28 U33 U37 U43 U47",SPX1117M3-L-5-0/TR,10,5 V local regulators for channel signal chain,high,
+Board regulator,U51,SPX1117M3-L-3-3/TR,1,3.3 V regulator,high,
+Board AC/DC module,U52,LD05-23B05R2,1,Board-side isolated 5 V supply feeding the 3.3 V regulator,high,
+Relays,"K1 K2 K3 K4 K5 K6 K7 K8 K9 K10",307H-1AH-F-C-DC12V,10,12 V relay coils/contacts,high,
+Relay drive transistors,"V4 V7 V12 V15 V20 V23 V28 V31 V36 V39",SS8050LT1,10,Relay low-side drive transistors,high,
+Relay flyback diodes,"V5 V8 V13 V16 V21 V24 V29 V32 V37 V40",FR107,10,Relay coil flyback diodes,high,
+Analog clamp diodes,"V1 V2 V3 V6 V9 V10 V11 V14 V17 V18 V19 V22 V25 V26 V27 V30 V33 V34 V35 V38",BAV99,20,Analog/input clamp diodes,high,
+Channel input limiters,"R11 R43 R75 R107 R139 R6 R38 R70 R102 R134",MF73T-1 5/7,10,AC line inrush limiters,medium,Reference set follows the ten repeated channel cells.
+Channel enable resistors,"R12 R23 R44 R55 R76 R87 R108 R119 R140 R151",1k,10,Optocoupler input current-limit resistors,high,
+Channel ACS divider/filter resistors,"R7 R9 R39 R41 R66 R67 R98 R99 R130 R131",20K,10,ACS712 output divider/filter network,medium,Representative repeated values; exact pairing should be checked against KiCad source for production BOM.
+Channel transistor base/gate resistors,"R26 R29 R50 R61 R82 R93 R115 R125 R147 R157",6.8k,10,Relay driver bias network,medium,Representative repeated values.
+Channel relay bias resistors,"R8 R10 R40 R42 R68 R72 R100 R104 R132 R138",15K,10,Relay/feedback bias network,medium,Representative repeated values.
+Channel pull resistors,"R16 R19 R27 R30 R48 R52 R59 R62 R80 R83 R91 R94 R112 R116 R123 R126 R144 R148 R155 R158",10k,20,Repeated pull/bias resistors in channel analog sections,medium,Some PDF labels join ref/value without a space.
+Channel filter capacitors,"C10 C17 C32 C44 C57 C66 C70 C78 C85 C90 C100 C104 C109 C111 C118 C125 C134 C138 C144 C152 C159 C168",1000P,22,Repeated small-signal filter capacitors,medium,Extracted from visible repeated channel blocks.
+Channel local capacitors,"C13 C47 C81 C115 C149 C3 C37 C71 C105 C140",1U50V,10,Local channel rail/filter capacitors,medium,
+Channel bulk capacitors,"C14 C15 C48 C49 C83 C84 C116 C117 C150 C151 C4 C5 C38 C39 C72 C73 C106 C107 C141 C142",100U25V,20,Local channel bulk capacitors,medium,
+Channel regulator capacitors,"C8 C18 C22 C29 C42 C52 C53 C75 C86 C88 C97 C110 C120 C122 C131 C145 C153 C156 C165",4.7U,19,Regulator/filter capacitors visible in repeated cells,medium,One repeated value may be hidden/merged in PDF text.
+3.3 V regulator input,C175,1U50V,1,3.3 V regulator input capacitor,high,
+3.3 V regulator bulk,C176,220U16V,1,3.3 V regulator bulk capacitor,high,
+3.3 V regulator output,C177,330U10V,1,3.3 V regulator output capacitor,high,
+3.3 V regulator resistor,R162,unknown,1,3.3 V regulator network resistor,low,Value not legible in extracted text.
