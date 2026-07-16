@@ -34,6 +34,7 @@
 # Usage: ./board_test.sh [--port /dev/ttyUSB0] [--baud 115200] [--slave 1]
 #                         [--timeout 2000] [--cli PATH] [--report PATH]
 #                         [--channel N] [--read-only] [--exercise-outputs]
+#                         [--assert-fresh]
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -46,6 +47,7 @@ REPORT=""
 ONLY_CHANNEL=-1
 READ_ONLY=0
 EXERCISE_OUTPUTS=0
+ASSERT_FRESH=0
 
 usage() {
     cat <<EOF
@@ -59,6 +61,12 @@ Usage: $(basename "$0") [options]
   --channel N           Test only channel N (default: all supported channels)
   --read-only            Skip every write test; only exercise read/describe commands
   --exercise-outputs      Also toggle ENABLE/DISABLE-GRACEFUL on switchable channels
+  --assert-fresh          Also assert every channel matches documented factory
+                          defaults (CFG_OUTPUT_ENABLED=1 on switchable channels,
+                          CFG_TARGET_VOLTAGE=0 on DAC channels). Only meaningful
+                          right after a clean erase+flash — a board with any
+                          legitimate prior configuration will fail these checks.
+                          See factory_bringup.sh, which always passes this.
   -h, --help              Show this help
 EOF
 }
@@ -74,6 +82,7 @@ while (($#)); do
     --channel) ONLY_CHANNEL="$2"; shift 2 ;;
     --read-only) READ_ONLY=1; shift ;;
     --exercise-outputs) EXERCISE_OUTPUTS=1; shift ;;
+    --assert-fresh) ASSERT_FRESH=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -204,7 +213,7 @@ finish() {
         echo "- **Port**: $PORT  **Baud**: $BAUD  **Slave**: $SLAVE  **Timeout**: ${TIMEOUT_MS}ms"
         echo "- **CLI**: $CLI"
         [[ -n "${protocol_major:-}" ]] && echo "- **Protocol**: ${protocol_major}.${protocol_minor}  **Variant**: ${variant_id}  **FW**: ${fw_version}  **Channels**: ${channel_count}"
-        echo "- **Read-only**: $((READ_ONLY)) **Exercise-outputs**: $((EXERCISE_OUTPUTS))"
+        echo "- **Read-only**: $((READ_ONLY)) **Exercise-outputs**: $((EXERCISE_OUTPUTS)) **Assert-fresh**: $((ASSERT_FRESH))"
         echo
         echo "| Result | Check |"
         echo "|---|---|"
@@ -418,6 +427,13 @@ for ((ch = 0; ch < channel_count; ch++)); do
     if (( has_drive )); then
         if holding_word "$((base + 3))"; then
             before=$WORD_DEC
+            if (( ASSERT_FRESH )); then
+                if [[ $before -eq 0 ]]; then
+                    pass "ch$ch voltage: factory default confirmed (target=0)"
+                else
+                    fail "ch$ch voltage: NOT at factory default (target=$before, expected 0) — board may have stale NVS state; see factory_bringup.sh"
+                fi
+            fi
             rt_ok=0
             for attempt in 1 2; do
                 cli channel "$ch" voltage "$before"; wr_out="$LAST_OUT"
@@ -442,6 +458,13 @@ for ((ch = 0; ch < channel_count; ch++)); do
     elif (( has_en )); then
         if holding_word "$((base + 17))"; then
             before=$WORD_DEC
+            if (( ASSERT_FRESH )); then
+                if [[ $before -eq 1 ]]; then
+                    pass "ch$ch enable-cfg: factory default confirmed (enabled=1)"
+                else
+                    fail "ch$ch enable-cfg: NOT at factory default (enabled=$before, expected 1) — board may have stale NVS state; see factory_bringup.sh"
+                fi
+            fi
             rt_ok=0
             for attempt in 1 2; do
                 cli channel "$ch" enable-cfg "$before"; wr_out="$LAST_OUT"

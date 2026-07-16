@@ -30,9 +30,41 @@ Options:
 --channel N           Test only channel N (default: all supported channels)
 --read-only            Skip every write test; only exercise read/describe commands
 --exercise-outputs      Also toggle ENABLE/DISABLE-GRACEFUL on switchable channels
+--assert-fresh          Also assert every channel matches documented factory
+                        defaults, not just that reads/writes round-trip
+                        self-consistently. Only meaningful right after a clean
+                        erase+flash — see "Clean bring-up" below.
 ```
 
 Without `--report`, reports are written to `tools/board_test/reports/`.
+
+## Clean bring-up
+
+`west flash` alone only programs the application image — every board
+variant's DTS defines a separate NVS `storage_partition` for persisted
+config/calibration, deliberately outside that image region so it survives
+ordinary firmware updates. That means a plain reflash during bring-up/testing
+can leave a channel's config at whatever it was left at during some earlier
+test session, indistinguishable from a genuine factory-default boot unless
+you know to mass-erase first. `board_test.sh`'s ordinary write checks
+wouldn't have caught this either — they're same-value round trips (read
+current value, write it back, verify unchanged), which pass regardless of
+whether "current value" happens to be the correct default.
+
+```bash
+tools/board_test/factory_bringup.sh --build-dir build_psb_lvb --port /dev/ttyUSB0
+```
+
+This mass-erases the chip (wiping the NVS partition too), reflashes, and runs
+`board_test.sh --assert-fresh` to confirm every channel actually came up at
+its Kconfig-documented default — not just that it's internally consistent.
+Use this whenever you need to know the board's *true* out-of-box state (e.g.
+after changing a Kconfig default), not a plain `west flash`.
+
+This is a bring-up/dev-loop tool for one bench unit with direct SWD access,
+not a manufacturing-line tool. See
+`docs/superpowers/plans/2026-07-16-board-lifecycle-state-management.md` for
+the broader board-lifecycle-state roadmap this is the first step of.
 
 ## Behavior
 
@@ -76,3 +108,11 @@ scratch. On USB-serial adapters (e.g. CH340) back-to-back reopens with no
 gap can intermittently fail to re-establish before the first Modbus
 transaction; the script adds a short settle delay and retries transient
 failures before reporting them.
+
+**Before assuming a bad run means hardware flakiness or a regression, check
+for a process already holding the port** (`fuser /dev/ttyUSB0` or
+`lsof /dev/ttyUSB0`) — `psb_demo_tui`/`psb_demo_cli monitor` left running in
+another terminal will race every `board_test.sh` invocation for the same
+serial port, producing exactly the same symptoms as a degraded USB link
+(intermittent "Connection error", partial multi-register reads failing more
+than single-register ones) but with no hardware cause at all.
