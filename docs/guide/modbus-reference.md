@@ -25,7 +25,7 @@ the wire format needed to talk to it.
 
 | | |
 |---|---|
-| Protocol version | **3.1** (`Protocol Major`=3, `Protocol Minor`=1 — read and check before interpreting anything else) |
+| Protocol version | **3.2** (`Protocol Major`=3, `Protocol Minor`=2 — read and check before interpreting anything else) |
 | Transport | Modbus RTU |
 | Physical layer | RS-485 half-duplex (current variants) |
 | Serial format | 8N1 |
@@ -45,6 +45,14 @@ at channel holding offsets 26–28 (§10) — a client that only knows v3.0 can
 keep working unmodified, since every pre-3.1 register kept its offset, width,
 and meaning, and each axis's exponent defaults to reproducing the old
 fixed-divisor formula exactly.
+
+**v3.2** (additive): added Current Unit Exp at system input offset 15 (§6) —
+declares the decimal exponent for MEASURED_CURRENT/CURRENT_LIMIT_THRESHOLD,
+since different board variants need genuinely different scales (jw_hvb's
+nA-scale sense currents vs. jw_lvb's amp-scale load currents can't both fit
+a fixed unit in an int16). A client that only knows v3.1 has no way to read
+this register and must assume the pre-v3.2 universal -10 (0.1 nA/LSB) —
+correct by construction for every board that predates this register.
 
 ---
 
@@ -86,8 +94,11 @@ addresses, encoding, and semantics — which is transport-agnostic.
 - **Voltage**: raw register value × **0.1 V/LSB** (i.e. ×100 mV). Raw 5000
   = 500.0 V. This applies uniformly to every voltage-flavored register
   (configured target, operational target, measured voltage, ramp steps).
-- **Current**: raw register value × **0.1 nA/LSB**. Raw 10000 = 1000.0 nA.
-  This applies to current threshold and measured-current registers.
+- **Current**: raw register value × **10^Current Unit Exp amperes/LSB**
+  (§6 offset 15, v3.2+) — **board-specific**, not a fixed scale. Default/pre-v3.2
+  assumption is 0.1 nA/LSB (raw 10000 = 1000.0 nA); e.g. jw_lvb instead uses
+  0.1 A/LSB (raw 10000 = 1000.0 A). Applies to current threshold and
+  measured-current registers alike.
 - **Time intervals**: raw × 0.1 = seconds (i.e. raw is deciseconds — "×10"
   in field names below means the raw value is ten times the second count).
   Delay/window fields (auto-retry delay, window) are already in whole
@@ -183,7 +194,8 @@ was rejected outright and had no effect.
 | 12 | Active Operating Mode | UINT16 | REALTIME | See §11.1 |
 | 13 | System Status | UINT16 | REALTIME | Global status bitmask (product-reserved; no bits currently defined) |
 | 14 | Fault Cause | UINT16 | REALTIME | Global fault summary, same bit layout as channel fault cause (§13) |
-| 15–39 | Reserved | — | — | Read as 0, reject writes |
+| 15 | Current Unit Exp | INT16 | FIXED | Decimal exponent: MEASURED_CURRENT / CURRENT_LIMIT_THRESHOLD registers are in units of 10^exp amperes/LSB, board-specific (added v3.2). Default -10 (0.1 nA/LSB, jw_hvb); jw_lvb reports -1 (0.1 A/LSB) — its real load currents are amp-scale, which the old universal 0.1nA/LSB convention couldn't represent at all in an int16 (max ±3.2768 uA). **A client that only knows v3.1 has no way to read this and must assume -10** — that assumption is correct for every board that predates this register, by construction. Voltage has no equivalent; every variant uses a fixed 0.1 V/LSB. |
+| 16–39 | Reserved | — | — | Read as 0, reject writes |
 
 ---
 
@@ -256,7 +268,7 @@ power-cycled while calibrating.
 | 8 | Operational Target Voltage | INT16 | REALTIME | — | Live target, ramps toward Configured Target Voltage; ×0.1 V |
 | 9 | Capability Flags | UINT16 | FIXED | — | Read this before touching any guarded register on this channel — see §12.2 |
 | 10 | Measured Voltage | INT16 | REALTIME | VOLTAGE_MEASUREMENT | Calibrated, ×0.1 V |
-| 11 | Measured Current | INT16 | REALTIME | CURRENT_MEASUREMENT | Calibrated, ×0.1 nA |
+| 11 | Measured Current | INT16 | REALTIME | CURRENT_MEASUREMENT | Calibrated; unit is board-specific — see Current Unit Exp (§6 offset 15) |
 | 12–13 | Raw ADC Voltage HI/LO | INT32 | REALTIME | VOLTAGE_MEASUREMENT | Uncalibrated ADC code — only meaningful in Calibration mode |
 | 14–15 | Raw ADC Current HI/LO | INT32 | REALTIME | CURRENT_MEASUREMENT | Uncalibrated ADC code — only meaningful in Calibration mode |
 | 16–39 | Reserved | — | — | — | Read as 0, reject writes |
@@ -287,7 +299,7 @@ power-cycled while calibrating.
 | 12 | Current Safe Band % | — | `UINT16` percent. Firmware does not range-clamp this field; 0–50 is the conventional/documented range (see `parameter-reference.md`) and values above 100 make the clear-eligibility formula (`threshold × (100−pct)/100`) go negative |
 | 13 | Current Protection Mode | CURRENT_MEASUREMENT | 0=Disabled, 1=FlagOnly, 2=ApplyOutputAction — see §11.6 |
 | 14 | Current Protection Output Action | CURRENT_MEASUREMENT | Same enum as offset 0, evaluated in **Protection** context (§11.2) |
-| 15 | Current Limit Threshold | CURRENT_MEASUREMENT | ×0.1 nA, compared directly against Measured Current |
+| 15 | Current Limit Threshold | CURRENT_MEASUREMENT | Same board-specific unit as Measured Current (§6 offset 15), compared directly against it |
 | 16 | Auto Derate Step | RAW_OUTPUT_DRIVE + VOLTAGE_MEASUREMENT | ×0.1 V subtracted from target per retry attempt under AutoDerateRetry |
 | 17–19 | Reserved | — | Read as 0, reject writes |
 
@@ -303,7 +315,7 @@ attempt outside Calibration mode returns exception `0x03`.
 | 22 | Measured Voltage Cal K | VOLTAGE_MEASUREMENT | `UINT16` mantissa — see §10 formula |
 | 23 | Measured Voltage Cal B | VOLTAGE_MEASUREMENT | `INT16`, raw offset in ×0.1 V units |
 | 24 | Measured Current Cal K | CURRENT_MEASUREMENT | `UINT16` mantissa — see §10 formula |
-| 25 | Measured Current Cal B | CURRENT_MEASUREMENT | `INT16`, raw offset in ×0.1 nA units |
+| 25 | Measured Current Cal B | CURRENT_MEASUREMENT | `INT16`, raw offset in the same board-specific current unit (§6 offset 15) |
 | 26 | Output Cal K Exp | RAW_OUTPUT_DRIVE | `INT16` decimal exponent, valid range -9..4. Default -4 (added v3.1) |
 | 27 | Measured Voltage Cal K Exp | VOLTAGE_MEASUREMENT | `INT16` decimal exponent, valid range -9..4. Default -6 (added v3.1) |
 | 28 | Measured Current Cal K Exp | CURRENT_MEASUREMENT | `INT16` decimal exponent, valid range -9..4. Default -6 (added v3.1) |
@@ -570,9 +582,11 @@ is the exception code, Illegal Data Address.)
       not as an error to retry.
 - [ ] Don't poll `COMMAND`-category registers — they're write-only triggers
       and read back 0 immediately after a successful write (§5).
-- [ ] Apply the correct scale per field: 0.1 V/LSB for voltage, 0.1 nA/LSB
-      for current, the calibration-specific divisor for Cal K (§10), plain
-      integer percent for safe band — don't assume one universal scale.
+- [ ] Apply the correct scale per field: 0.1 V/LSB for voltage (universal),
+      10^Current Unit Exp amperes/LSB for current (§6 offset 15, v3.2+ —
+      **board-specific, read it rather than assuming 0.1 nA/LSB**), the
+      calibration-specific mantissa/exponent for Cal K (§10), plain integer
+      percent for safe band — don't assume one universal scale.
 - [ ] Respect the Output Action host/protection context split (§11.2) — the
       same enum, two different valid subsets depending on which offset
       you're writing.

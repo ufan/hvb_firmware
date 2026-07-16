@@ -47,12 +47,20 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         }, /*autoCommit=*/true);
 
     // ---- Status toggle button ----
+    // "On" is capability-aware — see channelIsOn() in tui_policy.h. A plain
+    // OUTPUT_ENABLE_ACTIVE or OUTPUT_DRIVE_NONZERO bit alone is wrong for at
+    // least one channel shape each (fixed-voltage channels have no drive
+    // concept; a DAC channel with an enable gate can be "enabled" while
+    // legitimately driving 0).
     auto bopt = ButtonOption{};
     bopt.transform = [&s, ch](const EntryState& es) -> Element {
-        uint16_t st = s.data.valid ? s.data.chInfo[ch].status : 0;
-        int16_t tv  = s.data.valid ? s.data.chInfo[ch].operationalTargetVoltageRaw : 0;
-        bool ramp   = (st & ChStatus::RAMPING_ACTIVE) != 0;
-        bool on     = (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0 && tv != 0;
+        uint16_t caps = s.data.valid ? s.data.chInfo[ch].chCapFlags : 0;
+        uint16_t st   = s.data.valid ? s.data.chInfo[ch].status : 0;
+        bool ramp = (st & ChStatus::RAMPING_ACTIVE) != 0;
+        bool on   = channelIsOn((caps & CH_CAP_OUTPUT_ENABLE) != 0,
+                                (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0,
+                                (st & ChStatus::OUTPUT_ENABLE_ACTIVE) != 0,
+                                (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0);
         Element e;
         if (ramp)      e = text("[ RAMP ]") | color(Color::Yellow) | bold;
         else if (on)   e = text("[  ON  ]") | color(Color::Green) | bold;
@@ -61,13 +69,16 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         return e;
     };
     auto statusBtn = Button("", [&s, &inputs, ch, refreshCh] {
-        const uint16_t st = s.data.chInfo[ch].status;
+        const uint16_t caps = s.data.chInfo[ch].chCapFlags;
+        const uint16_t st   = s.data.chInfo[ch].status;
+        const bool on = channelIsOn((caps & CH_CAP_OUTPUT_ENABLE) != 0,
+                                    (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0,
+                                    (st & ChStatus::OUTPUT_ENABLE_ACTIVE) != 0,
+                                    (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0);
         const auto action = statusClickAction(
             s.data.valid,
             (st & ChStatus::RAMPING_ACTIVE) != 0,
-            s.data.chCfg[ch].configuredTargetVRaw,
-            s.data.chInfo[ch].operationalTargetVoltageRaw,
-            (st & ChStatus::OUTPUT_DRIVE_NONZERO) != 0);
+            on);
         if (action == StatusClickAction::None) return;
 
         const bool disabling = action == StatusClickAction::DisableGraceful;
@@ -111,7 +122,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
             int  iIdx   = inputs.iActIdx[ch];
             auto action = kIActVals[iIdx >= 0 && iIdx < 4 ? iIdx : 0];
-            auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]) * 1e-9);
+            auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]), s.data.sysInfo.currentUnitExp);
             postWrite(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); },
                 refreshCh);
@@ -162,7 +173,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
     static const std::vector<std::string> kHeaders = {
         // "Vset" is dual-purpose: target voltage on DAC channels, on/off
         // cycler on fixed-voltage switchable channels — see the render loop.
-        "", "Vset/En", "Status", "Vop", "V (V)", "I (nA)",
+        "", "Vset/En", "Status", "Vop", "V (V)", "I",
         "Ru", "Rd", "Limit", "Fault", "Clear", "Save",
     };
 
@@ -212,12 +223,19 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
                 cells.push_back(rows->at(ch).outputEnabledCyc->Render() | center);
             else
                 cells.push_back(text(unsupportedMonitorCellLabel()) | center);
-            cells.push_back(hasOut ? rows->at(ch).statusBtn->Render() | center
-                                   : text(unsupportedMonitorCellLabel()) | center);
-            cells.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | center);
+            // Status is meaningful whenever there's any output capability at
+            // all — including a drive-only channel with no enable gate (see
+            // channelIsOn() in tui_policy.h), not just hasOut alone.
+            cells.push_back((hasOut || hasDrive) ? rows->at(ch).statusBtn->Render() | center
+                                                  : text(unsupportedMonitorCellLabel()) | center);
+            // Vop (operational/ramping target) is only meaningful on DAC
+            // channels — fixed-voltage channels have no target-voltage concept
+            // at all (readChannelInfo never populates it for them).
+            cells.push_back(hasDrive ? text(fmtVoltage(ci.operationalTargetVoltageRaw)) | center
+                                     : text(unsupportedMonitorCellLabel()) | center);
             cells.push_back(hasVolt ? text(fmtVoltage(ci.voltageRaw)) | center
                                     : text(unsupportedMonitorCellLabel()) | center);
-            cells.push_back(hasCurr ? text(fmtCurrentNA(ci.currentRaw)) | center
+            cells.push_back(hasCurr ? text(fmtCurrentAuto(ci.currentRaw, s.data.sysInfo.currentUnitExp)) | center
                                     : text(unsupportedMonitorCellLabel()) | center);
             cells.push_back(hasDrive ? rows->at(ch).rampUpInp->Render() | center
                                      : text(unsupportedMonitorCellLabel()) | center);

@@ -12,15 +12,38 @@ TEST_CASE("port selection falls back to the first available port") {
     CHECK(selectedPortIndex({}, "missing") == -1);
 }
 
-TEST_CASE("status click has no action for invalid, ramping, or zero-target off channels") {
-    CHECK(statusClickAction(false, false, 10, 0, false) == StatusClickAction::None);
-    CHECK(statusClickAction(true, true, 10, 0, false) == StatusClickAction::None);
-    CHECK(statusClickAction(true, false, 0, 0, false) == StatusClickAction::None);
+TEST_CASE("status click has no action when invalid or ramping") {
+    CHECK(statusClickAction(false, false, false) == StatusClickAction::None);
+    CHECK(statusClickAction(true, true, false) == StatusClickAction::None);
+    CHECK(statusClickAction(true, true, true) == StatusClickAction::None);
 }
 
-TEST_CASE("status click enables a target and gracefully disables an active output") {
-    CHECK(statusClickAction(true, false, 10, 0, false) == StatusClickAction::Enable);
-    CHECK(statusClickAction(true, false, 10, 10, true) == StatusClickAction::DisableGraceful);
+TEST_CASE("status click enables a disabled channel and gracefully disables an enabled one") {
+    CHECK(statusClickAction(true, false, false) == StatusClickAction::Enable);
+    CHECK(statusClickAction(true, false, true) == StatusClickAction::DisableGraceful);
+}
+
+TEST_CASE("channelIsOn is capability-aware") {
+    // Both OUTPUT_ENABLE and RAW_OUTPUT_DRIVE (e.g. jw_hvb): enabled AND driving.
+    CHECK(channelIsOn(true, true, true, true));
+    CHECK_FALSE(channelIsOn(true, true, true, false));   // enabled but driving 0 -> off
+    CHECK_FALSE(channelIsOn(true, true, false, true));
+    CHECK_FALSE(channelIsOn(true, true, false, false));
+
+    // OUTPUT_ENABLE only (e.g. jw_lvb fixed-voltage channels): enable gate alone.
+    CHECK(channelIsOn(true, false, true, false));
+    CHECK(channelIsOn(true, false, true, true));
+    CHECK_FALSE(channelIsOn(true, false, false, false));
+    CHECK_FALSE(channelIsOn(true, false, false, true));
+
+    // RAW_OUTPUT_DRIVE only (a DAC with no enable gate): drive value alone.
+    CHECK(channelIsOn(false, true, false, true));
+    CHECK(channelIsOn(false, true, true, true));
+    CHECK_FALSE(channelIsOn(false, true, false, false));
+    CHECK_FALSE(channelIsOn(false, true, true, false));
+
+    // Neither capability: never on.
+    CHECK_FALSE(channelIsOn(false, false, true, true));
 }
 
 TEST_CASE("protection requires both measurement capabilities") {

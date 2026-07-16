@@ -123,7 +123,13 @@ bool FactorySession::connect(const std::string& port, int baud, int slaveId) {
     // "cal sample", which needs longer headroom for the firmware's internal
     // wait — that's scoped directly in PsbModbusClient::sendCalibrationSampleCommand
     // so routine commands stay fast.
-    return m_client.connect(port, baud, slaveId);
+    if (!m_client.connect(port, baud, slaveId)) return false;
+    // Warm PsbModbusClient::currentUnitExp()'s cache immediately — some
+    // commands (e.g. "watch adc") never otherwise call readSystemInfo() in
+    // this session, and would silently keep the -10 (0.1nA/LSB) default
+    // forever on a board that declares a different unit.
+    m_client.readSystemInfo();
+    return true;
 }
 
 void FactorySession::disconnect() {
@@ -169,7 +175,8 @@ void FactorySession::runWatch(WatchMode mode, int intervalMs, std::ostream& out)
             auto ci = m_client.readChannelInfo(ch);
             ss << "  V=" << std::fixed << std::setprecision(1)
                << reg::voltageToV(ci.voltageRaw) << "V"
-               << " I=" << reg::currentToA(ci.currentRaw) * 1e6 << "uA";
+               << "  I=" << reg::formatAmpsAuto(
+                     reg::currentToA(ci.currentRaw, m_client.currentUnitExp()));
         }
         if (mode == WatchMode::Status || mode == WatchMode::All) {
             auto si = m_client.readSystemInfo();

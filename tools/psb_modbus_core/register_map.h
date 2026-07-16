@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <string>
 
 // Shared register map from firmware — single UINT16 registers, raw LSB values
 #include "reg_store/reg_map.h"
@@ -96,11 +99,42 @@ inline double voltageToV(int16_t raw) {
 inline int16_t voltageFromV(double v) {
     return static_cast<int16_t>(v / scale::VOLTAGE_LSB_TO_V + 0.5);
 }
+// Legacy fixed-scale overloads — assume the pre-v3.2 universal 0.1nA/LSB.
+// Prefer the (raw, unitExp) overloads below wherever a live SystemInfo /
+// PsbModbusClient::currentUnitExp() is available: different board variants
+// can declare a different current-register unit (see SYS_CURRENT_UNIT_EXP,
+// v3.2+) — e.g. jw_lvb's real load currents are amp-scale, not nA-scale, and
+// these fixed-constant overloads would silently misinterpret them by ~9
+// orders of magnitude.
 inline double currentToA(int16_t raw) {
     return static_cast<double>(raw) * scale::CURRENT_LSB_TO_A;
 }
 inline int16_t currentFromA(double a) {
     return static_cast<int16_t>(a / scale::CURRENT_LSB_TO_A + 0.5);
+}
+
+// Variant-aware: unitExp is the board's declared decimal exponent (10^exp
+// amperes/LSB) — see PsbModbusClient::currentUnitExp() / SystemInfo::currentUnitExp.
+inline double currentToA(int16_t raw, int16_t unitExp) {
+    return static_cast<double>(raw) * std::pow(10.0, unitExp);
+}
+inline int16_t currentFromA(double a, int16_t unitExp) {
+    return static_cast<int16_t>(a / std::pow(10.0, unitExp) + 0.5);
+}
+
+// Formats an already-converted ampere value with an auto-selected SI prefix
+// (nA/uA/mA/A), so display code never has to assume — or hardcode a label
+// for — which magnitude a given board's declared current unit lands in.
+inline std::string formatAmpsAuto(double amps, int precision = 3) {
+    double mag = std::fabs(amps);
+    const char* unit; double scale;
+    if (mag >= 1.0)          { unit = "A";  scale = 1.0; }
+    else if (mag >= 1e-3)    { unit = "mA"; scale = 1e3; }
+    else if (mag >= 1e-6)    { unit = "uA"; scale = 1e6; }
+    else                     { unit = "nA"; scale = 1e9; }
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%+.*f %s", precision, amps * scale, unit);
+    return buf;
 }
 
 // Time — single-register UINT16 seconds

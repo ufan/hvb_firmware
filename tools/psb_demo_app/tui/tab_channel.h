@@ -71,7 +71,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         try {
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
             auto action = kIActVals.at(inputs.iActIdx[ch]);
-            auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]) * 1e-9);
+            auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]), s.data.sysInfo.currentUnitExp);
             postWrite(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); }, refreshCh);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
@@ -179,7 +179,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
             Elements liveParts;
             if (hasVolts) { liveParts.push_back(text("  Vop: ")); liveParts.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | bold); }
             if (hasVolts) { liveParts.push_back(text("   V: "));  liveParts.push_back(text(fmtVoltage(ci.voltageRaw)) | bold); }
-            if (hasCurr)  { liveParts.push_back(text("   I: "));  liveParts.push_back(text(fmtCurrentNA(ci.currentRaw)) | bold); }
+            if (hasCurr)  { liveParts.push_back(text("   I: "));  liveParts.push_back(text(fmtCurrentAuto(ci.currentRaw, s.data.sysInfo.currentUnitExp)) | bold); }
             liveParts.push_back(text("   Status: "));
             liveParts.push_back(text(statusBadge(ci.status)) | bold);
             liveParts.push_back(text("   Retries: "));
@@ -218,7 +218,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         if (hasProtection()) {
             protPanel = window(text(" Protection Policy "), vbox({
                 emptyElement(),
-                hbox({ text("Limit  : "), iThrInp->Render() | flex, text(" nA") }),
+                hbox({ text("Limit  : "), iThrInp->Render() | flex, text(" A") }),
                 hbox({ text("Mode   : "), iModeC->Render() | flex }),
                 hbox({ text("Action : "), iActC->Render() | flex }),
                 hbox({ bClrAct->Render(), text("  "), bClrHist->Render() }),

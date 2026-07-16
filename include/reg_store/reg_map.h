@@ -41,6 +41,18 @@
  *     is now k * 10^k_exp rather than a fixed-divisor k alone; k_exp defaults
  *     reproduce the old fixed divisors exactly, so existing k/b values are
  *     unaffected unless k_exp is deliberately changed.
+ *
+ * Additive changes in v3.2 (non-breaking):
+ *   - SYS_CURRENT_UNIT_EXP added at system input offset 15 (previously
+ *     reserved). Declares the decimal exponent for MEASURED_CURRENT /
+ *     CURRENT_LIMIT_THRESHOLD: those registers are in units of
+ *     10^CURRENT_UNIT_EXP amperes per LSB, board-specific (a single fixed
+ *     unit can't span both nA-scale sense currents and amp-scale load
+ *     currents in an int16). Defaults to -10 (0.1 nA/LSB), the value every
+ *     board used before this register existed, so a client that only knows
+ *     v3.1 and assumes 0.1 nA/LSB is unaffected unless it's actually talking
+ *     to a variant that overrides it (e.g. jw_lvb, -1 = 0.1 A/LSB). Voltage
+ *     has no equivalent register — every variant uses a fixed 0.1 V/LSB.
  */
 
 #ifndef REG_STORE_REG_MAP_H
@@ -49,7 +61,7 @@
 #include "dt-bindings/voltage_control/capabilities.h"
 
 #define VC_PROTOCOL_MAJOR             3
-#define VC_PROTOCOL_MINOR             1
+#define VC_PROTOCOL_MINOR             2
 #define VC_PROTOCOL_MAX_CHANNELS      16
 
 /* System capability flags (SYS_CAPABILITY_FLAGS input register) */

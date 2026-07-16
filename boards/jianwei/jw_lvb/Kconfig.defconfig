@@ -9,6 +9,13 @@ config LVB_VC_CHANNEL
 config VC_VARIANT_ID
 	default 2
 
+# LVB channels drive real loads at amp scale, not the nA-scale sense currents
+# jw_hvb measures — the default 0.1nA/LSB unit can only represent up to
+# 3.2768uA in an int16, nowhere near enough. 0.1A/LSB (+-3276.7A range)
+# actually fits this board's real currents.
+config VC_CURRENT_UNIT_EXP
+	default -1
+
 # All 10 channels are fixed-voltage (no DAC); the reference firmware drives
 # every channel active at boot, individually switchable afterward except
 # channel 1 (locked always-on, see jw_lvb.dts vc_ch0's capabilities).
@@ -22,22 +29,23 @@ config VC_DEFAULT_OUTPUT_ENABLED
 config VC_DEFAULT_OPERATING_MODE
 	default 1
 
-# Pre-calibration plausible-reading defaults, derived from the pwb_firmware
-# reference measure.c conversion (voltage gain ~5.6x, current gain ~16x).
-# jw_lvb has no attenuating divider ahead of the ADC the way jw_hvb does, so
-# these gains are super-unity — only representable with the k_exp decimal
-# exponent (see lib/voltage_control/Kconfig), not the legacy fixed-divisor
-# format. Real per-unit calibration supersedes these once run.
+# Pre-calibration plausible-reading default for voltage, derived from the
+# pwb_firmware reference measure.c conversion (gain ~5.6x). jw_lvb has no
+# attenuating divider ahead of the ADC the way jw_hvb does, so this gain is
+# super-unity — only representable with the k_exp decimal exponent (see
+# lib/voltage_control/Kconfig), not the legacy fixed-divisor format. Real
+# per-unit calibration supersedes this once run.
 config VC_DEFAULT_MEASURED_V_CAL_K
 	default 56000
 
 config VC_DEFAULT_MEASURED_V_CAL_K_EXP
 	default -4
 
-config VC_DEFAULT_MEASURED_I_CAL_K
-	default 16000
-
-config VC_DEFAULT_MEASURED_I_CAL_K_EXP
-	default -3
+# Current is left at the library's neutral k=1/exp=0 placeholder (gain=1.0,
+# i.e. raw ADC counts pass through numerically unchanged into the
+# CURRENT_UNIT_EXP=-1 (0.1A/LSB) register) rather than a guessed gain. The
+# ~16x figure used here previously was derived assuming the old universal
+# 0.1nA/LSB unit and is not valid under 0.1A/LSB — needs real bench
+# calibration against this board's actual current sensor, not a guess.
 
 endif # BOARD_JW_LVB

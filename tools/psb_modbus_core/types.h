@@ -118,6 +118,11 @@ struct SystemInfo {
     OpMode activeOpMode = OpMode::Normal;
     uint16_t sysStatus = 0;
     uint16_t faultCause = 0;
+    // Decimal exponent: MEASURED_CURRENT/CURRENT_LIMIT_THRESHOLD registers
+    // are in units of 10^currentUnitExp amperes/LSB (v3.2+; -10 = the fixed
+    // 0.1nA/LSB every board used before this field existed, and what a
+    // pre-v3.2 board is assumed to be since it has no way to report otherwise).
+    int16_t currentUnitExp = -10;
 };
 
 struct ChannelInfo {

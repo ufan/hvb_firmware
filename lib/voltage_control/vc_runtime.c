@@ -63,6 +63,7 @@ static const uint16_t vc_capability_flags =
 static const uint16_t vc_supported_channels = VC_MAX_CHANNELS;
 static const uint16_t vc_active_channel_mask =
 	(uint16_t)((1UL << VC_MAX_CHANNELS) - 1UL);
+static const int16_t vc_current_unit_exp = CONFIG_VC_CURRENT_UNIT_EXP;
 
 static void vc_catalog_release(void)
 {
@@ -608,6 +609,7 @@ const STRUCT_SECTION_ITERABLE_ARRAY(reg_descriptor, vc_catalog_channel_regs,
 #define VC_GLOBAL_VALUE_CAPABILITY_FLAGS (&vc_capability_flags)
 #define VC_GLOBAL_VALUE_SUPPORTED_CHANNELS (&vc_supported_channels)
 #define VC_GLOBAL_VALUE_ACTIVE_CHANNEL_MASK (&vc_active_channel_mask)
+#define VC_GLOBAL_VALUE_CURRENT_UNIT_EXP (&vc_current_unit_exp)
 #define VC_GLOBAL_VALUE_ACTIVE_OPERATING_MODE NULL
 #define VC_GLOBAL_VALUE_STATUS NULL
 #define VC_GLOBAL_VALUE_FAULT_CAUSE NULL

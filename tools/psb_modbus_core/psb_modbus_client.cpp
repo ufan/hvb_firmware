@@ -17,6 +17,7 @@ struct PsbModbusClient::Impl {
     bool connected = false;
     std::string errorText;
     FrameCallback frameCb;
+    int16_t currentUnitExp = -10;  // see PsbModbusClient::currentUnitExp()
 
     // Test mode — direct array access (bypasses Modbus RTU)
     uint16_t* testInputRegs = nullptr;
@@ -87,6 +88,7 @@ void PsbModbusClient::disconnect()    { m_impl->disconnect(); }
 bool PsbModbusClient::isConnected() const { return m_impl->connected || m_impl->testInputRegs; }
 std::string PsbModbusClient::lastError() const { return m_impl->errorText; }
 int PsbModbusClient::slaveId() const { return m_impl->slaveId; }
+int16_t PsbModbusClient::currentUnitExp() const { return m_impl->currentUnitExp; }
 
 void PsbModbusClient::attachTestArrays(uint16_t* inputRegs, uint16_t* holdingRegs, int maxAddr) {
     m_impl->testInputRegs = inputRegs;
@@ -282,8 +284,8 @@ SystemInfo PsbModbusClient::readSystemInfo() {
     SystemInfo info;
     if (!checkConnected()) return info;
 
-    uint16_t buf[15] = {};
-    if (!readRegsInternal(false, reg::sysAddr(0), 15, buf)) return info;
+    uint16_t buf[16] = {};
+    if (!readRegsInternal(false, reg::sysAddr(0), 16, buf)) return info;
 
     info.protoMajor       = static_cast<int>(buf[SYS_PROTOCOL_MAJOR]);
     info.protoMinor       = static_cast<int>(buf[SYS_PROTOCOL_MINOR]);
@@ -298,6 +300,17 @@ SystemInfo PsbModbusClient::readSystemInfo() {
     info.activeOpMode     = static_cast<OpMode>(buf[SYS_ACTIVE_OPERATING_MODE]);
     info.sysStatus        = buf[SYS_STATUS];
     info.faultCause       = buf[SYS_FAULT_CAUSE];
+    // v3.2+: declares the decimal exponent for MEASURED_CURRENT/
+    // CURRENT_LIMIT_THRESHOLD (10^exp amperes/LSB), board-specific. Offset 15
+    // is "reserved, reads as 0" on a pre-v3.2 board (not a read failure — the
+    // protocol convention is reserved registers read 0, not an exception), so
+    // reading 0 there does NOT mean "0.1nA/LSB" for an old board; it means
+    // "no such register." Gate on the protocol version, not the raw value.
+    info.currentUnitExp = (info.protoMajor > 3 ||
+                           (info.protoMajor == 3 && info.protoMinor >= 2))
+        ? static_cast<int16_t>(buf[SYS_CURRENT_UNIT_EXP])
+        : -10;
+    m_impl->currentUnitExp = info.currentUnitExp;
     return info;
 }
 

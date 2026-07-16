@@ -21,6 +21,14 @@ public:
     bool isConnected() const;
     std::string lastError() const;
     int slaveId() const;
+    // Decimal exponent for MEASURED_CURRENT/CURRENT_LIMIT_THRESHOLD registers
+    // (10^exp amperes/LSB), cached from the last successful readSystemInfo()
+    // call — -10 (0.1nA/LSB) before any connection, matching every pre-v3.2
+    // board. Formatting helpers (currentToA/currentFromA in register_map.h)
+    // need this to interpret a raw current register correctly; reading it
+    // fresh on every format call would mean an extra Modbus round-trip per
+    // display, so it's cached here instead.
+    int16_t currentUnitExp() const;
 
     // Direct test mode — inject register arrays (bypasses Modbus RTU)
     void attachTestArrays(uint16_t* inputRegs, uint16_t* holdingRegs, int maxAddr);

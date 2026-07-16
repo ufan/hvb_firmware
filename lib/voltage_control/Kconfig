@@ -21,6 +21,24 @@ config VC_VARIANT_ID
 	  Reported in the VARIANT_ID Modbus register so host tools can adapt
 	  their behaviour to the connected board type.
 
+config VC_CURRENT_UNIT_EXP
+	int "Decimal exponent for the current-measurement register unit"
+	default -10
+	range -15 0
+	help
+	  MEASURED_CURRENT and CURRENT_LIMIT_THRESHOLD are raw int16 registers
+	  whose physical unit is 10^VC_CURRENT_UNIT_EXP amperes per LSB.
+	  Reported in the CURRENT_UNIT_EXP Modbus register so host tools know
+	  how to interpret them, instead of assuming a fixed unit for every
+	  variant. This is board-specific because a single fixed unit can't
+	  span both nA-scale sense currents and amp-scale load currents in an
+	  int16 (max representable magnitude is 32767 * 10^exp amperes) — the
+	  calibration gain (measured_current_calib_k/_exp) only controls the
+	  raw-ADC-to-register conversion, not what physical unit the resulting
+	  register value is declared to mean. Default -10 (0.1 nA/LSB)
+	  preserves the value every board used before this option existed.
+	  Voltage has no equivalent — every variant uses a fixed 0.1V/LSB.
+
 config VC_CHANNEL_CONTROLLER
 	bool "VC channel controller DTS aggregation"
 	default y

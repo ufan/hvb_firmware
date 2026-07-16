@@ -110,9 +110,13 @@ inline void syncDataToInputs(const ScannedData& data, ConfigInputs& cfg) {
             cfg.rdStep[ch] = buf;
         }
         {
-            double a = reg::currentToA(cc.iLimitThresholdRaw);
-            char buf[16];
-            snprintf(buf, sizeof(buf), "%.0f", a * 1e9);
+            // Amperes, not a hardcoded nA scale — the board's declared
+            // current-unit exponent (data.sysInfo.currentUnitExp) can put the
+            // real magnitude anywhere from nA (jw_hvb) to whole amps (jw_lvb);
+            // %.9g adapts precision to whatever that turns out to be.
+            double a = reg::currentToA(cc.iLimitThresholdRaw, data.sysInfo.currentUnitExp);
+            char buf[24];
+            snprintf(buf, sizeof(buf), "%.9g", a);
             cfg.iThr[ch] = buf;
         }
 

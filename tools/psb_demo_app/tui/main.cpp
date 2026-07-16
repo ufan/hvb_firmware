@@ -26,13 +26,40 @@ static psb::ConfigManager   g_cfg;
 static std::atomic<bool>    g_connected{false};
 static int g_pollInterval = 1;
 
+// Reads never surface failure to the caller (readChannelInfo/Config/CalConfig
+// return a plain struct, defaulted/partial on a transient read error, with
+// isConnected() unaffected). doFullScan runs exactly once at connect time,
+// right where this codebase has repeatedly observed USB-serial (e.g. CH340)
+// reopen flakiness bite hardest — so retry each read once, using lastError()
+// changing as the per-call failure signal (it's sticky/never cleared on
+// success, so comparing before/after isolates whether *this* call set a new
+// one). Without this, a single glitched read permanently corrupts that one
+// channel's displayed data until the user manually interacts with it
+// (triggering refreshCh) or reconnects.
+template <typename Fn>
+static auto readWithRetry(Fn&& fn) -> decltype(fn()) {
+    auto before = g_client.lastError();
+    auto result = fn();
+    if (g_client.lastError() != before) {
+        result = fn();
+    }
+    return result;
+}
+
 static void doFullScan(psb::tui::ScannedData& data) {
-    data.sysInfo = g_client.readSystemInfo();
+    data.sysInfo = readWithRetry([&] { return g_client.readSystemInfo(); });
     int n = data.numChannels();
-    for (int ch = 0; ch < n; ++ch) data.chInfo[ch]   = g_client.readChannelInfo(ch);
-    data.sysCfg  = g_client.readSystemConfig();
-    for (int ch = 0; ch < n; ++ch) data.chCfg[ch]    = g_client.readChannelConfig(ch, data.chInfo[ch].chCapFlags);
-    for (int ch = 0; ch < n; ++ch) data.chCalCfg[ch] = g_client.readChannelCalConfig(ch, data.chInfo[ch].chCapFlags);
+    for (int ch = 0; ch < n; ++ch)
+        data.chInfo[ch] = readWithRetry([&] { return g_client.readChannelInfo(ch); });
+    data.sysCfg = readWithRetry([&] { return g_client.readSystemConfig(); });
+    for (int ch = 0; ch < n; ++ch)
+        data.chCfg[ch] = readWithRetry([&] {
+            return g_client.readChannelConfig(ch, data.chInfo[ch].chCapFlags);
+        });
+    for (int ch = 0; ch < n; ++ch)
+        data.chCalCfg[ch] = readWithRetry([&] {
+            return g_client.readChannelCalConfig(ch, data.chInfo[ch].chCapFlags);
+        });
 }
 
 static void doPollScan(psb::tui::ScannedData& data) {

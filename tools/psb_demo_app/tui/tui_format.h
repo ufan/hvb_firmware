@@ -31,16 +31,12 @@ inline std::string fmtVoltage(int16_t raw) {
     return buf;
 }
 
-inline std::string fmtCurrentUA(int16_t raw) {
-    char buf[24];
-    snprintf(buf, sizeof(buf), "%+.3f uA", psb::reg::currentToA(raw) * 1e6);
-    return buf;
-}
-
-inline std::string fmtCurrentNA(int16_t raw) {
-    char buf[24];
-    snprintf(buf, sizeof(buf), "%+.1f nA", psb::reg::currentToA(raw) * 1e9);
-    return buf;
+// unitExp is the board's declared decimal exponent (SystemInfo::currentUnitExp
+// / PsbModbusClient::currentUnitExp()) — a hardcoded "uA"/"nA" label is wrong
+// for any board that isn't jw_hvb-style nA-scale (e.g. jw_lvb's real load
+// currents are amp-scale), so this auto-selects nA/uA/mA/A per formatAmpsAuto().
+inline std::string fmtCurrentAuto(int16_t raw, int16_t unitExp) {
+    return psb::reg::formatAmpsAuto(psb::reg::currentToA(raw, unitExp));
 }
 
 inline std::string fmtInterval(uint16_t raw) {

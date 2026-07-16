@@ -36,19 +36,18 @@ TEST_CASE("fmtVoltage") {
     CHECK(fmtVoltage(-1000) == "-100.0 V");
 }
 
-TEST_CASE("fmtCurrentUA") {
-    // 1 LSB = 0.1 nA; 32767 LSB = 3.2767 µA
-    CHECK(fmtCurrentUA(32767) == "+3.277 uA");
-    CHECK(fmtCurrentUA(0)     == "+0.000 uA");
-    CHECK(fmtCurrentUA(-1000) == "-0.100 uA");
-}
+TEST_CASE("fmtCurrentAuto is variant-aware via the unitExp parameter") {
+    // jw_hvb-style (unitExp=-10, 0.1nA/LSB): auto-selects uA/nA by magnitude.
+    CHECK(fmtCurrentAuto(32767, -10) == "+3.277 uA");
+    CHECK(fmtCurrentAuto(0, -10)     == "+0.000 nA");
+    CHECK(fmtCurrentAuto(1000, -10)  == "+100.000 nA");
+    CHECK(fmtCurrentAuto(-1000, -10) == "-100.000 nA");
 
-TEST_CASE("fmtCurrentNA") {
-    // Monitor table cell — one decimal place so sub-nA readings aren't
-    // rounded away to an indistinguishable integer.
-    CHECK(fmtCurrentNA(32767) == "+3276.7 nA");
-    CHECK(fmtCurrentNA(0)     == "+0.0 nA");
-    CHECK(fmtCurrentNA(-1000) == "-100.0 nA");
+    // jw_lvb-style (unitExp=-1, 0.1A/LSB): the same raw magnitudes that read
+    // as nA/uA above now correctly read as whole amps/milliamps — this is
+    // exactly the case a hardcoded "nA" label got wrong before.
+    CHECK(fmtCurrentAuto(500, -1) == "+50.000 A");
+    CHECK(fmtCurrentAuto(5, -1)   == "+500.000 mA");
 }
 
 TEST_CASE("fmtInterval") {

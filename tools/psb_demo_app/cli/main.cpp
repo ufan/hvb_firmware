@@ -23,13 +23,10 @@ static std::string formatVRaw(uint16_t raw) {
     ss << raw << " LSB ≈ " << std::showpos << std::fixed << std::setprecision(1) << v << " V";
     return ss.str();
 }
-static std::string formatIRaw(uint16_t raw) {
-    auto a = psb::reg::currentToA(raw);
+static std::string formatIRaw(uint16_t raw, int16_t currentUnitExp) {
+    auto a = psb::reg::currentToA(static_cast<int16_t>(raw), currentUnitExp);
     std::ostringstream ss;
-    ss << raw << " LSB ≈ ";
-    if (std::abs(a) >= 1.0) ss << std::fixed << std::setprecision(3) << a << " A";
-    else if (std::abs(a) >= 1e-3) ss << (a * 1e3) << " mA";
-    else ss << (a * 1e6) << " uA";
+    ss << raw << " LSB ≈ " << psb::reg::formatAmpsAuto(a);
     return ss.str();
 }
 
@@ -151,7 +148,7 @@ int cmdStatus() {
         if (!g_client->isConnected()) { std::cerr << "Error ch" << ch << "\n"; break; }
         std::cout << "=== Channel " << ch << " ===\n";
         printSep("Measured Voltage:", formatVRaw(ci.voltageRaw));
-        printSep("Measured Current:", formatIRaw(ci.currentRaw));
+        printSep("Measured Current:", formatIRaw(ci.currentRaw, sysInfo.currentUnitExp));
         printSep("Operational Target:", formatVRaw(ci.operationalTargetVoltageRaw));
         printSep("Status:", formatHex(ci.status));
         printStatusBits(ci.status);
@@ -203,6 +200,7 @@ int cmdChannelConfig(int ch) {
     uint16_t caps = g_client->readChannelInfo(ch).chCapFlags;
     auto cfg = g_client->readChannelConfig(ch, caps);
     if (!g_client->isConnected()) return 1;
+    int16_t currentUnitExp = g_client->readSystemInfo().currentUnitExp;
     std::cout << "=== Channel " << ch << " Configuration ===\n";
     if (caps & CH_CAP_RAW_OUTPUT_DRIVE) {
         printSep("Configured Target:", formatVRaw(cfg.configuredTargetVRaw));
@@ -225,7 +223,7 @@ int cmdChannelConfig(int ch) {
     printSep("I Safe Band:", std::to_string(cfg.currentSafeBandPct) + "%");
     if (caps & CH_CAP_CURRENT_MEASUREMENT) {
         printSep("I Protection:", std::string(psb::protectionModeName(cfg.iProtMode)) + " / "
-                 + psb::outputActionName(cfg.iProtOutputAction) + " / " + formatIRaw(cfg.iLimitThresholdRaw));
+                 + psb::outputActionName(cfg.iProtOutputAction) + " / " + formatIRaw(cfg.iLimitThresholdRaw, currentUnitExp));
     } else {
         printSep("I Protection:", "n/a — no current measurement");
     }
@@ -399,9 +397,10 @@ int main(int argc, char** argv) {
     chCmd->add_subcommand("info", "Measurements")->callback([&]() {
         auto ci = g_client->readChannelInfo(ch);
         if (!g_client->isConnected()) return;
+        int16_t currentUnitExp = g_client->readSystemInfo().currentUnitExp;
         std::cout << "=== Channel " << ch << " ===\n";
         printSep("Measured V:", formatVRaw(ci.voltageRaw));
-        printSep("Measured I:", formatIRaw(ci.currentRaw));
+        printSep("Measured I:", formatIRaw(ci.currentRaw, currentUnitExp));
         printSep("Operational Target:", formatVRaw(ci.operationalTargetVoltageRaw));
         printSep("Status:", formatHex(ci.status)); printStatusBits(ci.status);
         printFaultCause(ci.activeFault, "Active Fault:");

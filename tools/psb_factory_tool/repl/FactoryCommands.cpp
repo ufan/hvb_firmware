@@ -168,8 +168,9 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                 out << "CH" << ch << ":\n"
                     << "  Vmeas:  " << std::fixed << std::setprecision(1)
                     << reg::voltageToV(ci.voltageRaw) << " V  (raw=" << ci.voltageRaw << ")\n"
-                    << "  Imeas:  " << std::fixed << std::setprecision(3)
-                    << (reg::currentToA(ci.currentRaw) * 1e6) << " uA  (raw=" << ci.currentRaw << ")\n"
+                    << "  Imeas:  " << reg::formatAmpsAuto(
+                          reg::currentToA(ci.currentRaw, session.client().currentUnitExp()))
+                    << "  (raw=" << ci.currentRaw << ")\n"
                     << "  Target: " << reg::voltageToV(ci.operationalTargetVoltageRaw) << " V\n"
                     << "  Status: 0x" << std::hex << ci.status << std::dec
                     << ((ci.status & 0x0002) ? " [ON]" : " [OFF]")
@@ -193,8 +194,8 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
                     out << "  CH" << ch
                         << "  V=" << std::fixed << std::setprecision(1)
                         << reg::voltageToV(ci.voltageRaw) << "V"
-                        << "  I=" << std::fixed << std::setprecision(3)
-                        << (reg::currentToA(ci.currentRaw) * 1e6) << "uA"
+                        << "  I=" << reg::formatAmpsAuto(
+                              reg::currentToA(ci.currentRaw, session.client().currentUnitExp()))
                         << "  tgt=" << reg::voltageToV(ci.operationalTargetVoltageRaw) << "V"
                         << "  status=0x" << std::hex << ci.status << std::dec
                         << (ci.activeFault ? " FAULT" : "") << "\n";
