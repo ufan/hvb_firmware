@@ -327,7 +327,7 @@ Config and cal config persist to NVS flash via Zephyr Settings (`vc_storage_sett
 
 ## VC Channel Hardware API (`vc_channel_api.h`)
 
-The vtable that hardware channel drivers must implement. See `include/voltage_control/vc_channel_api.h:19`.
+The vtable that hardware channel drivers must implement. See `include/voltage_control/vc_channel_api.h:22`. The first six functions are required; `get_dt_defaults` is optional (NULL means the channel uses Kconfig defaults only — see `docs/guide/vc-runtime-execution.md` §4, Step 3b for how to implement it).
 
 ```c
 typedef void (*vc_meas_ready_cb_t)(uint8_t channel, void *user_data);
@@ -340,6 +340,9 @@ struct vc_channel_api {
     uint16_t (*get_capabilities)(const struct device *dev);
     int (*set_meas_callback)(const struct device *dev,
                              vc_meas_ready_cb_t cb, void *user_data);
+    int (*get_dt_defaults)(const struct device *dev,           // optional
+                           struct vc_channel_config *cfg,
+                           struct vc_channel_cal_config *cal);
 };
 ```
 

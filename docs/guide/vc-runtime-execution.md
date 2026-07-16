@@ -464,10 +464,13 @@ This section is a step-by-step guide for implementing a new hardware channel dri
 
 ### 4.1 The Driver Vtable (`struct vc_channel_api`)
 
-Defined in `include/voltage_control/vc_channel_api.h:19`. Every channel driver must implement all six function pointers:
+Defined in `include/voltage_control/vc_channel_api.h:22`. Every channel driver must implement the first six function pointers; `get_dt_defaults` is optional (NULL is fine — it exists purely so a driver can override Kconfig-derived defaults from per-channel DTS properties):
 
 ```c
 typedef void (*vc_meas_ready_cb_t)(uint8_t channel, void *user_data);
+
+struct vc_channel_config;
+struct vc_channel_cal_config;
 
 struct vc_channel_api {
     int (*set_output)(const struct device *dev, uint16_t code);
@@ -477,6 +480,9 @@ struct vc_channel_api {
     uint16_t (*get_capabilities)(const struct device *dev);
     int (*set_meas_callback)(const struct device *dev,
                              vc_meas_ready_cb_t cb, void *user_data);
+    int (*get_dt_defaults)(const struct device *dev,
+                           struct vc_channel_config *cfg,
+                           struct vc_channel_cal_config *cal);
 };
 ```
 
@@ -488,6 +494,7 @@ struct vc_channel_api {
 | `stop_sampling` | Teardown path | Cancel pending reads. |
 | `get_capabilities` | `vc_channel_init()`, queries | Return DTS-derived `CH_CAP_*` bitmask. |
 | `set_meas_callback` | `vc_channel_init()` in `vc_channel.c:308` | Register measurement-ready callback. |
+| `get_dt_defaults` (optional) | `vc_channel_init()`, after `cfg`/`cal` are Kconfig-populated | Only touch fields you want to override from a per-channel DTS property (e.g. a factory-default output-enabled flag, or an ADC zero-offset). Leave everything else alone — this runs *after* the Kconfig defaults, not instead of them. |
 
 ### 4.2 Measurement Buffer (`struct vc_channel_buffer`)
 
@@ -642,6 +649,46 @@ static int my_set_meas_callback(const struct device *dev,
     return 0;
 }
 ```
+
+#### Step 3b (optional): Per-Channel DTS Defaults via `get_dt_defaults`
+
+Skip this unless your channel needs a factory default that differs from
+the board-wide Kconfig value — e.g. a specific channel starting disabled
+by default, or a per-channel ADC zero-offset calibration value baked into
+DTS. Reference implementation:
+`drivers/voltage_control/lvb_vc_channel/lvb_vc_channel.c` (the only current
+driver that implements this hook; `hvb_vc_channel.c` doesn't need it and
+leaves the vtable slot NULL).
+
+```c
+struct my_vc_config {
+    // ... existing fields ...
+    int16_t calib_current_b;       // per-channel ADC zero offset from DTS
+    bool default_output_disabled;  // per-channel startup override from DTS
+};
+
+static int my_get_dt_defaults(const struct device *dev,
+                              struct vc_channel_config *cfg,
+                              struct vc_channel_cal_config *cal)
+{
+    const struct my_vc_config *drv_cfg = dev->config;
+
+    cal->measured_current_calib_b = drv_cfg->calib_current_b;
+    if (drv_cfg->default_output_disabled) {
+        cfg->configured_output_enabled = false;
+    }
+    return 0;
+}
+```
+
+Add the corresponding optional property to your DTS binding YAML (`type:
+int` / `type: boolean` as appropriate, `required: false`), populate the
+driver config struct field from it in your `MY_VC_INIT` macro via
+`DT_INST_PROP`/`DT_INST_PROP_OR`, and add `.get_dt_defaults =
+my_get_dt_defaults,` to the vtable. A boolean property's *absence* should
+mean "no override, follow the normal default" — design the property as an
+opt-in exception (`default-output-disabled`), not a tri-state, so the
+common case (every other channel) needs no DTS changes at all.
 
 #### Step 4: Implement Async ADC Sampling
 
