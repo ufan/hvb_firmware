@@ -48,6 +48,7 @@ ONLY_CHANNEL=-1
 READ_ONLY=0
 EXERCISE_OUTPUTS=0
 ASSERT_FRESH=0
+EXPECT_DISABLED=""
 
 usage() {
     cat <<EOF
@@ -67,6 +68,12 @@ Usage: $(basename "$0") [options]
                           right after a clean erase+flash — a board with any
                           legitimate prior configuration will fail these checks.
                           See factory_bringup.sh, which always passes this.
+  --expect-disabled LIST  Comma-separated channel numbers whose documented
+                          factory default is CFG_OUTPUT_ENABLED=0 instead of
+                          the normal 1 (i.e. channels with a
+                          default-output-disabled DTS override — see
+                          jw_lvb.dts). Only affects --assert-fresh. Example:
+                          --expect-disabled 5 or --expect-disabled 3,5
   -h, --help              Show this help
 EOF
 }
@@ -83,6 +90,7 @@ while (($#)); do
     --read-only) READ_ONLY=1; shift ;;
     --exercise-outputs) EXERCISE_OUTPUTS=1; shift ;;
     --assert-fresh) ASSERT_FRESH=1; shift ;;
+    --expect-disabled) EXPECT_DISABLED="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -195,6 +203,17 @@ holding_words() {
 
 u16() { echo "$((16#$1))"; }
 
+# Is channel $1 listed in --expect-disabled? (comma-separated channel numbers
+# whose documented factory default is CFG_OUTPUT_ENABLED=0, not the normal 1)
+expect_disabled() {
+    local ch="$1" tok
+    IFS=',' read -ra toks <<<"$EXPECT_DISABLED"
+    for tok in "${toks[@]}"; do
+        [[ "$tok" == "$ch" ]] && return 0
+    done
+    return 1
+}
+
 recovery_policy_name() { case "$1" in 0) echo MANUAL-LATCH;; 1) echo AUTO-RETRY;; 2) echo AUTO-DERATE;; 3) echo NEVER-RETRY;; *) echo MANUAL-LATCH;; esac; }
 protection_mode_name()  { case "$1" in 0) echo DISABLED;; 1) echo FLAG-ONLY;; 2) echo APPLY-ACTION;; *) echo DISABLED;; esac; }
 protection_action_name() { case "$1" in 0) echo NONE;; 2) echo DISABLE-GRACEFUL;; 3) echo DISABLE-IMMEDIATE;; 4) echo FORCE-ZERO;; *) echo NONE;; esac; }
@@ -213,7 +232,7 @@ finish() {
         echo "- **Port**: $PORT  **Baud**: $BAUD  **Slave**: $SLAVE  **Timeout**: ${TIMEOUT_MS}ms"
         echo "- **CLI**: $CLI"
         [[ -n "${protocol_major:-}" ]] && echo "- **Protocol**: ${protocol_major}.${protocol_minor}  **Variant**: ${variant_id}  **FW**: ${fw_version}  **Channels**: ${channel_count}"
-        echo "- **Read-only**: $((READ_ONLY)) **Exercise-outputs**: $((EXERCISE_OUTPUTS)) **Assert-fresh**: $((ASSERT_FRESH))"
+        echo "- **Read-only**: $((READ_ONLY)) **Exercise-outputs**: $((EXERCISE_OUTPUTS)) **Assert-fresh**: $((ASSERT_FRESH))${EXPECT_DISABLED:+ **Expect-disabled**: $EXPECT_DISABLED}"
         echo
         echo "| Result | Check |"
         echo "|---|---|"
@@ -459,7 +478,13 @@ for ((ch = 0; ch < channel_count; ch++)); do
         if holding_word "$((base + 17))"; then
             before=$WORD_DEC
             if (( ASSERT_FRESH )); then
-                if [[ $before -eq 1 ]]; then
+                if expect_disabled "$ch"; then
+                    if [[ $before -eq 0 ]]; then
+                        pass "ch$ch enable-cfg: factory default confirmed (enabled=0, per --expect-disabled)"
+                    else
+                        fail "ch$ch enable-cfg: NOT at factory default (enabled=$before, expected 0 per --expect-disabled) — board may have stale NVS state; see factory_bringup.sh"
+                    fi
+                elif [[ $before -eq 1 ]]; then
                     pass "ch$ch enable-cfg: factory default confirmed (enabled=1)"
                 else
                     fail "ch$ch enable-cfg: NOT at factory default (enabled=$before, expected 1) — board may have stale NVS state; see factory_bringup.sh"

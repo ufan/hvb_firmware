@@ -120,6 +120,7 @@
 			io-channels = <&adc1 3>, <&adc1 2>;
 			io-channel-names = "voltage", "current";
 			calib-current-b = <(-1707)>;
+			default-output-disabled;
 		};
 
 		vc_ch6: channel@6 {

@@ -34,6 +34,10 @@ Options:
                         defaults, not just that reads/writes round-trip
                         self-consistently. Only meaningful right after a clean
                         erase+flash — see "Clean bring-up" below.
+--expect-disabled LIST  Comma-separated channel numbers whose factory default
+                        is CFG_OUTPUT_ENABLED=0 instead of the normal 1 (i.e.
+                        channels with a default-output-disabled DTS override,
+                        e.g. jw_lvb ch5). Only affects --assert-fresh.
 ```
 
 Without `--report`, reports are written to `tools/board_test/reports/`.
@@ -60,6 +64,14 @@ This mass-erases the chip (wiping the NVS partition too), reflashes, and runs
 its Kconfig-documented default — not just that it's internally consistent.
 Use this whenever you need to know the board's *true* out-of-box state (e.g.
 after changing a Kconfig default), not a plain `west flash`.
+
+`jw_lvb` ch5 has a `default-output-disabled` DTS override (see
+`docs/guide/vc-runtime-execution.md` §4, Step 3b), so its true factory
+default is `0`, not the normal `1`. Pass that through to `board_test.sh`:
+
+```bash
+tools/board_test/factory_bringup.sh --build-dir build_psb_lvb --port /dev/ttyUSB0 -- --expect-disabled 5
+```
 
 This is a bring-up/dev-loop tool for one bench unit with direct SWD access,
 not a manufacturing-line tool. See
