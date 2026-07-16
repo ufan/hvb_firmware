@@ -10,7 +10,6 @@ add_executable(psb_tests
     test_tui_policy.cpp
     test_tui_modbus_settings.cpp
     test_calibration.cpp
-    test_register_meta.cpp
 )
 
 target_include_directories(psb_tests PRIVATE

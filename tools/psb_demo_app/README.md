@@ -48,8 +48,6 @@ tools/bin/psb_demo_tui -p /dev/ttyUSB0
 ```sh
 # Discovery
 psb_demo_cli list ports
-psb_demo_cli list regs
-psb_demo_cli describe <hex-addr>
 
 # Connect + read
 psb_demo_cli -p /dev/ttyUSB0 info

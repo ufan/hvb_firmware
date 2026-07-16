@@ -331,20 +331,6 @@ fi
 cli list ports
 [[ $LAST_RC -eq 0 ]] && pass "list ports: ran OK" || fail "list ports: exit $LAST_RC"
 
-cli list regs
-if [[ $LAST_RC -eq 0 && -n "$LAST_OUT" ]] && grep -q "Configured Target V" <<<"$LAST_OUT"; then
-    pass "list regs: catalog non-empty and contains known register"
-else
-    fail "list regs: unexpected output"
-fi
-
-cli describe 0
-if [[ $LAST_RC -eq 0 ]] && grep -qi "Operating Mode\|Protocol Major" <<<"$LAST_OUT"; then
-    pass "describe 0: shows register metadata"
-else
-    fail "describe 0: metadata missing"
-fi
-
 sleep 0.15
 mon_out="$(timeout 8s "$CLI" -p "$PORT" -b "$BAUD" -i "$SLAVE" -t "$TIMEOUT_MS" monitor 1 2>&1 || true)"
 if grep -q '=== PSB Monitor \[' <<<"$mon_out"; then

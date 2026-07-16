@@ -84,7 +84,7 @@ the broader board-lifecycle-state roadmap this is the first step of.
 ground truth (protocol version, variant ID, channel count).
 
 **Phase 1 — system-level commands.** `info`, `status`, `system config`,
-`list ports`, `list regs`, `describe`, `monitor` (one rendered frame), and a
+`list ports`, `monitor` (one rendered frame), and a
 CLI11 argument-validation check (`channel 99` must be rejected).
 
 **Phase 2 — per-channel, for every supported channel.** `channel <n> info`,

@@ -1,7 +1,6 @@
 #include "psb_modbus_client.h"
 #include "config_manager.h"
 #include "register_map.h"
-#include "register_meta.h"
 
 #include <CLI/CLI.hpp>
 
@@ -85,34 +84,6 @@ int cmdListPorts() {
     auto ports = psb::PsbModbusClient::scanPorts();
     if (ports.empty()) { std::cout << "No serial ports found.\n"; return 0; }
     for (const auto& p : ports) std::cout << p << "\n";
-    return 0;
-}
-
-int cmdListRegs() { std::cout << psb::meta::formatRegisterCatalog(); return 0; }
-
-// Print one bank's metadata, plus a live decoded value (via psb::meta::formatValue)
-// if a device is connected.
-static void describeBank(const char* label, const psb::meta::RegDesc* d, uint16_t addr, bool holding) {
-    if (!d) return;
-    printSep(label, std::string(d->name) + " " + d->desc);
-    printSep("Type:", std::string(d->type) + (d->unit[0] ? std::string(", ") + d->unit : ""));
-    if (!g_client->isConnected()) return;
-    uint16_t raw = 0;
-    bool ok = holding ? g_client->readHoldingRegs(addr, 1, &raw)
-                       : g_client->readInputRegs(addr, 1, &raw);
-    if (ok) printSep("Value:", psb::meta::formatValue(raw, *d));
-    else    std::cerr << "Read error: " << g_client->lastError() << "\n";
-}
-
-int cmdDescribe(uint16_t addr) {
-    const auto* holdingDesc = psb::meta::findDesc(addr, true);
-    const auto* inputDesc   = psb::meta::findDesc(addr, false);
-    if (!holdingDesc && !inputDesc) {
-        std::cout << "No register at 0x" << std::hex << addr << std::dec << "\n";
-        return 1;
-    }
-    describeBank("Holding:", holdingDesc, addr, true);
-    describeBank("Input:",   inputDesc,   addr, false);
     return 0;
 }
 
@@ -304,12 +275,6 @@ int main(int argc, char** argv) {
     app.add_option("-t,--timeout", timeout, "Timeout ms");
     app.add_flag("--save", save, "Save connection to config");
 
-    // Describe
-    uint32_t hexAddr = 0;
-    auto* describeCmd = app.add_subcommand("describe", "Show register metadata");
-    describeCmd->add_option("addr", hexAddr, "PDU address (hex)")->required();
-    describeCmd->callback([&]() { cmdDescribe(static_cast<uint16_t>(hexAddr)); });
-
     // Monitor
     int interval = 2;
     auto* monitorCmd = app.add_subcommand("monitor", "Live polling");
@@ -344,7 +309,6 @@ int main(int argc, char** argv) {
     // Discovery
     auto* listCmd = app.add_subcommand("list", "Discovery")->require_subcommand(1);
     listCmd->add_subcommand("ports", "List serial ports")->callback([&]() { cmdListPorts(); });
-    listCmd->add_subcommand("regs", "List register catalog")->callback([&]() { cmdListRegs(); });
 
     // Top-level reads
     app.add_subcommand("info", "System info dump")->callback([&]() { cmdInfo(); });

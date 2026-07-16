@@ -36,7 +36,7 @@ tools/board_test/board_test.sh --port /dev/ttyUSB0
 ```
 
 Phase 0 connectivity, Phase 1 system-level commands (`info`, `status`,
-`list regs`, `monitor`, ...), Phase 2 per-channel tests (config round trips,
+`monitor`, ...), Phase 2 per-channel tests (config round trips,
 capability-gated rejections, the always-on safety invariant). All
 per-channel writes are same-value round trips — read the current value,
 write it back, verify unchanged — so it never changes configured behavior.

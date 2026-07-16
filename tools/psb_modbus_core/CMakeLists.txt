@@ -2,7 +2,6 @@ add_library(psb_modbus_core STATIC
     config_manager.cpp
     psb_modbus_client.cpp
     monitor_render.cpp
-    register_meta.cpp
 )
 target_include_directories(psb_modbus_core
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
