@@ -284,6 +284,11 @@ Bring channel 0 up to 500 V, watch it, then take it back down:
 | Demo CLI | `psb_demo_cli` | Scriptable one-shot commands; writes `~/.psb_demo_app.toml` with `--save` |
 | Factory TUI | `psb_factory_tui` | Production calibration — see [`calibration-guide.md`](calibration-guide.md) |
 
+Building or maintaining a client (this TUI, the Qt/QML GUI, or your own)?
+See [`client-architecture-and-pitfalls.md`](client-architecture-and-pitfalls.md)
+for the threading/polling architecture and every non-obvious bug found
+hardening it against real hardware.
+
 ---
 
 ## 11. Troubleshooting

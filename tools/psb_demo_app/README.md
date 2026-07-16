@@ -108,6 +108,7 @@ the same file at startup but never writes it.
 ## Related documentation
 
 - [`docs/guide/demo-tui-guide.md`](../../docs/guide/demo-tui-guide.md) — `psb_demo_tui` full user guide (EN/ZH)
+- [`docs/guide/client-architecture-and-pitfalls.md`](../../docs/guide/client-architecture-and-pitfalls.md) — threading/polling architecture and every non-obvious bug found hardening `psb_demo_tui` against real hardware; read this before touching the GUI, the TUI, or writing your own client
 - [`docs/guide/calibration-guide.md`](../../docs/guide/calibration-guide.md) — factory calibration procedure (`psb_factory_tui`)
 - [`docs/guide/operating-mode-guide.md`](../../docs/guide/operating-mode-guide.md) — Normal vs. Automatic mode, protection and recovery policy
 - [`docs/guide/modbus-reference.md`](../../docs/guide/modbus-reference.md) — protocol register map
