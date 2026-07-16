@@ -46,29 +46,129 @@ static auto readWithRetry(Fn&& fn) -> decltype(fn()) {
     return result;
 }
 
-static void doFullScan(psb::tui::ScannedData& data) {
+// Scans only what the Monitor table actually displays: ChannelInfo (status/
+// V/I/Vop/faults) plus the output, protection, and output-enabled
+// ChannelConfig blocks (Vset, ramp, I-limit, iProtMode for the Fault
+// column). Recovery-policy and derate-step — shown only on the Channel tab —
+// are deliberately left out here and fetched lazily the first time that
+// channel's tab is opened (see tab_channel.h), since scanning them for every
+// channel up front was pure overhead for what Monitor needs to render.
+//
+// Stages all channel results locally and publishes (chInfo/chCfg/chLoaded)
+// in one shot at the very end, so Monitor shows a single "Scanning
+// channels... X/N" message throughout (via scanProgress) and then reveals
+// the whole table at once — not a row-by-row trickle, which read as a
+// torn/inconsistent table rather than an obviously-still-loading one.
+//
+// Interleaves a system-status read after every channel so the menu bar's
+// uptime/temp/humidity keep ticking with real (not extrapolated) data
+// throughout the scan instead of freezing for its whole duration — the
+// serial bus is still shared with the channel reads (can't run truly
+// concurrently), but this keeps the readout at most one channel's-worth
+// stale rather than stuck for the whole scan.
+static void doFullScan(psb::tui::ScannedData& data, ScreenInteractive& screen,
+                       std::atomic<bool>& running) {
+    for (int ch = 0; ch < psb::tui::MAX_CHANNELS; ++ch) {
+        data.chLoaded[ch] = false;
+        data.chDetailLoaded[ch] = false;
+    }
+
     data.sysInfo = readWithRetry([&] { return g_client.readSystemInfo(); });
+    data.sysCfg  = readWithRetry([&] { return g_client.readSystemConfig(); });
     int n = data.numChannels();
-    for (int ch = 0; ch < n; ++ch)
-        data.chInfo[ch] = readWithRetry([&] { return g_client.readChannelInfo(ch); });
-    data.sysCfg = readWithRetry([&] { return g_client.readSystemConfig(); });
-    for (int ch = 0; ch < n; ++ch)
-        data.chCfg[ch] = readWithRetry([&] {
-            return g_client.readChannelConfig(ch, data.chInfo[ch].chCapFlags);
-        });
-    for (int ch = 0; ch < n; ++ch)
-        data.chCalCfg[ch] = readWithRetry([&] {
-            return g_client.readChannelCalConfig(ch, data.chInfo[ch].chCapFlags);
-        });
+    // Gate on g_connected, not an unconditional true — if the user hits
+    // Disconnect while this (queued) scan is running, g_connected already
+    // flipped false on the UI thread, and this must not resurrect `valid`
+    // out from under it.
+    data.valid = g_connected.load();
+    data.scanProgress = 0;
+    if (running) screen.PostEvent(Event::Custom);
+
+    psb::ChannelInfo   chInfoStaging[psb::tui::MAX_CHANNELS];
+    psb::ChannelConfig chCfgStaging[psb::tui::MAX_CHANNELS];
+
+    for (int ch = 0; ch < n; ++ch) {
+        chInfoStaging[ch] = readWithRetry([&] { return g_client.readChannelInfo(ch); });
+        uint16_t caps = chInfoStaging[ch].chCapFlags;
+        g_client.readChannelOutputBlock(ch, caps, chCfgStaging[ch]);
+        g_client.readChannelProtectionBlock(ch, caps, chCfgStaging[ch]);
+        g_client.readChannelOutputEnabledBlock(ch, caps, chCfgStaging[ch]);
+
+        data.scanProgress = ch + 1;
+        g_client.readSystemStatus(data.sysInfo);
+        if (running) screen.PostEvent(Event::Custom);
+    }
+
+    for (int ch = 0; ch < n; ++ch) {
+        data.chInfo[ch]   = chInfoStaging[ch];
+        data.chCfg[ch]    = chCfgStaging[ch];
+        data.chLoaded[ch] = true;
+    }
+    if (running) screen.PostEvent(Event::Custom);
 }
 
-static void doPollScan(psb::tui::ScannedData& data) {
-    g_client.readSystemStatus(data.sysInfo);
+// A channel that fails this many consecutive status polls in a row is
+// flagged offline (see doPollScan below) — a real, user-visible fault
+// (unresponsive channel, not just one glitched transaction), not a
+// transient blip; readWithRetry-style single-retry is deliberately not
+// enough tolerance for this class of decision.
+static constexpr int kChannelOfflineThreshold = 5;
+
+// Reads system status and sweeps every channel's status into local staging
+// copies, then publishes everything to `data` in one shot (one PostEvent)
+// once the sweep is done (or interrupted — see below), rather than mutating
+// `data` in place channel-by-channel. The latter let the ~12 Hz
+// breathing-LED animation thread's continuous redraws catch the table
+// mid-sweep, showing a torn mix of channels already refreshed this cycle
+// and channels still showing the previous cycle's values; staging then
+// publishing atomically means every repaint sees one consistent snapshot.
+//
+// Tracks consecutive read failures per channel in `data` directly (rare,
+// edge-triggered changes — no torn-read concern like the per-cycle
+// measurement data above) and flags a channel offline, with a one-time
+// status message, after kChannelOfflineThreshold consecutive failures; any
+// single success clears it.
+//
+// `hasPendingWork` lets the sweep bail out early when a write is queued —
+// the worker loop drains that write right away instead of making it wait
+// for the whole sweep; any channels not yet reached this tick simply keep
+// their staged (pre-sweep) values and get re-polled next tick — no data
+// loss, since this is continuous live polling, not a one-shot scan.
+static void doPollScan(psb::tui::ScannedData& data, ScreenInteractive& screen,
+                       std::atomic<bool>& running,
+                       const std::function<bool()>& hasPendingWork,
+                       std::string& statusMsg, std::mutex& statusMutex) {
     int n = data.numChannels();
+
+    psb::SystemInfo sysStaging = data.sysInfo;
+    g_client.readSystemStatus(sysStaging);
+
+    psb::ChannelInfo chStaging[psb::tui::MAX_CHANNELS];
+    for (int ch = 0; ch < n; ++ch) chStaging[ch] = data.chInfo[ch];
+
+    std::vector<int> newlyOffline;
     for (int ch = 0; ch < n; ++ch) {
+        if (hasPendingWork()) break;
         if (!psb::tui::shouldPollChannel(ch, n)) continue;
-        g_client.readChannelStatus(ch, data.chInfo[ch].chCapFlags, data.chInfo[ch]);
+        bool ok = g_client.readChannelStatus(ch, chStaging[ch].chCapFlags, chStaging[ch]);
+        if (ok) {
+            data.chPollFailCount[ch] = 0;
+            data.chOffline[ch] = false;
+        } else if (++data.chPollFailCount[ch] > kChannelOfflineThreshold && !data.chOffline[ch]) {
+            data.chOffline[ch] = true;
+            newlyOffline.push_back(ch);
+        }
     }
+
+    // Publish atomically — a render can never observe a partially-refreshed sweep.
+    data.sysInfo = sysStaging;
+    for (int ch = 0; ch < n; ++ch) data.chInfo[ch] = chStaging[ch];
+
+    if (!newlyOffline.empty()) {
+        std::lock_guard<std::mutex> lk(statusMutex);
+        statusMsg = "Error: CH" + std::to_string(newlyOffline.front()) + " not responding — marked offline";
+    }
+    if (running) screen.PostEvent(Event::Custom);
 }
 
 static void rebuildChannelTitles(std::vector<std::string>& titles, int numChannels) {
@@ -116,11 +216,22 @@ int main(int argc, char** argv) {
     psb::tui::ConfigInputs inputs;
 
     // ---- Modbus worker thread — serialises all serial I/O ----
+    auto hasPendingWork = [&] {
+        std::lock_guard<std::mutex> lk(workMutex);
+        return !workQueue.empty();
+    };
     std::thread modbusWorker([&] {
         while (running) {
             {
+                // While connected, only wait a short floor between poll
+                // sweeps (bounded by the sweep's own real duration, not an
+                // extra artificial delay) — while idle/disconnected, fall
+                // back to g_pollInterval so this thread isn't spinning for
+                // no reason.
+                auto waitDur = g_connected.load() ? std::chrono::milliseconds(50)
+                                                   : std::chrono::seconds(g_pollInterval);
                 std::unique_lock<std::mutex> lk(workMutex);
-                workCv.wait_for(lk, std::chrono::seconds(g_pollInterval),
+                workCv.wait_for(lk, waitDur,
                     [&] { return !workQueue.empty() || !running; });
             }
             for (;;) {
@@ -131,9 +242,14 @@ int main(int argc, char** argv) {
                 item();
             }
             if (running && g_connected) {
-                doPollScan(data);
-                data.valid = g_client.isConnected();
-                if (running) screen.PostEvent(Event::Custom);
+                doPollScan(data, screen, running, hasPendingWork, statusMsg, statusMutex);
+                // Re-check g_connected, not just isConnected() — if the user
+                // clicked Disconnect while this sweep was in flight,
+                // g_connected already flipped false on the UI thread, but
+                // the queued disconnect() job hasn't drained yet, so
+                // isConnected() alone would still read true here and
+                // resurrect a cleared `valid` right back to stale content.
+                data.valid = g_connected.load() && g_client.isConnected();
             }
         }
     });
@@ -187,7 +303,7 @@ int main(int argc, char** argv) {
             if (ok) {
                 { std::lock_guard<std::mutex> lk(workMutex);
                   workQueue.push([&] {
-                      doFullScan(data); data.valid = true;
+                      doFullScan(data, screen, running); data.valid = g_connected.load();
                       pendingChannelCount.store(data.numChannels(), std::memory_order_release);
                       pendingSync.store(true, std::memory_order_release);
                       screen.PostEvent(Event::Custom);

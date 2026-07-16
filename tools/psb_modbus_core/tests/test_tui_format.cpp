@@ -4,16 +4,6 @@
 using namespace psb::tui;
 using namespace psb;
 
-TEST_CASE("statusBadge") {
-    CHECK(statusBadge(0x0000) == "OFF");
-    CHECK(statusBadge(ChStatus::OUTPUT_DRIVE_NONZERO) == "ON");
-    CHECK(statusBadge(ChStatus::RAMPING_ACTIVE) == "RAMP");
-    CHECK(statusBadge(ChStatus::OUTPUT_DRIVE_NONZERO | ChStatus::RAMPING_ACTIVE) == "ON RAMP");
-    CHECK(statusBadge(ChStatus::ACTIVE_FAULT) == "FAULT");
-    CHECK(statusBadge(ChStatus::COOLDOWN_ACTIVE) == "COOL");
-    CHECK(statusBadge(ChStatus::MEASUREMENT_STALE) == "STALE");
-}
-
 TEST_CASE("faultStr") {
     CHECK(faultStr(0) == "--");
     CHECK(faultStr(FaultCause::CURRENT) == "CL");

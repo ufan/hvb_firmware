@@ -16,22 +16,45 @@ struct MonitorRow {
 
 // Build one row — creates all widgets, returns them in a MonitorRow.
 inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
-    auto refreshCh = [&s, &inputs, ch]() {
-        // Read live status first so the button label updates immediately after toggle.
-        // doPollScan skips inactive channels (not in activeChMask), so without this
-        // call a just-disabled channel would stay showing "ON" until the next full scan.
+    // Narrow, action-specific refreshes — each re-reads only the Modbus
+    // block the corresponding write actually touched (merging in place via
+    // the reference-taking client methods, never a wholesale struct
+    // replace), instead of one catch-all readChannelConfig() re-read of
+    // everything after every click. Status is re-read first in every case so
+    // the button label updates immediately after a toggle — doPollScan skips
+    // inactive channels (not in activeChMask), so without this a
+    // just-disabled channel would stay showing "ON" until the next poll.
+    auto refreshStatus = [&s, ch]() {
         s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
-        s.data.chCfg[ch] = s.client.readChannelConfig(ch, s.data.chInfo[ch].chCapFlags);
+    };
+    auto refreshOutput = [&s, &inputs, ch]() {
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
+        s.client.readChannelOutputBlock(ch, s.data.chInfo[ch].chCapFlags, s.data.chCfg[ch]);
+        syncDataToInputs(s.data, inputs);
+    };
+    auto refreshProtection = [&s, &inputs, ch]() {
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
+        s.client.readChannelProtectionBlock(ch, s.data.chInfo[ch].chCapFlags, s.data.chCfg[ch]);
+        syncDataToInputs(s.data, inputs);
+    };
+    auto refreshOutputEnabled = [&s, &inputs, ch]() {
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
+        s.client.readChannelOutputEnabledBlock(ch, s.data.chInfo[ch].chCapFlags, s.data.chCfg[ch]);
+        syncDataToInputs(s.data, inputs);
+    };
+    auto refreshFull = [&s, &inputs, ch]() {
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
+        s.client.readChannelConfig(ch, s.data.chInfo[ch].chCapFlags, s.data.chCfg[ch]);
         syncDataToInputs(s.data, inputs);
     };
 
     // ---- Vset Input (DAC channels — CH_CAP_RAW_OUTPUT_DRIVE) ----
-    auto vsetInp = CommitInput(&inputs.targetV[ch], "+0.0", [&s, &inputs, ch, refreshCh] {
+    auto vsetInp = CommitInput(&inputs.targetV[ch], "+0.0", [&s, &inputs, ch, refreshOutput] {
         try {
             auto raw = reg::voltageFromV(std::stod(inputs.targetV[ch]));
             postWrite(s, inputs, "Target V",
                 [&s, ch, raw] { return s.client.writeConfiguredTargetVoltage(ch, raw); },
-                refreshCh);
+                refreshOutput);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
     });
 
@@ -39,11 +62,11 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     // without CH_CAP_RAW_OUTPUT_DRIVE). Occupies the same table slot as vsetInp;
     // the two are mutually exclusive per channel — see the render loop below. ----
     auto outputEnabledCyc = InlineCycler({"Off", "On"}, &inputs.outputEnabledIdx[ch],
-        [&s, &inputs, ch, refreshCh] {
+        [&s, &inputs, ch, refreshOutputEnabled] {
             bool on = inputs.outputEnabledIdx[ch] != 0;
             postWrite(s, inputs, "Output Enabled",
                 [&s, ch, on] { return s.client.writeOutputEnabled(ch, on); },
-                refreshCh);
+                refreshOutputEnabled);
         }, /*autoCommit=*/true);
 
     // ---- Status toggle button ----
@@ -68,7 +91,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         if (es.focused) e = e | inverted;
         return e;
     };
-    auto statusBtn = Button("", [&s, &inputs, ch, refreshCh] {
+    auto statusBtn = Button("", [&s, &inputs, ch, refreshStatus] {
         const uint16_t caps = s.data.chInfo[ch].chCapFlags;
         const uint16_t st   = s.data.chInfo[ch].status;
         const bool on = channelIsOn((caps & CH_CAP_OUTPUT_ENABLE) != 0,
@@ -89,31 +112,31 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             [&s, ch, outputAction] {
                 return s.client.sendOutputAction(ch, outputAction);
             },
-            refreshCh);
+            refreshStatus);
     }, bopt);
 
     // ---- Ramp Up Input ----
-    auto rampUpInp = CommitInput(&inputs.ruStep[ch], "0.0", [&s, &inputs, ch, refreshCh] {
+    auto rampUpInp = CommitInput(&inputs.ruStep[ch], "0.0", [&s, &inputs, ch, refreshOutput] {
         try {
             auto stepRaw = reg::voltageFromV(std::stod(inputs.ruStep[ch]));
             postWrite(s, inputs, "Ramp Up",
                 [&s, ch, stepRaw] { return s.client.writeRampUp(ch, stepRaw, s.data.chCfg[ch].rampUpInterval); },
-                refreshCh);
+                refreshOutput);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-up value"; }
     });
 
     // ---- Ramp Down Input ----
-    auto rampDownInp = CommitInput(&inputs.rdStep[ch], "0.0", [&s, &inputs, ch, refreshCh] {
+    auto rampDownInp = CommitInput(&inputs.rdStep[ch], "0.0", [&s, &inputs, ch, refreshOutput] {
         try {
             auto stepRaw = reg::voltageFromV(std::stod(inputs.rdStep[ch]));
             postWrite(s, inputs, "Ramp Down",
                 [&s, ch, stepRaw] { return s.client.writeRampDown(ch, stepRaw, s.data.chCfg[ch].rampDownInterval); },
-                refreshCh);
+                refreshOutput);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-down value"; }
     });
 
     // ---- I-limit Input ----
-    auto iLimitInp = CommitInput(&inputs.iThr[ch], "0", [&s, &inputs, ch, refreshCh] {
+    auto iLimitInp = CommitInput(&inputs.iThr[ch], "0", [&s, &inputs, ch, refreshProtection] {
         try {
             static constexpr OutputAction kIActVals[] = {
                 OutputAction::None, OutputAction::DisableGraceful,
@@ -125,7 +148,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]), s.data.sysInfo.currentUnitExp);
             postWrite(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); },
-                refreshCh);
+                refreshProtection);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
     });
 
@@ -133,18 +156,18 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     // FlagOnly mode surfaces fault *history* in the Fault column, so Clear
     // targets history there; ApplyOutputAction (and Disabled, which still
     // shows a dimmed active fault) target the active fault block instead.
-    auto clearFaultBtn = ActionButton("Clear", [&s, &inputs, ch, refreshCh] {
+    auto clearFaultBtn = ActionButton("Clear", [&s, &inputs, ch, refreshStatus] {
         auto mode = s.data.chCfg[ch].iProtMode;
         auto cmd = (mode == ProtectionMode::FlagOnly)
             ? ChannelFaultCommand::ClearFaultHistory
             : ChannelFaultCommand::ClearActiveFaultBlock;
         postWrite(s, inputs, "Clear Fault",
             [&s, ch, cmd] { return s.client.sendChannelFaultCommand(ch, cmd); },
-            refreshCh);
+            refreshStatus);
     });
 
-    auto saveBtn = ActionButton("Save", [&s, &inputs, ch, refreshCh] {
-        saveChannelConfig(s, inputs, ch, refreshCh);
+    auto saveBtn = ActionButton("Save", [&s, &inputs, ch, refreshFull] {
+        saveChannelConfig(s, inputs, ch, refreshFull);
     });
 
     auto rowWidgets = Container::Horizontal({
@@ -190,6 +213,16 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
         if (n == 0)
             return text(" Discovering channels... ") | dim | center;
 
+        // Connect scan stages every channel and publishes the whole table
+        // atomically (see doFullScan() in tui/main.cpp) — show one clear
+        // progress message for the whole duration rather than revealing
+        // rows one at a time, which read as a torn/inconsistent table
+        // rather than an obviously-still-loading one.
+        if (!s.data.allChannelsLoaded()) {
+            return text(" Scanning channels... " + std::to_string(s.data.scanProgress) +
+                        "/" + std::to_string(n) + " ") | dim | center;
+        }
+
         std::vector<std::vector<Element>> grid;
 
         // Header row
@@ -202,15 +235,29 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
 
         // Data rows
         for (int ch = 0; ch < n; ++ch) {
+            char chLabel[8];
+            snprintf(chLabel, sizeof(chLabel), "CH%-2d", ch);
+
+            // Channel has failed enough consecutive status polls in a row
+            // (see kChannelOfflineThreshold in tui/main.cpp) to be considered
+            // genuinely unresponsive — show it as an error, not silently
+            // continuing to display its last-known (now stale) values.
+            if (s.data.chOffline[ch]) {
+                std::vector<Element> cells;
+                cells.push_back(text(chLabel) | center);
+                cells.push_back(text("OFFLINE") | color(Color::Red) | bold | center);
+                for (size_t c = 2; c < kHeaders.size(); ++c)
+                    cells.push_back(text("--") | color(Color::Red) | dim | center);
+                grid.push_back(std::move(cells));
+                continue;
+            }
+
             const auto& ci = s.data.chInfo[ch];
             const uint16_t caps = ci.chCapFlags;
             bool hasOut   = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
             bool hasDrive = (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
             bool hasVolt  = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
             bool hasCurr  = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
-
-            char chLabel[8];
-            snprintf(chLabel, sizeof(chLabel), "CH%-2d", ch);
 
             std::vector<Element> cells;
             cells.push_back(text(chLabel) | center);

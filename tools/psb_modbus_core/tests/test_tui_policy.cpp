@@ -46,6 +46,25 @@ TEST_CASE("channelIsOn is capability-aware") {
     CHECK_FALSE(channelIsOn(false, false, true, true));
 }
 
+TEST_CASE("channelStatusBadge agrees with channelIsOn — capability-aware, not a bare drive bit") {
+    using namespace psb::ChStatus;
+    CHECK(channelStatusBadge(0x0000, true, true) == "OFF");
+    CHECK(channelStatusBadge(OUTPUT_ENABLE_ACTIVE | OUTPUT_DRIVE_NONZERO, true, true) == "ON");
+    CHECK(channelStatusBadge(RAMPING_ACTIVE, true, true) == "RAMP");
+    CHECK(channelStatusBadge(OUTPUT_ENABLE_ACTIVE | OUTPUT_DRIVE_NONZERO | RAMPING_ACTIVE, true, true) == "ON RAMP");
+    CHECK(channelStatusBadge(ACTIVE_FAULT, true, true) == "FAULT");
+    CHECK(channelStatusBadge(COOLDOWN_ACTIVE, true, true) == "COOL");
+    CHECK(channelStatusBadge(MEASUREMENT_STALE, true, true) == "STALE");
+
+    // Output-enable-only channel (no drive concept at all, e.g. jw_lvb
+    // fixed-voltage channels) — OUTPUT_DRIVE_NONZERO is never meaningful
+    // here, so a bare-bit check would always read OFF. This is the exact
+    // divergence from the Monitor table's Status button that this shared
+    // helper exists to prevent.
+    CHECK(channelStatusBadge(OUTPUT_ENABLE_ACTIVE, true, false) == "ON");
+    CHECK(channelStatusBadge(0x0000, true, false) == "OFF");
+}
+
 TEST_CASE("protection requires both measurement capabilities") {
     CHECK_FALSE(hasProtectionPolicy(0));
     CHECK_FALSE(hasProtectionPolicy(CH_CAP_VOLTAGE_MEASUREMENT));

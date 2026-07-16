@@ -1,6 +1,7 @@
 #pragma once
 
 #include "register_map.h"
+#include "types.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -46,6 +47,28 @@ inline bool channelIsOn(bool hasOutputEnable, bool hasRawOutputDrive,
 inline StatusClickAction statusClickAction(bool valid, bool ramping, bool on) {
     if (!valid || ramping) return StatusClickAction::None;
     return on ? StatusClickAction::DisableGraceful : StatusClickAction::Enable;
+}
+
+// Capability-aware status badge — single source of truth for the Channel
+// tab's "Live" panel, so it can never disagree with the Monitor table's
+// Status button. Same fault/cooldown/stale precedence as before, but "on" is
+// decided via channelIsOn() instead of a bare OUTPUT_DRIVE_NONZERO check,
+// which is meaningless on an output-enable-only channel with no drive
+// concept at all (e.g. jw_lvb's fixed-voltage channels) — that bare check
+// was why the Channel tab could show OFF while Monitor correctly showed ON.
+inline std::string channelStatusBadge(uint16_t status, bool hasOutputEnable, bool hasRawOutputDrive) {
+    using namespace psb::ChStatus;
+    if (status & ACTIVE_FAULT)      return "FAULT";
+    if (status & COOLDOWN_ACTIVE)   return "COOL";
+    if (status & MEASUREMENT_STALE) return "STALE";
+    bool on   = channelIsOn(hasOutputEnable, hasRawOutputDrive,
+                            (status & OUTPUT_ENABLE_ACTIVE) != 0,
+                            (status & OUTPUT_DRIVE_NONZERO) != 0);
+    bool ramp = (status & RAMPING_ACTIVE) != 0;
+    if (on && ramp) return "ON RAMP";
+    if (on)         return "ON";
+    if (ramp)       return "RAMP";
+    return "OFF";
 }
 
 inline bool hasProtectionPolicy(uint16_t caps) {

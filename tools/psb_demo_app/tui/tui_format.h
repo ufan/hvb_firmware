@@ -15,13 +15,41 @@ struct ScannedData {
     psb::ChannelInfo      chInfo[MAX_CHANNELS]{};
     psb::SystemConfig     sysCfg{};
     psb::ChannelConfig    chCfg[MAX_CHANNELS]{};
-    psb::ChannelCalConfig chCalCfg[MAX_CHANNELS]{};
+    // Per-channel connect-scan progress. Publishing is atomic — all flip
+    // from false to true together once the whole sweep finishes (see
+    // doFullScan() in tui/main.cpp) — Monitor shows a single "Scanning..."
+    // message via allChannelsLoaded() below rather than revealing rows one
+    // at a time, which was confusing (looked like a partial/inconsistent
+    // table rather than a still-loading one).
+    bool chLoaded[MAX_CHANNELS]{};
+    // Recovery-policy and derate-step fields (ChannelConfig) are shown only
+    // on the Channel tab, never on Monitor — deferred out of the connect
+    // scan and lazily fetched the first time that channel's tab is opened
+    // (see tab_channel.h) to keep connect-time down to just what Monitor
+    // actually displays.
+    bool chDetailLoaded[MAX_CHANNELS]{};
+    // How many channels doFullScan has finished reading so far — drives the
+    // "Scanning channels... X/N" message while a connect scan is in flight.
+    int scanProgress{0};
+    // Consecutive failed status-poll count per channel, and whether it has
+    // crossed the offline threshold (see doPollScan() in tui/main.cpp) —
+    // Monitor renders an OFFLINE row instead of stale live values once set.
+    int  chPollFailCount[MAX_CHANNELS]{};
+    bool chOffline[MAX_CHANNELS]{};
     std::atomic<bool> valid{false};
 
     // Number of channels to iterate over — 0 before first sysInfo read.
     int numChannels() const {
         int n = sysInfo.supportedChannels;
         return (n > 0 && n <= MAX_CHANNELS) ? n : 0;
+    }
+
+    bool allChannelsLoaded() const {
+        int n = numChannels();
+        if (n == 0) return false;
+        for (int ch = 0; ch < n; ++ch)
+            if (!chLoaded[ch]) return false;
+        return true;
     }
 };
 
@@ -43,19 +71,6 @@ inline std::string fmtInterval(uint16_t raw) {
     char buf[24];
     snprintf(buf, sizeof(buf), "%.1f s", psb::reg::intervalToS(raw));
     return buf;
-}
-
-inline std::string statusBadge(uint16_t status) {
-    using namespace psb::ChStatus;
-    if (status & ACTIVE_FAULT)       return "FAULT";
-    if (status & COOLDOWN_ACTIVE)    return "COOL";
-    if (status & MEASUREMENT_STALE)  return "STALE";
-    bool on   = (status & OUTPUT_DRIVE_NONZERO) != 0;
-    bool ramp = (status & RAMPING_ACTIVE) != 0;
-    if (on && ramp) return "ON RAMP";
-    if (on)         return "ON";
-    if (ramp)       return "RAMP";
-    return "OFF";
 }
 
 inline std::string faultStr(uint16_t fault) {

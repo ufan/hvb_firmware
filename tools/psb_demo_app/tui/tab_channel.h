@@ -15,33 +15,68 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     };
     static const std::vector<std::string> kRecovNames = {"ManualLatch","AutoRetry","AutoDerate","NeverRetry"};
 
-    auto refreshCh = [&s, &inputs, ch]() {
-        s.data.chCfg[ch] = s.client.readChannelConfig(ch, s.data.chInfo[ch].chCapFlags);
+    // Narrow, action-specific refreshes — each re-reads only the Modbus
+    // block the corresponding write actually touched (merging in place via
+    // the reference-taking client methods, never a wholesale struct
+    // replace), instead of one catch-all readChannelConfig() re-read of
+    // everything after every click. See the identical pattern (with more
+    // detail) in tab_monitor.h.
+    auto refreshStatus = [&s, ch]() {
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
+    };
+    auto refreshOutput = [&s, &inputs, ch]() {
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
+        s.client.readChannelOutputBlock(ch, s.data.chInfo[ch].chCapFlags, s.data.chCfg[ch]);
+        syncDataToInputs(s.data, inputs);
+    };
+    auto refreshOutputEnabled = [&s, &inputs, ch]() {
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
+        s.client.readChannelOutputEnabledBlock(ch, s.data.chInfo[ch].chCapFlags, s.data.chCfg[ch]);
+        syncDataToInputs(s.data, inputs);
+    };
+    auto refreshProtection = [&s, &inputs, ch]() {
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
+        s.client.readChannelProtectionBlock(ch, s.data.chInfo[ch].chCapFlags, s.data.chCfg[ch]);
+        syncDataToInputs(s.data, inputs);
+    };
+    auto refreshRecovery = [&s, &inputs, ch]() {
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
+        s.client.readChannelRecoveryBlock(ch, s.data.chCfg[ch]);
+        syncDataToInputs(s.data, inputs);
+    };
+    auto refreshDerate = [&s, &inputs, ch]() {
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
+        s.client.readChannelDerateBlock(ch, s.data.chInfo[ch].chCapFlags, s.data.chCfg[ch]);
+        syncDataToInputs(s.data, inputs);
+    };
+    auto refreshFull = [&s, &inputs, ch]() {
+        s.client.readChannelStatus(ch, s.data.chInfo[ch].chCapFlags, s.data.chInfo[ch]);
+        s.client.readChannelConfig(ch, s.data.chInfo[ch].chCapFlags, s.data.chCfg[ch]);
         syncDataToInputs(s.data, inputs);
     };
 
     // ---- Output / Control ----
-    auto onTarget = [&s, &inputs, refreshCh, ch] {
+    auto onTarget = [&s, &inputs, refreshOutput, ch] {
         try {
             auto raw = reg::voltageFromV(std::stod(inputs.targetV[ch]));
             postWrite(s, inputs, "Target V",
-                [&s, ch, raw] { return s.client.writeConfiguredTargetVoltage(ch, raw); }, refreshCh);
+                [&s, ch, raw] { return s.client.writeConfiguredTargetVoltage(ch, raw); }, refreshOutput);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
     };
-    auto onRampUp = [&s, &inputs, refreshCh, ch] {
+    auto onRampUp = [&s, &inputs, refreshOutput, ch] {
         try {
             auto stepRaw = reg::voltageFromV(std::stod(inputs.ruStep[ch]));
             auto iv = s.data.chCfg[ch].rampUpInterval;
             postWrite(s, inputs, "Ramp Up",
-                [&s, ch, stepRaw, iv] { return s.client.writeRampUp(ch, stepRaw, iv); }, refreshCh);
+                [&s, ch, stepRaw, iv] { return s.client.writeRampUp(ch, stepRaw, iv); }, refreshOutput);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
     };
-    auto onRampDown = [&s, &inputs, refreshCh, ch] {
+    auto onRampDown = [&s, &inputs, refreshOutput, ch] {
         try {
             auto stepRaw = reg::voltageFromV(std::stod(inputs.rdStep[ch]));
             auto iv = s.data.chCfg[ch].rampDownInterval;
             postWrite(s, inputs, "Ramp Down",
-                [&s, ch, stepRaw, iv] { return s.client.writeRampDown(ch, stepRaw, iv); }, refreshCh);
+                [&s, ch, stepRaw, iv] { return s.client.writeRampDown(ch, stepRaw, iv); }, refreshOutput);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
     };
 
@@ -51,29 +86,29 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
 
     // Fixed-voltage channel counterpart to tgtInp (CH_CAP_OUTPUT_ENABLE
     // without CH_CAP_RAW_OUTPUT_DRIVE — no DAC, no ramp, just on/off).
-    auto onOutputEnabledCfg = [&s, &inputs, refreshCh, ch] {
+    auto onOutputEnabledCfg = [&s, &inputs, refreshOutputEnabled, ch] {
         bool on = inputs.outputEnabledIdx[ch] != 0;
         postWrite(s, inputs, "Output Enabled",
-            [&s, ch, on] { return s.client.writeOutputEnabled(ch, on); }, refreshCh);
+            [&s, ch, on] { return s.client.writeOutputEnabled(ch, on); }, refreshOutputEnabled);
     };
     auto outputEnabledCyc = InlineCycler({"Off", "On"}, &inputs.outputEnabledIdx[ch],
         onOutputEnabledCfg, /*autoCommit=*/true);
 
-    auto bEnable  = ActionButton("Enable",    [&s, &inputs, refreshCh, ch]{
-        postWrite(s, inputs, "Enable", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::Enable); }, refreshCh); });
-    auto bDisGra  = ActionButton("Disable",   [&s, &inputs, refreshCh, ch]{
-        postWrite(s, inputs, "Disable", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableGraceful); }, refreshCh); });
-    auto bKill    = ActionButton("Kill",      [&s, &inputs, refreshCh, ch]{
-        postWrite(s, inputs, "Kill", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableImmediate); }, refreshCh); });
+    auto bEnable  = ActionButton("Enable",    [&s, &inputs, refreshStatus, ch]{
+        postWrite(s, inputs, "Enable", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::Enable); }, refreshStatus); });
+    auto bDisGra  = ActionButton("Disable",   [&s, &inputs, refreshStatus, ch]{
+        postWrite(s, inputs, "Disable", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableGraceful); }, refreshStatus); });
+    auto bKill    = ActionButton("Kill",      [&s, &inputs, refreshStatus, ch]{
+        postWrite(s, inputs, "Kill", [&s, ch]{ return s.client.sendOutputAction(ch, OutputAction::DisableImmediate); }, refreshStatus); });
 
     // ---- Protection ----
-    auto onIProt = [&s, &inputs, refreshCh, ch] {
+    auto onIProt = [&s, &inputs, refreshProtection, ch] {
         try {
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
             auto action = kIActVals.at(inputs.iActIdx[ch]);
             auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]), s.data.sysInfo.currentUnitExp);
             postWrite(s, inputs, "I Limit",
-                [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); }, refreshCh);
+                [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); }, refreshProtection);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
     };
     auto iModeC  = InlineCycler(kProtModes, &inputs.iModeIdx[ch], onIProt);
@@ -81,27 +116,27 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     auto iThrInp = CommitInput(&inputs.iThr[ch], "0", onIProt);
 
     // ---- Recovery ----
-    auto onRecov = [&s, &inputs, refreshCh, ch] {
+    auto onRecov = [&s, &inputs, refreshRecovery, ch] {
         try {
             auto pol = static_cast<RecoveryPolicy>(inputs.recovIdx[ch]);
             int d = std::stoi(inputs.retryDelay[ch]), m = std::stoi(inputs.retryMax[ch]),
                 w = std::stoi(inputs.retryWindow[ch]);
             postWrite(s, inputs, "Recovery",
-                [&s, ch, pol, d, m, w] { return s.client.writeChannelRecovery(ch, pol, d, m, w); }, refreshCh);
+                [&s, ch, pol, d, m, w] { return s.client.writeChannelRecovery(ch, pol, d, m, w); }, refreshRecovery);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid recovery value"; }
     };
-    auto onDerate = [&s, &inputs, refreshCh, ch] {
+    auto onDerate = [&s, &inputs, refreshDerate, ch] {
         try {
             auto step = (uint16_t)std::stoul(inputs.derateStep[ch]);
             postWrite(s, inputs, "Derate",
-                [&s, ch, step] { return s.client.writeDerateStep(ch, step); }, refreshCh);
+                [&s, ch, step] { return s.client.writeDerateStep(ch, step); }, refreshDerate);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid derate step"; }
     };
-    auto onBand = [&s, &inputs, refreshCh, ch] {
+    auto onBand = [&s, &inputs, refreshRecovery, ch] {
         try {
             uint16_t pct = (uint16_t)std::stoul(inputs.iBand[ch]);
             postWrite(s, inputs, "SafeBand",
-                [&s, ch, pct] { return s.client.writeChannelSafeBand(ch, pct); }, refreshCh);
+                [&s, ch, pct] { return s.client.writeChannelSafeBand(ch, pct); }, refreshRecovery);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid safe-band value"; }
     };
     auto recovC   = InlineCycler(kRecovNames, &inputs.recovIdx[ch], onRecov);
@@ -111,18 +146,18 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     auto derInp   = CommitInput(&inputs.derateStep[ch],  "0",  onDerate);
     auto iBandInp = CommitInput(&inputs.iBand[ch],       "10", onBand);
 
-    auto bClrAct  = ActionButton("ClrActive", [&s, &inputs, refreshCh, ch]{
-        postWrite(s, inputs, "ClrActive", [&s, ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearActiveFaultBlock); }, refreshCh); });
-    auto bClrHist = ActionButton("ClrHist",   [&s, &inputs, refreshCh, ch]{
-        postWrite(s, inputs, "ClrHist", [&s, ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearFaultHistory); }, refreshCh); });
+    auto bClrAct  = ActionButton("ClrActive", [&s, &inputs, refreshStatus, ch]{
+        postWrite(s, inputs, "ClrActive", [&s, ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearActiveFaultBlock); }, refreshStatus); });
+    auto bClrHist = ActionButton("ClrHist",   [&s, &inputs, refreshStatus, ch]{
+        postWrite(s, inputs, "ClrHist", [&s, ch]{ return s.client.sendChannelFaultCommand(ch, ChannelFaultCommand::ClearFaultHistory); }, refreshStatus); });
 
     // ---- Persistence ----
-    auto bSave    = ActionButton("Save",    [&s, &inputs, refreshCh, ch]{
-        saveChannelConfig(s, inputs, ch, refreshCh); });
-    auto bLoad    = ActionButton("Load",    [&s, &inputs, refreshCh, ch]{
-        postWrite(s, inputs, "Load", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::Load); }, refreshCh); });
-    auto bFactory = ActionButton("Factory", [&s, &inputs, refreshCh, ch]{
-        postWrite(s, inputs, "Factory", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::FactoryReset); }, refreshCh); });
+    auto bSave    = ActionButton("Save",    [&s, &inputs, refreshFull, ch]{
+        saveChannelConfig(s, inputs, ch, refreshFull); });
+    auto bLoad    = ActionButton("Load",    [&s, &inputs, refreshFull, ch]{
+        postWrite(s, inputs, "Load", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::Load); }, refreshFull); });
+    auto bFactory = ActionButton("Factory", [&s, &inputs, refreshFull, ch]{
+        postWrite(s, inputs, "Factory", [&s, ch]{ return s.client.sendParamAction(ch, ParamAction::FactoryReset); }, refreshFull); });
 
     auto hasOutput = [&s, ch] {
         return !s.data.valid ||
@@ -164,9 +199,28 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         bSave, bLoad, bFactory,
     });
 
-    return Renderer(container, [=, &s]() {
+    return Renderer(container, [=, &s, &inputs]() {
         if (s.data.valid && ch >= s.data.numChannels())
             return text(" CH" + std::to_string(ch) + " not present on this device ") | dim | center;
+
+        // Recovery-policy and derate-step fields are deliberately left out
+        // of the connect scan (doFullScan() in tui/main.cpp only fetches
+        // what Monitor displays) — fetch them here, once, the first time
+        // this channel's tab is actually opened. FTXUI's Container::Tab
+        // only renders the active tab, so this fires at most once per
+        // channel per session, never for tabs the user never visits.
+        if (s.data.valid && ch < s.data.numChannels() && !s.data.chDetailLoaded[ch]) {
+            s.data.chDetailLoaded[ch] = true;
+            std::function<void()> item = [&s, &inputs, ch] {
+                uint16_t caps = s.data.chInfo[ch].chCapFlags;
+                s.client.readChannelRecoveryBlock(ch, s.data.chCfg[ch]);
+                s.client.readChannelDerateBlock(ch, caps, s.data.chCfg[ch]);
+                syncDataToInputs(s.data, inputs);
+                s.screen.PostEvent(Event::Custom);
+            };
+            { std::lock_guard<std::mutex> lk(s.workMutex); s.workQueue.push(std::move(item)); }
+            s.workCv.notify_one();
+        }
 
         const uint16_t caps = s.data.valid ? s.data.chInfo[ch].chCapFlags : 0xFFFFu;
         const bool hasVolts = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
@@ -181,7 +235,9 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
             if (hasVolts) { liveParts.push_back(text("   V: "));  liveParts.push_back(text(fmtVoltage(ci.voltageRaw)) | bold); }
             if (hasCurr)  { liveParts.push_back(text("   I: "));  liveParts.push_back(text(fmtCurrentAuto(ci.currentRaw, s.data.sysInfo.currentUnitExp)) | bold); }
             liveParts.push_back(text("   Status: "));
-            liveParts.push_back(text(statusBadge(ci.status)) | bold);
+            liveParts.push_back(text(channelStatusBadge(ci.status,
+                (caps & CH_CAP_OUTPUT_ENABLE) != 0,
+                (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0)) | bold);
             liveParts.push_back(text("   Retries: "));
             liveParts.push_back(text(std::to_string(ci.retryCount)));
             liveBar = hbox(std::move(liveParts));
