@@ -35,10 +35,13 @@ properties:
     required: false
     default: 0
     description: >
-      Initial value for measured_current_calib_b (int16_t). Represents the
-      ADC reading at zero current (negated: if zero-current raw = 1822,
-      set -1822). Loaded as the channel's default measured_current_calib_b
-      at first boot; can be refined via the calibration workflow.
+      Initial value for measured_current_calib_b (int16_t), applied after
+      measured_current_calib_k and measured_current_calib_k_exp by the
+      calibration equation: calibrated = raw * k * 10^k_exp + b. When deriving
+      this from a zero-current raw ADC reading, set it to the negated
+      post-gain value, e.g. -apply_gain(raw_zero, k, k_exp). Loaded as the
+      channel's default measured_current_calib_b at first boot; can be refined
+      via the calibration workflow.
   sample-rate-ms:
     type: int
     required: false

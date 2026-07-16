@@ -119,7 +119,7 @@ struct vc_channel_cal_config {
 	uint16_t measured_voltage_calib_k;                     /* mantissa, unity = 1000000 at k_exp=-6 */
 	int16_t  measured_voltage_calib_b;                     /* mV offset */
 	uint16_t measured_current_calib_k;                     /* mantissa, unity = 1000000 at k_exp=-6 */
-	int16_t  measured_current_calib_b;                     /* raw ADC counts offset */
+	int16_t  measured_current_calib_b;                     /* post-gain current offset */
 	int16_t  output_calib_k_exp;                           /* decimal exponent, valid range [-9, 4] */
 	int16_t  measured_voltage_calib_k_exp;                 /* decimal exponent, valid range [-9, 4] */
 	int16_t  measured_current_calib_k_exp;                 /* decimal exponent, valid range [-9, 4] */
