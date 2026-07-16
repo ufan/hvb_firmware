@@ -45,6 +45,7 @@ struct lvb_vc_config {
 	uint8_t channel_index;
 	uint16_t sample_rate_ms;
 	uint8_t oversample_count;
+	bool default_output_disabled;
 };
 
 struct lvb_vc_data {
@@ -178,12 +179,16 @@ static int lvb_vc_set_meas_callback(const struct device *dev,
 	return 0;
 }
 
-static int lvb_get_default_cal(const struct device *dev,
+static int lvb_get_dt_defaults(const struct device *dev,
+				struct vc_channel_config *cfg_out,
 				struct vc_channel_cal_config *cal)
 {
 	const struct lvb_vc_config *cfg = dev->config;
 
 	cal->measured_current_calib_b = cfg->calib_current_b;
+	if (cfg->default_output_disabled) {
+		cfg_out->configured_output_enabled = false;
+	}
 	return 0;
 }
 
@@ -196,7 +201,7 @@ static const struct vc_channel_api lvb_vc_hw_api = {
 	.stop_sampling      = lvb_vc_stop_sampling,
 	.get_capabilities   = lvb_vc_get_capabilities,
 	.set_meas_callback  = lvb_vc_set_meas_callback,
-	.get_default_cal    = lvb_get_default_cal,
+	.get_dt_defaults    = lvb_get_dt_defaults,
 };
 
 /* ---- Device init ---- */
@@ -229,10 +234,10 @@ static int lvb_vc_init(const struct device *dev)
 	k_timer_init(&data->sample_timer, lvb_vc_timer_cb, NULL);
 	k_work_init(&data->sample_work, lvb_vc_sample_work_fn);
 
-	LOG_INF("ch%d ready caps=0x%04x sample=%dms x%d calib_i_b=%d",
+	LOG_INF("ch%d ready caps=0x%04x sample=%dms x%d calib_i_b=%d out_disabled_override=%d",
 		cfg->channel_index, cfg->capabilities,
 		cfg->sample_rate_ms, cfg->oversample_count,
-		cfg->calib_current_b);
+		cfg->calib_current_b, cfg->default_output_disabled);
 	return 0;
 }
 
@@ -251,6 +256,7 @@ static int lvb_vc_init(const struct device *dev)
 				      CONFIG_LVB_VC_DEFAULT_SAMPLE_RATE_MS), \
 		.oversample_count = (uint8_t)DT_INST_PROP_OR(n, oversample_count, \
 				        CONFIG_LVB_VC_OVERSAMPLE_COUNT), \
+		.default_output_disabled = DT_INST_PROP(n, default_output_disabled), \
 	}; \
 	static struct lvb_vc_data lvb_vc_data_##n = { \
 		.meas = VC_CHANNEL_BUFFER_PTR(DT_DRV_INST(n)), \

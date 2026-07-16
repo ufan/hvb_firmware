@@ -17,6 +17,7 @@
 typedef void (*vc_meas_ready_cb_t)(uint8_t channel, void *user_data);
 
 struct vc_channel_cal_config;
+struct vc_channel_config;
 
 struct vc_channel_api {
 	int (*set_output)(const struct device *dev, uint16_t code);
@@ -26,10 +27,14 @@ struct vc_channel_api {
 	uint16_t (*get_capabilities)(const struct device *dev);
 	int (*set_meas_callback)(const struct device *dev,
 				 vc_meas_ready_cb_t cb, void *user_data);
-	/* Optional: provide device-specific calibration defaults (e.g. per-channel
-	 * ADC zero offsets stored in DTS). Called from vc_channel_init() when dev
-	 * is non-NULL. NULL means use Kconfig defaults only. */
-	int (*get_default_cal)(const struct device *dev,
+	/* Optional: override per-channel operational-config and/or calibration
+	 * defaults sourced from DTS (e.g. a factory-default output-enabled
+	 * override, or a per-channel ADC zero offset). Called from
+	 * vc_channel_init() after cfg/cal are populated from Kconfig-driven
+	 * defaults; only touch the fields you want to override in either
+	 * struct. NULL means use Kconfig defaults for everything. */
+	int (*get_dt_defaults)(const struct device *dev,
+			       struct vc_channel_config *cfg,
 			       struct vc_channel_cal_config *cal);
 };
 

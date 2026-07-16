@@ -474,8 +474,8 @@ void vc_channel_init(struct vc_channel *ch,
 		if (api->set_meas_callback) {
 			api->set_meas_callback(dev, vc_channel_meas_ready, ch);
 		}
-		if (api->get_default_cal) {
-			api->get_default_cal(dev, &ch->cal_config);
+		if (api->get_dt_defaults) {
+			api->get_dt_defaults(dev, &ch->config, &ch->cal_config);
 		}
 	}
 }

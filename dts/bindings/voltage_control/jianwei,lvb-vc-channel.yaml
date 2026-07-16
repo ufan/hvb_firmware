@@ -51,3 +51,14 @@ properties:
     description: >
       Number of ADC samples averaged before one measurement is reported.
       Overrides CONFIG_LVB_VC_OVERSAMPLE_COUNT for this specific channel.
+  default-output-disabled:
+    type: boolean
+    description: >
+      Set to start this channel's configured_output_enabled factory
+      default as false instead of the normal CONFIG_VC_DEFAULT_OUTPUT_ENABLED
+      value. Absent (the common case) means this channel follows the global
+      Kconfig default like every other channel — this property only exists
+      to mark the exceptions. Only meaningful on channels with
+      CH_CAP_OUTPUT_ENABLE (switchable channels); silently has no effect on
+      a locked always-on channel, since configured_output_enabled isn't a
+      supported register there regardless of its stored value.
