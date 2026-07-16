@@ -41,10 +41,36 @@ public:
     ChannelConfig     readChannelConfig(int ch, uint16_t caps = 0);
     ChannelCalConfig  readChannelCalConfig(int ch, uint16_t caps = 0);
 
-    // Lightweight poll helpers — read only dynamic registers,
-    // merging into a cached struct populated by a prior full scan.
-    void readSystemStatus(SystemInfo& info);
-    void readChannelStatus(int ch, uint16_t caps, ChannelInfo& info);
+    // Lightweight poll helpers — read only dynamic registers, merging into a
+    // cached struct populated by a prior full scan. Return whether the read
+    // actually succeeded (false = transient failure — the cached struct is
+    // left untouched), so a caller polling in a loop can track consecutive
+    // failures per channel.
+    bool readSystemStatus(SystemInfo& info);
+    bool readChannelStatus(int ch, uint16_t caps, ChannelInfo& info);
+
+    // Merge-on-success variants — like readChannelStatus() above, only the
+    // fields of a successfully-read sub-block are written into `out`; a
+    // transient failure on one sub-block leaves the caller's existing value
+    // for that field untouched instead of resetting it to a default. Use
+    // these (not the value-returning overloads above) for any caller that
+    // keeps a long-lived cache and refreshes it repeatedly — e.g. the TUI.
+    void readChannelConfig(int ch, uint16_t caps, ChannelConfig& out);
+    void readChannelCalConfig(int ch, uint16_t caps, ChannelCalConfig& out);
+
+    // Per-block reads — the same Modbus transactions readChannelConfig()
+    // performs internally, exposed individually so a caller that knows
+    // exactly which block a write touched can re-read just that block
+    // instead of the whole channel config. Each merges on success like the
+    // reference-taking readChannelConfig() above. Caller must supply the
+    // channel's already-known capability flags (unlike readChannelConfig(),
+    // these don't fetch them internally — every narrow-refresh call site
+    // already has them cached from a prior full scan).
+    void readChannelOutputBlock(int ch, uint16_t caps, ChannelConfig& out);
+    void readChannelRecoveryBlock(int ch, ChannelConfig& out);
+    void readChannelProtectionBlock(int ch, uint16_t caps, ChannelConfig& out);
+    void readChannelDerateBlock(int ch, uint16_t caps, ChannelConfig& out);
+    void readChannelOutputEnabledBlock(int ch, uint16_t caps, ChannelConfig& out);
 
     // High-level writes — system
     bool writeOperatingMode(OpMode mode);

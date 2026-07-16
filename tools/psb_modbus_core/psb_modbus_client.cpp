@@ -203,14 +203,14 @@ bool PsbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uin
 //  Lightweight poll helpers — read only dynamic registers
 // ============================================================================
 
-void PsbModbusClient::readSystemStatus(SystemInfo& info) {
-    if (!checkConnected()) return;
+bool PsbModbusClient::readSystemStatus(SystemInfo& info) {
+    if (!checkConnected()) return false;
 
     /* Read the dynamic tail of the system input block:
        offsets 6..14 (9 registers) in one batch.
        Static fields at 10-11 (FW_VERSION) are read but discarded. */
     uint16_t buf[9] = {};
-    if (!readRegsInternal(false, reg::sysAddr(SYS_BOARD_TEMPERATURE), 9, buf)) return;
+    if (!readRegsInternal(false, reg::sysAddr(SYS_BOARD_TEMPERATURE), 9, buf)) return false;
 
     info.boardTempRaw     = static_cast<int16_t>(buf[SYS_BOARD_TEMPERATURE   - SYS_BOARD_TEMPERATURE]);
     info.boardHumidityRaw = buf[SYS_BOARD_HUMIDITY    - SYS_BOARD_TEMPERATURE];
@@ -219,10 +219,11 @@ void PsbModbusClient::readSystemStatus(SystemInfo& info) {
     info.activeOpMode     = static_cast<OpMode>(buf[SYS_ACTIVE_OPERATING_MODE - SYS_BOARD_TEMPERATURE]);
     info.sysStatus        = buf[SYS_STATUS              - SYS_BOARD_TEMPERATURE];
     info.faultCause       = buf[SYS_FAULT_CAUSE         - SYS_BOARD_TEMPERATURE];
+    return true;
 }
 
-void PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info) {
-    if (!checkConnected()) return;
+bool PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info) {
+    if (!checkConnected()) return false;
 
     uint16_t base = reg::chAddr(ch, 0);
     bool hasV = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
@@ -230,7 +231,7 @@ void PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info
 
     if (hasV && hasI) {
         uint16_t buf[12] = {};
-        if (!readRegsInternal(false, base, 12, buf)) return;
+        if (!readRegsInternal(false, base, 12, buf)) return false;
 
         info.status                      = buf[CH_STATUS_BITS];
         info.activeFault                 = buf[CH_ACTIVE_FAULT_CAUSE];
@@ -244,13 +245,13 @@ void PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info
         info.chCapFlags = caps;
         info.voltageRaw = static_cast<int16_t>(buf[CH_MEASURED_VOLTAGE]);
         info.currentRaw = static_cast<int16_t>(buf[CH_MEASURED_CURRENT]);
-        return;
+        return true;
     }
 
     /* Read 9 runtime_state registers in one batch (offsets 0..8).
        Capability flags (offset 9) are hardware-fixed - use cached caps. */
     uint16_t buf[9] = {};
-    if (!readRegsInternal(false, base, 9, buf)) return;
+    if (!readRegsInternal(false, base, 9, buf)) return false;
 
     info.status                      = buf[CH_STATUS_BITS];
     info.activeFault                 = buf[CH_ACTIVE_FAULT_CAUSE];
@@ -274,6 +275,7 @@ void PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info
         if (readRegsInternal(false, base + CH_MEASURED_CURRENT, 1, &c))
             info.currentRaw = static_cast<int16_t>(c);
     }
+    return true;
 }
 
 // ============================================================================
@@ -398,85 +400,112 @@ SystemConfig PsbModbusClient::readSystemConfig() {
     return cfg;
 }
 
-ChannelConfig PsbModbusClient::readChannelConfig(int ch, uint16_t caps) {
-    ChannelConfig cfg;
-    if (!checkConnected()) return cfg;
-
+void PsbModbusClient::readChannelOutputBlock(int ch, uint16_t caps, ChannelConfig& out) {
+    if (!checkConnected()) return;
     uint16_t base = reg::chAddr(ch, 0);
-
-    /* Acquire capability flags if caller didn't supply them. */
-    if (caps == 0) {
-        if (!readRegsInternal(false, base + CH_CAPABILITY_FLAGS, 1, &caps))
-            caps = 0;
-    }
-
-    bool haveDrive  = (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
-    bool haveV      = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
-    bool haveI      = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
-    bool haveOutput = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
+    bool haveDrive = (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
 
     /* Offsets 0-2 (commands) + optionally 3-7 (ramp/target, need RAW_OUTPUT_DRIVE) */
     if (haveDrive) {
         uint16_t buf[8] = {};
-        if (!readRegsInternal(true, base, 8, buf)) return cfg;
-        cfg.outputAction         = static_cast<OutputAction>(buf[CH_OUTPUT_ACTION]);
-        cfg.faultCommand         = static_cast<ChannelFaultCommand>(buf[CH_FAULT_CMD]);
-        cfg.configuredTargetVRaw = static_cast<int16_t>(buf[CH_CFG_TARGET_VOLTAGE]);
-        cfg.rampUpStepRaw        = buf[CH_RAMP_UP_STEP];
-        cfg.rampUpInterval       = buf[CH_RAMP_UP_INTERVAL];
-        cfg.rampDownStepRaw      = buf[CH_RAMP_DOWN_STEP];
-        cfg.rampDownInterval     = buf[CH_RAMP_DOWN_INTERVAL];
+        if (!readRegsInternal(true, base, 8, buf)) return;
+        out.outputAction         = static_cast<OutputAction>(buf[CH_OUTPUT_ACTION]);
+        out.faultCommand         = static_cast<ChannelFaultCommand>(buf[CH_FAULT_CMD]);
+        out.configuredTargetVRaw = static_cast<int16_t>(buf[CH_CFG_TARGET_VOLTAGE]);
+        out.rampUpStepRaw        = buf[CH_RAMP_UP_STEP];
+        out.rampUpInterval       = buf[CH_RAMP_UP_INTERVAL];
+        out.rampDownStepRaw      = buf[CH_RAMP_DOWN_STEP];
+        out.rampDownInterval     = buf[CH_RAMP_DOWN_INTERVAL];
     } else {
         uint16_t buf[3] = {};
-        if (!readRegsInternal(true, base, 3, buf)) return cfg;
-        cfg.outputAction = static_cast<OutputAction>(buf[CH_OUTPUT_ACTION]);
-        cfg.faultCommand = static_cast<ChannelFaultCommand>(buf[CH_FAULT_CMD]);
+        if (!readRegsInternal(true, base, 3, buf)) return;
+        out.outputAction = static_cast<OutputAction>(buf[CH_OUTPUT_ACTION]);
+        out.faultCommand = static_cast<ChannelFaultCommand>(buf[CH_FAULT_CMD]);
     }
+}
+
+void PsbModbusClient::readChannelRecoveryBlock(int ch, ChannelConfig& out) {
+    if (!checkConnected()) return;
+    uint16_t base = reg::chAddr(ch, 0);
 
     /* Offsets 8-12: recovery policy + retry + safe-band (always accessible) */
-    {
-        uint16_t buf[5] = {};
-        if (!readRegsInternal(true, base + CH_RECOVERY_POLICY_MODE, 5, buf)) return cfg;
-        cfg.recoveryPolicyMode = static_cast<RecoveryPolicy>(buf[CH_RECOVERY_POLICY_MODE - CH_RECOVERY_POLICY_MODE]);
-        cfg.autoRetryDelay     = buf[CH_AUTO_RETRY_DELAY - CH_RECOVERY_POLICY_MODE];
-        cfg.autoRetryMaxCount  = buf[CH_AUTO_RETRY_MAX_COUNT - CH_RECOVERY_POLICY_MODE];
-        cfg.autoRetryWindow    = buf[CH_AUTO_RETRY_WINDOW - CH_RECOVERY_POLICY_MODE];
-        cfg.currentSafeBandPct = buf[CH_CURRENT_SAFE_BAND_PCT - CH_RECOVERY_POLICY_MODE];
-    }
+    uint16_t buf[5] = {};
+    if (!readRegsInternal(true, base + CH_RECOVERY_POLICY_MODE, 5, buf)) return;
+    out.recoveryPolicyMode = static_cast<RecoveryPolicy>(buf[CH_RECOVERY_POLICY_MODE - CH_RECOVERY_POLICY_MODE]);
+    out.autoRetryDelay     = buf[CH_AUTO_RETRY_DELAY - CH_RECOVERY_POLICY_MODE];
+    out.autoRetryMaxCount  = buf[CH_AUTO_RETRY_MAX_COUNT - CH_RECOVERY_POLICY_MODE];
+    out.autoRetryWindow    = buf[CH_AUTO_RETRY_WINDOW - CH_RECOVERY_POLICY_MODE];
+    out.currentSafeBandPct = buf[CH_CURRENT_SAFE_BAND_PCT - CH_RECOVERY_POLICY_MODE];
+}
+
+void PsbModbusClient::readChannelProtectionBlock(int ch, uint16_t caps, ChannelConfig& out) {
+    if (!checkConnected()) return;
+    bool haveI = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
+    if (!haveI) return;
 
     /* Offsets 13-15: current protection (need CURRENT_MEASUREMENT) */
-    if (haveI) {
-        uint16_t buf[3] = {};
-        if (readRegsInternal(true, base + CH_CURRENT_PROTECTION_MODE, 3, buf)) {
-            cfg.iProtMode          = static_cast<ProtectionMode>(buf[0]);
-            cfg.iProtOutputAction  = static_cast<OutputAction>(buf[1]);
-            cfg.iLimitThresholdRaw = static_cast<int16_t>(buf[2]);
-        }
-    }
+    uint16_t base = reg::chAddr(ch, 0);
+    uint16_t buf[3] = {};
+    if (!readRegsInternal(true, base + CH_CURRENT_PROTECTION_MODE, 3, buf)) return;
+    out.iProtMode          = static_cast<ProtectionMode>(buf[0]);
+    out.iProtOutputAction  = static_cast<OutputAction>(buf[1]);
+    out.iLimitThresholdRaw = static_cast<int16_t>(buf[2]);
+}
+
+void PsbModbusClient::readChannelDerateBlock(int ch, uint16_t caps, ChannelConfig& out) {
+    if (!checkConnected()) return;
+    bool haveDrive = (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
+    bool haveV     = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+    if (!(haveDrive && haveV)) return;
 
     /* Offset 16: auto-derate step (need RAW_OUTPUT_DRIVE + VOLTAGE_MEASUREMENT) */
-    if (haveDrive && haveV) {
-        uint16_t d = 0;
-        if (readRegsInternal(true, base + CH_AUTO_DERATE_STEP, 1, &d))
-            cfg.derateStepRaw = d;
-    }
+    uint16_t base = reg::chAddr(ch, 0);
+    uint16_t d = 0;
+    if (readRegsInternal(true, base + CH_AUTO_DERATE_STEP, 1, &d))
+        out.derateStepRaw = d;
+}
+
+void PsbModbusClient::readChannelOutputEnabledBlock(int ch, uint16_t caps, ChannelConfig& out) {
+    if (!checkConnected()) return;
+    bool haveDrive  = (caps & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
+    bool haveOutput = (caps & CH_CAP_OUTPUT_ENABLE) != 0;
+    if (!(!haveDrive && haveOutput)) return;
 
     /* Offset 17: CFG_OUTPUT_ENABLED — fixed-voltage channels only (no DAC,
        but can be switched). Mutually exclusive with configuredTargetVRaw
        above; the firmware rejects this register on DAC channels and rejects
        CFG_TARGET_VOLTAGE on channels that lack RAW_OUTPUT_DRIVE. */
-    if (!haveDrive && haveOutput) {
-        uint16_t e = 0;
-        if (readRegsInternal(true, base + CH_CFG_OUTPUT_ENABLED, 1, &e))
-            cfg.outputEnabledCfg = (e != 0);
+    uint16_t base = reg::chAddr(ch, 0);
+    uint16_t e = 0;
+    if (readRegsInternal(true, base + CH_CFG_OUTPUT_ENABLED, 1, &e))
+        out.outputEnabledCfg = (e != 0);
+}
+
+void PsbModbusClient::readChannelConfig(int ch, uint16_t caps, ChannelConfig& out) {
+    if (!checkConnected()) return;
+
+    /* Acquire capability flags if caller didn't supply them. */
+    if (caps == 0) {
+        uint16_t base = reg::chAddr(ch, 0);
+        if (!readRegsInternal(false, base + CH_CAPABILITY_FLAGS, 1, &caps))
+            caps = 0;
     }
 
+    readChannelOutputBlock(ch, caps, out);
+    readChannelRecoveryBlock(ch, out);
+    readChannelProtectionBlock(ch, caps, out);
+    readChannelDerateBlock(ch, caps, out);
+    readChannelOutputEnabledBlock(ch, caps, out);
+}
+
+ChannelConfig PsbModbusClient::readChannelConfig(int ch, uint16_t caps) {
+    ChannelConfig cfg;
+    readChannelConfig(ch, caps, cfg);
     return cfg;
 }
 
-ChannelCalConfig PsbModbusClient::readChannelCalConfig(int ch, uint16_t caps) {
-    ChannelCalConfig cfg;
-    if (!checkConnected()) return cfg;
+void PsbModbusClient::readChannelCalConfig(int ch, uint16_t caps, ChannelCalConfig& out) {
+    if (!checkConnected()) return;
 
     uint16_t base = reg::chAddr(ch, 0);
 
@@ -497,52 +526,57 @@ ChannelCalConfig PsbModbusClient::readChannelCalConfig(int ch, uint16_t caps) {
     if (haveDrive && haveV && haveI) {
         uint16_t buf[9] = {};
         if (readRegsInternal(true, base + CH_OUTPUT_CAL_K, 9, buf)) {
-            cfg.outCalK      = buf[0];
-            cfg.outCalB      = static_cast<int16_t>(buf[1]);
-            cfg.measVCalK    = buf[2];
-            cfg.measVCalB    = static_cast<int16_t>(buf[3]);
-            cfg.measICalK    = buf[4];
-            cfg.measICalB    = static_cast<int16_t>(buf[5]);
-            cfg.outCalKExp   = static_cast<int16_t>(buf[6]);
-            cfg.measVCalKExp = static_cast<int16_t>(buf[7]);
-            cfg.measICalKExp = static_cast<int16_t>(buf[8]);
+            out.outCalK      = buf[0];
+            out.outCalB      = static_cast<int16_t>(buf[1]);
+            out.measVCalK    = buf[2];
+            out.measVCalB    = static_cast<int16_t>(buf[3]);
+            out.measICalK    = buf[4];
+            out.measICalB    = static_cast<int16_t>(buf[5]);
+            out.outCalKExp   = static_cast<int16_t>(buf[6]);
+            out.measVCalKExp = static_cast<int16_t>(buf[7]);
+            out.measICalKExp = static_cast<int16_t>(buf[8]);
         }
-    } else {
-        if (haveDrive) {
-            uint16_t buf[2] = {};
-            if (readRegsInternal(true, base + CH_OUTPUT_CAL_K, 2, buf)) {
-                cfg.outCalK = buf[0];
-                cfg.outCalB = static_cast<int16_t>(buf[1]);
-            }
-            uint16_t expBuf = 0;
-            if (readRegsInternal(true, base + CH_OUTPUT_CAL_K_EXP, 1, &expBuf)) {
-                cfg.outCalKExp = static_cast<int16_t>(expBuf);
-            }
-        }
-        if (haveV) {
-            uint16_t buf[2] = {};
-            if (readRegsInternal(true, base + CH_MEASURED_V_CAL_K, 2, buf)) {
-                cfg.measVCalK = buf[0];
-                cfg.measVCalB = static_cast<int16_t>(buf[1]);
-            }
-            uint16_t expBuf = 0;
-            if (readRegsInternal(true, base + CH_MEASURED_V_CAL_K_EXP, 1, &expBuf)) {
-                cfg.measVCalKExp = static_cast<int16_t>(expBuf);
-            }
-        }
-        if (haveI) {
-            uint16_t buf[2] = {};
-            if (readRegsInternal(true, base + CH_MEASURED_I_CAL_K, 2, buf)) {
-                cfg.measICalK = buf[0];
-                cfg.measICalB = static_cast<int16_t>(buf[1]);
-            }
-            uint16_t expBuf = 0;
-            if (readRegsInternal(true, base + CH_MEASURED_I_CAL_K_EXP, 1, &expBuf)) {
-                cfg.measICalKExp = static_cast<int16_t>(expBuf);
-            }
-        }
+        return;
     }
 
+    if (haveDrive) {
+        uint16_t buf[2] = {};
+        if (readRegsInternal(true, base + CH_OUTPUT_CAL_K, 2, buf)) {
+            out.outCalK = buf[0];
+            out.outCalB = static_cast<int16_t>(buf[1]);
+        }
+        uint16_t expBuf = 0;
+        if (readRegsInternal(true, base + CH_OUTPUT_CAL_K_EXP, 1, &expBuf)) {
+            out.outCalKExp = static_cast<int16_t>(expBuf);
+        }
+    }
+    if (haveV) {
+        uint16_t buf[2] = {};
+        if (readRegsInternal(true, base + CH_MEASURED_V_CAL_K, 2, buf)) {
+            out.measVCalK = buf[0];
+            out.measVCalB = static_cast<int16_t>(buf[1]);
+        }
+        uint16_t expBuf = 0;
+        if (readRegsInternal(true, base + CH_MEASURED_V_CAL_K_EXP, 1, &expBuf)) {
+            out.measVCalKExp = static_cast<int16_t>(expBuf);
+        }
+    }
+    if (haveI) {
+        uint16_t buf[2] = {};
+        if (readRegsInternal(true, base + CH_MEASURED_I_CAL_K, 2, buf)) {
+            out.measICalK = buf[0];
+            out.measICalB = static_cast<int16_t>(buf[1]);
+        }
+        uint16_t expBuf = 0;
+        if (readRegsInternal(true, base + CH_MEASURED_I_CAL_K_EXP, 1, &expBuf)) {
+            out.measICalKExp = static_cast<int16_t>(expBuf);
+        }
+    }
+}
+
+ChannelCalConfig PsbModbusClient::readChannelCalConfig(int ch, uint16_t caps) {
+    ChannelCalConfig cfg;
+    readChannelCalConfig(ch, caps, cfg);
     return cfg;
 }
 
