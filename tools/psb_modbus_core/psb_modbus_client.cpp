@@ -6,10 +6,28 @@
 #include <Modbus.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <sstream>
+#include <thread>
 
 namespace psb {
+
+// The non-blocking port's request state machine (ModbusClientPort::process())
+// is explicitly designed to be pumped from an external timer/event loop —
+// it returns Status_Processing immediately while waiting for I/O rather than
+// blocking (that's the whole point of non-blocking mode; see its STATE_TIMEOUT
+// case, which only sleeps in blocking mode). Driving it with a zero-delay
+// do/while spin — as a naive port of the intended "poll until done" pattern
+// would — pegs a CPU core at ~100% for the full duration of every single
+// transaction. Measured live: this doesn't just waste CPU, it visibly
+// degrades real transaction latency under sustained continuous polling
+// (confirmed by comparing against mbpoll's much faster, non-spinning
+// isolated reads on the same board/cable) — almost certainly by starving
+// the kernel's USB-serial interrupt servicing of CPU time on whatever core
+// the spin lands on. This tiny yield between checks is cheap next to a
+// Modbus RTU round-trip (tens of ms) and eliminates the spin entirely.
+static constexpr auto kNonBlockingPollInterval = std::chrono::milliseconds(1);
 
 struct PsbModbusClient::Impl {
     ModbusClientPort* port = nullptr;
@@ -50,7 +68,27 @@ bool PsbModbusClient::connect(const std::string& portName, int baud, int slaveId
     settings.stopBits = Modbus::OneStop;
     settings.flowControl = Modbus::NoFlowControl;
     settings.timeoutFirstByte = static_cast<uint32_t>(timeoutMs);
-    settings.timeoutInterByte = std::max(10u, static_cast<uint32_t>(timeoutMs) / 10);
+    // timeoutInterByte governs how long ModbusLib waits for each subsequent
+    // byte within an already-started response before concluding the frame is
+    // complete — a property of the serial link and adapter, unrelated to
+    // timeoutFirstByte (how long to wait for a response to even begin) and
+    // must not be derived from it. The previous timeoutMs/10 formula happened
+    // to produce 300ms at this class's typical 3000ms caller default (the
+    // TUI) — confirmed via syscall-level tracing that EVERY transaction, not
+    // just failures, paid this in full (measured ~306-308ms per transaction,
+    // matching 3000/10 almost exactly), since the library waits out the full
+    // inter-byte timeout after the last byte arrives before returning, even
+    // for an already-complete, healthy response. This is why the CLI's
+    // commands (default timeoutMs=500 -> 50ms) looked fine while the TUI's
+    // (3000ms -> 300ms) was consistently ~6x slower than a healthy transaction
+    // needs to be. 50ms is exactly what the CLI's default timeoutMs=500 has
+    // always produced via this same formula — already a proven-safe value in
+    // this codebase, not a new guess — with generous margin over both the
+    // Modbus RTU spec's frame-silence threshold (~0.3ms at 115200 baud) and
+    // the several-ms USB-serial adapter buffering/latency-timer behavior
+    // (e.g. CH340) that non-blocking mode exists to tolerate (see the
+    // mode-choice comment below).
+    settings.timeoutInterByte = 50;
 
     // Non-blocking mode: engages ModbusLib's inter-byte accumulation loop
     // (nonBlockingRead). The blocking path does a single ::read() and treats a
@@ -159,12 +197,14 @@ bool PsbModbusClient::readRegsInternal(bool holding, uint16_t addr, uint16_t cou
     Modbus::StatusCode s;
     auto unit = static_cast<uint8_t>(m_impl->slaveId);
     // Non-blocking port: drive the request to completion. ModbusLib's internal
-    // timeout/retry logic guarantees this terminates (Good or Bad).
+    // timeout/retry logic guarantees this terminates (Good or Bad). The sleep
+    // is required, not cosmetic — see kNonBlockingPollInterval's comment.
     do {
         if (holding)
             s = m_impl->port->readHoldingRegisters(unit, addr, count, out);
         else
             s = m_impl->port->readInputRegisters(unit, addr, count, out);
+        if (Modbus::StatusIsProcessing(s)) std::this_thread::sleep_for(kNonBlockingPollInterval);
     } while (Modbus::StatusIsProcessing(s));
     if (!Modbus::StatusIsGood(s)) {
         m_impl->errorText = std::string("Modbus error: ") + m_impl->port->lastErrorText();
@@ -188,10 +228,13 @@ bool PsbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uin
     ScopedPortTimeout timeoutGuard(m_impl->port ? m_impl->port->port() : nullptr, timeoutOverrideMs);
     auto unit = static_cast<uint8_t>(m_impl->slaveId);
     for (uint16_t i = 0; i < count; i++) {
-        // Non-blocking port: poll until the write request completes.
+        // Non-blocking port: poll until the write request completes. The
+        // sleep is required, not cosmetic — see kNonBlockingPollInterval's
+        // comment.
         Modbus::StatusCode s;
         do {
             s = m_impl->port->writeSingleRegister(unit, addr + i, values[i]);
+            if (Modbus::StatusIsProcessing(s)) std::this_thread::sleep_for(kNonBlockingPollInterval);
         } while (Modbus::StatusIsProcessing(s));
         if (!Modbus::StatusIsGood(s)) {
             m_impl->errorText = std::string("Modbus error: ") + m_impl->port->lastErrorText();
