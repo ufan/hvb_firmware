@@ -100,8 +100,18 @@ int cmdInfo() {
         + (info.sysCapFlags & psb::SysCap::ENV_SENSOR ? "[Env]" : "")
         + (info.sysCapFlags & psb::SysCap::CALIBRATION_MODE ? "[Cal]" : ""));
     printSep("Channels:", std::to_string(info.supportedChannels) + " (mask " + formatHex(info.activeChMask) + ")");
-    printSep("Board Temp:", std::to_string(info.boardTempRaw) + " raw");
-    printSep("Humidity:", std::to_string(info.boardHumidityRaw) + " raw");
+    // SYS_BOARD_TEMPERATURE/HUMIDITY have no backing register descriptor at
+    // all on a board without CONFIG_SYS_STATUS (e.g. jw_lvb) — they read
+    // back as the protocol's "reserved register" convention (0), which looks
+    // exactly like a real (if suspiciously flat) reading unless gated on the
+    // ENV_SENSOR capability bit.
+    if (info.sysCapFlags & psb::SysCap::ENV_SENSOR) {
+        printSep("Board Temp:", std::to_string(info.boardTempRaw) + " raw");
+        printSep("Humidity:", std::to_string(info.boardHumidityRaw) + " raw");
+    } else {
+        printSep("Board Temp:", "n/a — no environment sensor");
+        printSep("Humidity:", "n/a — no environment sensor");
+    }
     printSep("Uptime:", std::to_string(info.uptimeSec) + " s");
     printSep("FW Version:", formatHex(info.fwVersion));
     printSep("Active OpMode:", psb::opModeName(info.activeOpMode));

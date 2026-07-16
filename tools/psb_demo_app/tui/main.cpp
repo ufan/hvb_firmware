@@ -612,8 +612,14 @@ int main(int argc, char** argv) {
         if (data.valid) chTxt = std::to_string(data.numChannels());
 
         std::string fwTxt = "--", protoTxt = "--";
-        char tmpS[16], humS[16];
         std::string uptimeTxt = "--s";
+        // SYS_BOARD_TEMPERATURE/HUMIDITY have no backing register descriptor
+        // at all on a board without CONFIG_SYS_STATUS (e.g. jw_lvb) — they
+        // read back as the protocol's "reserved register" convention (0),
+        // which looks exactly like a real (if suspiciously flat) reading
+        // unless gated on the ENV_SENSOR capability bit.
+        bool hasEnvSensor = false;
+        char tmpS[16], humS[16];
         tmpS[0] = humS[0] = 0;
         if (data.valid) {
             const auto& si = data.sysInfo;
@@ -621,8 +627,11 @@ int main(int argc, char** argv) {
             fwTxt    = fw;
             protoTxt = std::to_string(si.protoMajor) + "." + std::to_string(si.protoMinor);
             uptimeTxt = std::to_string(si.uptimeSec) + "s";
-            snprintf(tmpS, sizeof(tmpS), "%.1fC",  si.boardTempRaw    * 0.1);
-            snprintf(humS, sizeof(humS), "%.1f%%", si.boardHumidityRaw * 0.1);
+            hasEnvSensor = (si.sysCapFlags & psb::SysCap::ENV_SENSOR) != 0;
+            if (hasEnvSensor) {
+                snprintf(tmpS, sizeof(tmpS), "%.1fC",  si.boardTempRaw    * 0.1);
+                snprintf(humS, sizeof(humS), "%.1f%%", si.boardHumidityRaw * 0.1);
+            }
         }
 
         // --- Breathing green: cosine wave 0→1→0 over 2 s ----
@@ -647,9 +656,13 @@ int main(int argc, char** argv) {
         bool isOnline = g_connected.load();
         Element centerGroup;
         if (isOnline) {
+            std::string telemetry = " " + uptimeTxt;
+            if (hasEnvSensor)
+                telemetry += "  |  T: " + std::string(tmpS) + "  H: " + std::string(humS);
+            telemetry += " ";
             centerGroup = hbox({
                 connDotEl,
-                text(" " + uptimeTxt + "  |  T: " + std::string(tmpS) + "  H: " + std::string(humS) + " "),
+                text(telemetry),
             });
         } else {
             centerGroup = text("");
