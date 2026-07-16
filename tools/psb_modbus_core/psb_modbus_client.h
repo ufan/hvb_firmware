@@ -45,9 +45,22 @@ public:
     // cached struct populated by a prior full scan. Return whether the read
     // actually succeeded (false = transient failure — the cached struct is
     // left untouched), so a caller polling in a loop can track consecutive
-    // failures per channel.
-    bool readSystemStatus(SystemInfo& info);
-    bool readChannelStatus(int ch, uint16_t caps, ChannelInfo& info);
+    // failures per channel. `timeoutOverrideMs` (>= 0) temporarily replaces
+    // the port's response timeout for just this call — a routine poll that
+    // fails is expected to just retry next cycle, so it's worth failing fast
+    // (a short override) rather than blocking the whole poll loop for
+    // however long the port's normal timeout is; -1 keeps it unchanged.
+    bool readSystemStatus(SystemInfo& info, int timeoutOverrideMs = -1);
+    bool readChannelStatus(int ch, uint16_t caps, ChannelInfo& info, int timeoutOverrideMs = -1);
+
+    // Single-register capability-flags probe — every other read/write in
+    // this class takes `caps` as a cached, already-known input rather than
+    // fetching it (by design, to avoid an extra transaction on every call).
+    // This exists purely so a caller can re-probe a channel whose caps were
+    // never captured correctly in the first place (e.g. a connect-time
+    // transient failure left it at 0, the "unknown"/default value — no real
+    // channel legitimately has zero capability bits).
+    bool readChannelCapabilities(int ch, uint16_t& caps, int timeoutOverrideMs = -1);
 
     // Merge-on-success variants — like readChannelStatus() above, only the
     // fields of a successfully-read sub-block are written into `out`; a
@@ -121,10 +134,11 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
-    bool readRegsInternal(bool holding, uint16_t addr, uint16_t count, uint16_t* out);
     // timeoutOverrideMs >= 0 temporarily replaces the port's response timeout
     // for just this request (restored afterward); -1 keeps the port's current
     // timeout unchanged.
+    bool readRegsInternal(bool holding, uint16_t addr, uint16_t count, uint16_t* out,
+                          int timeoutOverrideMs = -1);
     bool writeRegsInternal(uint16_t addr, uint16_t count, const uint16_t* values,
                             int timeoutOverrideMs = -1);
     bool checkConnected();

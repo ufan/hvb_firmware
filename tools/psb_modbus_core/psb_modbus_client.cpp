@@ -117,35 +117,6 @@ bool PsbModbusClient::checkConnected() {
     return true;
 }
 
-bool PsbModbusClient::readRegsInternal(bool holding, uint16_t addr, uint16_t count, uint16_t* out) {
-    // Test mode — direct array access
-    if (m_impl->testInputRegs || m_impl->testHoldingRegs) {
-        uint16_t* src = holding ? m_impl->testHoldingRegs : m_impl->testInputRegs;
-        if (!src || addr + count > static_cast<uint16_t>(m_impl->testMaxAddr)) {
-            m_impl->errorText = "test: address out of range";
-            return false;
-        }
-        memcpy(out, src + addr, count * sizeof(uint16_t));
-        return true;
-    }
-    if (!checkConnected()) return false;
-    Modbus::StatusCode s;
-    auto unit = static_cast<uint8_t>(m_impl->slaveId);
-    // Non-blocking port: drive the request to completion. ModbusLib's internal
-    // timeout/retry logic guarantees this terminates (Good or Bad).
-    do {
-        if (holding)
-            s = m_impl->port->readHoldingRegisters(unit, addr, count, out);
-        else
-            s = m_impl->port->readInputRegisters(unit, addr, count, out);
-    } while (Modbus::StatusIsProcessing(s));
-    if (!Modbus::StatusIsGood(s)) {
-        m_impl->errorText = std::string("Modbus error: ") + m_impl->port->lastErrorText();
-        return false;
-    }
-    return true;
-}
-
 namespace {
 // RAII helper: temporarily overrides a ModbusPort's response timeout for the
 // duration of a single request, restoring the previous value on scope exit
@@ -170,6 +141,37 @@ private:
     uint32_t m_saved = 0;
 };
 } // namespace
+
+bool PsbModbusClient::readRegsInternal(bool holding, uint16_t addr, uint16_t count, uint16_t* out,
+                                       int timeoutOverrideMs) {
+    // Test mode — direct array access
+    if (m_impl->testInputRegs || m_impl->testHoldingRegs) {
+        uint16_t* src = holding ? m_impl->testHoldingRegs : m_impl->testInputRegs;
+        if (!src || addr + count > static_cast<uint16_t>(m_impl->testMaxAddr)) {
+            m_impl->errorText = "test: address out of range";
+            return false;
+        }
+        memcpy(out, src + addr, count * sizeof(uint16_t));
+        return true;
+    }
+    if (!checkConnected()) return false;
+    ScopedPortTimeout timeoutGuard(m_impl->port ? m_impl->port->port() : nullptr, timeoutOverrideMs);
+    Modbus::StatusCode s;
+    auto unit = static_cast<uint8_t>(m_impl->slaveId);
+    // Non-blocking port: drive the request to completion. ModbusLib's internal
+    // timeout/retry logic guarantees this terminates (Good or Bad).
+    do {
+        if (holding)
+            s = m_impl->port->readHoldingRegisters(unit, addr, count, out);
+        else
+            s = m_impl->port->readInputRegisters(unit, addr, count, out);
+    } while (Modbus::StatusIsProcessing(s));
+    if (!Modbus::StatusIsGood(s)) {
+        m_impl->errorText = std::string("Modbus error: ") + m_impl->port->lastErrorText();
+        return false;
+    }
+    return true;
+}
 
 bool PsbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uint16_t* values,
                                          int timeoutOverrideMs) {
@@ -203,14 +205,14 @@ bool PsbModbusClient::writeRegsInternal(uint16_t addr, uint16_t count, const uin
 //  Lightweight poll helpers — read only dynamic registers
 // ============================================================================
 
-bool PsbModbusClient::readSystemStatus(SystemInfo& info) {
+bool PsbModbusClient::readSystemStatus(SystemInfo& info, int timeoutOverrideMs) {
     if (!checkConnected()) return false;
 
     /* Read the dynamic tail of the system input block:
        offsets 6..14 (9 registers) in one batch.
        Static fields at 10-11 (FW_VERSION) are read but discarded. */
     uint16_t buf[9] = {};
-    if (!readRegsInternal(false, reg::sysAddr(SYS_BOARD_TEMPERATURE), 9, buf)) return false;
+    if (!readRegsInternal(false, reg::sysAddr(SYS_BOARD_TEMPERATURE), 9, buf, timeoutOverrideMs)) return false;
 
     info.boardTempRaw     = static_cast<int16_t>(buf[SYS_BOARD_TEMPERATURE   - SYS_BOARD_TEMPERATURE]);
     info.boardHumidityRaw = buf[SYS_BOARD_HUMIDITY    - SYS_BOARD_TEMPERATURE];
@@ -222,7 +224,7 @@ bool PsbModbusClient::readSystemStatus(SystemInfo& info) {
     return true;
 }
 
-bool PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info) {
+bool PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info, int timeoutOverrideMs) {
     if (!checkConnected()) return false;
 
     uint16_t base = reg::chAddr(ch, 0);
@@ -231,7 +233,7 @@ bool PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info
 
     if (hasV && hasI) {
         uint16_t buf[12] = {};
-        if (!readRegsInternal(false, base, 12, buf)) return false;
+        if (!readRegsInternal(false, base, 12, buf, timeoutOverrideMs)) return false;
 
         info.status                      = buf[CH_STATUS_BITS];
         info.activeFault                 = buf[CH_ACTIVE_FAULT_CAUSE];
@@ -251,7 +253,7 @@ bool PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info
     /* Read 9 runtime_state registers in one batch (offsets 0..8).
        Capability flags (offset 9) are hardware-fixed - use cached caps. */
     uint16_t buf[9] = {};
-    if (!readRegsInternal(false, base, 9, buf)) return false;
+    if (!readRegsInternal(false, base, 9, buf, timeoutOverrideMs)) return false;
 
     info.status                      = buf[CH_STATUS_BITS];
     info.activeFault                 = buf[CH_ACTIVE_FAULT_CAUSE];
@@ -267,12 +269,12 @@ bool PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info
     /* Measured voltage / current - conditional on channel capabilities. */
     if (hasV) {
         uint16_t v = 0;
-        if (readRegsInternal(false, base + CH_MEASURED_VOLTAGE, 1, &v))
+        if (readRegsInternal(false, base + CH_MEASURED_VOLTAGE, 1, &v, timeoutOverrideMs))
             info.voltageRaw = static_cast<int16_t>(v);
     }
     if (hasI) {
         uint16_t c = 0;
-        if (readRegsInternal(false, base + CH_MEASURED_CURRENT, 1, &c))
+        if (readRegsInternal(false, base + CH_MEASURED_CURRENT, 1, &c, timeoutOverrideMs))
             info.currentRaw = static_cast<int16_t>(c);
     }
     return true;
@@ -314,6 +316,14 @@ SystemInfo PsbModbusClient::readSystemInfo() {
         : -10;
     m_impl->currentUnitExp = info.currentUnitExp;
     return info;
+}
+
+bool PsbModbusClient::readChannelCapabilities(int ch, uint16_t& caps, int timeoutOverrideMs) {
+    if (!checkConnected()) return false;
+    uint16_t v = 0;
+    if (!readRegsInternal(false, reg::chAddr(ch, CH_CAPABILITY_FLAGS), 1, &v, timeoutOverrideMs)) return false;
+    caps = v;
+    return true;
 }
 
 ChannelInfo PsbModbusClient::readChannelInfo(int ch, uint16_t caps) {

@@ -89,6 +89,15 @@ static void doFullScan(psb::tui::ScannedData& data, ScreenInteractive& screen,
 
     for (int ch = 0; ch < n; ++ch) {
         chInfoStaging[ch] = readWithRetry([&] { return g_client.readChannelInfo(ch); });
+        // Zero capability flags means the connect-time probe itself failed
+        // both of readWithRetry's attempts (readChannelInfo's capability
+        // fetch is one all-or-nothing transaction — no real channel
+        // legitimately reports zero capability bits). Worth fighting harder
+        // for here: getting this wrong silently renders the whole row "n/a"
+        // for the rest of the session (doPollScan's self-heal below covers
+        // the case this still misses).
+        for (int attempt = 0; attempt < 2 && chInfoStaging[ch].chCapFlags == 0; ++attempt)
+            chInfoStaging[ch] = g_client.readChannelInfo(ch);
         uint16_t caps = chInfoStaging[ch].chCapFlags;
         g_client.readChannelOutputBlock(ch, caps, chCfgStaging[ch]);
         g_client.readChannelProtectionBlock(ch, caps, chCfgStaging[ch]);
@@ -114,14 +123,32 @@ static void doFullScan(psb::tui::ScannedData& data, ScreenInteractive& screen,
 // enough tolerance for this class of decision.
 static constexpr int kChannelOfflineThreshold = 5;
 
-// Reads system status and sweeps every channel's status into local staging
-// copies, then publishes everything to `data` in one shot (one PostEvent)
-// once the sweep is done (or interrupted — see below), rather than mutating
-// `data` in place channel-by-channel. The latter let the ~12 Hz
-// breathing-LED animation thread's continuous redraws catch the table
-// mid-sweep, showing a torn mix of channels already refreshed this cycle
-// and channels still showing the previous cycle's values; staging then
-// publishing atomically means every repaint sees one consistent snapshot.
+// Response timeout used for routine polling reads only (system/channel
+// status, capability self-heal) — deliberately much shorter than the port's
+// normal connect-time timeout (default 3000ms). Confirmed live against real
+// hardware that this board/cable link has genuine, occasional transient
+// Modbus failures (independently reproduced with mbpoll alone, no TUI
+// involved) — with the default timeout, one such failure mid-sweep froze
+// the whole poll cycle (and the uptime counter with it) for up to 3 full
+// seconds. A routine poll that fails is expected to just succeed next
+// cycle, so it should fail fast here rather than block the UI.
+static constexpr int kPollTimeoutMs = 300;
+
+// Publishes system status and channel status on two independent cadences,
+// each a single PostEvent:
+//  - System status (uptime/temp/humidity) publishes the instant it's read,
+//    so the menu bar ticks every poll cycle regardless of how long the
+//    10-channel sweep below takes — coupling it to the sweep's completion
+//    is what previously made uptime visibly update only once every ~3-5s
+//    on a 10-channel board instead of every cycle.
+//  - Channel status is swept into a local staging copy and published to
+//    `data` in one shot once the sweep is done (or interrupted — see
+//    below), rather than mutating `data` in place channel-by-channel. The
+//    latter let the ~12 Hz breathing-LED animation thread's continuous
+//    redraws catch the table mid-sweep, showing a torn mix of channels
+//    already refreshed this cycle and channels still showing the previous
+//    cycle's values; staging then publishing atomically means every repaint
+//    sees one consistent snapshot of the whole table.
 //
 // Tracks consecutive read failures per channel in `data` directly (rare,
 // edge-triggered changes — no torn-read concern like the per-cycle
@@ -140,8 +167,14 @@ static void doPollScan(psb::tui::ScannedData& data, ScreenInteractive& screen,
                        std::string& statusMsg, std::mutex& statusMutex) {
     int n = data.numChannels();
 
-    psb::SystemInfo sysStaging = data.sysInfo;
-    g_client.readSystemStatus(sysStaging);
+    // Publish system status (uptime/temp/humidity) immediately, on its own —
+    // it has no consistency relationship with the per-channel sweep below,
+    // and gating it behind the whole sweep is what made the uptime counter
+    // only tick once per full sweep (~3-5s on a 10-channel board) instead of
+    // every poll cycle. readSystemStatus() merges in place, so this is safe
+    // to publish straight to `data` without a staging copy.
+    g_client.readSystemStatus(data.sysInfo, kPollTimeoutMs);
+    if (running) screen.PostEvent(Event::Custom);
 
     psb::ChannelInfo chStaging[psb::tui::MAX_CHANNELS];
     for (int ch = 0; ch < n; ++ch) chStaging[ch] = data.chInfo[ch];
@@ -150,7 +183,22 @@ static void doPollScan(psb::tui::ScannedData& data, ScreenInteractive& screen,
     for (int ch = 0; ch < n; ++ch) {
         if (hasPendingWork()) break;
         if (!psb::tui::shouldPollChannel(ch, n)) continue;
-        bool ok = g_client.readChannelStatus(ch, chStaging[ch].chCapFlags, chStaging[ch]);
+
+        // Self-heal a channel whose capability flags never got captured
+        // correctly (0 is not a real hardware configuration — every
+        // channel reports at least one bit). doFullScan's connect-time
+        // retries can still miss a persistent glitch; without this, such a
+        // channel is otherwise stuck showing "n/a" everywhere for the rest
+        // of the session, since readChannelStatus only ever reuses the caps
+        // it's handed, never re-derives them. One cheap extra transaction
+        // per affected channel per poll cycle, only while still unknown.
+        if (chStaging[ch].chCapFlags == 0) {
+            uint16_t caps = 0;
+            if (g_client.readChannelCapabilities(ch, caps, kPollTimeoutMs) && caps != 0)
+                chStaging[ch].chCapFlags = caps;
+        }
+
+        bool ok = g_client.readChannelStatus(ch, chStaging[ch].chCapFlags, chStaging[ch], kPollTimeoutMs);
         if (ok) {
             data.chPollFailCount[ch] = 0;
             data.chOffline[ch] = false;
@@ -160,8 +208,8 @@ static void doPollScan(psb::tui::ScannedData& data, ScreenInteractive& screen,
         }
     }
 
-    // Publish atomically — a render can never observe a partially-refreshed sweep.
-    data.sysInfo = sysStaging;
+    // Publish the channel sweep atomically — a render can never observe a
+    // partially-refreshed set of channels.
     for (int ch = 0; ch < n; ++ch) data.chInfo[ch] = chStaging[ch];
 
     if (!newlyOffline.empty()) {

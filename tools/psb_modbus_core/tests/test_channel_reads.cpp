@@ -15,6 +15,33 @@ static void fillChannelDefaults(uint16_t* inputRegs, uint16_t* holdingRegs) {
     }
 }
 
+TEST_CASE("readChannelCapabilities reads the capability-flags register directly", "[channel-reads]") {
+    uint16_t inputRegs[280] = {};
+    uint16_t holdingRegs[280] = {};
+    fillChannelDefaults(inputRegs, holdingRegs);
+
+    psb::PsbModbusClient client;
+    client.attachTestArrays(inputRegs, holdingRegs, 280);
+
+    uint16_t caps = 0;
+    REQUIRE(client.readChannelCapabilities(0, caps));
+    CHECK(caps == 0x000F);
+}
+
+TEST_CASE("readChannelCapabilities fails without clobbering caller's value", "[channel-reads]") {
+    uint16_t inputRegs[280] = {};
+    uint16_t holdingRegs[280] = {};
+    fillChannelDefaults(inputRegs, holdingRegs);
+
+    psb::PsbModbusClient client;
+    // Window too small to reach CH_CAPABILITY_FLAGS (offset 9) for ch0 (base 40).
+    client.attachTestArrays(inputRegs, holdingRegs, 40 + 9);
+
+    uint16_t caps = 0x1234;
+    CHECK_FALSE(client.readChannelCapabilities(0, caps));
+    CHECK(caps == 0x1234);
+}
+
 TEST_CASE("ChannelInfo — defaults both channels", "[channel-reads]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
@@ -53,6 +80,32 @@ TEST_CASE("ChannelInfo — enabled channel has measurements", "[channel-reads]")
     CHECK(ci.currentRaw == 1234);
     CHECK(ci.operationalTargetVoltageRaw == 5000);
     CHECK(ci.status == 0x0003);
+}
+
+TEST_CASE("readChannelStatus/readSystemStatus accept an explicit poll timeout override", "[channel-reads]") {
+    // Test-mode reads bypass the real port entirely, so an explicit
+    // timeoutOverrideMs is a no-op here — this just confirms the added
+    // parameter doesn't disturb existing behavior for callers that pass it.
+    uint16_t inputRegs[280] = {};
+    uint16_t holdingRegs[280] = {};
+    fillChannelDefaults(inputRegs, holdingRegs);
+    inputRegs[40 + 10] = 5000;
+    inputRegs[40 + 11] = 1234;
+
+    psb::PsbModbusClient client;
+    client.attachTestArrays(inputRegs, holdingRegs, 280);
+
+    psb::ChannelInfo ci;
+    REQUIRE(client.readChannelStatus(0, 0x000F, ci, /*timeoutOverrideMs=*/300));
+    CHECK(ci.voltageRaw == 5000);
+    CHECK(ci.currentRaw == 1234);
+
+    psb::SystemInfo si;
+    CHECK(client.readSystemStatus(si, /*timeoutOverrideMs=*/300));
+
+    uint16_t caps = 0;
+    REQUIRE(client.readChannelCapabilities(0, caps, /*timeoutOverrideMs=*/300));
+    CHECK(caps == 0x000F);
 }
 
 TEST_CASE("ChannelConfig — defaults", "[channel-reads]") {
