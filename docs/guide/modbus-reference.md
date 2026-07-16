@@ -403,6 +403,12 @@ Only meaningful in Automatic operating mode; see
 
 ## 12. Capability flags
 
+This section covers the wire-level effect of each flag (which registers
+return exception `0x02`). For the underlying firmware behavioral contract —
+what each bit actually turns on or off, and the non-obvious rules around
+output-action commands and the Automatic-mode auto-enable invariant — see
+[`channel-capability-model.md`](channel-capability-model.md).
+
 ### 12.1 System Capability Flags (System Input offset 3)
 
 | Bit | Mask | Meaning |

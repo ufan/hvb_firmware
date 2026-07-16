@@ -112,6 +112,11 @@ static enum reg_status vc_status_to_reg(enum vc_status status)
 	}
 }
 
+/* Authoritative capability gate for every VC channel register. Mirrored in
+ * docs/guide/channel-capability-model.md (register-gate table, §2) and
+ * independently re-derived by several host tools (see that doc's §4) —
+ * update the doc in the same change if you touch this switch.
+ */
 static bool vc_catalog_supported(uint16_t field, uint16_t caps)
 {
 	switch (field) {
