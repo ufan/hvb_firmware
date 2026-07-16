@@ -251,7 +251,11 @@ VC_DEFAULT_MEASURED_I_CAL_K     = 16113
 VC_DEFAULT_MEASURED_I_CAL_K_EXP = -5
 ```
 
-The DTS `calib-current-b` values are post-gain offsets. They are derived from the existing zero-current raw ADC counts by `-apply_gain(raw_zero, 16113, -5)`.
+The DTS `calib-current-b` values are post-gain offsets. The schematic-nominal
+zero-current value is about `-250`, from ACS712 `VCC/2` followed by the equal
+20K/20K network. The committed per-channel defaults are live-board zero-load
+offsets in the same post-gain unit, adjusted so the latest `jw_lvb` firmware
+reports approximately zero current with no external load.
 
 ## Protection Design and Mechanisms
 

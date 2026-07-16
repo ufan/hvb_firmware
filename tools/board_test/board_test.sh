@@ -70,10 +70,8 @@ Usage: $(basename "$0") [options]
                           See factory_bringup.sh, which always passes this.
   --expect-disabled LIST  Comma-separated channel numbers whose documented
                           factory default is CFG_OUTPUT_ENABLED=0 instead of
-                          the normal 1 (i.e. channels with a
-                          default-output-disabled DTS override — see
-                          jw_lvb.dts). Only affects --assert-fresh. Example:
-                          --expect-disabled 5 or --expect-disabled 3,5
+                          the normal 1. Only affects --assert-fresh. Example:
+                          --expect-disabled 3 or --expect-disabled 3,7
   -h, --help              Show this help
 EOF
 }
