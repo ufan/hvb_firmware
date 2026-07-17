@@ -235,27 +235,45 @@ VC_DEFAULT_MEASURED_V_CAL_K     = 45177
 VC_DEFAULT_MEASURED_V_CAL_K_EXP = -6
 ```
 
-Current registers use the board-specific 0.1 A/LSB unit. With ACS712-20A sensitivity of 100 mV/A and the equal 20K/20K network halving the signal:
+Current registers use the board-specific 1 mA/LSB unit (`VC_CURRENT_UNIT_EXP
+= -3`; changed from the original 0.1 A/LSB — 100 mA/LSB was too coarse for
+this board's amp-scale-but-not-huge load currents). With ACS712-20A
+sensitivity of 100 mV/A and the equal 20K/20K network halving the signal:
 
 ```text
 effective_sensitivity = 50mV/A
 counts_per_amp = 50mV / 0.8057mV = 62.06 counts/A
-desired_per_amp = 10 LSB/A
-current_gain = 10 / 62.06 = 0.16113 LSB/count
+desired_per_amp = 1000 LSB/A
+current_gain = 1000 / 62.06 = 16.113 LSB/count
 ```
 
 The nominal current default is therefore:
 
 ```text
 VC_DEFAULT_MEASURED_I_CAL_K     = 16113
-VC_DEFAULT_MEASURED_I_CAL_K_EXP = -5
+VC_DEFAULT_MEASURED_I_CAL_K_EXP = -3
 ```
 
-The DTS `calib-current-b` values are post-gain offsets. The schematic-nominal
-zero-current value is about `-250`, from ACS712 `VCC/2` followed by the equal
-20K/20K network. The committed per-channel defaults are live-board zero-load
-offsets in the same post-gain unit, adjusted so the latest `jw_lvb` firmware
-reports approximately zero current with no external load.
+Same mantissa as the original 0.1 A/LSB-era derivation (`16113`) — only the
+exponent moved, by exactly the two decades the unit itself moved, since the
+physical ADC-to-amps conversion didn't change, only how finely the register
+expresses it.
+
+The DTS `calib-current-b` values are post-gain offsets, and **must be rescaled
+by the same factor whenever the gain changes** — they're a raw `int16`
+addend, not paired with their own decimal exponent, so unlike `k`/`k_exp`
+there's no exponent field to shift; the numeric value itself has to move.
+The schematic-nominal zero-current value is about `-25000` in the current
+1 mA/LSB-era post-gain unit (`-250` under the old 0.1 A/LSB-era unit, ×100),
+from ACS712 `VCC/2` followed by the equal 20K/20K network. The committed
+per-channel defaults are live-board zero-load offsets in the same post-gain
+unit (currently in the `-26900` to `-27900` range — also the old,
+0.1 A/LSB-era measured values ×100), adjusted so the latest `jw_lvb` firmware
+reports approximately zero current with no external load. **Whenever
+`VC_CURRENT_UNIT_EXP` or `VC_DEFAULT_MEASURED_I_CAL_K_EXP` changes, these
+per-channel `calib-current-b` values must be rescaled by the same factor** —
+a real bug was shipped once already from missing this (currents read ~100x
+too high after a unit-exponent change that rescaled `k_exp` but not `b`).
 
 ## Protection Design and Mechanisms
 

@@ -11,10 +11,11 @@ config VC_VARIANT_ID
 
 # LVB channels drive real loads at amp scale, not the nA-scale sense currents
 # jw_hvb measures — the default 0.1nA/LSB unit can only represent up to
-# 3.2768uA in an int16, nowhere near enough. 0.1A/LSB (+-3276.7A range)
-# actually fits this board's real currents.
+# 3.2768uA in an int16, nowhere near enough. 1mA/LSB (+-32.767A range) fits
+# this board's real currents (a few amps at most) with much finer
+# resolution than the coarser 0.1A/LSB (100mA/LSB) this used to default to.
 config VC_CURRENT_UNIT_EXP
-	default -1
+	default -3
 
 # All 10 channels are fixed-voltage (no DAC); the reference firmware drives
 # every channel active at boot, individually switchable afterward except
@@ -44,12 +45,14 @@ config VC_DEFAULT_MEASURED_V_CAL_K_EXP
 # schematic's equal 20K/20K R3/R2 network halves the signal before the
 # RS8412XK buffer. Effective ADC sensitivity is therefore ~50mV/A. One ADC
 # count is 3.3V/4096 = 0.8057mV, so one amp is ~62.06 counts. With
-# VC_CURRENT_UNIT_EXP=-1 (0.1A/LSB), the register gain is
-# 10/62.06 = 0.16113 LSB/count.
+# VC_CURRENT_UNIT_EXP=-3 (1mA/LSB), the register gain is
+# 1000/62.06 = 16.113 LSB/count — same mantissa as the old 0.1A/LSB gain
+# (0.16113 LSB/count), just moved two decades by K_EXP since only the
+# *declared* register unit changed, not the physical ADC calibration.
 config VC_DEFAULT_MEASURED_I_CAL_K
 	default 16113
 
 config VC_DEFAULT_MEASURED_I_CAL_K_EXP
-	default -5
+	default -3
 
 endif # BOARD_JW_LVB

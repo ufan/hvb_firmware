@@ -224,9 +224,9 @@ back in range — then write both together: `cal coeff meas-v <k> <b> -3`.
 `y` = reference current source reading, in raw units at 0.1 nA/LSB — this
 example is jw_hvb-specific; check the board's `Current Unit Exp` register
 (`modbus-reference.md` §6, offset 15) before assuming 0.1 nA/LSB on any other
-variant. jw_lvb, for instance, uses 0.1 A/LSB, so `y` there is in amps, not
-nanoamps, and the reference readings/units in this worked example would need
-to be redone in amps to match):
+variant. jw_lvb, for instance, uses 1 mA/LSB, so `y` there is in milliamps,
+not nanoamps, and the reference readings/units in this worked example would
+need to be redone in milliamps to match):
 
 | Point | adc_i (x) | Reference | y (raw, ×0.1 nA) |
 |---|---|---|---|

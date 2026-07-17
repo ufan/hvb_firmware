@@ -97,7 +97,7 @@ addresses, encoding, and semantics — which is transport-agnostic.
 - **Current**: raw register value × **10^Current Unit Exp amperes/LSB**
   (§6 offset 15, v3.2+) — **board-specific**, not a fixed scale. Default/pre-v3.2
   assumption is 0.1 nA/LSB (raw 10000 = 1000.0 nA); e.g. jw_lvb instead uses
-  0.1 A/LSB (raw 10000 = 1000.0 A). Applies to current threshold and
+  1 mA/LSB (raw 10000 = 10.0 A). Applies to current threshold and
   measured-current registers alike.
 - **Time intervals**: raw × 0.1 = seconds (i.e. raw is deciseconds — "×10"
   in field names below means the raw value is ten times the second count).
@@ -194,7 +194,7 @@ was rejected outright and had no effect.
 | 12 | Active Operating Mode | UINT16 | REALTIME | See §11.1 |
 | 13 | System Status | UINT16 | REALTIME | Global status bitmask (product-reserved; no bits currently defined) |
 | 14 | Fault Cause | UINT16 | REALTIME | Global fault summary, same bit layout as channel fault cause (§13) |
-| 15 | Current Unit Exp | INT16 | FIXED | Decimal exponent: MEASURED_CURRENT / CURRENT_LIMIT_THRESHOLD registers are in units of 10^exp amperes/LSB, board-specific (added v3.2). Default -10 (0.1 nA/LSB, jw_hvb); jw_lvb reports -1 (0.1 A/LSB) — its real load currents are amp-scale, which the old universal 0.1nA/LSB convention couldn't represent at all in an int16 (max ±3.2768 uA). **A client that only knows v3.1 has no way to read this and must assume -10** — that assumption is correct for every board that predates this register, by construction. Voltage has no equivalent; every variant uses a fixed 0.1 V/LSB. |
+| 15 | Current Unit Exp | INT16 | FIXED | Decimal exponent: MEASURED_CURRENT / CURRENT_LIMIT_THRESHOLD registers are in units of 10^exp amperes/LSB, board-specific (added v3.2). Default -10 (0.1 nA/LSB, jw_hvb); jw_lvb reports -3 (1 mA/LSB) — its real load currents are amp-scale, which the old universal 0.1nA/LSB convention couldn't represent at all in an int16 (max ±3.2768 uA). **A client that only knows v3.1 has no way to read this and must assume -10** — that assumption is correct for every board that predates this register, by construction. Voltage has no equivalent; every variant uses a fixed 0.1 V/LSB. |
 | 16–39 | Reserved | — | — | Read as 0, reject writes |
 
 ---
