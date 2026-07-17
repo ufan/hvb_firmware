@@ -13,6 +13,12 @@ already-calibrated `Measured Current` readings taken under real operating
 conditions, not from Calibration Mode's forced-off state. See the module
 docstring and calibration-guide.md §7 for the rationale.
 
+## Install
+
+```bash
+pip install -r tools/jw_lvb_calib/requirements.txt
+```
+
 ## Run
 
 ```bash
@@ -48,4 +54,6 @@ rerun, or pass `--force-loaded` only if you're certain the flag is wrong.
 
 ## Dependencies
 
-`minimalmodbus` (already used by `tools/stress_test/stress_test.py`).
+`minimalmodbus` (see `requirements.txt`; also used by
+`tools/stress_test/stress_test.py`) — the only third-party dependency,
+so the script itself is otherwise self-contained (stdlib only).
