@@ -74,4 +74,11 @@ config VC_DEFAULT_MEASURED_I_CAL_K_EXP
 config LVB_VC_OVERSAMPLE_COUNT
 	default 64
 
+# The generic VC_DEFAULT_CURRENT_LIMIT default (10000) is sized for
+# jw_hvb's nA-scale unit — reused as-is on jw_lvb's 1 mA/LSB unit it would
+# mean 10000 mA (10 A), not a sane per-channel limit for this board's real
+# loads. 6000 = 6000 mA (6 A).
+config VC_DEFAULT_CURRENT_LIMIT
+	default 6000
+
 endif # BOARD_JW_LVB
