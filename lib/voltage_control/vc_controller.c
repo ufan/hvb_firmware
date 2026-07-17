@@ -202,6 +202,20 @@ enum vc_status vc_controller_set_operating_mode(
 		}
 	}
 
+	/* CAL → anything: reset channels back to normal state. Must run
+	 * before the "→ AUTOMATIC: enable all" pass below — this used to run
+	 * after it (via an else-if on the same condition), which meant a
+	 * CAL → AUTOMATIC transition enabled every wanting channel and then
+	 * immediately clobbered output_enabled back to false on the very next
+	 * line, leaving every channel disabled after any calibration session
+	 * on an AUTOMATIC-mode board (e.g. jw_lvb) regardless of which
+	 * channel was actually calibrated. */
+	if (ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
+		for (size_t i = 0; i < ctrl->channel_count; i++) {
+			vc_channel_reset_calibration(&ctrl->channels[i], false);
+		}
+	}
+
 	/* AUTO → NORMAL: gracefully disable all outputs */
 	if (mode == VC_OPERATING_MODE_NORMAL &&
 	    ctrl->operating_mode == VC_OPERATING_MODE_AUTOMATIC) {
@@ -236,11 +250,6 @@ enum vc_status vc_controller_set_operating_mode(
 		cal_watchdog_reset(ctrl);
 		for (size_t i = 0; i < ctrl->channel_count; i++) {
 			vc_channel_reset_calibration(&ctrl->channels[i], true);
-		}
-	} else if (ctrl->operating_mode == VC_OPERATING_MODE_CALIBRATION) {
-		/* CAL → anything: reset channels back to normal state */
-		for (size_t i = 0; i < ctrl->channel_count; i++) {
-			vc_channel_reset_calibration(&ctrl->channels[i], false);
 		}
 	}
 

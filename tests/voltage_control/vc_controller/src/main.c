@@ -269,6 +269,26 @@ ZTEST(vc_controller, test_cal_exit_from_auto_restores_auto)
 		      VC_OPERATING_MODE_AUTOMATIC);
 }
 
+ZTEST(vc_controller, test_cal_exit_to_auto_restores_channel_output)
+{
+	struct vc_channel_config cfg;
+
+	vc_controller_get_channel_config(ctrl, 0, &cfg);
+	cfg.configured_target_voltage = 1000;
+	vc_channel_set_config(&ctrl->channels[0], &cfg);
+
+	vc_controller_set_operating_mode(ctrl, VC_OPERATING_MODE_AUTOMATIC);
+	zassert_true(ctrl->channels[0].output_enabled);
+
+	enter_cal(ctrl);
+	zassert_false(ctrl->channels[0].output_enabled);
+
+	zassert_equal(vc_controller_cal_exit(ctrl), VC_OK);
+	zassert_equal(vc_controller_get_operating_mode(ctrl),
+		      VC_OPERATING_MODE_AUTOMATIC);
+	zassert_true(ctrl->channels[0].output_enabled);
+}
+
 ZTEST(vc_controller, test_reentering_cal_keeps_pre_cal_mode)
 {
 	vc_controller_set_operating_mode(ctrl, VC_OPERATING_MODE_AUTOMATIC);
