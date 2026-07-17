@@ -2,11 +2,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-TEST_CASE("Connection — scanPorts returns only USB", "[connection]") {
+TEST_CASE("Connection — scanPorts returns only USB serial (ttyUSB/ttyACM)", "[connection]") {
     auto ports = psb::PsbModbusClient::scanPorts();
     for (const auto& p : ports) {
         INFO("Port: " << p);
-        CHECK(p.find("/dev/ttyUSB") == 0);
+        CHECK((p.rfind("/dev/ttyUSB", 0) == 0 || p.rfind("/dev/ttyACM", 0) == 0));
     }
 }
 

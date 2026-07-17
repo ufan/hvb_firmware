@@ -831,7 +831,13 @@ std::vector<std::string> PsbModbusClient::scanPorts() {
         if (path.rfind("COM", 0) == 0)
             result.push_back(path);
 #else
-        if (path.rfind("/dev/ttyUSB", 0) == 0)
+        /* ttyUSB: USB-to-serial adapters (FTDI, CH340, etc.) using a
+         * separate UART chip. ttyACM: USB CDC-ACM devices — boards with
+         * native USB, and multi-port USB-serial adapters (e.g. WCH
+         * "Quad_Serial") that enumerate as ACM rather than USB. Both are
+         * real external serial links worth listing; ttyS* (onboard,
+         * non-USB serial) stays excluded. */
+        if (path.rfind("/dev/ttyUSB", 0) == 0 || path.rfind("/dev/ttyACM", 0) == 0)
             result.push_back(path);
 #endif
     }
