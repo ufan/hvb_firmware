@@ -33,6 +33,16 @@ static void printSep(const std::string& left, const std::string& right) {
     std::cout << std::left << std::setw(24) << left << " " << right << "\n";
 }
 
+// Mirrors enum vc_baud_rate_code (include/modbus_adapter/modbus_adapter.h).
+static const char* baudRateCodeName(uint16_t code) {
+    switch (code) {
+    case 1:  return "9600";
+    case 2:  return "19200";
+    case 3:  return "38400";
+    default: return "115200";
+    }
+}
+
 static void printStatusBits(uint16_t status) {
     auto yn = [status](uint16_t m) { return (status & m) ? "Yes" : "No"; };
     std::cout << "  Output Drive:     " << yn(psb::ChStatus::OUTPUT_DRIVE_NONZERO) << "\n";
@@ -189,7 +199,7 @@ int cmdSystemConfig() {
     printSep("Operating Mode:", psb::opModeName(cfg.operatingMode));
     printSep("Startup Ch Policy:", std::to_string(cfg.startupChannelPolicy));
     printSep("Slave Address:", std::to_string(cfg.slaveAddr));
-    printSep("Baud Rate:", cfg.baudRateCode == 0 ? "115200" : "9600");
+    printSep("Baud Rate:", baudRateCodeName(cfg.baudRateCode));
     return 0;
 }
 
@@ -296,7 +306,8 @@ int main(int argc, char** argv) {
     int baud = 115200, slaveId = 1, timeout = 500;
     bool save = false;
     app.add_option("-p,--port", port, "Serial port");
-    app.add_option("-b,--baud", baud, "Baud rate")->check(CLI::IsMember({9600, 115200}));
+    app.add_option("-b,--baud", baud, "Baud rate")
+        ->check(CLI::IsMember({9600, 19200, 38400, 115200}));
     app.add_option("-i,--id", slaveId, "Slave ID")->check(CLI::Range(0, 247));
     app.add_option("-t,--timeout", timeout, "Timeout ms");
     app.add_flag("--save", save, "Save connection to config");
@@ -358,7 +369,8 @@ int main(int argc, char** argv) {
     sysAddr->callback([&]() { std::cout << (g_client->writeSlaveAddress(sys_addr_val)?"OK\n":g_client->lastError()+"\n"); });
 
     auto* sysBaud = sysCmd->add_subcommand("baud", "Set baud rate");
-    sysBaud->add_option("code", sys_baud_code, "0=115200,1=9600")->required()->check(CLI::Range(0u,1u));
+    sysBaud->add_option("code", sys_baud_code, "0=115200,1=9600,2=19200,3=38400")
+        ->required()->check(CLI::Range(0u,3u));
     sysBaud->callback([&]() { std::cout << (g_client->writeBaudRateCode(sys_baud_code)?"OK\n":g_client->lastError()+"\n"); });
 
     sysCmd->add_subcommand("save", "Save system params")->callback([&]() { std::cout << (g_client->sendParamAction(-1,psb::ParamAction::Save)?"OK\n":g_client->lastError()+"\n"); });

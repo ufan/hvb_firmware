@@ -29,7 +29,7 @@ the wire format needed to talk to it.
 | Transport | Modbus RTU |
 | Physical layer | RS-485 half-duplex (current variants) |
 | Serial format | 8N1 |
-| Baud rate | 115200 default, 9600 alternate (runtime-selectable, see §5) |
+| Baud rate | 115200 default, 9600/19200/38400 alternates (runtime-selectable, see §5) |
 | Slave address | 1 default, runtime-selectable 1–247; 0 is the broadcast address |
 | Function codes | 0x03 (Read Holding), 0x04 (Read Input), 0x06 (Write Single Holding) — that's all; no FC10, no coils/discrete inputs |
 
@@ -206,7 +206,7 @@ was rejected outright and had no effect.
 | 0 | Operating Mode | RW | CONFIG | 0=Normal, 1=Automatic, 2=Calibration — see §11.1. Entering Calibration requires the unlock sequence (§8) first |
 | 1 | Startup Channel Policy | RW | CONFIG | 0=load channel config from NVS at boot, 1=apply factory-default op-config at boot |
 | 2 | Slave Address | RW | CONFIG | 1–247. Writing this does **not** apply immediately — see procedure below |
-| 3 | Baud Rate Code | RW | CONFIG | 0=115200, 1=9600. Same apply-on-reset caveat as Slave Address |
+| 3 | Baud Rate Code | RW | CONFIG | 0=115200, 1=9600, 2=19200, 3=38400. Same apply-on-reset caveat as Slave Address |
 | 4–38 | Reserved | — | — | Read as 0, reject writes |
 | 39 | Param Action | RW | COMMAND | 1=Save, 2=Load, 3=Factory Reset, 255=Software Reset — see §11.4 |
 

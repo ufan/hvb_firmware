@@ -22,6 +22,8 @@ enum vc_mb_result {
 enum vc_baud_rate_code {
 	VC_BAUD_RATE_115200 = 0,
 	VC_BAUD_RATE_9600 = 1,
+	VC_BAUD_RATE_19200 = 2,
+	VC_BAUD_RATE_38400 = 3,
 };
 
 struct mb_adapter_config {

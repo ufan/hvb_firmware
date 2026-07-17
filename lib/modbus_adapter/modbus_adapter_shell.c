@@ -39,6 +39,8 @@ static uint32_t baud_code_to_hz(uint16_t code)
 {
 	switch (code) {
 	case VC_BAUD_RATE_9600:   return 9600;
+	case VC_BAUD_RATE_19200:  return 19200;
+	case VC_BAUD_RATE_38400:  return 38400;
 	case VC_BAUD_RATE_115200: return 115200;
 	default:                  return 0;
 	}
@@ -120,9 +122,12 @@ static int cmd_mb_set_baud(const struct shell *sh, size_t argc, char **argv)
 	switch ((uint16_t)val) {
 	case VC_BAUD_RATE_115200:
 	case VC_BAUD_RATE_9600:
+	case VC_BAUD_RATE_19200:
+	case VC_BAUD_RATE_38400:
 		break;
 	default:
-		shell_error(sh, "baud rate code must be 0 (115200) or 1 (9600)");
+		shell_error(sh, "baud rate code must be 0 (115200), 1 (9600), "
+				"2 (19200), or 3 (38400)");
 		return -EINVAL;
 	}
 
@@ -214,7 +219,8 @@ static int cmd_mb_factory(const struct shell *sh, size_t argc, char **argv)
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_mb_set,
 	SHELL_CMD_ARG(slave, NULL, "Set slave address <1-247>", cmd_mb_set_slave, 2, 0),
-	SHELL_CMD_ARG(baud, NULL, "Set baud rate <0=115200|1=9600>", cmd_mb_set_baud, 2, 0),
+	SHELL_CMD_ARG(baud, NULL, "Set baud rate <0=115200|1=9600|2=19200|3=38400>",
+		      cmd_mb_set_baud, 2, 0),
 	SHELL_SUBCMD_SET_END
 );
 

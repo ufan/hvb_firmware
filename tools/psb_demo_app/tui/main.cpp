@@ -443,7 +443,7 @@ int main(int argc, char** argv) {
     // ---- SysConfig popup ----
     static const std::vector<std::string> kOpModes  = {"Normal", "Automatic"};
     static const std::vector<std::string> kStartPol = {"Load NVS Config", "Factory Default"};
-    static const std::vector<std::string> kBaudNames = {"115200", "9600"};
+    static const std::vector<std::string> kBaudNames = {"115200", "9600", "19200", "38400"};
 
     auto bSysCfg = psb::tui::ActionButton("Setting", [&] {
         if (!showSysCfg && data.valid) psb::tui::syncDataToInputs(data, inputs);

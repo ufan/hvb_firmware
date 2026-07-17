@@ -7,7 +7,7 @@ namespace psb::tui {
 
 inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
     static const std::vector<std::string> kOpModes       = {"Normal", "Automatic"};
-    static const std::vector<std::string> kBaudNames     = {"115200", "9600"};
+    static const std::vector<std::string> kBaudNames     = {"115200", "9600", "19200", "38400"};
     static const std::vector<std::string> kStartupPolicy = {"Load NVS Config", "Factory Default"};
 
     auto onOpMode  = [&s, &inputs] {

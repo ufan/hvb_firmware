@@ -169,21 +169,34 @@ static uint32_t baud_code_to_rate(uint16_t code)
 {
 	switch (code) {
 	case VC_BAUD_RATE_9600:   return 9600;
+	case VC_BAUD_RATE_19200:  return 19200;
+	case VC_BAUD_RATE_38400:  return 38400;
 	default:                  return 115200;
 	}
 }
 #endif
 
 BUILD_ASSERT(CONFIG_VC_MODBUS_BAUD_RATE == 9600 ||
+	     CONFIG_VC_MODBUS_BAUD_RATE == 19200 ||
+	     CONFIG_VC_MODBUS_BAUD_RATE == 38400 ||
 	     CONFIG_VC_MODBUS_BAUD_RATE == 115200,
-	     "CONFIG_VC_MODBUS_BAUD_RATE must be 9600 or 115200");
+	     "CONFIG_VC_MODBUS_BAUD_RATE must be 9600, 19200, 38400, or 115200");
+
+static uint16_t baud_rate_to_code(int rate)
+{
+	switch (rate) {
+	case 9600:    return VC_BAUD_RATE_9600;
+	case 19200:   return VC_BAUD_RATE_19200;
+	case 38400:   return VC_BAUD_RATE_38400;
+	default:      return VC_BAUD_RATE_115200;
+	}
+}
 
 static struct mb_adapter_config adapter_default_config(void)
 {
 	return (struct mb_adapter_config){
 		.slave_address = CONFIG_VC_MODBUS_UNIT_ID,
-		.baud_rate_code = CONFIG_VC_MODBUS_BAUD_RATE == 9600
-			? VC_BAUD_RATE_9600 : VC_BAUD_RATE_115200,
+		.baud_rate_code = baud_rate_to_code(CONFIG_VC_MODBUS_BAUD_RATE),
 	};
 }
 
@@ -191,7 +204,9 @@ static bool adapter_config_valid(const struct mb_adapter_config *cfg)
 {
 	return cfg->slave_address >= 1 && cfg->slave_address <= 247 &&
 		(cfg->baud_rate_code == VC_BAUD_RATE_115200 ||
-		 cfg->baud_rate_code == VC_BAUD_RATE_9600);
+		 cfg->baud_rate_code == VC_BAUD_RATE_9600 ||
+		 cfg->baud_rate_code == VC_BAUD_RATE_19200 ||
+		 cfg->baud_rate_code == VC_BAUD_RATE_38400);
 }
 
 #if defined(CONFIG_SETTINGS)
@@ -661,7 +676,7 @@ static int modbus_adapter_set_baud_rate_code(uint16_t code)
 	if (mb == NULL) {
 		return -ENODEV;
 	}
-	if (code > VC_BAUD_RATE_9600) {
+	if (code > VC_BAUD_RATE_38400) {
 		return -EINVAL;
 	}
 	struct mb_adapter_config candidate;
@@ -762,7 +777,7 @@ static int modbus_adapter_set_baud_rate_code(uint16_t code)
 	if (mb == NULL) {
 		return -ENODEV;
 	}
-	if (code > VC_BAUD_RATE_9600) {
+	if (code > VC_BAUD_RATE_38400) {
 		return -EINVAL;
 	}
 	k_mutex_lock(&mb->lock, K_FOREVER);

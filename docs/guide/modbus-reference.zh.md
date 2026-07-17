@@ -30,7 +30,7 @@
 | 传输方式 | Modbus RTU |
 | 物理层 | RS-485 半双工（当前各变体均如此） |
 | 串口格式 | 8N1 |
-| 波特率 | 默认 115200，备选 9600（运行时可切换，见第 5 节） |
+| 波特率 | 默认 115200，备选 9600/19200/38400（运行时可切换，见第 5 节） |
 | 从站地址 | 默认 1，运行时可设置为 1–247；0 为广播地址 |
 | 功能码 | 0x03（读保持寄存器）、0x04（读输入寄存器）、0x06（写单个保持寄存器）——仅此三种；不支持 FC10，也没有线圈/离散输入 |
 
@@ -173,7 +173,7 @@ EXT_BASE    = 40 + 16 × 40 = 680
 | 0 | Operating Mode | RW | CONFIG | 0=Normal，1=Automatic，2=Calibration——见第 11.1 节。进入 Calibration 前需先完成解锁序列（第 8 节） |
 | 1 | Startup Channel Policy | RW | CONFIG | 0=启动时从 NVS 加载通道配置，1=启动时应用出厂默认运行参数 |
 | 2 | Slave Address | RW | CONFIG | 1–247。写入本寄存器**不会**立即生效——见下方流程 |
-| 3 | Baud Rate Code | RW | CONFIG | 0=115200，1=9600。生效方式与 Slave Address 相同，需复位后生效 |
+| 3 | Baud Rate Code | RW | CONFIG | 0=115200，1=9600，2=19200，3=38400。生效方式与 Slave Address 相同，需复位后生效 |
 | 4–38 | Reserved | — | — | 读回 0，拒绝写入 |
 | 39 | Param Action | RW | COMMAND | 1=Save，2=Load，3=Factory Reset，255=Software Reset——见第 11.4 节 |
 

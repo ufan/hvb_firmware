@@ -46,8 +46,8 @@ Popup {
             ComboBox {
                 id: baudCombo
                 Layout.fillWidth: true
-                model: ["9600", "115200"]
-                currentIndex: backend.baudRate === 115200 ? 1 : 0
+                model: ["9600", "19200", "38400", "115200"]
+                currentIndex: model.indexOf(String(backend.baudRate))
                 onActivated: backend.baudRate = parseInt(currentText)
             }
 
