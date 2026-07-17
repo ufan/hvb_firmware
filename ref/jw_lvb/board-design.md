@@ -267,10 +267,14 @@ The schematic-nominal zero-current value is about `-25000` in the current
 1 mA/LSB-era post-gain unit (`-250` under the old 0.1 A/LSB-era unit, ×100),
 from ACS712 `VCC/2` followed by the equal 20K/20K network. The committed
 per-channel defaults are live-board zero-load offsets in the same post-gain
-unit (currently in the `-26900` to `-27900` range — also the old,
-0.1 A/LSB-era measured values ×100), adjusted so the latest `jw_lvb` firmware
-reports approximately zero current with no external load. **Whenever
-`VC_CURRENT_UNIT_EXP` or `VC_DEFAULT_MEASURED_I_CAL_K_EXP` changes, these
+unit (currently in the `-27017` to `-27946` range), measured with
+`tools/jw_lvb_calib/jw_lvb_calibrate.py` — each channel genuinely on and
+unloaded, not Calibration Mode's forced-off state (see
+`docs/guide/calibration-guide.md` §7 for why that distinction matters).
+These are one reference board's numbers, not a guarantee for every unit;
+see §7 for why per-board calibration still matters despite this default.
+
+**Whenever `VC_CURRENT_UNIT_EXP` or `VC_DEFAULT_MEASURED_I_CAL_K_EXP` changes, these
 per-channel `calib-current-b` values must be rescaled by the same factor** —
 a real bug was shipped once already from missing this (currents read ~100x
 too high after a unit-exponent change that rescaled `k_exp` but not `b`).
