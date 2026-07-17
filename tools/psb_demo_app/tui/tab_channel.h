@@ -106,7 +106,12 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         try {
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
             auto action = kIActVals.at(inputs.iActIdx[ch]);
-            auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]), s.data.sysInfo.currentUnitExp);
+            // Input is in the board's fixed display unit (currentUnitFor),
+            // not plain amps — convert back before currentFromA, mirroring
+            // the sync side in widgets.h.
+            CurrentUnit iu = currentUnitFor(s.data.sysInfo.currentUnitExp);
+            auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]) / iu.scale,
+                                             s.data.sysInfo.currentUnitExp);
             postWrite(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); }, refreshProtection);
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
@@ -233,7 +238,15 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
             Elements liveParts;
             if (hasVolts) { liveParts.push_back(text("  Vop: ")); liveParts.push_back(text(fmtVoltage(ci.operationalTargetVoltageRaw)) | bold); }
             if (hasVolts) { liveParts.push_back(text("   V: "));  liveParts.push_back(text(fmtVoltage(ci.voltageRaw)) | bold); }
-            if (hasCurr)  { liveParts.push_back(text("   I: "));  liveParts.push_back(text(fmtCurrentAuto(ci.currentRaw, s.data.sysInfo.currentUnitExp)) | bold); }
+            if (hasCurr)  {
+                // Fixed per-board unit (not fmtCurrentAuto's per-value
+                // auto-ranging) so this always matches the Limit row's unit
+                // below and Monitor's "I" column.
+                CurrentUnit iu = currentUnitFor(s.data.sysInfo.currentUnitExp);
+                liveParts.push_back(text("   I: "));
+                liveParts.push_back(text(fmtCurrentBare(ci.currentRaw, s.data.sysInfo.currentUnitExp) +
+                                          " " + iu.label) | bold);
+            }
             liveParts.push_back(text("   Status: "));
             liveParts.push_back(text(channelStatusBadge(ci.status,
                 (caps & CH_CAP_OUTPUT_ENABLE) != 0,
@@ -272,9 +285,10 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         // Protection panel
         Element protPanel = emptyElement();
         if (hasProtection()) {
+            CurrentUnit iu = currentUnitFor(s.data.sysInfo.currentUnitExp);
             protPanel = window(text(" Protection Policy "), vbox({
                 emptyElement(),
-                hbox({ text("Limit  : "), iThrInp->Render() | flex, text(" A") }),
+                hbox({ text("Limit  : "), iThrInp->Render() | flex, text(std::string(" ") + iu.label) }),
                 hbox({ text("Mode   : "), iModeC->Render() | flex }),
                 hbox({ text("Action : "), iActC->Render() | flex }),
                 hbox({ bClrAct->Render(), text("  "), bClrHist->Render() }),

@@ -145,7 +145,12 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             auto mode   = static_cast<ProtectionMode>(inputs.iModeIdx[ch]);
             int  iIdx   = inputs.iActIdx[ch];
             auto action = kIActVals[iIdx >= 0 && iIdx < 4 ? iIdx : 0];
-            auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]), s.data.sysInfo.currentUnitExp);
+            // Input is in the board's fixed display unit (currentUnitFor),
+            // not plain amps — convert back before currentFromA, mirroring
+            // the sync side in widgets.h.
+            CurrentUnit iu  = currentUnitFor(s.data.sysInfo.currentUnitExp);
+            auto raw    = reg::currentFromA(std::stod(inputs.iThr[ch]) / iu.scale,
+                                             s.data.sysInfo.currentUnitExp);
             postWrite(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); },
                 refreshProtection);
@@ -193,13 +198,6 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
     }
     auto tableContainer = Container::Vertical(rowComps);
 
-    static const std::vector<std::string> kHeaders = {
-        // "Vset" is dual-purpose: target voltage on DAC channels, on/off
-        // cycler on fixed-voltage switchable channels — see the render loop.
-        "", "Vset/En", "Status", "Vop", "V (V)", "I",
-        "Ru", "Rd", "Limit", "Fault", "Clear", "Save",
-    };
-
     return Renderer(tableContainer, [=, &s]() {
         int n = s.data.numChannels();
 
@@ -223,12 +221,39 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
                         "/" + std::to_string(n) + " ") | dim | center;
         }
 
+        // First-column label: capability is uniform per board in every real
+        // case (jw_hvb: every channel has RAW_OUTPUT_DRIVE; jw_lvb: channels
+        // are OUTPUT_ENABLE-only or neither, never RAW_OUTPUT_DRIVE), so one
+        // scan over the loaded channels picks the right label for the whole
+        // column instead of a static "Vset/En" that fits no board exactly.
+        const char* vsetEnHeader = "Vset/En";
+        {
+            bool anyDrive = false, anyOut = false;
+            for (int ch = 0; ch < n; ++ch) {
+                uint16_t caps = s.data.chInfo[ch].chCapFlags;
+                if (caps & CH_CAP_RAW_OUTPUT_DRIVE) anyDrive = true;
+                if (caps & CH_CAP_OUTPUT_ENABLE)     anyOut   = true;
+            }
+            if (anyDrive)      vsetEnHeader = "Vset (V)";
+            else if (anyOut)   vsetEnHeader = "En";
+        }
+        // Current unit is fixed per board (currentUnitFor), not per-value —
+        // see fmtCurrentBare — so it's valid for the whole "I"/"Limit"
+        // column and belongs in the header instead of every cell.
+        CurrentUnit iu = currentUnitFor(s.data.sysInfo.currentUnitExp);
+        const std::vector<std::string> headers = {
+            "", vsetEnHeader, "Status", "Vop", "V (V)",
+            std::string("I (") + iu.label + ")",
+            "Ru", "Rd", std::string("Limit (") + iu.label + ")",
+            "Fault", "Clear", "Save",
+        };
+
         std::vector<std::vector<Element>> grid;
 
         // Header row
         {
             std::vector<Element> hdr;
-            for (const auto& h : kHeaders)
+            for (const auto& h : headers)
                 hdr.push_back(text(h) | bold | center);
             grid.push_back(std::move(hdr));
         }
@@ -246,7 +271,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
                 std::vector<Element> cells;
                 cells.push_back(text(chLabel) | center);
                 cells.push_back(text("OFFLINE") | color(Color::Red) | bold | center);
-                for (size_t c = 2; c < kHeaders.size(); ++c)
+                for (size_t c = 2; c < headers.size(); ++c)
                     cells.push_back(text("--") | color(Color::Red) | dim | center);
                 grid.push_back(std::move(cells));
                 continue;
@@ -280,9 +305,11 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
             // at all (readChannelInfo never populates it for them).
             cells.push_back(hasDrive ? text(fmtVoltage(ci.operationalTargetVoltageRaw)) | center
                                      : text(unsupportedMonitorCellLabel()) | center);
-            cells.push_back(hasVolt ? text(fmtVoltage(ci.voltageRaw)) | center
+            // Bare (no unit suffix) — the "V (V)"/"I (<unit>)" headers above
+            // already carry it.
+            cells.push_back(hasVolt ? text(fmtVoltageBare(ci.voltageRaw)) | center
                                     : text(unsupportedMonitorCellLabel()) | center);
-            cells.push_back(hasCurr ? text(fmtCurrentAuto(ci.currentRaw, s.data.sysInfo.currentUnitExp)) | center
+            cells.push_back(hasCurr ? text(fmtCurrentBare(ci.currentRaw, s.data.sysInfo.currentUnitExp)) | center
                                     : text(unsupportedMonitorCellLabel()) | center);
             cells.push_back(hasDrive ? rows->at(ch).rampUpInp->Render() | center
                                      : text(unsupportedMonitorCellLabel()) | center);
@@ -321,7 +348,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
         table.SelectRow(0).SeparatorVertical(LIGHT);
         table.SelectRow(0).Border(DOUBLE);
 
-        for (size_t c = 0; c < kHeaders.size(); ++c)
+        for (size_t c = 0; c < headers.size(); ++c)
             table.SelectColumn(static_cast<int>(c)).Decorate(flex);
 
         return vbox({

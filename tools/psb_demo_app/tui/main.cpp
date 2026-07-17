@@ -74,6 +74,7 @@ static void doFullScan(psb::tui::ScannedData& data, ScreenInteractive& screen,
     }
 
     data.sysInfo = readWithRetry([&] { return g_client.readSystemInfo(); });
+    data.lastSysUpdate = std::chrono::steady_clock::now();
     data.sysCfg  = readWithRetry([&] { return g_client.readSystemConfig(); });
     int n = data.numChannels();
     // Gate on g_connected, not an unconditional true — if the user hits
@@ -173,7 +174,8 @@ static void doPollScan(psb::tui::ScannedData& data, ScreenInteractive& screen,
     // only tick once per full sweep (~3-5s on a 10-channel board) instead of
     // every poll cycle. readSystemStatus() merges in place, so this is safe
     // to publish straight to `data` without a staging copy.
-    g_client.readSystemStatus(data.sysInfo, kPollTimeoutMs);
+    if (g_client.readSystemStatus(data.sysInfo, kPollTimeoutMs))
+        data.lastSysUpdate = std::chrono::steady_clock::now();
     if (running) screen.PostEvent(Event::Custom);
 
     psb::ChannelInfo chStaging[psb::tui::MAX_CHANNELS];
@@ -643,8 +645,18 @@ int main(int argc, char** argv) {
         };
 
         // --- Connection indicator (menu bar — breathing) ---
+        // Stops breathing and turns solid red once the last successful
+        // system-status poll is more than kSysStaleThreshold old — g_connected
+        // alone can't detect a board that went unresponsive (e.g. powered
+        // off) without the user ever clicking Disconnect, so without this
+        // the dot kept breathing green forever even after channel rows had
+        // already gone OFFLINE (see kChannelOfflineThreshold / chOffline).
+        static constexpr auto kSysStaleThreshold = std::chrono::seconds(10);
+        bool sysStale = g_connected.load() && data.sysStale(kSysStaleThreshold);
         Element connDotEl;
-        if (g_connected.load()) {
+        if (sysStale) {
+            connDotEl = text(" \xe2\x97\x8f ") | color(Color::Red) | bold;
+        } else if (g_connected.load()) {
             connDotEl = text(" \xe2\x97\x8f ") | color(breathColor()) | bold;
         } else if (connecting.load()) {
             connDotEl = text(" \xe2\x8f\xb3 ") | color(Color::Yellow) | bold;

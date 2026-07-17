@@ -110,13 +110,15 @@ inline void syncDataToInputs(const ScannedData& data, ConfigInputs& cfg) {
             cfg.rdStep[ch] = buf;
         }
         {
-            // Amperes, not a hardcoded nA scale — the board's declared
-            // current-unit exponent (data.sysInfo.currentUnitExp) can put the
-            // real magnitude anywhere from nA (jw_hvb) to whole amps (jw_lvb);
-            // %.9g adapts precision to whatever that turns out to be.
+            // In the board's fixed display unit (currentUnitFor), not plain
+            // amperes — typing/reading raw amps was unusable for nA-scale
+            // boards like jw_hvb (values like 0.0000000123). This must stay
+            // in lockstep with the parse-back in tab_monitor.h/tab_channel.h,
+            // which converts through the same currentUnitFor() scale.
+            CurrentUnit u = currentUnitFor(data.sysInfo.currentUnitExp);
             double a = reg::currentToA(cc.iLimitThresholdRaw, data.sysInfo.currentUnitExp);
             char buf[24];
-            snprintf(buf, sizeof(buf), "%.9g", a);
+            snprintf(buf, sizeof(buf), "%.9g", a * u.scale);
             cfg.iThr[ch] = buf;
         }
 
