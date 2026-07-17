@@ -55,4 +55,23 @@ config VC_DEFAULT_MEASURED_I_CAL_K
 config VC_DEFAULT_MEASURED_I_CAL_K_EXP
 	default -3
 
+# At the register gain above (16.113 mA/LSB), even modest ADC jitter reads
+# out as a large current swing — the generic driver default of 5 samples
+# (150ms report period) let no-load current jump by several hundred mA
+# between reports. 16 samples (~480ms) helped but some channels still
+# showed report-to-report stdev up to ~160mA on real hardware.
+#
+# Oversampling noise falls off as 1/sqrt(N), so from a measured N=16
+# baseline (stdev per channel 21-159mA across 10 channels) the expected
+# stdev at other N is baseline x sqrt(16/N). Budgeting a <2s report
+# period caps N at ~66 (66 x 30ms sample tick = 1980ms); N=64 lands just
+# under that with margin (1920ms) and roughly halves the N=16 noise
+# (predicted 10-80mA range) — worth it since AUTOMATIC-mode protection
+# response time isn't documented as needing to be faster than ~2s on
+# this board. Confirm the halving actually held on real hardware before
+# trusting this comment; the 1/sqrt(N) model assumes i.i.d. sample
+# noise, which is an approximation, not a guarantee.
+config LVB_VC_OVERSAMPLE_COUNT
+	default 64
+
 endif # BOARD_JW_LVB

@@ -24,9 +24,17 @@ config LVB_VC_DEFAULT_SAMPLE_RATE_MS
 config LVB_VC_OVERSAMPLE_COUNT
 	int "LVB ADC oversampling count (samples averaged before one report)"
 	default 5
-	range 1 20
+	range 1 100
 	depends on LVB_VC_CHANNEL
 	help
 	  Number of raw ADC samples averaged together before a single
 	  measurement result is published to the vc_channel framework.
+	  Averaging noise falls off as 1/sqrt(N), so doubling this roughly
+	  halves report-to-report jitter at the cost of doubling the report
+	  period (this value x LVB_VC_DEFAULT_SAMPLE_RATE_MS) — weigh against
+	  how fast a board needs its protection logic to react. Range raised
+	  from the original 20 to 100 to give boards with a noisier current
+	  front-end (e.g. jw_lvb) room to trade report latency for a materially
+	  quieter reading; a board with tighter timing needs should just use a
+	  lower value, not rely on the range cap for that.
 	  Can be overridden per-channel via the oversample-count DTS property.
