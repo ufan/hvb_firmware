@@ -252,7 +252,104 @@ different `exp`, per the note above.
 
 ---
 
-## 7. Post-calibration verification
+## 7. jw_lvb quick calibration (current zero-offset only, no sweep)
+
+jw_lvb has no DAC (`CH_CAP_RAW_OUTPUT_DRIVE`) — its 10 channels are fixed-voltage,
+switchable on/off only. There's no output axis to calibrate, and the voltage
+axis is a fixed resistor divider whose factory-nominal gain
+(`docs/guide/parameter-reference.md` / `ref/jw_lvb/board-design.md`) is
+normally accurate enough to leave alone. The one axis worth calibrating
+per-unit is **current**, because the ACS712 Hall sensor's zero-current
+quiescent output (`Vout(Q)`) has real chip-to-chip and board-to-board
+tolerance — well beyond what a single factory-nominal offset can capture —
+while its sensitivity (gain) is comparatively tight and rarely needs
+correction. This is why the procedure is a **single zero-offset measurement
+per channel**, not a two-point sweep: no reference ammeter, precision load,
+or DAC codes needed at all.
+
+**Automated tool (recommended):** `tools/jw_lvb_calib/jw_lvb_calibrate.py`
+— see `tools/jw_lvb_calib/README.md`. jw_lvb-only; jw_hvb needs external
+reference instruments and a DAC sweep, so it isn't automatable the same
+way. Run with `--dry-run` first.
+
+```bash
+python3 tools/jw_lvb_calib/jw_lvb_calibrate.py --port /dev/ttyUSB0 --dry-run
+python3 tools/jw_lvb_calib/jw_lvb_calibrate.py --port /dev/ttyUSB0
+```
+
+**Why the channel must be ON (relay closed), not forced off:** an earlier
+version of this procedure took the zero-current reference from Calibration
+Mode's forced-off state (entering Calibration Mode disables every
+channel's output — existing, intentional firmware behavior, see §10 — and
+jw_lvb has no way to re-energize a channel while inside Calibration Mode,
+since that path is gated on `CH_CAP_RAW_OUTPUT_DRIVE`). That turned out to
+be wrong: measured on real hardware, the ACS712's true zero-current bias
+differs between the relay open and relay closed states — self-heating and
+EMI from the live 12V rail shift it. **The zero-offset must be measured
+with the channel truly on and unloaded**, matching real operating
+condition, not with the relay open.
+
+Since Calibration Mode can't energize a jw_lvb channel, this means the
+*measurement* has to happen outside Calibration Mode entirely, using the
+already-calibrated `Measured Current` register (not raw ADC counts) while
+the channel is genuinely on:
+
+1. Confirm the channel is enabled (`ch <n>` → `measure` → check `Status`)
+   and has **no external load connected**.
+2. Take several `measure` readings a second or so apart and average
+   `Imeas` (a single sample is noisy — the automated tool averages 12 by
+   default). Read the channel's current `b` (`cal coeff show`, after
+   unlocking) — call it `b_old`.
+3. Compute the new offset directly — no `k`/`k_exp`/raw ADC needed, since
+   this is just shifting the same gain's operating point to read zero:
+   ```
+   b_new = b_old − Imeas_avg
+   ```
+4. Only now enter Calibration Mode to persist it: `cal unlock` → `cal ch
+   <n>` → `cal coeff meas-i <k> <b_new>` (same `k`, 3-arg form) → `cal
+   commit`. Repeat for every channel, then `cal exit-cal` — this restores
+   the board's prior operating mode and, with it, every channel that's
+   configured to want output, not just the one(s) you calibrated. Worth a
+   `sys status` check afterward regardless, since Calibration Mode forces
+   every channel off for the duration of this step.
+
+**Real-load hazard:** a channel with a genuine external load connected
+will show a stable, low-noise nonzero `Imeas` — computing `b_new` from
+that reading bakes in a permanent under-reporting bias equal to the load
+current, not a real zero-offset correction. The automated tool detects
+this pattern (large mean, low noise relative to the mean) and refuses to
+calibrate that channel by default. Doing this by hand, double-check every
+channel is truly unloaded before averaging its reading.
+
+Verify with `ch <n>` → `output on` → `measure`: `Imeas` should read close
+to zero with no load connected. Compare against a real load if you have
+one — it won't be exact (that's the gain axis, not what this procedure
+calibrates), but should track reasonably.
+
+**Optional gain check.** If a verification load shows a consistent
+*scale* error (not just offset) — e.g. every reading is high by roughly
+the same percentage across different load currents — the gain (`k`) may
+need correcting too. With the channel on and a known reference current
+flowing, read the already-calibrated `Imeas` register, back-solve the raw
+ADC count algebraically using the *currently active* `k`/`b`/`k_exp`
+(`x = (Imeas − b_old) / (k_old × 10^k_exp)`), then fit `k_new` from that
+recovered `x` and your reference reading the same way as the worked
+example in §6. This is expected to be needed rarely, if ever.
+
+**On the factory-default `calib-current-b` values** (`jw_lvb.dts`,
+per-channel `calib-current-b` property): these come from live zero-load
+measurements on one reference board (see `ref/jw_lvb/board-design.md`),
+so they're a reasonable factory default — much better than a pure
+schematic-nominal guess — but they are **not** a substitute for running
+this procedure on each new unit. Per-part ACS712 offset variance is real
+and, at this board's 16.113 mA/LSB gain, even a few millivolts of
+difference between boards is tens of mA of avoidable, uncorrected bias.
+Since this procedure needs no reference equipment, there's no real cost
+to running it on every board before it ships.
+
+---
+
+## 8. Post-calibration verification
 
 After committing and exiting calibration mode, verify the result using the
 root-level commands (no unlock needed):
@@ -279,7 +376,7 @@ points.
 
 ---
 
-## 8. Persistence
+## 9. Persistence
 
 | Command | Scope | Effect |
 |---|---|---|
@@ -295,7 +392,7 @@ disconnecting, or they're lost on the next reboot.
 
 ---
 
-## 9. Safety rules (enforced by firmware, not by the tool)
+## 10. Safety rules (enforced by firmware, not by the tool)
 
 - Calibration Mode requires the two-step unlock (`cal unlock` does both
   steps for you).
@@ -314,7 +411,7 @@ disconnecting, or they're lost on the next reboot.
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
