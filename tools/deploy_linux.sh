@@ -10,12 +10,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOOLS_DIR="$SCRIPT_DIR"
 APP_NAMES=("psb_demo_tui" "psb_demo_cli" "psb_factory_tui")
-VERSION="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || echo "dev")"
 ARCH="linux-x86_64"
 
 BUILD_DIR="${TOOLS_DIR}/build/linux-release"
 BIN_DIR="${TOOLS_DIR}/bin"
 DEPLOY_DIR="${SCRIPT_DIR}/deploy"
+
+# Each host tool is released independently under its own <tool-name>-vX.Y.Z
+# tag (see docs/superpowers/specs/2026-07-19-version-management-contract-
+# design.md §7) — a shared repo-wide tag would conflate unrelated tools'
+# release cadence. --always falls back to the abbreviated commit hash when
+# that tool has no matching tag reachable, same fallback behavior as before.
+resolve_version() {
+    git -C "$SCRIPT_DIR" describe --tags --match "$1-v*" --always --dirty 2>/dev/null || echo "dev"
+}
+declare -A VERSIONS
+for APP_NAME in "${APP_NAMES[@]}"; do
+    VERSIONS[$APP_NAME]="$(resolve_version "$APP_NAME")"
+done
 
 INSTALL=false
 while [[ $# -gt 0 ]]; do
@@ -27,7 +39,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "=== PSB CLI/TUI tools — Linux package ==="
-echo "    Version : $VERSION"
+for APP_NAME in "${APP_NAMES[@]}"; do
+    echo "    Version (${APP_NAME}) : ${VERSIONS[$APP_NAME]}"
+done
 echo "    Build   : $BUILD_DIR"
 echo "    Output  : $DEPLOY_DIR"
 echo ""
@@ -45,7 +59,7 @@ for APP_NAME in "${APP_NAMES[@]}"; do
         exit 1
     fi
 
-    STAGE_DIR="${DEPLOY_DIR}/${APP_NAME}-${VERSION}-${ARCH}"
+    STAGE_DIR="${DEPLOY_DIR}/${APP_NAME}-${VERSIONS[$APP_NAME]}-${ARCH}"
     rm -rf "$STAGE_DIR"
     mkdir -p "$STAGE_DIR"
     cp "$BIN_DIR/$APP_NAME" "$STAGE_DIR/"
@@ -59,8 +73,8 @@ done
 echo ""
 echo "[3/3] Creating tarballs..."
 for APP_NAME in "${APP_NAMES[@]}"; do
-    STAGE_DIR="${DEPLOY_DIR}/${APP_NAME}-${VERSION}-${ARCH}"
-    TARBALL="${DEPLOY_DIR}/${APP_NAME}-${VERSION}-${ARCH}.tar.gz"
+    STAGE_DIR="${DEPLOY_DIR}/${APP_NAME}-${VERSIONS[$APP_NAME]}-${ARCH}"
+    TARBALL="${DEPLOY_DIR}/${APP_NAME}-${VERSIONS[$APP_NAME]}-${ARCH}.tar.gz"
     tar -czf "$TARBALL" -C "$DEPLOY_DIR" "$(basename "$STAGE_DIR")"
     echo "    Created: $TARBALL"
 done
@@ -77,7 +91,7 @@ fi
 echo ""
 echo "Done. Packages in: $DEPLOY_DIR"
 for APP_NAME in "${APP_NAMES[@]}"; do
-    TARBALL="${DEPLOY_DIR}/${APP_NAME}-${VERSION}-${ARCH}.tar.gz"
+    TARBALL="${DEPLOY_DIR}/${APP_NAME}-${VERSIONS[$APP_NAME]}-${ARCH}.tar.gz"
     echo "  ${TARBALL}:"
     tar -tzf "$TARBALL" | sed 's/^/    /'
 done
