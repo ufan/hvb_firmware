@@ -724,12 +724,12 @@ int main(int argc, char** argv) {
             text(" " + msg + " ") | (isErr ? color(Color::Red) : color(Color::Green))
                                   | size(WIDTH, GREATER_THAN, 30),
             filler(),
-            isOnline ? text(" FW:" + fwTxt + "  Proto:" + protoTxt + " ") : text(""),
+            isOnline ? text(" FW:" + fwTxt + "  Proto:" + protoTxt
+                            + "  TUI:" TOOL_VERSION_STRING " ") : text(""),
             filler(),
             connTextEl,
             text(" "),
             bSysCfg->Render(),
-            text(" TUI:" TOOL_VERSION_STRING " ") | dim,
         });
 
         return vbox({
