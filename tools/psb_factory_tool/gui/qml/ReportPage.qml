@@ -4,6 +4,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import PsbFactory
+import "components"
 
 Item {
     id: root

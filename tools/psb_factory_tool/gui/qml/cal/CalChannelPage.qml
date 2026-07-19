@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import PsbFactory
+import "../components"
 
 // Step 3: Per-channel calibration — sweep, enter DMM readings, compute fit, write coefficients
 Item {

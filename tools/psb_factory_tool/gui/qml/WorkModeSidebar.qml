@@ -27,21 +27,21 @@ Rectangle {
 
         SidebarButton {
             label: "Calibration"
-            icon: "⚙"
+            iconText: "⚙"
             active: root.currentMode === "cal"
             onClicked: root.modeSelected("cal")
         }
 
         SidebarButton {
             label: "Testing"
-            icon: "✓"
+            iconText: "✓"
             active: root.currentMode === "test"
             onClicked: root.modeSelected("test")
         }
 
         SidebarButton {
             label: "Report"
-            icon: "📄"
+            iconText: "📄"
             active: root.currentMode === "report"
             onClicked: root.modeSelected("report")
         }
@@ -71,12 +71,12 @@ Rectangle {
     // Inline helper component — avoids separate file for a trivial button
     component SidebarButton: ItemDelegate {
         required property string label
-        required property string icon
+        required property string iconText
         required property bool active
 
         Layout.fillWidth: true
         highlighted: active
-        text: icon + "  " + label
+        text: iconText + "  " + label
         font.pixelSize: 13
     }
 }

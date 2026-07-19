@@ -32,6 +32,7 @@ Item {
                 model: buildHeaders()
                 delegate: Label {
                     required property string modelData
+                    required property int index
                     width: colWidth(index)
                     text: modelData
                     font.bold: true

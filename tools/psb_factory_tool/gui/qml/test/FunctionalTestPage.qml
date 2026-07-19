@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import PsbFactory
+import "../components"
 
 Item {
     id: root

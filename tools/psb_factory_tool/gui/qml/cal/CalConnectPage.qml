@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import PsbFactory
+import "../components"
 
 // Step 1: Select port, connect, verify device info
 Item {

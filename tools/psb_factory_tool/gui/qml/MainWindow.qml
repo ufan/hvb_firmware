@@ -3,6 +3,8 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import PsbFactory
+import "cal"
+import "test"
 
 ApplicationWindow {
     id: root

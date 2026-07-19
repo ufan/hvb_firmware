@@ -4,6 +4,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtCharts
 import PsbFactory
+import "../components"
 
 Item {
     id: root
@@ -17,7 +18,7 @@ Item {
             progressBar.value = total > 0 ? elapsed / total : 0
             progressLabel.text = "CH" + ch + "  " + elapsed.toFixed(0) + "/" + total.toFixed(0)
                                  + " s  " + v.toFixed(4) + " V"
-            liveSeries.append(elapsed, v)
+            liveChart.append(elapsed, v)
         }
 
         function onStressDone(pass, channels) {
@@ -105,7 +106,7 @@ Item {
                     if (Backend.testRunning) {
                         Backend.abortTest()
                     } else {
-                        liveSeries.clear()
+                        liveChart.clear()
                         const cfg = {
                             ch:             chCombo.currentIndex === 0 ? -1 : chCombo.currentIndex - 1,
                             durationSec:    parseInt(durationField.text),
@@ -146,15 +147,6 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 180
             visible: Backend.testRunning || root.lastResults.length > 0
-            seriesRef: liveSeries
-        }
-
-        // Hidden series feeding the chart
-        ChartView {
-            id: hiddenChart
-            visible: false
-            width: 1; height: 1
-            LineSeries { id: liveSeries; name: "Voltage" }
         }
 
         // Results table

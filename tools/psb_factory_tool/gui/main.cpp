@@ -19,7 +19,7 @@ int main(int argc, char* argv[]) {
         "PsbFactory", 1, 0, "Backend", &backend);
 
     QQmlApplicationEngine engine;
-    engine.loadFromModule("PsbFactory", "MainWindow");
+    engine.load(QUrl("qrc:/PsbFactory/qml/MainWindow.qml"));
 
     return app.exec();
 }

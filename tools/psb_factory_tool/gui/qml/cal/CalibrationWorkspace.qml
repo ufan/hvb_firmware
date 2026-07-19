@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import PsbFactory
+import "../components"
 
 // Cal wizard — strict step order enforced by stepIndex
 Item {
