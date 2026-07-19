@@ -47,8 +47,10 @@ static int cmd_ss(const struct shell *sh, size_t argc, char **argv)
 		}
 	}
 
-	shell_print(sh, "fw:      %d.%d",
-		    (uint16_t)(version.u32 >> 16), (uint16_t)version.u32);
+	shell_print(sh, "fw:      %u.%u.%u",
+		    (unsigned)((version.u32 >> 24) & 0xFFU),
+		    (unsigned)((version.u32 >> 16) & 0xFFU),
+		    (unsigned)(version.u32 & 0xFFFFU));
 	return 0;
 }
 

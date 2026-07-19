@@ -38,9 +38,12 @@ ZTEST(ss_shell, test_system_status_is_exposed_through_catalog)
 {
 	union reg_value value = {};
 
+	/* FW_VERSION is major:8|minor:8|patch:16, sourced from the
+	 * firmware-vX.Y.Z git tag at build time (falls back to 0.0.0 when
+	 * untagged) — its exact value depends on repo tag state, not a
+	 * fixed constant, so only readability is asserted here. */
 	zassert_equal(reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_FW_VERSION), &value),
 		      REG_OK);
-	zassert_equal(value.u32, 1U);
 	zassert_equal(reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_UPTIME), &value), REG_OK);
 	zassert_equal(reg_read(REG_SYS_STATUS_ID(REG_SYS_STATUS_FIELD_BOARD_TEMPERATURE),
 			       &value), REG_OK);

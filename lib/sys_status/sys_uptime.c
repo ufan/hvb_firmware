@@ -15,11 +15,16 @@
 #include "reg_store/reg_catalog.h"
 #include "reg_store/reg_schema.h"
 
-#define SYS_STATUS_FW_VERSION_HIGH 0
-#define SYS_STATUS_FW_VERSION_LOW  1
+#include "fw_version.h"
 
+/* Packed as major:8 | minor:8 | patch:16 — see docs/superpowers/specs/
+ * 2026-07-19-version-management-contract-design.md §4. FW_VERSION_MAJOR/
+ * MINOR/PATCH come from the firmware-vX.Y.Z git tag via
+ * cmake/fw_version.cmake, falling back to 0.0.0 when untagged. */
 static const uint32_t firmware_version =
-	((uint32_t)SYS_STATUS_FW_VERSION_HIGH << 16) | SYS_STATUS_FW_VERSION_LOW;
+	((uint32_t)(FW_VERSION_MAJOR & 0xFFU) << 24) |
+	((uint32_t)(FW_VERSION_MINOR & 0xFFU) << 16) |
+	((uint32_t)(FW_VERSION_PATCH & 0xFFFFU));
 
 static enum reg_status sys_uptime_reg_read(const struct reg_descriptor *desc,
 					   union reg_value *value)
