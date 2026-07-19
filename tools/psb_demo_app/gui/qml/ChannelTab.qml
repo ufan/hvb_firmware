@@ -91,7 +91,10 @@ ScrollView {
             }
         }
 
-        // Control + Protection row
+        // Control + Protection + Recovery + Persistence — one row of four
+        // compact, evenly-sized GroupBoxes instead of a 2x2 grid, so the
+        // parameter section takes less vertical space and the graphs below
+        // get more room.
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
@@ -99,9 +102,12 @@ ScrollView {
             GroupBox {
                 title: "Control"
                 Layout.fillWidth: true
+                Layout.preferredWidth: 1
                 visible: root.hasOutEn
 
                 ColumnLayout {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
                     RowLayout {
                         spacing: 6
                         Button {
@@ -123,6 +129,7 @@ ScrollView {
                         Label { text: "Ru:" }
                         TextField {
                             id: ruField
+                            Layout.fillWidth: true
                             implicitWidth: 85
                             placeholderText: "V/step"
                             Binding on text {
@@ -134,9 +141,13 @@ ScrollView {
                                 Math.round((parseFloat(text) || 0) / 0.1),
                                 root.cc.rampUpInterval || 1)
                         }
+                    }
+                    RowLayout {
+                        spacing: 6
                         Label { text: "Rd:" }
                         TextField {
                             id: rdField
+                            Layout.fillWidth: true
                             implicitWidth: 85
                             placeholderText: "V/step"
                             Binding on text {
@@ -155,14 +166,18 @@ ScrollView {
             GroupBox {
                 title: "Protection"
                 Layout.fillWidth: true
+                Layout.preferredWidth: 1
                 visible: root.hasCurr
 
                 ColumnLayout {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
                     RowLayout {
                         spacing: 6
                         Label { text: "I-Limit (nA):" }
                         TextField {
                             id: iLimitField
+                            Layout.fillWidth: true
                             implicitWidth: 100
                             Binding on text {
                                 value: (root.cc.iLimitThresholdRaw || 0).toString()
@@ -174,61 +189,64 @@ ScrollView {
                                 parseInt(text) || 0)
                         }
                     }
-                    RowLayout {
-                        ComboBox {
-                            model: ["Disabled", "FlagOnly", "Apply-Action"]
-                            currentIndex: root.cc.iProtMode || 0
-                            onActivated: backend.writeCurrentProtection(root.channelIndex,
-                                currentIndex,
-                                root.cc.iProtOutputAction || 0,
-                                root.cc.iLimitThresholdRaw || 0)
-                        }
-                        ComboBox {
-                            model: ["None", "Dis-Graceful", "Dis-Immed", "ForceZero"]
-                            currentIndex: root.cc.iProtOutputAction || 0
-                            onActivated: backend.writeCurrentProtection(root.channelIndex,
-                                root.cc.iProtMode || 0,
-                                currentIndex,
-                                root.cc.iLimitThresholdRaw || 0)
-                        }
+                    ComboBox {
+                        Layout.fillWidth: true
+                        model: ["Disabled", "FlagOnly", "Apply-Action"]
+                        currentIndex: root.cc.iProtMode || 0
+                        onActivated: backend.writeCurrentProtection(root.channelIndex,
+                            currentIndex,
+                            root.cc.iProtOutputAction || 0,
+                            root.cc.iLimitThresholdRaw || 0)
+                    }
+                    ComboBox {
+                        Layout.fillWidth: true
+                        model: ["None", "Dis-Graceful", "Dis-Immed", "ForceZero"]
+                        currentIndex: root.cc.iProtOutputAction || 0
+                        onActivated: backend.writeCurrentProtection(root.channelIndex,
+                            root.cc.iProtMode || 0,
+                            currentIndex,
+                            root.cc.iLimitThresholdRaw || 0)
                     }
                     RowLayout {
                         spacing: 6
                         Label { text: "Safe Band %:" }
                         SpinBox {
+                            Layout.fillWidth: true
                             from: 0; to: 50
-                            implicitWidth: 140
+                            implicitWidth: 120
                             value: root.cc.currentSafeBandPct || 10
                             onValueModified: backend.writeChannelSafeBand(root.channelIndex, value)
                         }
                     }
                     RowLayout {
+                        spacing: 6
                         Button {
+                            Layout.fillWidth: true
                             text: "Clr Active"
                             onClicked: backend.sendFaultCmd(root.channelIndex, 1)
                         }
                         Button {
+                            Layout.fillWidth: true
                             text: "Clr History"
                             onClicked: backend.sendFaultCmd(root.channelIndex, 2)
                         }
                     }
                 }
             }
-        }
-
-        // Recovery + Persistence row
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
 
             GroupBox {
                 title: "Recovery"
                 Layout.fillWidth: true
+                Layout.preferredWidth: 1
 
                 ColumnLayout {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
                     RowLayout {
+                        spacing: 6
                         Label { text: "Policy:" }
                         ComboBox {
+                            Layout.fillWidth: true
                             model: ["ManualLatch", "AutoRetry", "AutoDerate", "NeverRetry"]
                             currentIndex: root.cc.recoveryPolicyMode || 0
                             onActivated: backend.writeChannelRecovery(root.channelIndex,
@@ -240,31 +258,42 @@ ScrollView {
                     }
                     RowLayout {
                         spacing: 6
-                        Label { text: "Dly:" }
+                        Label { text: "Dly:"; Layout.preferredWidth: 34 }
                         SpinBox { from: 0; to: 3600; value: root.cc.autoRetryDelay || 0
-                            implicitWidth: 150
+                            Layout.fillWidth: true
+                            implicitWidth: 120
                             onValueModified: backend.writeChannelRecovery(root.channelIndex,
                                 root.cc.recoveryPolicyMode || 0, value,
                                 root.cc.autoRetryMaxCount || 0, root.cc.autoRetryWindow || 0) }
-                        Label { text: "Max:" }
+                    }
+                    RowLayout {
+                        spacing: 6
+                        Label { text: "Max:"; Layout.preferredWidth: 34 }
                         SpinBox { from: 0; to: 100; value: root.cc.autoRetryMaxCount || 0
-                            implicitWidth: 140
+                            Layout.fillWidth: true
+                            implicitWidth: 120
                             onValueModified: backend.writeChannelRecovery(root.channelIndex,
                                 root.cc.recoveryPolicyMode || 0,
                                 root.cc.autoRetryDelay || 0, value, root.cc.autoRetryWindow || 0) }
-                        Label { text: "Win:" }
+                    }
+                    RowLayout {
+                        spacing: 6
+                        Label { text: "Win:"; Layout.preferredWidth: 34 }
                         SpinBox { from: 0; to: 86400; value: root.cc.autoRetryWindow || 0
-                            implicitWidth: 160
+                            Layout.fillWidth: true
+                            implicitWidth: 130
                             onValueModified: backend.writeChannelRecovery(root.channelIndex,
                                 root.cc.recoveryPolicyMode || 0,
                                 root.cc.autoRetryDelay || 0, root.cc.autoRetryMaxCount || 0, value) }
                     }
                     RowLayout {
                         spacing: 6
-                        Label { text: "Derate (LSB):" }
+                        Label { text: "Derate:" }
                         TextField {
                             id: derateField
+                            Layout.fillWidth: true
                             implicitWidth: 100
+                            placeholderText: "LSB"
                             Binding on text {
                                 value: (root.cc.derateStepRaw || 0).toString()
                                 when: !derateField.activeFocus
@@ -277,8 +306,12 @@ ScrollView {
 
             GroupBox {
                 title: "Persistence"
+                Layout.fillWidth: true
+                Layout.preferredWidth: 1
 
                 ColumnLayout {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
                     Button { text: "Save";    Layout.fillWidth: true
                         onClicked: backend.saveChannel(root.channelIndex) }
                     Button { text: "Load";    Layout.fillWidth: true
@@ -290,11 +323,13 @@ ScrollView {
             }
         }
 
-        // Graphs row
+        // Graphs row — sized to roughly half the tab's available height, so
+        // trend data (the reason to have a Channel tab at all) dominates the
+        // screen instead of the parameter panels above it.
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
-            height: 280
+            Layout.preferredHeight: Math.max(240, root.height * 0.46)
 
             ChannelGraph {
                 Layout.fillWidth: true

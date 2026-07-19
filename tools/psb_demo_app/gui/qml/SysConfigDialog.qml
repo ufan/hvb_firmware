@@ -9,6 +9,8 @@ Popup {
     anchors.centerIn: parent
     padding: 20
     closePolicy: Popup.CloseOnEscape
+    // Explicit width — see ConnectionModal.qml for why this is needed.
+    width: 320 + leftPadding + rightPadding
 
     ColumnLayout {
         spacing: 14

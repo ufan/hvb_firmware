@@ -29,6 +29,7 @@ ApplicationWindow {
         }
         function onConnectedChanged() {
             if (backend.connected) window._connecting = false
+            if (!backend.connected) tabContent.currentIndex = 0
         }
     }
 
@@ -36,7 +37,9 @@ ApplicationWindow {
         anchors.fill: parent
         spacing: 0
 
-        // Menu bar
+        // Menu bar — layout mirrors psb_demo_tui's menu bar: identity/mode on
+        // the left, breathing indicator + uptime + T/H centered, connect/quit
+        // on the right.
         Pane {
             Layout.fillWidth: true
             padding: 10
@@ -54,10 +57,13 @@ ApplicationWindow {
 
                 ToolSeparator {}
 
-                BreathingIndicator {
-                    connected:  backend.connected
-                    connecting: window._connecting
+                Label {
+                    visible: backend.connected
+                    text: backend.channelCount + " Channels"
+                    opacity: 0.8
                 }
+
+                ToolSeparator { visible: backend.connected }
 
                 ComboBox {
                     visible: backend.connected
@@ -67,25 +73,41 @@ ApplicationWindow {
                     onActivated: backend.writeOperatingMode(currentIndex)
                 }
 
-                Label {
-                    visible: backend.connected
-                    text: {
-                        var s = backend.sysInfo.uptimeSec || 0
-                        var h = Math.floor(s / 3600)
-                        var m = Math.floor((s % 3600) / 60)
-                        return h > 0 ? h + "h " + m + "m" : m + "m " + (s % 60) + "s"
+                Item { Layout.fillWidth: true }
+
+                // Center group — heartbeat + uptime + environment, always
+                // visible (the indicator itself communicates offline/
+                // connecting/connected), telemetry text only once connected.
+                RowLayout {
+                    spacing: 10
+
+                    BreathingIndicator {
+                        connected:  backend.connected
+                        connecting: window._connecting
                     }
-                    opacity: 0.7
+
+                    Label {
+                        visible: backend.connected
+                        text: {
+                            var s = backend.sysInfo.uptimeSec || 0
+                            var h = Math.floor(s / 3600)
+                            var m = Math.floor((s % 3600) / 60)
+                            return h > 0 ? h + "h " + m + "m" : m + "m " + (s % 60) + "s"
+                        }
+                        opacity: 0.7
+                    }
+
+                    Label {
+                        visible: backend.connected && (backend.sysInfo.capEnvSensor || false)
+                        text: "|  T: " + (backend.sysInfo.boardTempC !== undefined
+                                ? backend.sysInfo.boardTempC.toFixed(1) + "°C" : "--")
+                            + "  H: " + (backend.sysInfo.boardHumidityPct !== undefined
+                                ? backend.sysInfo.boardHumidityPct.toFixed(1) + "%" : "--")
+                        opacity: 0.7
+                    }
                 }
 
                 Item { Layout.fillWidth: true }
-
-                Label {
-                    visible: backend.connected
-                    text: backend.selectedPort + " @" + backend.baudRate + " #" + backend.slaveId
-                    opacity: 0.6
-                    font.pixelSize: 13
-                }
 
                 Button {
                     text: backend.connected ? "Disconnect" : "Connect"
@@ -104,44 +126,75 @@ ApplicationWindow {
             }
         }
 
-        // Tab bar
-        TabBar {
-            id: tabBar
-            Layout.fillWidth: true
+        Rectangle { Layout.fillWidth: true; height: 1; color: "#3a3a3a" }
 
-            TabButton { text: "Monitor" }
-            Repeater {
-                model: backend.channelCount
-                TabButton { text: "CH" + index }
-            }
-
-            Connections {
-                target: backend
-                function onConnectedChanged() {
-                    if (!backend.connected) tabBar.currentIndex = 0
-                }
-            }
-        }
-
-        // Tab content
-        StackLayout {
-            id: tabContent
+        // Sidebar + tab content
+        RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: tabBar.currentIndex
+            spacing: 0
 
-            MonitorTab {}
+            ColumnLayout {
+                // Layout.preferredWidth alone isn't respected here — this
+                // nested ColumnLayout's own implicit width (inflated by its
+                // Layout.fillWidth children) ends up used instead, grabbing
+                // nearly all of the RowLayout's space. Layout.maximumWidth
+                // is a hard constraint that isn't subject to that.
+                Layout.preferredWidth: 140
+                Layout.maximumWidth: 140
+                Layout.fillHeight: true
+                spacing: 0
 
-            Repeater {
-                model: backend.channelCount
-                ChannelTab {
-                    required property int index
-                    channelIndex: index
+                Repeater {
+                    model: 1 + backend.channelCount
+                    delegate: ItemDelegate {
+                        required property int index
+                        Layout.fillWidth: true
+                        text: index === 0 ? "Monitor" : "CH" + (index - 1)
+                        highlighted: tabContent.currentIndex === index
+                        onClicked: tabContent.currentIndex = index
+                    }
+                }
+
+                Item { Layout.fillHeight: true }
+            }
+
+            Rectangle { Layout.fillHeight: true; width: 1; color: "#3a3a3a" }
+
+            // StackLayout is wrapped in a plain Item that takes the
+            // Layout.fillWidth/fillHeight instead of putting those directly
+            // on the StackLayout: nested one level inside this sidebar
+            // RowLayout, StackLayout's own implicit-size negotiation
+            // collapsed to a few pixels wide regardless of Layout.fillWidth
+            // (verified live — MonitorTab's root Item reported width: 8).
+            // anchors.fill sidesteps that negotiation entirely.
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                StackLayout {
+                    id: tabContent
+                    anchors.fill: parent
+                    currentIndex: 0
+
+                    MonitorTab {}
+
+                    Repeater {
+                        model: backend.channelCount
+                        ChannelTab {
+                            required property int index
+                            channelIndex: index
+                        }
+                    }
                 }
             }
         }
 
-        // Status bar
+        Rectangle { Layout.fillWidth: true; height: 1; color: "#3a3a3a" }
+
+        // Status bar — command I/O feedback (statusMessage) leftmost and
+        // prominent, version info centered, connection info + Config in the
+        // bottom-right corner, mirroring psb_demo_tui's status bar.
         Pane {
             Layout.fillWidth: true
             padding: 8
@@ -151,49 +204,43 @@ ApplicationWindow {
                 anchors.fill: parent
                 spacing: 10
 
-                Button {
-                    text: "⚙ Config"
-                    flat: true
-                    enabled: backend.connected
-                    onClicked: sysCfgDialog.open()
+                Label {
+                    id: statusLabel
+                    text: backend.statusMessage
+                    // Hardcoded to match PsbTheme's colorOk/colorError rather than
+                    // referencing the singleton directly — see MonitorTab.qml's
+                    // computeActiveColumns() for why (qmlcachegen AOT limitation).
+                    color: backend.statusMessage.startsWith("✓") ? "#4CAF50"
+                         : backend.statusMessage.startsWith("✗") ? "#F44336"
+                         : Material.foreground
+                    Layout.preferredWidth: 340
+                    elide: Text.ElideRight
                 }
 
-                ToolSeparator {}
+                Item { Layout.fillWidth: true }
 
-                LabeledValue {
-                    label: "FW"
-                    value: backend.connected ? (backend.sysInfo.fwVersionStr || "--") : "--"
-                }
-                LabeledValue {
-                    label: "Proto"
-                    value: backend.connected
-                        ? (backend.sysInfo.protoMajor || 0) + "." + (backend.sysInfo.protoMinor || 0)
-                        : "--"
-                }
-                LabeledValue {
-                    label: "Variant"
-                    value: backend.connected
-                        ? (backend.sysInfo.variantName || "--") + " (" + (backend.sysInfo.boardHwRevisionLabel || "--") + ")"
-                        : "--"
-                }
-                LabeledValue {
-                    label: "GUI"
-                    value: backend.toolVersion
-                }
-
-                ToolSeparator {}
-
-                LabeledValue {
-                    label: "T"
-                    value: backend.connected && backend.sysInfo.boardTempC !== undefined
-                        ? backend.sysInfo.boardTempC.toFixed(1) + "°C" : "--"
-                    visible: backend.sysInfo.capEnvSensor || false
-                }
-                LabeledValue {
-                    label: "H"
-                    value: backend.connected && backend.sysInfo.boardHumidityPct !== undefined
-                        ? backend.sysInfo.boardHumidityPct.toFixed(1) + "%" : "--"
-                    visible: backend.sysInfo.capEnvSensor || false
+                RowLayout {
+                    spacing: 10
+                    LabeledValue {
+                        label: "FW"
+                        value: backend.connected ? (backend.sysInfo.fwVersionStr || "--") : "--"
+                    }
+                    LabeledValue {
+                        label: "Proto"
+                        value: backend.connected
+                            ? (backend.sysInfo.protoMajor || 0) + "." + (backend.sysInfo.protoMinor || 0)
+                            : "--"
+                    }
+                    LabeledValue {
+                        label: "Variant"
+                        value: backend.connected
+                            ? (backend.sysInfo.variantName || "--") + " (" + (backend.sysInfo.boardHwRevisionLabel || "--") + ")"
+                            : "--"
+                    }
+                    LabeledValue {
+                        label: "GUI"
+                        value: backend.toolVersion
+                    }
                 }
 
                 Item { Layout.fillWidth: true }
@@ -209,16 +256,19 @@ ApplicationWindow {
                 ToolSeparator {}
 
                 Label {
-                    id: statusLabel
-                    text: backend.statusMessage
-                    // Hardcoded to match PsbTheme's colorOk/colorError rather than
-                    // referencing the singleton directly — see MonitorTab.qml's
-                    // computeActiveColumns() for why (qmlcachegen AOT limitation).
-                    color: backend.statusMessage.startsWith("✓") ? "#4CAF50"
-                         : backend.statusMessage.startsWith("✗") ? "#F44336"
-                         : Material.foreground
-                    Layout.preferredWidth: 340
-                    elide: Text.ElideRight
+                    visible: backend.connected
+                    text: backend.selectedPort + " @" + backend.baudRate + " #" + backend.slaveId
+                    opacity: 0.6
+                    font.pixelSize: 13
+                }
+
+                ToolSeparator {}
+
+                Button {
+                    text: "⚙ Config"
+                    flat: true
+                    enabled: backend.connected
+                    onClicked: sysCfgDialog.open()
                 }
             }
         }

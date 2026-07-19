@@ -8,6 +8,11 @@ Popup {
     anchors.centerIn: parent
     padding: 20
     closePolicy: Popup.CloseOnEscape
+    // Explicit width — Popup's automatic implicit-size inference from a
+    // ColumnLayout child (with its own explicit width plus Layout.fillWidth
+    // descendants) undersizes the background Rectangle relative to the
+    // actual content, so rows/buttons visibly spill past its right edge.
+    width: 380 + leftPadding + rightPadding
 
     onOpened: backend.scanPorts()
 

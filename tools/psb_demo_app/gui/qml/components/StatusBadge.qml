@@ -14,7 +14,7 @@ RowLayout {
         color: active ? parent.color : "#ccc"
     }
     Label {
-        text: (active ? "● " : "○ ") + label
+        text: label
         font.pixelSize: 14
         color: active ? parent.color : "#999"
     }

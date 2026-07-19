@@ -47,6 +47,17 @@ struct PsbModbusClient::Impl {
         if (port) { delete port; port = nullptr; }
         connected = false;
     }
+
+    // ModbusClientPort's signalTx/signalRx are the library's own raw-frame
+    // hooks (see ModbusClientPort.h) — wired here so setFrameCallback()
+    // actually receives data. Previously frameCb was stored but nothing
+    // ever invoked it, so the GUI's raw-log/debug panel was always empty.
+    void onTx(const Modbus::Char*, const uint8_t* buff, uint16_t size) {
+        if (frameCb) frameCb(true, std::vector<uint8_t>(buff, buff + size));
+    }
+    void onRx(const Modbus::Char*, const uint8_t* buff, uint16_t size) {
+        if (frameCb) frameCb(false, std::vector<uint8_t>(buff, buff + size));
+    }
 };
 
 PsbModbusClient::PsbModbusClient() : m_impl(std::make_unique<Impl>()) {}
@@ -100,6 +111,8 @@ bool PsbModbusClient::connect(const std::string& portName, int baud, int slaveId
         m_impl->errorText = "failed to create RTU client port";
         return false;
     }
+    m_impl->port->connect(&ModbusClientPort::signalTx, m_impl.get(), &Impl::onTx);
+    m_impl->port->connect(&ModbusClientPort::signalRx, m_impl.get(), &Impl::onRx);
 
     // Mark connected so readRegsInternal allows the probe transaction.
     m_impl->connected = true;
