@@ -88,6 +88,17 @@ private:
 
     void onFrame(bool tx, const std::vector<uint8_t>& data);
 
+    // Merges read-only calibration coefficients (outCalK/B, measVCalK/B,
+    // measICalK/B + their decimal exponents) into a channel config map, for
+    // display only — writing them is a factory-tool-only operation (see
+    // docs/guide/calibration-guide.md). Only reads if the board's sysCapFlags
+    // report SysCap::CALIBRATION_MODE, so boards without it pay no extra
+    // transactions. Called at connect-time full read and after Save/Load/
+    // Factory (the only places a full channel-config refresh happens) —
+    // never from the narrow per-write refreshes, since none of those writes
+    // touch calibration registers.
+    void mergeCalConfig(int ch, QVariantMap& map);
+
     // Narrow, action-specific post-write refreshes — mirrors demo_tui's
     // tab_monitor.h/tab_channel.h refreshXxx lambdas. Each re-reads only the
     // Modbus block the corresponding write actually touched (merging into

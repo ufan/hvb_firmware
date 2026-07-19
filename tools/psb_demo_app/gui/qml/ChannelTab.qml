@@ -19,6 +19,11 @@ ScrollView {
     property bool hasVolt:  (caps & 0x0004) !== 0
     property bool hasCurr:  (caps & 0x0008) !== 0
 
+    // SysCap::CALIBRATION_MODE (0x0004) — a system-wide capability, not a
+    // per-channel one. Coefficients are read-only here; writing them is a
+    // factory-tool-only operation (see docs/guide/calibration-guide.md).
+    property bool hasCal: ((backend.sysInfo.sysCapFlags || 0) & 0x0004) !== 0
+
     property int windowMinutes: 5
 
     // ComboBox.currentIndex and SpinBox.value destroy their declarative
@@ -111,6 +116,48 @@ ScrollView {
                     label: "Retries"
                     value: (root.ci.retryCount || 0).toString()
                 }
+            }
+        }
+
+        // Read-only calibration coefficients — advisory/diagnostic info
+        // only. Calibration writes are a factory-tool-only operation (see
+        // docs/guide/calibration-guide.md); the demo GUI never exposes them
+        // as editable fields. Hidden entirely on boards that don't report
+        // the calibration capability bit.
+        Pane {
+            Layout.fillWidth: true
+            padding: 8
+            visible: root.hasCal
+
+            RowLayout {
+                spacing: 16
+                anchors.fill: parent
+
+                Label { text: "Calibration (read-only):"; opacity: 0.6; font.italic: true }
+
+                LabeledValue {
+                    label: "Out K/e/b"
+                    value: root.cc.outCalK !== undefined
+                        ? root.cc.outCalK + " / " + root.cc.outCalKExp + " / " + root.cc.outCalB
+                        : "--"
+                    visible: root.hasOutEn
+                }
+                LabeledValue {
+                    label: "Vmeas K/e/b"
+                    value: root.cc.measVCalK !== undefined
+                        ? root.cc.measVCalK + " / " + root.cc.measVCalKExp + " / " + root.cc.measVCalB
+                        : "--"
+                    visible: root.hasVolt
+                }
+                LabeledValue {
+                    label: "Imeas K/e/b"
+                    value: root.cc.measICalK !== undefined
+                        ? root.cc.measICalK + " / " + root.cc.measICalKExp + " / " + root.cc.measICalB
+                        : "--"
+                    visible: root.hasCurr
+                }
+
+                Item { Layout.fillWidth: true }
             }
         }
 

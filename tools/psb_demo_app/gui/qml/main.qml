@@ -37,9 +37,14 @@ ApplicationWindow {
         // Mode/Startup Policy combos in SysConfigDialog.qml) — without this,
         // it would never reflect backend.sysInfo.activeOpMode again after
         // the first manual switch, including if the write silently failed
-        // or the mode changed for any other reason.
+        // or the mode changed for any other reason. Clamp to 0 (Normal) for
+        // activeOpMode 2 (Calibration) — modeCombo's model only has 2 items
+        // and is hidden in that state anyway (see calModeLabel below); the
+        // demo GUI can't enter/exit Calibration Mode itself (factory-tool-
+        // only unlock sequence, see docs/guide/calibration-guide.md).
         function onSysInfoChanged() {
-            modeCombo.currentIndex = backend.sysInfo.activeOpMode || 0
+            var m = backend.sysInfo.activeOpMode || 0
+            modeCombo.currentIndex = (m === 2) ? 0 : m
         }
     }
 
@@ -77,11 +82,26 @@ ApplicationWindow {
 
                 ComboBox {
                     id: modeCombo
-                    visible: backend.connected
+                    visible: backend.connected && backend.sysInfo.activeOpMode !== 2
                     model: ["Normal", "Automatic"]
                     currentIndex: backend.sysInfo.activeOpMode || 0
                     implicitWidth: 130
                     onActivated: backend.writeOperatingMode(currentIndex)
+                }
+
+                // A factory-tool session (or a stuck exit — see
+                // docs/guide/calibration-guide.md §10 on the auto-exit
+                // watchdog) can leave the board in Calibration Mode while
+                // the demo GUI is connected. The demo GUI can't enter/exit
+                // it (factory-tool-only unlock), so show it plainly instead
+                // of letting the Normal/Automatic combo silently mis-render
+                // an out-of-range index.
+                Label {
+                    id: calModeLabel
+                    visible: backend.connected && backend.sysInfo.activeOpMode === 2
+                    text: "Calibration Mode (factory)"
+                    color: Material.color(Material.Amber)
+                    font.bold: true
                 }
 
                 Item { Layout.fillWidth: true }

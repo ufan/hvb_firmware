@@ -194,14 +194,27 @@ void ModbusWorker::doReadSystemConfig()
 void ModbusWorker::doReadChannelConfig(int ch)
 {
     if (ch < 0 || ch >= WORKER_MAX_CH) return;
-    // No QML file reads outCalK/outCalB/measVCalK/measVCalB/measICalK/measICalB
-    // (calibration write UI was removed from the demo GUI per the host-tools
-    // architecture doc) — readChannelCalConfig() here was dead work, 3 extra
-    // Modbus transactions per channel on every connect for data nothing
-    // displays. Matches the same fix already applied to demo_tui.
     m_cachedChConfig[ch] = m_client.readChannelConfig(ch);
     if (!m_client.isConnected()) { emit operationComplete(false, "Read failed"); return; }
-    emit channelConfigReady(ch, channelConfigToMap(ch, m_cachedChConfig[ch]));
+    auto map = channelConfigToMap(ch, m_cachedChConfig[ch]);
+    mergeCalConfig(ch, map);
+    emit channelConfigReady(ch, map);
+}
+
+void ModbusWorker::mergeCalConfig(int ch, QVariantMap& map)
+{
+    if ((m_cachedSysInfo.sysCapFlags & psb::SysCap::CALIBRATION_MODE) == 0) return;
+    auto cal = m_client.readChannelCalConfig(ch);
+    if (!m_client.isConnected()) return;
+    map["outCalK"]      = cal.outCalK;
+    map["outCalKExp"]   = cal.outCalKExp;
+    map["outCalB"]      = cal.outCalB;
+    map["measVCalK"]    = cal.measVCalK;
+    map["measVCalKExp"] = cal.measVCalKExp;
+    map["measVCalB"]    = cal.measVCalB;
+    map["measICalK"]    = cal.measICalK;
+    map["measICalKExp"] = cal.measICalKExp;
+    map["measICalB"]    = cal.measICalB;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,7 +283,9 @@ void ModbusWorker::refreshChannelFull(int ch)
     m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch]);
     m_client.readChannelConfig(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChConfig[ch]);
     emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
-    emit channelConfigReady(ch, channelConfigToMap(ch, m_cachedChConfig[ch]));
+    auto map = channelConfigToMap(ch, m_cachedChConfig[ch]);
+    mergeCalConfig(ch, map);
+    emit channelConfigReady(ch, map);
 }
 
 void ModbusWorker::refreshSystemConfig()
