@@ -30,6 +30,7 @@ Popup {
 
             Label { text: "Working Mode" }
             ComboBox {
+                id: modeCombo
                 Layout.fillWidth: true
                 model: ["Normal", "Automatic"]
                 currentIndex: backend.sysConfig.operatingMode || 0
@@ -38,10 +39,23 @@ Popup {
 
             Label { text: "Startup Policy" }
             ComboBox {
+                id: startupCombo
                 Layout.fillWidth: true
                 model: ["Load NVS Config", "Factory Default"]
                 currentIndex: backend.sysConfig.startupChannelPolicy || 0
                 onActivated: backend.writeStartupChannelPolicy(currentIndex)
+            }
+        }
+
+        // ComboBox.currentIndex destroys its declarative `expr` binding the
+        // first time the user picks an item, so without this it would never
+        // reflect backend.sysConfig again — including the confirmed value
+        // from the post-write refresh triggered by onActivated above.
+        Connections {
+            target: backend
+            function onSysConfigChanged() {
+                modeCombo.currentIndex = backend.sysConfig.operatingMode || 0
+                startupCombo.currentIndex = backend.sysConfig.startupChannelPolicy || 0
             }
         }
 

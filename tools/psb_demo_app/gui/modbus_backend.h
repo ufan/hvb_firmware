@@ -130,6 +130,13 @@ signals:
     void rawLogChanged();
     void statusMessageChanged();
     void rawHexReady(const QString& hex);
+    // Fires only when channel `ch`'s config actually refreshes (connect-time
+    // full read or a post-write narrow refresh) — unlike channelDataChanged,
+    // which also fires on every routine 1s status-only poll tick. QML
+    // controls that lose their declarative binding after the first user
+    // interaction (ComboBox.currentIndex, SpinBox.value) use this to
+    // resync explicitly, without being reset on every poll tick.
+    void channelConfigUpdated(int ch);
 
 private slots:
     void onConnected(bool ok, const QString& error);

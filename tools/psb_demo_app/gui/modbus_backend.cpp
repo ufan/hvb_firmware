@@ -226,6 +226,7 @@ void ModbusBackend::onChConfigReady(int ch, const QVariantMap& cfg)
     if (ch < 0 || ch >= MAX_CHANNELS) return;
     m_chConfig[ch] = cfg;
     emit channelDataChanged();
+    emit channelConfigUpdated(ch);
 }
 
 void ModbusBackend::onOperationComplete(bool ok, const QString& msg)

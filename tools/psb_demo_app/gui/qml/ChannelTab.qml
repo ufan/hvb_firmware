@@ -21,6 +21,29 @@ ScrollView {
 
     property int windowMinutes: 5
 
+    // ComboBox.currentIndex and SpinBox.value destroy their declarative
+    // `expr` binding the first time the user interacts with the control
+    // (QQC2 sets the property imperatively on selection/+-click), so once
+    // that happens the control never reflects backend.channelConfigList
+    // again — including the confirmed value from a post-write refresh.
+    // channelConfigUpdated (unlike channelDataChanged) fires only when this
+    // channel's config actually refreshes — connect-time full read or a
+    // post-write narrow refresh — never on a routine 1s status-only poll
+    // tick, so resyncing here won't fight the user mid-interaction.
+    Connections {
+        target: backend
+        function onChannelConfigUpdated(ch) {
+            if (ch !== root.channelIndex) return
+            iModeCombo.currentIndex = root.cc.iProtMode || 0
+            iActCombo.currentIndex = root.cc.iProtOutputAction || 0
+            safeBandSpin.value = root.cc.currentSafeBandPct || 10
+            recovCombo.currentIndex = root.cc.recoveryPolicyMode || 0
+            dlySpin.value = root.cc.autoRetryDelay || 0
+            maxSpin.value = root.cc.autoRetryMaxCount || 0
+            winSpin.value = root.cc.autoRetryWindow || 0
+        }
+    }
+
     ColumnLayout {
         width: root.width
         spacing: 8
@@ -190,6 +213,7 @@ ScrollView {
                         }
                     }
                     ComboBox {
+                        id: iModeCombo
                         Layout.fillWidth: true
                         model: ["Disabled", "FlagOnly", "Apply-Action"]
                         currentIndex: root.cc.iProtMode || 0
@@ -199,6 +223,7 @@ ScrollView {
                             root.cc.iLimitThresholdRaw || 0)
                     }
                     ComboBox {
+                        id: iActCombo
                         Layout.fillWidth: true
                         model: ["None", "Dis-Graceful", "Dis-Immed", "ForceZero"]
                         currentIndex: root.cc.iProtOutputAction || 0
@@ -211,6 +236,7 @@ ScrollView {
                         spacing: 6
                         Label { text: "Safe Band %:" }
                         SpinBox {
+                            id: safeBandSpin
                             Layout.fillWidth: true
                             from: 0; to: 50
                             implicitWidth: 120
@@ -246,6 +272,7 @@ ScrollView {
                         spacing: 6
                         Label { text: "Policy:" }
                         ComboBox {
+                            id: recovCombo
                             Layout.fillWidth: true
                             model: ["ManualLatch", "AutoRetry", "AutoDerate", "NeverRetry"]
                             currentIndex: root.cc.recoveryPolicyMode || 0
@@ -259,7 +286,7 @@ ScrollView {
                     RowLayout {
                         spacing: 6
                         Label { text: "Dly:"; Layout.preferredWidth: 34 }
-                        SpinBox { from: 0; to: 3600; value: root.cc.autoRetryDelay || 0
+                        SpinBox { id: dlySpin; from: 0; to: 3600; value: root.cc.autoRetryDelay || 0
                             Layout.fillWidth: true
                             implicitWidth: 120
                             onValueModified: backend.writeChannelRecovery(root.channelIndex,
@@ -269,7 +296,7 @@ ScrollView {
                     RowLayout {
                         spacing: 6
                         Label { text: "Max:"; Layout.preferredWidth: 34 }
-                        SpinBox { from: 0; to: 100; value: root.cc.autoRetryMaxCount || 0
+                        SpinBox { id: maxSpin; from: 0; to: 100; value: root.cc.autoRetryMaxCount || 0
                             Layout.fillWidth: true
                             implicitWidth: 120
                             onValueModified: backend.writeChannelRecovery(root.channelIndex,
@@ -279,7 +306,7 @@ ScrollView {
                     RowLayout {
                         spacing: 6
                         Label { text: "Win:"; Layout.preferredWidth: 34 }
-                        SpinBox { from: 0; to: 86400; value: root.cc.autoRetryWindow || 0
+                        SpinBox { id: winSpin; from: 0; to: 86400; value: root.cc.autoRetryWindow || 0
                             Layout.fillWidth: true
                             implicitWidth: 130
                             onValueModified: backend.writeChannelRecovery(root.channelIndex,

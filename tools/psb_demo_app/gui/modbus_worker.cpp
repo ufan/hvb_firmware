@@ -193,18 +193,91 @@ void ModbusWorker::doReadSystemConfig()
 
 void ModbusWorker::doReadChannelConfig(int ch)
 {
-    auto cfg = m_client.readChannelConfig(ch);
-    auto cal = m_client.readChannelCalConfig(ch);
+    if (ch < 0 || ch >= WORKER_MAX_CH) return;
+    // No QML file reads outCalK/outCalB/measVCalK/measVCalB/measICalK/measICalB
+    // (calibration write UI was removed from the demo GUI per the host-tools
+    // architecture doc) — readChannelCalConfig() here was dead work, 3 extra
+    // Modbus transactions per channel on every connect for data nothing
+    // displays. Matches the same fix already applied to demo_tui.
+    m_cachedChConfig[ch] = m_client.readChannelConfig(ch);
     if (!m_client.isConnected()) { emit operationComplete(false, "Read failed"); return; }
-    auto map = channelConfigToMap(ch, cfg);
-    // Merge cal coefficients so QML channel tab can display them from the same config map
-    map["outCalK"]  = cal.outCalK;
-    map["outCalB"]  = cal.outCalB;
-    map["measVCalK"] = cal.measVCalK;
-    map["measVCalB"] = cal.measVCalB;
-    map["measICalK"] = cal.measICalK;
-    map["measICalB"] = cal.measICalB;
-    emit channelConfigReady(ch, map);
+    emit channelConfigReady(ch, channelConfigToMap(ch, m_cachedChConfig[ch]));
+}
+
+// ---------------------------------------------------------------------------
+//  Narrow post-write refreshes — mirrors demo_tui's tab_monitor.h/
+//  tab_channel.h refreshXxx lambdas. doPollStatus() only polls realtime
+//  status/measurement registers, never config, so without these, any
+//  channel/system CONFIG field the user writes would never be confirmed
+//  from the device again until the next full connect.
+// ---------------------------------------------------------------------------
+
+void ModbusWorker::refreshChannelStatus(int ch)
+{
+    if (ch < 0 || ch >= WORKER_MAX_CH) return;
+    m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch]);
+    emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
+}
+
+void ModbusWorker::refreshChannelOutput(int ch)
+{
+    if (ch < 0 || ch >= WORKER_MAX_CH) return;
+    m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch]);
+    m_client.readChannelOutputBlock(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChConfig[ch]);
+    emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
+    emit channelConfigReady(ch, channelConfigToMap(ch, m_cachedChConfig[ch]));
+}
+
+void ModbusWorker::refreshChannelOutputEnabled(int ch)
+{
+    if (ch < 0 || ch >= WORKER_MAX_CH) return;
+    m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch]);
+    m_client.readChannelOutputEnabledBlock(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChConfig[ch]);
+    emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
+    emit channelConfigReady(ch, channelConfigToMap(ch, m_cachedChConfig[ch]));
+}
+
+void ModbusWorker::refreshChannelProtection(int ch)
+{
+    if (ch < 0 || ch >= WORKER_MAX_CH) return;
+    m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch]);
+    m_client.readChannelProtectionBlock(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChConfig[ch]);
+    emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
+    emit channelConfigReady(ch, channelConfigToMap(ch, m_cachedChConfig[ch]));
+}
+
+void ModbusWorker::refreshChannelRecovery(int ch)
+{
+    if (ch < 0 || ch >= WORKER_MAX_CH) return;
+    m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch]);
+    m_client.readChannelRecoveryBlock(ch, m_cachedChConfig[ch]);
+    emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
+    emit channelConfigReady(ch, channelConfigToMap(ch, m_cachedChConfig[ch]));
+}
+
+void ModbusWorker::refreshChannelDerate(int ch)
+{
+    if (ch < 0 || ch >= WORKER_MAX_CH) return;
+    m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch]);
+    m_client.readChannelDerateBlock(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChConfig[ch]);
+    emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
+    emit channelConfigReady(ch, channelConfigToMap(ch, m_cachedChConfig[ch]));
+}
+
+void ModbusWorker::refreshChannelFull(int ch)
+{
+    if (ch < 0 || ch >= WORKER_MAX_CH) return;
+    m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch]);
+    m_client.readChannelConfig(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChConfig[ch]);
+    emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
+    emit channelConfigReady(ch, channelConfigToMap(ch, m_cachedChConfig[ch]));
+}
+
+void ModbusWorker::refreshSystemConfig()
+{
+    auto cfg = m_client.readSystemConfig();
+    if (!m_client.isConnected()) return;
+    emit systemConfigReady(systemConfigToMap(cfg));
 }
 
 // ---------------------------------------------------------------------------
@@ -213,21 +286,25 @@ void ModbusWorker::doReadChannelConfig(int ch)
 
 void ModbusWorker::doWriteOperatingMode(int mode) {
     bool ok = m_client.writeOperatingMode(static_cast<psb::OpMode>(mode));
+    if (ok) refreshSystemConfig();
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doWriteStartupChannelPolicy(int policy) {
     bool ok = m_client.writeStartupChannelPolicy(static_cast<uint16_t>(policy));
+    if (ok) refreshSystemConfig();
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doWriteSlaveAddress(int addr) {
     bool ok = m_client.writeSlaveAddress(static_cast<uint16_t>(addr));
+    if (ok) refreshSystemConfig();
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doWriteBaudRate(int code) {
     bool ok = m_client.writeBaudRateCode(static_cast<uint16_t>(code));
+    if (ok) refreshSystemConfig();
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
@@ -237,48 +314,57 @@ void ModbusWorker::doWriteBaudRate(int code) {
 
 void ModbusWorker::doSendOutputAction(int ch, int action) {
     bool ok = m_client.sendOutputAction(ch, static_cast<psb::OutputAction>(action));
+    if (ok) refreshChannelStatus(ch);
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doSendFaultCmd(int ch, int cmd) {
     bool ok = m_client.sendChannelFaultCommand(ch, static_cast<psb::ChannelFaultCommand>(cmd));
+    if (ok) refreshChannelStatus(ch);
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doWriteTargetVoltage(int ch, int raw) {
     bool ok = m_client.writeConfiguredTargetVoltage(ch, static_cast<int16_t>(raw));
+    if (ok) refreshChannelOutput(ch);
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doWriteRampUp(int ch, int stepRaw, int interval) {
     bool ok = m_client.writeRampUp(ch, static_cast<uint16_t>(stepRaw), static_cast<uint16_t>(interval));
+    if (ok) refreshChannelOutput(ch);
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doWriteRampDown(int ch, int stepRaw, int interval) {
     bool ok = m_client.writeRampDown(ch, static_cast<uint16_t>(stepRaw), static_cast<uint16_t>(interval));
+    if (ok) refreshChannelOutput(ch);
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doWriteChannelRecovery(int ch, int policy, int delay, int max, int window) {
     bool ok = m_client.writeChannelRecovery(ch,
         static_cast<psb::RecoveryPolicy>(policy), delay, max, window);
+    if (ok) refreshChannelRecovery(ch);
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doWriteChannelSafeBand(int ch, int pct) {
     bool ok = m_client.writeChannelSafeBand(ch, static_cast<uint16_t>(pct));
+    if (ok) refreshChannelRecovery(ch);
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doWriteCurrentProtection(int ch, int mode, int action, int thresholdRaw) {
     bool ok = m_client.writeCurrentProtection(ch,
         static_cast<psb::ProtectionMode>(mode), static_cast<psb::OutputAction>(action), static_cast<int16_t>(thresholdRaw));
+    if (ok) refreshChannelProtection(ch);
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
 void ModbusWorker::doWriteDerateStep(int ch, int stepRaw) {
     bool ok = m_client.writeDerateStep(ch, static_cast<uint16_t>(stepRaw));
+    if (ok) refreshChannelDerate(ch);
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
@@ -304,6 +390,12 @@ void ModbusWorker::doExitCalibrationMode() {
 
 void ModbusWorker::doSendParamAction(int chScope, int action) {
     bool ok = m_client.sendParamAction(chScope, static_cast<psb::ParamAction>(action));
+    // action 255 is a software reset — the board is about to reboot, so
+    // reading anything back would just fail/timeout; skip the refresh.
+    if (ok && action != 255) {
+        if (chScope >= 0) refreshChannelFull(chScope);
+        else refreshSystemConfig();
+    }
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 
@@ -354,13 +446,13 @@ void ModbusWorker::doPollStatus()
 {
     if (!m_client.isConnected() || m_channelCount == 0) return;
 
-    m_client.readSystemStatus(m_cachedSysInfo);
+    m_client.readSystemStatus(m_cachedSysInfo, kPollTimeoutMs);
     if (!m_client.isConnected()) return;
 
     uint16_t activeMask = m_cachedSysInfo.activeChMask;
     for (int ch = 0; ch < m_channelCount; ++ch) {
         if ((activeMask & (1u << ch)) == 0) continue;
-        m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch]);
+        m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch], kPollTimeoutMs);
         if (!m_client.isConnected()) return;
     }
 

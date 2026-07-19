@@ -66,9 +66,20 @@ private:
 
     // Cached structs for realtime poll — populated by doRefreshSystemInfo/doRefreshChannelInfo
     static constexpr int WORKER_MAX_CH = 16;
-    psb::SystemInfo  m_cachedSysInfo{};
-    psb::ChannelInfo m_cachedChInfo[WORKER_MAX_CH]{};
+    psb::SystemInfo   m_cachedSysInfo{};
+    psb::ChannelInfo  m_cachedChInfo[WORKER_MAX_CH]{};
+    // Cached alongside m_cachedChInfo so post-write narrow refreshes (see
+    // refreshChannelXxx below) can use the client's merge-on-success,
+    // reference-taking block reads instead of a wholesale re-read.
+    psb::ChannelConfig m_cachedChConfig[WORKER_MAX_CH]{};
     int m_channelCount = 0;
+
+    // Poll timeout override (ms) for doPollStatus()'s routine reads — short,
+    // matching demo_tui's kPollTimeoutMs, so a single unresponsive poll
+    // transaction fails fast and retries next cycle instead of blocking for
+    // the connection's full timeout (set from the Connect dialog, typically
+    // 3000ms) on every poll tick.
+    static constexpr int kPollTimeoutMs = 300;
 
     QVariantMap systemInfoToMap(const psb::SystemInfo& info);
     QVariantMap channelInfoToMap(int ch, const psb::ChannelInfo& info);
@@ -76,4 +87,22 @@ private:
     QVariantMap channelConfigToMap(int ch, const psb::ChannelConfig& cfg);
 
     void onFrame(bool tx, const std::vector<uint8_t>& data);
+
+    // Narrow, action-specific post-write refreshes — mirrors demo_tui's
+    // tab_monitor.h/tab_channel.h refreshXxx lambdas. Each re-reads only the
+    // Modbus block the corresponding write actually touched (merging into
+    // m_cachedChInfo/m_cachedChConfig in place via the client's
+    // reference-taking methods, never a wholesale struct replace) and emits
+    // the matching Ready signal so QML picks up the confirmed device state
+    // immediately instead of waiting for the next poll tick — which never
+    // arrives for config fields, since doPollStatus() only reads realtime
+    // status/measurement registers, not config.
+    void refreshChannelStatus(int ch);
+    void refreshChannelOutput(int ch);
+    void refreshChannelOutputEnabled(int ch);
+    void refreshChannelProtection(int ch);
+    void refreshChannelRecovery(int ch);
+    void refreshChannelDerate(int ch);
+    void refreshChannelFull(int ch);
+    void refreshSystemConfig();
 };
