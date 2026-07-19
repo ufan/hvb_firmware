@@ -1,5 +1,6 @@
 #include "modbus_worker.h"
 #include "register_map.h"
+#include "board_catalog.h"
 
 #include <QDateTime>
 
@@ -62,12 +63,17 @@ QVariantMap ModbusWorker::systemInfoToMap(const psb::SystemInfo& info)
     m["protoMajor"] = info.protoMajor;
     m["protoMinor"] = info.protoMinor;
     m["variantId"] = info.variantId;
+    m["variantName"] = QString::fromStdString(psb::catalog::variantName(info.variantId));
+    m["variantFamily"] = QString::fromStdString(psb::catalog::variantFamily(info.variantId));
+    m["boardHwRevision"] = info.boardHwRevision;
+    m["boardHwRevisionLabel"] = QString::fromStdString(psb::catalog::hwRevisionLabel(info.boardHwRevision));
     m["supportedChannels"] = info.supportedChannels;
     m["activeChMask"] = info.activeChMask;
     m["boardTempC"] = static_cast<double>(info.boardTempRaw) * 0.1;  // raw LSB, estimate
     m["boardHumidityPct"] = static_cast<double>(info.boardHumidityRaw) * 0.1;
     m["uptimeSec"] = info.uptimeSec;
     m["fwVersion"] = info.fwVersion;
+    m["fwVersionStr"] = QString::fromStdString(psb::reg::formatFwVersion(info.fwVersion));
     m["activeOpMode"] = static_cast<int>(info.activeOpMode);
     m["sysStatus"] = info.sysStatus;
     m["faultCause"] = info.faultCause;

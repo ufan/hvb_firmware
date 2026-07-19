@@ -159,9 +159,7 @@ ApplicationWindow {
 
                 LabeledValue {
                     label: "FW"
-                    value: backend.connected
-                        ? "0x" + ((backend.sysInfo.fwVersion || 0) >>> 0).toString(16).toUpperCase()
-                        : "--"
+                    value: backend.connected ? (backend.sysInfo.fwVersionStr || "--") : "--"
                 }
                 LabeledValue {
                     label: "Proto"
@@ -171,7 +169,9 @@ ApplicationWindow {
                 }
                 LabeledValue {
                     label: "Variant"
-                    value: (backend.sysInfo.variantId || "--").toString()
+                    value: backend.connected
+                        ? (backend.sysInfo.variantName || "--") + " (" + (backend.sysInfo.boardHwRevisionLabel || "--") + ")"
+                        : "--"
                 }
 
                 ToolSeparator {}
