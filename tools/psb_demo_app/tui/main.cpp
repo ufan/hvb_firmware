@@ -1,5 +1,7 @@
 #include "psb_modbus_client.h"
 #include "config_manager.h"
+#include "register_map.h"
+#include "board_catalog.h"
 #include "tab_monitor.h"
 #include "tab_channel.h"
 #include "tui_policy.h"
@@ -614,6 +616,7 @@ int main(int argc, char** argv) {
         if (data.valid) chTxt = std::to_string(data.numChannels());
 
         std::string fwTxt = "--", protoTxt = "--";
+        std::string variantTxt = "PSB";
         std::string uptimeTxt = "--s";
         // SYS_BOARD_TEMPERATURE/HUMIDITY have no backing register descriptor
         // at all on a board without CONFIG_SYS_STATUS (e.g. jw_lvb) — they
@@ -625,9 +628,9 @@ int main(int argc, char** argv) {
         tmpS[0] = humS[0] = 0;
         if (data.valid) {
             const auto& si = data.sysInfo;
-            char fw[16]; snprintf(fw, sizeof(fw), "0x%04X", si.fwVersion);
-            fwTxt    = fw;
+            fwTxt    = psb::reg::formatFwVersion(si.fwVersion);
             protoTxt = std::to_string(si.protoMajor) + "." + std::to_string(si.protoMinor);
+            variantTxt = psb::catalog::variantName(si.variantId);
             uptimeTxt = std::to_string(si.uptimeSec) + "s";
             hasEnvSensor = (si.sysCapFlags & psb::SysCap::ENV_SENSOR) != 0;
             if (hasEnvSensor) {
@@ -686,7 +689,7 @@ int main(int argc, char** argv) {
             ? connectedMenuSave->Render()
             : text("[ Save ]") | dim;
         auto menuBarEl = hbox({
-            text(" PSB ") | bold,
+            text(" " + variantTxt + " ") | bold,
             separator(),
             text(" " + chTxt + " Channels "),
             separator(),
