@@ -31,6 +31,16 @@ ApplicationWindow {
             if (backend.connected) window._connecting = false
             if (!backend.connected) tabContent.currentIndex = 0
         }
+        // modeCombo.currentIndex destroys its declarative `expr` binding the
+        // first time the user picks an item (same QQC2 quirk fixed for the
+        // Protection/Recovery combos in ChannelTab.qml and the Working
+        // Mode/Startup Policy combos in SysConfigDialog.qml) — without this,
+        // it would never reflect backend.sysInfo.activeOpMode again after
+        // the first manual switch, including if the write silently failed
+        // or the mode changed for any other reason.
+        function onSysInfoChanged() {
+            modeCombo.currentIndex = backend.sysInfo.activeOpMode || 0
+        }
     }
 
     ColumnLayout {
@@ -66,6 +76,7 @@ ApplicationWindow {
                 ToolSeparator { visible: backend.connected }
 
                 ComboBox {
+                    id: modeCombo
                     visible: backend.connected
                     model: ["Normal", "Automatic"]
                     currentIndex: backend.sysInfo.activeOpMode || 0
