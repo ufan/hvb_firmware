@@ -16,8 +16,10 @@ Related documents, once you have a working connection:
 workflow), [`operating-mode-guide.md`](operating-mode-guide.md) (Normal vs.
 Automatic mode, protection/recovery semantics),
 [`parameter-reference.md`](parameter-reference.md) (field-by-field defaults
-and derivations). This document does not repeat product *behavior* — only
-the wire format needed to talk to it.
+and derivations), [`version-management-guide.md`](version-management-guide.md)
+(what `Protocol`/`FW Version`/`Variant ID`/`Board HW Revision` mean, how to
+check compatibility, how releases are tagged). This document does not
+repeat product *behavior* — only the wire format needed to talk to it.
 
 ---
 
@@ -25,7 +27,7 @@ the wire format needed to talk to it.
 
 | | |
 |---|---|
-| Protocol version | **3.2** (`Protocol Major`=3, `Protocol Minor`=2 — read and check before interpreting anything else) |
+| Protocol version | **3.3** (`Protocol Major`=3, `Protocol Minor`=3 — read and check before interpreting anything else) |
 | Transport | Modbus RTU |
 | Physical layer | RS-485 half-duplex (current variants) |
 | Serial format | 8N1 |
@@ -53,6 +55,16 @@ nA-scale sense currents vs. jw_lvb's amp-scale load currents can't both fit
 a fixed unit in an int16). A client that only knows v3.1 has no way to read
 this register and must assume the pre-v3.2 universal -10 (0.1 nA/LSB) —
 correct by construction for every board that predates this register.
+
+**v3.3** (additive): added Board HW Revision at system input offset 16
+(§6) — reports the Zephyr `board.yml` hardware-revision index within a
+board variant (0 = default/revA), distinct from Variant ID (board type).
+See `docs/guide/version-management-guide.md` for the full board
+family/variant/revision model. Also: `FW Version` (offset 10–11) changed
+meaning from an ad hoc HI/LO split to a real packed SemVer value — see
+§6's updated row below. Both changes are additive/reinterpretive of
+previously-reserved-or-unused space; no existing register moved or was
+removed.
 
 ---
 
@@ -190,12 +202,13 @@ was rejected outright and had no effect.
 | 6 | Board Temperature | INT16 | REALTIME | ×0.1 °C; 0 if no environment sensor |
 | 7 | Board Humidity | UINT16 | REALTIME | ×0.1 %RH; 0 if no environment sensor |
 | 8–9 | Uptime HI/LO | UINT32 | REALTIME | Seconds since boot |
-| 10–11 | FW Version HI/LO | UINT32 | FIXED | Packed 32-bit; current firmware sets HI=major, LO=minor as separate 16-bit values, not a semantic version string |
+| 10–11 | FW Version HI/LO | UINT32 | FIXED | Packed SemVer (added v3.3): bits 31–24 = major, 23–16 = minor, 15–0 = patch. Sourced from the `firmware-vX.Y.Z` git tag at build time; reads `0.0.0` on an untagged build or a pre-v3.3 firmware (see `docs/guide/version-management-guide.md`) |
 | 12 | Active Operating Mode | UINT16 | REALTIME | See §11.1 |
 | 13 | System Status | UINT16 | REALTIME | Global status bitmask (product-reserved; no bits currently defined) |
 | 14 | Fault Cause | UINT16 | REALTIME | Global fault summary, same bit layout as channel fault cause (§13) |
 | 15 | Current Unit Exp | INT16 | FIXED | Decimal exponent: MEASURED_CURRENT / CURRENT_LIMIT_THRESHOLD registers are in units of 10^exp amperes/LSB, board-specific (added v3.2). Default -10 (0.1 nA/LSB, jw_hvb); jw_lvb reports -3 (1 mA/LSB) — its real load currents are amp-scale, which the old universal 0.1nA/LSB convention couldn't represent at all in an int16 (max ±3.2768 uA). **A client that only knows v3.1 has no way to read this and must assume -10** — that assumption is correct for every board that predates this register, by construction. Voltage has no equivalent; every variant uses a fixed 0.1 V/LSB. |
-| 16–39 | Reserved | — | — | Read as 0, reject writes |
+| 16 | Board HW Revision | UINT16 | FIXED | Zephyr `board.yml` hardware-revision index within this board variant (0 = default/revA), added v3.3. Distinct from Variant ID — see `docs/guide/version-management-guide.md` |
+| 17–39 | Reserved | — | — | Read as 0, reject writes |
 
 ---
 
