@@ -724,8 +724,8 @@ int main(int argc, char** argv) {
             text(" " + msg + " ") | (isErr ? color(Color::Red) : color(Color::Green))
                                   | size(WIDTH, GREATER_THAN, 30),
             filler(),
-            isOnline ? text(" FW:" + fwTxt + "  Proto:" + protoTxt
-                            + "  TUI:" TOOL_VERSION_STRING " ") : text(""),
+            text((isOnline ? " FW:" + fwTxt + "  Proto:" + protoTxt + "  " : " ")
+                 + "TUI:" TOOL_VERSION_STRING " "),
             filler(),
             connTextEl,
             text(" "),
