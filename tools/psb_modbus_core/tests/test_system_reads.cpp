@@ -1,6 +1,7 @@
 #include "psb_modbus_client.h"
 #include "types.h"
 #include "register_map.h"
+#include "board_catalog.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -8,6 +9,7 @@ static void fillDefaultInputRegs(uint16_t* regs) {
     regs[0] = 3;    // Protocol Major
     regs[1] = 0;    // Protocol Minor
     regs[2] = 1;    // Variant ID
+    regs[16] = 0;   // Board HW revision
     regs[3] = SYS_CAP_AUTOMATIC_MODE | SYS_CAP_ENV_SENSOR; // Capability flags (Auto + Env)
     regs[4] = 2;    // Supported channels
     regs[5] = 0x0003; // Active channel mask
@@ -43,6 +45,7 @@ TEST_CASE("SystemInfo — defaults", "[system-reads]") {
     CHECK(info.protoMajor == 3);
     CHECK(info.protoMinor == 0);
     CHECK(info.variantId == 1);
+    CHECK(info.boardHwRevision == 0);
     CHECK(info.supportedChannels == 2);
     CHECK(info.activeChMask == 0x0003);
     CHECK(info.boardTempRaw == 254);
@@ -78,4 +81,46 @@ TEST_CASE("SystemInfo — capability flags decoded", "[system-reads]") {
     auto info = client.readSystemInfo();
     CHECK((info.sysCapFlags & psb::SysCap::AUTOMATIC_MODE) != 0);
     CHECK((info.sysCapFlags & psb::SysCap::ENV_SENSOR) != 0);
+}
+
+TEST_CASE("SystemInfo — board hardware revision decoded", "[system-reads]") {
+    uint16_t inputRegs[280] = {};
+    uint16_t holdingRegs[280] = {};
+    fillDefaultInputRegs(inputRegs);
+    inputRegs[16] = 2;  // Board HW revision (offset 16, "rev C")
+
+    psb::PsbModbusClient client;
+    client.attachTestArrays(inputRegs, holdingRegs, 280);
+
+    auto info = client.readSystemInfo();
+    CHECK(info.boardHwRevision == 2);
+}
+
+TEST_CASE("board_catalog — variant/family/revision lookup", "[system-reads]") {
+    CHECK(psb::catalog::variantName(1) == "jw_hvb");
+    CHECK(psb::catalog::variantName(2) == "jw_lvb");
+    CHECK(psb::catalog::variantName(99) == "unknown (id=99)");
+
+    CHECK(psb::catalog::variantFamily(1) == "HVB family");
+    CHECK(psb::catalog::variantFamily(2) == "LVB family");
+    CHECK(psb::catalog::variantFamily(99) == "unknown family");
+
+    CHECK(psb::catalog::hwRevisionLabel(0) == "rev A");
+    CHECK(psb::catalog::hwRevisionLabel(1) == "rev B");
+    CHECK(psb::catalog::hwRevisionLabel(2) == "rev C");
+}
+
+TEST_CASE("reg::formatFwVersion — decodes packed major/minor/patch", "[system-reads]") {
+    CHECK(psb::reg::formatFwVersion(0x00000000u) == "v0.0.0");
+    // major=1, minor=2, patch=3: 0x01 << 24 | 0x02 << 16 | 0x0003
+    CHECK(psb::reg::formatFwVersion(0x01020003u) == "v1.2.3");
+}
+
+TEST_CASE("reg::protocolCompatible — major must match, minor must be >=", "[system-reads]") {
+    // Client built against VC_PROTOCOL_MAJOR.VC_PROTOCOL_MINOR (currently 3.3).
+    CHECK(psb::reg::protocolCompatible(VC_PROTOCOL_MAJOR, VC_PROTOCOL_MINOR));
+    CHECK(psb::reg::protocolCompatible(VC_PROTOCOL_MAJOR, VC_PROTOCOL_MINOR + 1));
+    CHECK_FALSE(psb::reg::protocolCompatible(VC_PROTOCOL_MAJOR, VC_PROTOCOL_MINOR - 1));
+    CHECK_FALSE(psb::reg::protocolCompatible(VC_PROTOCOL_MAJOR + 1, VC_PROTOCOL_MINOR));
+    CHECK_FALSE(psb::reg::protocolCompatible(VC_PROTOCOL_MAJOR - 1, 99));
 }

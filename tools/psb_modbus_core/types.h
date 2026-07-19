@@ -108,6 +108,7 @@ struct SystemInfo {
     int protoMajor = 0;
     int protoMinor = 0;
     int variantId = 0;
+    int boardHwRevision = 0;  // v3.3+; 0 on older firmware (reserved reg reads 0)
     uint16_t sysCapFlags = 0;
     int supportedChannels = 0;
     uint16_t activeChMask = 0;

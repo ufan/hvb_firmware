@@ -29,6 +29,7 @@ void VirtualBoard::setVariantDefaults() {
     inputRegs[reg::sysAddr(0) + SYS_PROTOCOL_MAJOR] = 3;
     inputRegs[reg::sysAddr(0) + SYS_PROTOCOL_MINOR] = 0;
     inputRegs[reg::sysAddr(0) + SYS_VARIANT_ID] = 1;
+    inputRegs[reg::sysAddr(0) + SYS_BOARD_HW_REVISION] = 0;
     inputRegs[reg::sysAddr(0) + SYS_CAPABILITY_FLAGS] = SYS_CAP_AUTOMATIC_MODE | SYS_CAP_ENV_SENSOR | SYS_CAP_CALIBRATION_MODE;
     inputRegs[reg::sysAddr(0) + SYS_SUPPORTED_CHANNELS] = 2;
     inputRegs[reg::sysAddr(0) + SYS_ACTIVE_CHANNEL_MASK] = 0x0003;

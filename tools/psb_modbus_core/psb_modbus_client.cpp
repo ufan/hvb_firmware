@@ -105,16 +105,30 @@ bool PsbModbusClient::connect(const std::string& portName, int baud, int slaveId
     m_impl->connected = true;
 
     // Probe: verify the board actually responds before claiming success.
-    // Read one well-known input register (PROTOCOL_MAJOR at address 0).
-    uint16_t probe = 0xFFFF;
-    if (!readRegsInternal(false, reg::sysAddr(0), 1, &probe)) {
+    // Read PROTOCOL_MAJOR/MINOR (input offsets 0-1) in one transaction.
+    uint16_t probe[2] = {0xFFFF, 0xFFFF};
+    if (!readRegsInternal(false, reg::sysAddr(0), 2, probe)) {
         m_impl->errorText = "no response from board — check baud rate, slave ID, and cabling";
         m_impl->disconnect();
         return false;
     }
-    if (probe < 1 || probe > 15) {
-        m_impl->errorText = "unexpected protocol version " + std::to_string(probe)
+    int protoMajor = static_cast<int>(probe[0]);
+    int protoMinor = static_cast<int>(probe[1]);
+    if (protoMajor < 1 || protoMajor > 15) {
+        m_impl->errorText = "unexpected protocol version " + std::to_string(protoMajor)
                             + " — check baud rate and slave ID";
+        m_impl->disconnect();
+        return false;
+    }
+    // Real compatibility gate (design spec §6): refuse to operate, not just
+    // warn, on a protocol mismatch — an exact major mismatch means this
+    // client cannot correctly speak the wire format at all, and a lower
+    // minor means the firmware predates a register this client may rely on.
+    if (!reg::protocolCompatible(protoMajor, protoMinor)) {
+        m_impl->errorText = "firmware protocol v" + std::to_string(protoMajor) + "."
+                            + std::to_string(protoMinor) + " is incompatible with this tool "
+                            + "(requires v" + std::to_string(VC_PROTOCOL_MAJOR) + "."
+                            + std::to_string(VC_PROTOCOL_MINOR) + " or newer, same major version)";
         m_impl->disconnect();
         return false;
     }
@@ -331,12 +345,13 @@ SystemInfo PsbModbusClient::readSystemInfo() {
     SystemInfo info;
     if (!checkConnected()) return info;
 
-    uint16_t buf[16] = {};
-    if (!readRegsInternal(false, reg::sysAddr(0), 16, buf)) return info;
+    uint16_t buf[17] = {};
+    if (!readRegsInternal(false, reg::sysAddr(0), 17, buf)) return info;
 
     info.protoMajor       = static_cast<int>(buf[SYS_PROTOCOL_MAJOR]);
     info.protoMinor       = static_cast<int>(buf[SYS_PROTOCOL_MINOR]);
     info.variantId        = static_cast<int>(buf[SYS_VARIANT_ID]);
+    info.boardHwRevision  = static_cast<int>(buf[SYS_BOARD_HW_REVISION]);
     info.sysCapFlags      = buf[SYS_CAPABILITY_FLAGS];
     info.supportedChannels = static_cast<int>(buf[SYS_SUPPORTED_CHANNELS]);
     info.activeChMask     = buf[SYS_ACTIVE_CHANNEL_MASK];
