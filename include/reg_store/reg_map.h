@@ -53,6 +53,13 @@
  *     v3.1 and assumes 0.1 nA/LSB is unaffected unless it's actually talking
  *     to a variant that overrides it (e.g. jw_lvb, -1 = 0.1 A/LSB). Voltage
  *     has no equivalent register — every variant uses a fixed 0.1 V/LSB.
+ *
+ * Additive changes in v3.3 (non-breaking):
+ *   - SYS_BOARD_HW_REVISION added at system input offset 16 (previously
+ *     reserved). Reports the Zephyr board.yml hardware-revision index
+ *     within this board variant (0 = default/revA), distinct from
+ *     SYS_VARIANT_ID (board type). See docs/superpowers/specs/
+ *     2026-07-19-version-management-contract-design.md sections 3-4.
  */
 
 #ifndef REG_STORE_REG_MAP_H
@@ -61,7 +68,7 @@
 #include "dt-bindings/voltage_control/capabilities.h"
 
 #define VC_PROTOCOL_MAJOR             3
-#define VC_PROTOCOL_MINOR             2
+#define VC_PROTOCOL_MINOR             3
 #define VC_PROTOCOL_MAX_CHANNELS      16
 
 /* System capability flags (SYS_CAPABILITY_FLAGS input register) */

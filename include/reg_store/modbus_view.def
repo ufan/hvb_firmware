@@ -24,7 +24,7 @@
  *   COMMAND   write-only triggers — do not poll
  */
 
-/* ---- System input (FC04, offsets 0..15; 16..39 reserved) ----------- */
+/* ---- System input (FC04, offsets 0..16; 17..39 reserved) ----------- */
 MODBUS_SYS16(PROTOCOL_MAJOR,         INPUT,   0, FIXED)
 MODBUS_SYS16(PROTOCOL_MINOR,         INPUT,   1, FIXED)
 MODBUS_SYS16(VARIANT_ID,             INPUT,   2, FIXED)
@@ -45,7 +45,12 @@ MODBUS_SYS16(FAULT_CAUSE,            INPUT,  14, REALTIME)
  * has no equivalent register — it's a fixed 0.1V/LSB on every variant.
  * Added in v3.2, additive-only. */
 MODBUS_SYS16(CURRENT_UNIT_EXP,       INPUT,  15, FIXED)
-/* 16..39 reserved */
+/* Board.yml hardware-revision index within this board variant (0 = default/
+ * revA). Distinct from VARIANT_ID (board type). Added in v3.3, additive-
+ * only — see docs/superpowers/specs/2026-07-19-version-management-contract-
+ * design.md §3, §4. */
+MODBUS_SYS16(BOARD_HW_REVISION,      INPUT,  16, FIXED)
+/* 17..39 reserved */
 
 /* ---- System holding (FC03/FC06, offsets 0..3; 4..38 reserved) ------ */
 MODBUS_SYS16(OPERATING_MODE,         HOLDING,  0, CONFIG)

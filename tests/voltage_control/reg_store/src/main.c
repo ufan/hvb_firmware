@@ -127,6 +127,7 @@ ZTEST(reg_store, test_sys_input_wire_offsets_are_unique)
 	zassert_equal(used[SYS_ACTIVE_OPERATING_MODE]++, 0, "offset %u reused", SYS_ACTIVE_OPERATING_MODE);
 	zassert_equal(used[SYS_STATUS]++,                0, "offset %u reused", SYS_STATUS);
 	zassert_equal(used[SYS_FAULT_CAUSE]++,           0, "offset %u reused", SYS_FAULT_CAUSE);
+	zassert_equal(used[SYS_BOARD_HW_REVISION]++,     0, "offset %u reused", SYS_BOARD_HW_REVISION);
 }
 
 ZTEST(reg_store, test_sys_holding_wire_offsets_are_unique)

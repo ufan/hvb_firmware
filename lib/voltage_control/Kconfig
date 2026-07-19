@@ -21,6 +21,20 @@ config VC_VARIANT_ID
 	  Reported in the VARIANT_ID Modbus register so host tools can adapt
 	  their behaviour to the connected board type.
 
+config VC_BOARD_HW_REVISION
+	int "Hardware revision index reported over Modbus"
+	default 0
+	range 0 65535
+	help
+	  Index of this build's Zephyr board.yml revision (0 = default/revA,
+	  1 = revB, ...), reported in the BOARD_HW_REVISION Modbus register.
+	  Distinct from VC_VARIANT_ID: this identifies a hardware iteration
+	  within one board variant (same DTS topology/drivers, e.g. a
+	  calibration-nominal constant change), not a different board. See
+	  docs/superpowers/specs/2026-07-19-version-management-contract-design.md
+	  §3. Defaults to 0 on every board today since no board in this tree
+	  declares board.yml revisions yet.
+
 config VC_CURRENT_UNIT_EXP
 	int "Decimal exponent for the current-measurement register unit"
 	default -10
