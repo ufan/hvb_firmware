@@ -1,5 +1,6 @@
 #include "FactoryCommands.h"
 #include "register_map.h"
+#include "board_catalog.h"
 #include <chrono>
 #include <iomanip>
 #include <sstream>
@@ -51,11 +52,11 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
         [&session](std::ostream& out) {
             requireConnected(session, out, [&] {
                 auto info = session.client().readSystemInfo();
-                char fw[12];
-                std::snprintf(fw, sizeof(fw), "0x%04X", info.fwVersion);
                 out << "Protocol: " << info.protoMajor << "." << info.protoMinor << "\n"
-                    << "Variant:  " << info.variantId << "\n"
-                    << "FW:       " << fw << "\n"
+                    << "Variant:  " << psb::catalog::variantName(info.variantId) << " ("
+                        << psb::catalog::variantFamily(info.variantId) << ", "
+                        << psb::catalog::hwRevisionLabel(info.boardHwRevision) << ")\n"
+                    << "FW:       " << psb::reg::formatFwVersion(info.fwVersion) << "\n"
                     << "Channels: " << info.supportedChannels << "\n"
                     << "Mode:     " << opModeName(info.activeOpMode) << "\n"
                     << "Uptime:   " << info.uptimeSec << " s\n"
