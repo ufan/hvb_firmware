@@ -23,9 +23,19 @@ int main(int argc, char* argv[])
     app.setApplicationName("HVB Modbus Tool");
     app.setOrganizationName("jianwei");
 
-    QQmlApplicationEngine engine;
-
+    // Declared before `engine` so it outlives it: C++ destroys locals in
+    // reverse declaration order, so with this ordering `engine` (and the
+    // whole QML item tree it owns) is torn down first, before `backend`
+    // is destroyed. With the opposite order, `backend` was destroyed
+    // first while QML items were still alive and re-evaluating bindings
+    // against the now-dangling "backend" context property during
+    // shutdown — Qt nulls a destroyed QObject's context property rather
+    // than leaving a dangling pointer, so every such binding throws
+    // "TypeError: Cannot read property 'X' of null" (harmless but noisy;
+    // reproduced by clicking Quit).
     ModbusBackend backend;
+
+    QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend", &backend);
 
     const QUrl url("qrc:/PsbTool/qml/main.qml");
