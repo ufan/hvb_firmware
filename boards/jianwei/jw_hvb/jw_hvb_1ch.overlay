@@ -1,0 +1,25 @@
+/*
+ * Copyright (c) 2026 Jianwei
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * 1-channel BOM population of jw_hvb: only HV1 is populated, HV2's DAC/ADC
+ * and the vc-controller channel bound to it are unused. See
+ * docs/superpowers/specs/2026-07-19-version-management-contract-design.md
+ * §5 — channel count is a build-time DTS parameter, not a board variant or
+ * hardware revision, since the DAC/ADC/isolator architecture is identical
+ * to the 2-channel base config; only how many of those identical circuits
+ * are populated differs.
+ */
+
+&ads1232_hv2 {
+	status = "disabled";
+};
+
+&dac_hv2 {
+	status = "disabled";
+};
+
+&vc_ch1 {
+	status = "disabled";
+};
