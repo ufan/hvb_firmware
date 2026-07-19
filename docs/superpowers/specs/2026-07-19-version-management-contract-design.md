@@ -140,39 +140,51 @@ Firmware:  v1.2.0        Protocol: v3.3
 
 ## 5. Channel count as a build parameter, not an identity dimension
 
-Today `boards/jianwei/jw_hvb/jw_hvb.dts` hardcodes exactly 2 channel nodes.
-`VC_MAX_CHANNELS` is `DT_CHILD_NUM_STATUS_OKAY(vc_controller)` — a direct
-count of enabled channel nodes at build time. To support 1ch/2ch/4ch SKUs of
-one board variant explicitly (rather than as an implicit, unrealized
-assumption), the target tree shape is:
+`boards/jianwei/jw_hvb/jw_hvb.dts` declares 2 channel nodes (HV1, HV2),
+each backed by real, documented hardware (`ref/jw_hvb/pin_map.md`,
+`ref/jw_hvb/board_design.md`): a dedicated SPI bus + AD5541 DAC and a
+dedicated 7-GPIO ADS1232 bit-bang ADC per channel. `VC_MAX_CHANNELS` is
+`DT_CHILD_NUM_STATUS_OKAY(vc_controller)` — a direct count of enabled
+channel nodes at build time. The base DTS stays the 2-channel (fully
+populated) description; a 1-channel BOM population is expressed as an
+overlay that disables HV2's DAC/ADC/logical channel:
 
 ```
 boards/jianwei/jw_hvb/
-    jw_hvb.dts              # canonical/max hardware description: declares
-                             # channel@0..channel@3 (HV1-HV4). channel@0/@1
-                             # status="okay" (today's 2ch board becomes the
-                             # base default), channel@2/@3 status="disabled"
-    jw_hvb_1ch.overlay       # sets channel@1 status="disabled"
-    jw_hvb_4ch.overlay       # sets channel@2, channel@3 status="okay"
+    jw_hvb.dts              # base: HV1 + HV2, both status="okay" (today's
+                             # 2ch board, fully populated)
+    jw_hvb_1ch.overlay       # disables ads1232_hv2, dac_hv2, vc_ch1
 ```
 
 Build — only the DTC overlay flag changes:
 
 ```sh
-west build -b jw_hvb applications/psb_controller                                          # 2ch (base)
-west build -b jw_hvb applications/psb_controller -- -DDTC_OVERLAY_FILE=jw_hvb_1ch.overlay  # 1ch
-west build -b jw_hvb applications/psb_controller -- -DDTC_OVERLAY_FILE=jw_hvb_4ch.overlay  # 4ch
+west build -b jw_hvb applications/psb_controller                                                # 2ch (base)
+west build -b jw_hvb applications/psb_controller -- -DEXTRA_DTC_OVERLAY_FILE=jw_hvb_1ch.overlay  # 1ch
 ```
 
-Flashing is identical in all three cases — `west flash` doesn't care about
+A 4-channel overlay is **not** included here — see the 2026-07-19
+implementation note below.
+
+Flashing is identical in both cases — `west flash` doesn't care about
 channel count; only the build step differs. This is why channel count isn't
 part of the identity hierarchy in §3: it's an ordinary, additive,
 non-sequential DTS build parameter, the same idiomatic mechanism Zephyr uses
 for any optional-hardware-population case.
 
-(Widening `jw_hvb.dts` to declare the currently-absent disabled ch2/ch3
-nodes, and writing the two overlay files, is an implementation task — out
-of scope for this contract per §1, but now has a concrete target shape.)
+(Writing the overlay file(s) is an implementation task — out of scope for
+this contract per §1, but now has a concrete target shape.)
+
+**2026-07-19 implementation note**: `jw_hvb_1ch.overlay` was implemented
+(disables HV2's DAC/ADC/logical channel — full pin data was already
+documented for HV1/HV2 in `ref/jw_hvb/pin_map.md` and
+`ref/jw_hvb/board_design.md`). A `jw_hvb_4ch.overlay` was **not**
+implemented: `board_design.md` §10 documents a real `SYS_MOD0`/`SYS_MOD1`
+DIP switch with a 4-channel mode entry, but no HV3/HV4 SPI bus, ADS1232
+GPIO set, or isolator part numbers are documented anywhere in this repo.
+Writing `channel@2`/`channel@3` DTS nodes without that schematic data
+would mean fabricating pin assignments. Blocked on real hardware
+documentation for HV3/HV4 before a 4ch overlay can be written correctly.
 
 ## 6. Compatibility rules
 
