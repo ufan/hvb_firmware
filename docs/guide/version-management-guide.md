@@ -39,22 +39,28 @@ artifacts — see §3.
 
 ## 2. Checking what's currently running
 
-**On a connected board** (illustrative — CLI's `info` command, TUI's
-System tab, and the factory REPL's `info` command each show the same three
-facts with slightly different labels):
+**On a connected board** (illustrative — CLI's `info` command, TUI's menu
+bar/status bar, and the factory REPL's `info` command each show the same
+facts with slightly different labels/layout):
 
 ```
+Tool:        psb_demo_cli v1.0.0
 Protocol:    3.3
 Variant:     jw_hvb (HVB family, rev A)
 FW Version:  v0.92.0
 ```
 
-Under the hood this comes from four system input registers
-(`modbus-reference.md` §6, offsets 0/1/2/10-11/16), decoded host-side by
-`tools/psb_modbus_core/board_catalog.h` (`variantName`, `variantFamily`,
-`hwRevisionLabel`) and `register_map.h`'s `formatFwVersion`. The wire
-protocol itself stays numeric-only — the human-readable names are a
-host-tool-side lookup, not something the firmware sends as a string.
+The first line is the host tool's **own** version, not the board's —
+every tool embeds it at build time from its own `<tool-name>-vX.Y.Z` git
+tag (`tools/cmake/tool_version.cmake`, the same mechanism as
+`cmake/fw_version.cmake` but per tool), so a running binary can always
+report what it is without needing a board connected. The remaining three
+come from four system input registers (`modbus-reference.md` §6, offsets
+0/1/2/10-11/16), decoded host-side by `tools/psb_modbus_core/board_catalog.h`
+(`variantName`, `variantFamily`, `hwRevisionLabel`) and `register_map.h`'s
+`formatFwVersion`. The wire protocol itself stays numeric-only — the
+human-readable names are a host-tool-side lookup, not something the
+firmware sends as a string.
 
 **In the repo, for the currently checked-out commit:**
 
@@ -200,7 +206,8 @@ the same commit/PR as the tag.
 | Board HW revision register | `lib/voltage_control/Kconfig` (`CONFIG_VC_BOARD_HW_REVISION`), `include/reg_store/vc_global_regs.def`, `include/reg_store/modbus_view.def`, `lib/voltage_control/vc_runtime.c` |
 | Protocol version constants | `include/reg_store/reg_map.h` (`VC_PROTOCOL_MAJOR/MINOR`) |
 | Channel-count build overlays | `boards/jianwei/jw_hvb/jw_hvb_1ch.overlay`, documented in `README.md` |
-| Host-tool version resolution | `tools/deploy_linux.sh`, `tools/deploy_windows.sh` (`resolve_version()`) |
+| Host-tool version resolution (packaging) | `tools/deploy_linux.sh`, `tools/deploy_windows.sh` (`resolve_version()`) |
+| Host-tool version resolution (embedded in binary) | `tools/cmake/tool_version.cmake`, `tools/cmake/tool_version.h.in` — call `tool_version(<target>)` in a tool's `CMakeLists.txt`; use `TOOL_VERSION_STRING` in its C++ |
 | Host-tool compat-check | `tools/psb_modbus_core/psb_modbus_client.cpp` (`connect()`), `register_map.h` (`protocolCompatible()`) |
 | Board/variant/revision lookup table | `tools/psb_modbus_core/board_catalog.h` |
 | Firmware version formatting | `tools/psb_modbus_core/register_map.h` (`formatFwVersion()`) |
