@@ -137,6 +137,29 @@ inline std::string formatAmpsAuto(double amps, int precision = 3) {
     return buf;
 }
 
+// Formats a packed FW_VERSION register (major:8 | minor:8 | patch:16, see
+// docs/superpowers/specs/2026-07-19-version-management-contract-design.md
+// §4) as "vMAJOR.MINOR.PATCH". All-zero ("v0.0.0") legitimately means "no
+// real version known" (pre-v3.3 board, or an untagged firmware build) —
+// not a read failure.
+inline std::string formatFwVersion(uint32_t packed) {
+    unsigned major = (packed >> 24) & 0xFFu;
+    unsigned minor = (packed >> 16) & 0xFFu;
+    unsigned patch = packed & 0xFFFFu;
+    char buf[24];
+    std::snprintf(buf, sizeof(buf), "v%u.%u.%u", major, minor, patch);
+    return buf;
+}
+
+// Protocol compatibility rule (design spec §6): exact major match required
+// (a major bump means a breaking wire-format change this client literally
+// cannot speak), minor must be at least what this client was built against
+// (a newer firmware may add registers this client doesn't know about, which
+// is fine — it simply won't request them).
+inline bool protocolCompatible(int major, int minor) {
+    return major == VC_PROTOCOL_MAJOR && minor >= VC_PROTOCOL_MINOR;
+}
+
 // Time — single-register UINT16 seconds
 inline double intervalToS(uint16_t raw) {
     return static_cast<double>(raw) * 0.1;  // seconds x10
