@@ -2,6 +2,7 @@
 #include "config_manager.h"
 #include "register_map.h"
 #include "board_catalog.h"
+#include "tool_version.h"
 #include "tab_monitor.h"
 #include "tab_channel.h"
 #include "tui_policy.h"
@@ -728,6 +729,7 @@ int main(int argc, char** argv) {
             connTextEl,
             text(" "),
             bSysCfg->Render(),
+            text(" TUI:" TOOL_VERSION_STRING " ") | dim,
         });
 
         return vbox({

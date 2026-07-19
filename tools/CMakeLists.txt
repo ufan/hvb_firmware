@@ -116,6 +116,8 @@ if(BUILD_FACTORY)
     endif()
 endif()
 
+include(${CMAKE_SOURCE_DIR}/cmake/tool_version.cmake)
+
 add_subdirectory(psb_modbus_core)
 add_subdirectory(psb_demo_app)
 

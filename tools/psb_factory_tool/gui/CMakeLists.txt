@@ -32,6 +32,7 @@ set(FACTORY_GUI_QML
 )
 
 qt_add_executable(psb_factory_gui ${FACTORY_GUI_SOURCES})
+tool_version(psb_factory_gui)
 
 qt_add_qml_module(psb_factory_gui
     URI PsbFactory

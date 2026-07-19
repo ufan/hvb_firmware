@@ -173,6 +173,10 @@ ApplicationWindow {
                         ? (backend.sysInfo.variantName || "--") + " (" + (backend.sysInfo.boardHwRevisionLabel || "--") + ")"
                         : "--"
                 }
+                LabeledValue {
+                    label: "GUI"
+                    value: backend.toolVersion
+                }
 
                 ToolSeparator {}
 

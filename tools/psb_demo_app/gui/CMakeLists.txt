@@ -5,6 +5,7 @@ qt_add_executable(psb_demo_gui
     modbus_backend.cpp modbus_backend.h
     modbus_worker.cpp modbus_worker.h
 )
+tool_version(psb_demo_gui)
 
 set_source_files_properties(qml/PsbTheme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 

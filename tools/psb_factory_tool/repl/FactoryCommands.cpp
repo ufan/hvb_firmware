@@ -1,6 +1,7 @@
 #include "FactoryCommands.h"
 #include "register_map.h"
 #include "board_catalog.h"
+#include "tool_version.h"
 #include <chrono>
 #include <iomanip>
 #include <sstream>
@@ -52,7 +53,8 @@ std::unique_ptr<cli::Menu> buildRootMenu(FactorySession& session) {
         [&session](std::ostream& out) {
             requireConnected(session, out, [&] {
                 auto info = session.client().readSystemInfo();
-                out << "Protocol: " << info.protoMajor << "." << info.protoMinor << "\n"
+                out << "Tool:     psb_factory_tui " << TOOL_VERSION_STRING << "\n"
+                    << "Protocol: " << info.protoMajor << "." << info.protoMinor << "\n"
                     << "Variant:  " << psb::catalog::variantName(info.variantId) << " ("
                         << psb::catalog::variantFamily(info.variantId) << ", "
                         << psb::catalog::hwRevisionLabel(info.boardHwRevision) << ")\n"

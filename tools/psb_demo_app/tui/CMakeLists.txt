@@ -1,4 +1,5 @@
 add_executable(psb_demo_tui main.cpp)
+tool_version(psb_demo_tui)
 target_include_directories(psb_demo_tui PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../psb_modbus_core
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../include

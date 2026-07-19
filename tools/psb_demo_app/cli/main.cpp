@@ -2,6 +2,7 @@
 #include "config_manager.h"
 #include "register_map.h"
 #include "board_catalog.h"
+#include "tool_version.h"
 
 #include <CLI/CLI.hpp>
 
@@ -104,6 +105,7 @@ int cmdInfo() {
     auto info = g_client->readSystemInfo();
     if (!g_client->isConnected()) { std::cerr << "Error\n"; return 1; }
     std::cout << "=== System Info ===\n";
+    printSep("Tool:", std::string("psb_demo_cli ") + TOOL_VERSION_STRING);
     printSep("Protocol:", std::to_string(info.protoMajor) + "." + std::to_string(info.protoMinor));
     printSep("Variant:", psb::catalog::variantName(info.variantId) + " ("
         + psb::catalog::variantFamily(info.variantId) + ", "
@@ -296,6 +298,7 @@ int cmdRawFc06(uint16_t addr, uint16_t value) {
 
 int main(int argc, char** argv) {
     CLI::App app{"PSB Demo App"};
+    app.set_version_flag("--version", std::string("psb_demo_cli ") + TOOL_VERSION_STRING);
     psb::ConfigManager cfgMgr;
     cfgMgr.load();
 

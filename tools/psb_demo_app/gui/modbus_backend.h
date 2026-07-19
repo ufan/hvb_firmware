@@ -1,5 +1,7 @@
 #pragma once
 
+#include "tool_version.h"
+
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -41,6 +43,10 @@ class ModbusBackend : public QObject
     // Status message
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
 
+    // This tool's own version (compile-time constant, from its own
+    // psb_demo_gui-vX.Y.Z git tag — see docs/guide/version-management-guide.md)
+    Q_PROPERTY(QString toolVersion READ toolVersion CONSTANT)
+
 public:
     static constexpr int MAX_CHANNELS = 16;
 
@@ -55,6 +61,8 @@ public:
     int pollIntervalMs() const { return m_pollInterval; }
 
     QVariantMap sysInfo() const { return m_sysInfo; }
+
+    static QString toolVersion() { return QStringLiteral(TOOL_VERSION_STRING); }
 
     int channelCount() const;
     QVariantList channelInfoList() const;

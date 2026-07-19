@@ -16,6 +16,7 @@
 #include "SweepData.h"
 #include "TestEngine.h"
 #include "psb_modbus_client.h"
+#include "tool_version.h"
 
 namespace psb::factory {
 
@@ -28,6 +29,10 @@ class CalibrationBackend : public QObject {
     Q_PROPERTY(bool        connected     READ connected      NOTIFY connectedChanged)
     Q_PROPERTY(QString     statusMessage READ statusMessage  NOTIFY statusMessageChanged)
     Q_PROPERTY(QVariantMap deviceInfo    READ deviceInfo     NOTIFY deviceInfoChanged)
+
+    // This tool's own version (compile-time constant, from its own
+    // psb_factory_gui-vX.Y.Z git tag — see docs/guide/version-management-guide.md)
+    Q_PROPERTY(QString toolVersion READ toolVersion CONSTANT)
 
     // ---- Cal session state -------------------------------------------------
     Q_PROPERTY(bool calUnlocked READ calUnlocked NOTIFY calStateChanged)
@@ -57,6 +62,7 @@ public:
     bool         connected()     const;
     QString      statusMessage() const;
     QVariantMap  deviceInfo()    const;
+    static QString toolVersion() { return QStringLiteral(TOOL_VERSION_STRING); }
     bool         calUnlocked()   const;
     bool         calActive()     const;
     int          numChannels()   const;

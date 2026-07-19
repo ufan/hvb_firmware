@@ -1,4 +1,5 @@
 add_executable(psb_demo_cli main.cpp)
+tool_version(psb_demo_cli)
 target_link_libraries(psb_demo_cli PRIVATE psb_modbus_core CLI11::CLI11)
 target_compile_features(psb_demo_cli PRIVATE cxx_std_17)
 target_compile_options(psb_demo_cli PRIVATE -Wall -Wextra)

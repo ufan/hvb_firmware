@@ -21,7 +21,8 @@ Pane {
                 {label: "Channels",  value: Backend.deviceInfo.supportedChannels},
                 {label: "Board °C",  value: Backend.deviceInfo.boardTemp !== undefined
                                             ? Backend.deviceInfo.boardTemp.toFixed(1) : "—"},
-                {label: "Uptime",    value: Backend.deviceInfo.uptimeSec + " s"}
+                {label: "Uptime",    value: Backend.deviceInfo.uptimeSec + " s"},
+                {label: "Tool",      value: Backend.toolVersion}
             ]
             ColumnLayout {
                 required property var modelData

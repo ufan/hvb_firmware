@@ -3,6 +3,7 @@ add_executable(psb_factory_tui
     FactorySession.cpp
     FactoryCommands.cpp
 )
+tool_version(psb_factory_tui)
 target_include_directories(psb_factory_tui PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../psb_modbus_core
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../include
