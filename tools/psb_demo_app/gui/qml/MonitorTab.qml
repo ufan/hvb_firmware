@@ -22,17 +22,25 @@ Item {
             if (caps & 0x0004) hasVolt  = true
             if (caps & 0x0008) hasCurr  = true
         }
+        // Widths are duplicated from PsbTheme's col* constants rather than
+        // referenced directly: qmlcachegen's AOT compilation of this file
+        // hits a known Qt Quick Compiler limitation ("PsbTheme was a
+        // singleton at compile time, but is not a singleton anymore") when
+        // a singleton is read from inside a plain JS function body here,
+        // silently evaluating every PsbTheme.col* access to undefined
+        // (logged as a QML TypeError, not thrown) and collapsing every
+        // Monitor column to zero width.
         var cols = []
-        cols.push({ key: "ch",     label: "CH",        width: PsbTheme.colCh })
-        if (hasOutEn) cols.push({ key: "vset",   label: "Vset (V)", width: PsbTheme.colVset })
-        if (hasOutEn) cols.push({ key: "status", label: "Status",   width: PsbTheme.colStatus })
-        cols.push(    { key: "vop",    label: "Vop (V)",   width: PsbTheme.colVop })
-        if (hasVolt)  cols.push({ key: "v",      label: "V (V)",    width: PsbTheme.colV })
-        if (hasCurr)  cols.push({ key: "i",      label: "I (nA)",   width: PsbTheme.colI })
-        if (hasOutEn) cols.push({ key: "ru",     label: "Ru (V)",   width: PsbTheme.colRamp })
-        if (hasOutEn) cols.push({ key: "rd",     label: "Rd (V)",   width: PsbTheme.colRamp })
-        if (hasCurr)  cols.push({ key: "limit",  label: "Lim(nA)",  width: PsbTheme.colLimit })
-        cols.push(    { key: "fault",  label: "Fault",     width: PsbTheme.colFault })
+        cols.push({ key: "ch",     label: "CH",        width: 50 })
+        if (hasOutEn) cols.push({ key: "vset",   label: "Vset (V)", width: 80 })
+        if (hasOutEn) cols.push({ key: "status", label: "Status",   width: 90 })
+        cols.push(    { key: "vop",    label: "Vop (V)",   width: 80 })
+        if (hasVolt)  cols.push({ key: "v",      label: "V (V)",    width: 80 })
+        if (hasCurr)  cols.push({ key: "i",      label: "I (nA)",   width: 90 })
+        if (hasOutEn) cols.push({ key: "ru",     label: "Ru (V)",   width: 72 })
+        if (hasOutEn) cols.push({ key: "rd",     label: "Rd (V)",   width: 72 })
+        if (hasCurr)  cols.push({ key: "limit",  label: "Lim(nA)",  width: 90 })
+        cols.push(    { key: "fault",  label: "Fault",     width: 110 })
 
         // Column set is derived from hardware capability flags, which are
         // fixed for the lifetime of a connection — only replace the array

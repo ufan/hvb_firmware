@@ -208,8 +208,11 @@ ApplicationWindow {
                 Label {
                     id: statusLabel
                     text: backend.statusMessage
-                    color: backend.statusMessage.startsWith("✓") ? PsbTheme.colorOk
-                         : backend.statusMessage.startsWith("✗") ? PsbTheme.colorError
+                    // Hardcoded to match PsbTheme's colorOk/colorError rather than
+                    // referencing the singleton directly — see MonitorTab.qml's
+                    // computeActiveColumns() for why (qmlcachegen AOT limitation).
+                    color: backend.statusMessage.startsWith("✓") ? "#4CAF50"
+                         : backend.statusMessage.startsWith("✗") ? "#F44336"
                          : Material.foreground
                     Layout.preferredWidth: 300
                     elide: Text.ElideRight
