@@ -1,5 +1,6 @@
 #pragma once
 #include "widgets.h"
+#include "board_catalog.h"
 #include <memory>
 #include <string>
 
@@ -69,12 +70,11 @@ inline Component makeSystemTab(AppState& s, ConfigInputs& inputs) {
         char tmp[16], hum[16];
         snprintf(tmp, sizeof(tmp), "%.1f", si.boardTempRaw * 0.1);
         snprintf(hum, sizeof(hum), "%.1f", si.boardHumidityRaw * 0.1);
-        char fw[16];
-        snprintf(fw, sizeof(fw), "0x%04X", si.fwVersion);
         auto leftPanel = vbox({
             hbox({ text("Protocol  : "), text(std::to_string(si.protoMajor)+"."+std::to_string(si.protoMinor)) }),
-            hbox({ text("Variant ID: "), text(std::to_string(si.variantId)) }),
-            hbox({ text("FW Version: "), text(fw) }),
+            hbox({ text("Variant   : "), text(psb::catalog::variantName(si.variantId) + " ("
+                + psb::catalog::hwRevisionLabel(si.boardHwRevision) + ")") }),
+            hbox({ text("FW Version: "), text(psb::reg::formatFwVersion(si.fwVersion)) }),
             hbox({ text("Channels  : "), text(std::to_string(si.supportedChannels)) }),
             hbox({ text("Uptime    : "), text(std::to_string(si.uptimeSec) + " s") }),
             hbox({ text("Board Temp: "), text(std::string(tmp) + " \xc2\xb0\x43") }),
