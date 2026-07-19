@@ -11,7 +11,12 @@ a release tag, or add a new board variant to the lookup table.
 Related: [`modbus-reference.md`](modbus-reference.md) §1/§6 (the
 `Protocol`/`FW Version`/`Variant ID`/`Board HW Revision` wire registers
 this doc explains the meaning of), [`channel-capability-model.md`](channel-capability-model.md)
-(capability flags — a related but distinct concept from board identity).
+(capability flags — a related but distinct concept from board identity),
+[`compatibility-matrix.md`](compatibility-matrix.md) (which board variant
+needs which minimum firmware/protocol), [`../../CHANGELOG.md`](../../CHANGELOG.md)
+(every tagged release, newest first). This doc stays deliberately compact
+— those two are reference tables that grow over time, kept separate so
+this guide doesn't.
 
 ---
 
@@ -104,31 +109,13 @@ scheme isn't descriptive enough for that variant.
 parameter (e.g. `jw_hvb_1ch.overlay`), not a board variant or revision. See
 design doc §5.
 
----
-
-## 4. Board / hardware compatibility table
-
-Which firmware a board variant needs, and why. **Keep this table current**:
-add a row (or extend an existing one) every time a new board variant or a
-real `board.yml` hardware revision is added — see §3 for the mechanism. A
-stale compatibility table is worse than none, since it actively misleads
-whoever checks it next.
-
-| Board variant | `VARIANT_ID` | HW revision | Min. protocol | Min. firmware tag | Notes |
-|---|---|---|---|---|---|
-| `jw_hvb` | 1 | rev A (0) — only revision that exists | 3.0+ | `firmware-v0.92.0` (first tagged release; untagged commits back to protocol 3.0 also work) | Original variant. 2-channel by default; 1-channel BOM population via `jw_hvb_1ch.overlay` (§3, design doc §5) |
-| `jw_lvb` | 2 | rev A (0) — only revision that exists | **3.2+** — a client that only knows protocol ≤3.1 has no way to read `CURRENT_UNIT_EXP` and will misinterpret `MEASURED_CURRENT`/`CURRENT_LIMIT_THRESHOLD` by ~9 orders of magnitude (jw_lvb's amp-scale load currents vs. the pre-3.2 universal 0.1 nA/LSB assumption) — see `modbus-reference.md` §3, §6 | `firmware-v0.92.0` (first tagged release) | 10-channel, fixed-voltage (no DAC) |
-
-No board in this tree declares a real `board.yml` hardware revision yet —
-every row above is "rev A (0)" by construction (`CONFIG_VC_BOARD_HW_REVISION`
-default). When a board gets a second revision, add a row per revision here,
-since different revisions can have different minimum-firmware requirements
-(e.g. a revision-scoped `defconfig` value a host tool needs to know how to
-interpret).
+**Which board needs which minimum firmware/protocol**: see
+[`compatibility-matrix.md`](compatibility-matrix.md) — kept as a separate,
+independently-maintained reference table rather than inline here.
 
 ---
 
-## 5. Host-tool compatibility behavior
+## 4. Host-tool compatibility behavior
 
 Every host tool (CLI, TUI, factory REPL, both GUIs) connects through the
 shared `PsbModbusClient::connect()`, which enforces:
@@ -153,7 +140,7 @@ shouldn't refuse to talk to a board just because it's running an older
 
 ---
 
-## 6. Cutting a release tag
+## 5. Cutting a release tag
 
 ### Firmware
 
@@ -199,9 +186,12 @@ tool's own tag the next time they're run (`git describe --tags --match
 "<tool>-v*"` per tool, not a shared repo-wide version) — no script changes
 needed after tagging.
 
+**Record it**: add a row to [`../../CHANGELOG.md`](../../CHANGELOG.md) in
+the same commit/PR as the tag.
+
 ---
 
-## 7. Where the mechanism lives (file map)
+## 6. Where the mechanism lives (file map)
 
 | Concern | File(s) |
 |---|---|
@@ -214,24 +204,5 @@ needed after tagging.
 | Host-tool compat-check | `tools/psb_modbus_core/psb_modbus_client.cpp` (`connect()`), `register_map.h` (`protocolCompatible()`) |
 | Board/variant/revision lookup table | `tools/psb_modbus_core/board_catalog.h` |
 | Firmware version formatting | `tools/psb_modbus_core/register_map.h` (`formatFwVersion()`) |
-
----
-
-## 8. Version history
-
-**Keep this table current**: add a row every time a new tag is cut (§6),
-in the same commit/PR as the tag itself. Newest first.
-
-| Tag | Date | Component | Highlights |
-|---|---|---|---|
-| `firmware-v0.92.0` | 2026-07-19 | Firmware | First release under the new scheme. Version management contract implemented: `FW_VERSION` now real SemVer (sourced from this tag family at build time), new `BOARD_HW_REVISION` register, protocol 3.2→3.3, `jw_hvb_1ch.overlay` for 1-channel BOM populations. |
-| `psb_demo_tui-v1.0.0` | 2026-07-19 | Host tool | First independently-tagged release. Variant/family/revision display, real SemVer firmware-version display, protocol compat-check (refuses to connect on mismatch, via the shared `PsbModbusClient`). |
-| `psb_demo_cli-v1.0.0` | 2026-07-19 | Host tool | Same as `psb_demo_tui-v1.0.0` (shared `psb_modbus_core` changes). |
-| `psb_factory_tui-v1.0.0` | 2026-07-19 | Host tool | Same as `psb_demo_tui-v1.0.0`. |
-| `v0.91` | 2026-07-18 | Legacy whole-repo | jw_lvb board bring-up (hardware fixes, current calibration, ch5 default-off policy, zero-offset tool); `hvb_*`→`psb_*` host-tool rename; protocol v3.1 (calibration gain as decimal mantissa×10^exp); `jw_hvb_selfcal` no-instrument calibration tool. Predates the new tag scheme — left as a historical marker, never retagged. |
-| `v0.90` | 2026-07-03 | Legacy whole-repo | Pre-release baseline. FW version `0x00000001`, protocol `3.0`. Software/repo release point only, not itself a firmware or protocol bump. Predates the new tag scheme. |
-
-For anything not in this table (e.g. exactly which commit first shipped
-protocol 3.2), `git log -S <symbol> -- <file>` against the real source is
-authoritative — this table only promises to track tagged release points,
-not to reconstruct untagged history.
+| Release history | [`../../CHANGELOG.md`](../../CHANGELOG.md) |
+| Board/hardware compatibility | [`compatibility-matrix.md`](compatibility-matrix.md) |
