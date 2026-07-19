@@ -20,15 +20,29 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOOLS_DIR="$SCRIPT_DIR"
 APP_NAMES=("psb_demo_tui" "psb_demo_cli" "psb_factory_tui")
-VERSION="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || echo "dev")"
 ARCH="win-x86_64"
 
 BUILD_DIR="${TOOLS_DIR}/build/mingw-release"
 BIN_DIR="${TOOLS_DIR}/bin"
 DEPLOY_DIR="${SCRIPT_DIR}/deploy"
 
+# Each host tool is released independently under its own <tool-name>-vX.Y.Z
+# tag (see docs/superpowers/specs/2026-07-19-version-management-contract-
+# design.md §7) — a shared repo-wide tag would conflate unrelated tools'
+# release cadence. --always falls back to the abbreviated commit hash when
+# that tool has no matching tag reachable, same fallback behavior as before.
+resolve_version() {
+    git -C "$SCRIPT_DIR" describe --tags --match "$1-v*" --always --dirty 2>/dev/null || echo "dev"
+}
+declare -A VERSIONS
+for APP_NAME in "${APP_NAMES[@]}"; do
+    VERSIONS[$APP_NAME]="$(resolve_version "$APP_NAME")"
+done
+
 echo "=== PSB CLI/TUI tools — Windows cross-compile package ==="
-echo "    Version : $VERSION"
+for APP_NAME in "${APP_NAMES[@]}"; do
+    echo "    Version (${APP_NAME}) : ${VERSIONS[$APP_NAME]}"
+done
 echo "    Build   : $BUILD_DIR"
 echo "    Output  : $DEPLOY_DIR"
 echo ""
@@ -59,7 +73,7 @@ echo "[3/3] Creating single-executable zips..."
 mkdir -p "$DEPLOY_DIR"
 for APP_NAME in "${APP_NAMES[@]}"; do
     BINARY="${BIN_DIR}/${APP_NAME}.exe"
-    ZIPFILE="${DEPLOY_DIR}/${APP_NAME}-${VERSION}-${ARCH}.zip"
+    ZIPFILE="${DEPLOY_DIR}/${APP_NAME}-${VERSIONS[$APP_NAME]}-${ARCH}.zip"
     rm -f "$ZIPFILE"
     zip -j "$ZIPFILE" "$BINARY"
     echo "    Created: $ZIPFILE"
@@ -69,5 +83,5 @@ echo ""
 echo "Done. Packages in: $DEPLOY_DIR"
 echo ""
 echo "To run on Windows:"
-echo "  1. Unzip the .exe you want (e.g. psb_demo_tui-${VERSION}-${ARCH}.zip)"
+echo "  1. Unzip the .exe you want (e.g. psb_demo_tui-${VERSIONS[psb_demo_tui]}-${ARCH}.zip)"
 echo "  2. Double-click the .exe"
