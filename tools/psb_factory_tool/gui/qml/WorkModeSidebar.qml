@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import PsbFactory
+import "components"
 
 Rectangle {
     id: root
@@ -11,6 +12,20 @@ Rectangle {
 
     signal modeSelected(string mode)
     required property string currentMode
+
+    // Backend has no explicit "connecting" property — derived the same way
+    // as demo_gui's main.qml, from the transient status message connectToDevice()
+    // sets before dispatching the async connect.
+    property bool connecting: false
+    Connections {
+        target: Backend
+        function onStatusMessageChanged() {
+            root.connecting = (Backend.statusMessage === "Connecting...")
+        }
+        function onConnectedChanged() {
+            if (Backend.connected) root.connecting = false
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -48,20 +63,29 @@ Rectangle {
 
         Item { Layout.fillHeight: true }
 
-        // Connection status indicator
+        // Connection status indicator — 3-state (offline/connecting/connected)
+        // breathing dot, matching demo_gui's menu bar indicator, instead of a
+        // static 2-state box with no feedback while a connect is in flight.
         Rectangle {
             Layout.fillWidth: true
             height: 32
             radius: 4
-            color: Backend.connected ? "#1a4a1a" : "#3a1a1a"
-            border.color: Backend.connected ? "#4CAF50" : "#f44336"
+            color: Backend.connected ? "#1a4a1a" : root.connecting ? "#4a3a1a" : "#3a1a1a"
+            border.color: Backend.connected ? "#4CAF50" : root.connecting ? "#FFC107" : "#f44336"
             border.width: 1
 
-            Label {
+            RowLayout {
                 anchors.centerIn: parent
-                text: Backend.connected ? "● Connected" : "○ Disconnected"
-                color: Backend.connected ? "#4CAF50" : "#f44336"
-                font.pixelSize: 11
+                spacing: 6
+                BreathingIndicator {
+                    connected: Backend.connected
+                    connecting: root.connecting
+                }
+                Label {
+                    text: Backend.connected ? "Connected" : root.connecting ? "Connecting..." : "Disconnected"
+                    color: Backend.connected ? "#4CAF50" : root.connecting ? "#FFC107" : "#f44336"
+                    font.pixelSize: 11
+                }
             }
         }
 

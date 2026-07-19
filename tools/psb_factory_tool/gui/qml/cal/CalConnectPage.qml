@@ -79,6 +79,7 @@ Item {
         Button {
             text: Backend.connected ? "Disconnect" : "Connect"
             highlighted: !Backend.connected
+            Material.background: Backend.connected ? Material.Red : undefined
             enabled: portCombo.count > 0 || Backend.connected
             Layout.fillWidth: true
             onClicked: {

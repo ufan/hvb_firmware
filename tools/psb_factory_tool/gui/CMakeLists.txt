@@ -23,6 +23,7 @@ set(FACTORY_GUI_QML
     qml/test/TestingWorkspace.qml
     qml/test/FunctionalTestPage.qml
     qml/test/StressTestPage.qml
+    qml/components/BreathingIndicator.qml
     qml/components/DeviceInfoCard.qml
     qml/components/StepIndicator.qml
     qml/components/SweepTable.qml

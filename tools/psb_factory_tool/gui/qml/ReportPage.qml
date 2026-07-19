@@ -60,26 +60,43 @@ Item {
 
                 Label { text: "Board serial:" }
                 TextField {
+                    id: boardSerialField
                     Layout.fillWidth: true
-                    text: Backend.reportBoardSerial
-                    onTextChanged: Backend.reportBoardSerial = text
                     placeholderText: "e.g. HVB-001-2026"
+                    // Binding on text (rather than a plain text: assignment) so a
+                    // backend-side change to reportBoardSerial can still reach this
+                    // field — a plain `text: Backend.reportBoardSerial` binding is
+                    // destroyed the instant the user's own typing sets `text`
+                    // imperatively, same QQC2 behavior as ComboBox/SpinBox.
+                    Binding on text {
+                        value: Backend.reportBoardSerial
+                        when: !boardSerialField.activeFocus
+                    }
+                    onTextChanged: if (boardSerialField.activeFocus) Backend.reportBoardSerial = text
                 }
 
                 Label { text: "Operator ID:" }
                 TextField {
+                    id: operatorIdField
                     Layout.fillWidth: true
-                    text: Backend.reportOperatorId
-                    onTextChanged: Backend.reportOperatorId = text
                     placeholderText: "e.g. J.Smith"
+                    Binding on text {
+                        value: Backend.reportOperatorId
+                        when: !operatorIdField.activeFocus
+                    }
+                    onTextChanged: if (operatorIdField.activeFocus) Backend.reportOperatorId = text
                 }
 
                 Label { text: "Notes:" }
                 TextField {
+                    id: notesField
                     Layout.fillWidth: true
-                    text: Backend.reportNotes
-                    onTextChanged: Backend.reportNotes = text
                     placeholderText: "Optional remarks"
+                    Binding on text {
+                        value: Backend.reportNotes
+                        when: !notesField.activeFocus
+                    }
+                    onTextChanged: if (notesField.activeFocus) Backend.reportNotes = text
                 }
             }
         }

@@ -12,6 +12,10 @@ ApplicationWindow {
     width: 1200
     height: 800
     title: "HVB Factory Tool"
+    // App-wide base font — matches demo_gui's main.qml, giving every
+    // Control/Label a deliberate baseline instead of the Material style's
+    // implicit default with sizes scattered ad hoc across files.
+    font.pixelSize: 14
 
     Material.theme: Material.Dark
     Material.accent: Material.Cyan
@@ -50,26 +54,37 @@ ApplicationWindow {
         }
     }
 
-    RowLayout {
+    ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
-        WorkModeSidebar {
-            id: sidebar
-            Layout.fillHeight: true
-            currentMode: root.workMode
-            onModeSelected: function(mode) { root.workMode = mode }
-        }
-
-        StackLayout {
+        RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: root.workMode === "cal" ? 0
-                        : root.workMode === "test" ? 1 : 2
+            spacing: 0
 
-            CalibrationWorkspace { }
-            TestingWorkspace { }
-            ReportPage { }
+            WorkModeSidebar {
+                id: sidebar
+                Layout.fillHeight: true
+                currentMode: root.workMode
+                onModeSelected: function(mode) { root.workMode = mode }
+            }
+
+            // Gray 1px separator between sidebar and content — matches
+            // demo_gui's main.qml section separators; previously the two
+            // areas had no visual boundary at all.
+            Rectangle { Layout.fillHeight: true; width: 1; color: "#3a3a3a" }
+
+            StackLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                currentIndex: root.workMode === "cal" ? 0
+                            : root.workMode === "test" ? 1 : 2
+
+                CalibrationWorkspace { }
+                TestingWorkspace { }
+                ReportPage { }
+            }
         }
     }
 }

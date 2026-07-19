@@ -195,10 +195,23 @@ private slots:
     void onStressProgress(int ch, double elapsed, double total, double v);
     void onStressComplete(StressTestResult result);
 
+    // Quick-operation results from CalibrationWorker (see the "Quick
+    // operations" comment in CalibrationWorker.h) — these run on
+    // m_sweepThread and report back here via queued signals so this class's
+    // own state (m_sysInfo, m_chCaps, m_calUnlocked, ...) is only ever
+    // touched from the main thread.
+    void onPortsScanned(QStringList ports);
+    void onConnectResult(bool ok, QString error, psb::SystemInfo sysInfo, QList<uint16_t> chCaps);
+    void onDisconnectDone();
+    void onUnlockResult(bool ok, QString error, QList<uint16_t> chCaps,
+                         QList<psb::ChannelCalConfig> nvsCoeffs);
+    void onExitCalDone(bool ok);
+    void onWriteCoeffsDone(int ch, bool ok, QString error);
+    void onCommitDone(int ch, bool ok, QString error);
+    void onSafeAllDone();
+
 private:
     void setStatus(const QString& msg);
-    void readDeviceInfo();
-    void readChannelCaps();
 
     PsbModbusClient  m_client;
     QMutex           m_clientMutex;

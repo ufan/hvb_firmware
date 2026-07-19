@@ -23,6 +23,10 @@ static void registerMetaTypes() {
     qRegisterMetaType<psb::factory::ChannelCalData>("psb::factory::ChannelCalData");
     qRegisterMetaType<psb::factory::FuncTestResult>("psb::factory::FuncTestResult");
     qRegisterMetaType<psb::factory::StressTestResult>("psb::factory::StressTestResult");
+    qRegisterMetaType<psb::SystemInfo>("psb::SystemInfo");
+    qRegisterMetaType<QList<uint16_t>>("QList<uint16_t>");
+    qRegisterMetaType<psb::ChannelCalConfig>("psb::ChannelCalConfig");
+    qRegisterMetaType<QList<psb::ChannelCalConfig>>("QList<psb::ChannelCalConfig>");
 }
 
 // ---------------------------------------------------------------------------
@@ -52,6 +56,22 @@ CalibrationBackend::CalibrationBackend(QObject* parent)
         emit sweepRunningChanged();
         setStatus("Sweep aborted");
     });
+    connect(m_sweepWorker, &CalibrationWorker::portsScanned,
+            this, &CalibrationBackend::onPortsScanned);
+    connect(m_sweepWorker, &CalibrationWorker::connectResult,
+            this, &CalibrationBackend::onConnectResult);
+    connect(m_sweepWorker, &CalibrationWorker::disconnectDone,
+            this, &CalibrationBackend::onDisconnectDone);
+    connect(m_sweepWorker, &CalibrationWorker::unlockResult,
+            this, &CalibrationBackend::onUnlockResult);
+    connect(m_sweepWorker, &CalibrationWorker::exitCalDone,
+            this, &CalibrationBackend::onExitCalDone);
+    connect(m_sweepWorker, &CalibrationWorker::writeCoeffsDone,
+            this, &CalibrationBackend::onWriteCoeffsDone);
+    connect(m_sweepWorker, &CalibrationWorker::commitDone,
+            this, &CalibrationBackend::onCommitDone);
+    connect(m_sweepWorker, &CalibrationWorker::safeAllDone,
+            this, &CalibrationBackend::onSafeAllDone);
     m_sweepThread.start();
 
     // Test engine — lives on its own thread
@@ -349,43 +369,19 @@ QVariantMap CalibrationBackend::stressSummary() const {
 // ---------------------------------------------------------------------------
 
 void CalibrationBackend::scanPorts() {
-    m_ports.clear();
-    for (const auto& p : PsbModbusClient::scanPorts())
-        m_ports.append(QString::fromStdString(p));
-    emit portsChanged();
+    QTimer::singleShot(0, m_sweepWorker, [this] { m_sweepWorker->doScanPorts(); });
 }
 
 void CalibrationBackend::connectToDevice(const QString& port, int baud, int slaveId) {
-    bool ok;
-    {
-        QMutexLocker lk(&m_clientMutex);
-        ok = m_client.connect(port.toStdString(), baud, slaveId);
-    }
-    if (ok) {
-        setStatus("Connected to " + port);
-        readDeviceInfo();
-    } else {
-        setStatus("Connect failed: " + QString::fromStdString(m_client.lastError()));
-    }
-    emit connectedChanged();
+    setStatus("Connecting...");
+    QTimer::singleShot(0, m_sweepWorker, [this, port, baud, slaveId] {
+        m_sweepWorker->doConnect(port, baud, slaveId);
+    });
 }
 
 void CalibrationBackend::disconnectFromDevice() {
     if (m_calActive) exitCalMode();
-    {
-        QMutexLocker lk(&m_clientMutex);
-        m_client.disconnect();
-    }
-    m_calUnlocked = false;
-    m_calActive   = false;
-    m_sysInfo     = {};
-    m_chCaps.clear();
-    m_nvsCoeffs.clear();
-    m_calData.clear();
-    emit connectedChanged();
-    emit calStateChanged();
-    emit deviceInfoChanged();
-    setStatus("Disconnected");
+    QTimer::singleShot(0, m_sweepWorker, [this] { m_sweepWorker->doDisconnect(); });
 }
 
 // ---------------------------------------------------------------------------
@@ -393,54 +389,12 @@ void CalibrationBackend::disconnectFromDevice() {
 // ---------------------------------------------------------------------------
 
 void CalibrationBackend::unlockAndEnter() {
-    bool ok = false;
-    {
-        QMutexLocker lk(&m_clientMutex);
-        ok = m_client.unlockCalibrationStep(CAL_UNLOCK_STEP1)
-          && m_client.unlockCalibrationStep(CAL_UNLOCK_STEP2)
-          && m_client.enterCalibrationMode();
-    }
-    if (!ok) {
-        setStatus("Unlock failed: " + QString::fromStdString(m_client.lastError()));
-        return;
-    }
-    m_calUnlocked = true;
-    m_calActive   = true;
-
-    readChannelCaps();
     int nch = m_sysInfo.supportedChannels;
-    m_nvsCoeffs.resize(nch);
-    m_calData.resize(nch);
-    for (int ch = 0; ch < nch; ++ch) {
-        {
-            QMutexLocker lk(&m_clientMutex);
-            m_nvsCoeffs[ch] = m_client.readChannelCalConfig(ch, m_chCaps.value(ch, 0));
-        }
-        auto& d   = m_calData[ch];
-        d.ch      = ch;
-        uint16_t caps = m_chCaps.value(ch, 0);
-        d.hasOut   = (caps & CH_CAP_RAW_OUTPUT_DRIVE)    != 0;
-        d.hasMeasV = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
-        d.hasMeasI = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
-        d.needsCal = d.hasOut || d.hasMeasV || d.hasMeasI;
-        d.points.clear();
-        d.coeffsWritten = false;
-        d.committed     = false;
-    }
-
-    emit calStateChanged();
-    setStatus("Calibration mode entered — NVS coefficients saved");
+    QTimer::singleShot(0, m_sweepWorker, [this, nch] { m_sweepWorker->doUnlockAndEnter(nch); });
 }
 
 void CalibrationBackend::exitCalMode() {
-    {
-        QMutexLocker lk(&m_clientMutex);
-        m_client.exitCalibrationMode();
-    }
-    m_calActive   = false;
-    m_calUnlocked = false;
-    emit calStateChanged();
-    setStatus("Calibration mode exited");
+    QTimer::singleShot(0, m_sweepWorker, [this] { m_sweepWorker->doExitCalMode(); });
 }
 
 // ---------------------------------------------------------------------------
@@ -586,38 +540,28 @@ void CalibrationBackend::writeCoefficients(int ch,
                                            double measVK, double measVB,
                                            double measIK, double measIB) {
     if (ch < 0 || ch >= m_calData.size()) return;
-    auto& d = m_calData[ch];
+    const auto& d = m_calData[ch];
 
-    bool ok = true;
-    {
-        QMutexLocker lk(&m_clientMutex);
-        if (d.hasOut)
-            ok = ok && m_client.writeCalibrationOutput(ch,
-                    static_cast<uint16_t>(qRound(outK  * vscale::OUTPUT_CAL_DIVISOR)),
-                    static_cast<int16_t> (qRound(outB)));
-        if (d.hasMeasV)
-            ok = ok && m_client.writeCalibrationMeasV(ch,
-                    static_cast<uint16_t>(qRound(measVK * vscale::MEAS_CAL_DIVISOR)),
-                    static_cast<int16_t> (qRound(measVB)));
-        if (d.hasMeasI)
-            ok = ok && m_client.writeCalibrationMeasI(ch,
-                    static_cast<uint16_t>(qRound(measIK * vscale::MEAS_CAL_DIVISOR)),
-                    static_cast<int16_t> (qRound(measIB)));
-    }
-    d.coeffsWritten = ok;
+    // Persist the (possibly user-overridden) fit values immediately so the
+    // report is accurate even before the write completes — matches the
+    // previous synchronous behavior's ordering.
+    m_calData[ch].outFit.k   = outK;   m_calData[ch].outFit.b   = outB;
+    m_calData[ch].measVFit.k = measVK; m_calData[ch].measVFit.b = measVB;
+    m_calData[ch].measIFit.k = measIK; m_calData[ch].measIFit.b = measIB;
 
-    // Persist the (possibly user-overridden) fit values so the report is accurate
-    d.outFit.k   = outK;   d.outFit.b   = outB;
-    d.measVFit.k = measVK; d.measVFit.b = measVB;
-    d.measIFit.k = measIK; d.measIFit.b = measIB;
+    auto outK16  = static_cast<quint16>(qRound(outK  * vscale::OUTPUT_CAL_DIVISOR));
+    auto outB16  = static_cast<qint16> (qRound(outB));
+    auto vK16    = static_cast<quint16>(qRound(measVK * vscale::MEAS_CAL_DIVISOR));
+    auto vB16    = static_cast<qint16> (qRound(measVB));
+    auto iK16    = static_cast<quint16>(qRound(measIK * vscale::MEAS_CAL_DIVISOR));
+    auto iB16    = static_cast<qint16> (qRound(measIB));
+    bool hasOut = d.hasOut, hasMeasV = d.hasMeasV, hasMeasI = d.hasMeasI;
 
-    emit writeCoeffsResult(ch, ok,
-        ok ? QString("CH%1 coefficients written").arg(ch)
-           : QString("CH%1 write failed: %2")
-                 .arg(ch)
-                 .arg(QString::fromStdString(m_client.lastError())));
-    setStatus(ok ? QString("CH%1 coefficients written").arg(ch)
-                 : QString("CH%1 write failed").arg(ch));
+    QTimer::singleShot(0, m_sweepWorker, [this, ch, hasOut, hasMeasV, hasMeasI,
+                                           outK16, outB16, vK16, vB16, iK16, iB16] {
+        m_sweepWorker->doWriteCoefficients(ch, hasOut, hasMeasV, hasMeasI,
+                                            outK16, outB16, vK16, vB16, iK16, iB16);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -626,24 +570,7 @@ void CalibrationBackend::writeCoefficients(int ch,
 
 void CalibrationBackend::commitChannel(int ch) {
     if (ch < 0 || ch >= m_calData.size()) return;
-    bool ok;
-    {
-        QMutexLocker lk(&m_clientMutex);
-        ok = m_client.sendCalibrationCommitCommand(ch);
-    }
-    m_calData[ch].committed = ok;
-    if (ok) {
-        m_reportData.calResults = m_calData;
-        m_reportData.calRun     = true;
-        emit reportMetaChanged();
-    }
-    emit channelCommitted(ch, ok,
-        ok ? QString("CH%1 committed to NVS").arg(ch)
-           : QString("CH%1 commit failed: %2")
-                 .arg(ch)
-                 .arg(QString::fromStdString(m_client.lastError())));
-    setStatus(ok ? QString("CH%1 committed").arg(ch)
-                 : QString("CH%1 commit failed").arg(ch));
+    QTimer::singleShot(0, m_sweepWorker, [this, ch] { m_sweepWorker->doCommitChannel(ch); });
 }
 
 void CalibrationBackend::commitAll() {
@@ -658,12 +585,8 @@ void CalibrationBackend::commitAll() {
 // ---------------------------------------------------------------------------
 
 void CalibrationBackend::safeAll() {
-    QMutexLocker lk(&m_clientMutex);
-    for (int ch = 0; ch < m_sysInfo.supportedChannels; ++ch) {
-        m_client.writeConfiguredTargetVoltage(ch, 0);
-        m_client.sendOutputAction(ch, OutputAction::DisableImmediate);
-    }
-    setStatus("All outputs safe-off");
+    int nch = m_sysInfo.supportedChannels;
+    QTimer::singleShot(0, m_sweepWorker, [this, nch] { m_sweepWorker->doSafeAll(nch); });
 }
 
 // ---------------------------------------------------------------------------
@@ -761,24 +684,108 @@ void CalibrationBackend::setStatus(const QString& msg) {
     emit statusMessageChanged();
 }
 
-void CalibrationBackend::readDeviceInfo() {
-    {
-        QMutexLocker lk(&m_clientMutex);
-        m_sysInfo = m_client.readSystemInfo();
-    }
-    m_reportData.deviceInfo = m_sysInfo;
-    readChannelCaps();
-    emit deviceInfoChanged();
+// ---------------------------------------------------------------------------
+// Quick-operation result handlers — run on the main thread, so this is the
+// only place m_sysInfo/m_chCaps/m_calUnlocked/m_calActive/m_calData are ever
+// mutated. See the "Quick operations" comment in CalibrationWorker.h.
+// ---------------------------------------------------------------------------
+
+void CalibrationBackend::onPortsScanned(QStringList ports) {
+    m_ports = ports;
+    emit portsChanged();
 }
 
-void CalibrationBackend::readChannelCaps() {
-    int nch = m_sysInfo.supportedChannels;
-    m_chCaps.resize(nch);
-    for (int ch = 0; ch < nch; ++ch) {
-        QMutexLocker lk(&m_clientMutex);
-        ChannelInfo ci = m_client.readChannelInfo(ch);
-        m_chCaps[ch]   = ci.chCapFlags;
+void CalibrationBackend::onConnectResult(bool ok, QString error,
+                                          psb::SystemInfo sysInfo, QList<uint16_t> chCaps) {
+    if (ok) {
+        m_sysInfo = sysInfo;
+        m_chCaps  = chCaps;
+        m_reportData.deviceInfo = m_sysInfo;
+        emit deviceInfoChanged();
+        setStatus("Connected");
+    } else {
+        setStatus("Connect failed: " + error);
     }
+    emit connectedChanged();
+}
+
+void CalibrationBackend::onDisconnectDone() {
+    m_calUnlocked = false;
+    m_calActive   = false;
+    m_sysInfo     = {};
+    m_chCaps.clear();
+    m_nvsCoeffs.clear();
+    m_calData.clear();
+    emit connectedChanged();
+    emit calStateChanged();
+    emit deviceInfoChanged();
+    setStatus("Disconnected");
+}
+
+void CalibrationBackend::onUnlockResult(bool ok, QString error, QList<uint16_t> chCaps,
+                                         QList<psb::ChannelCalConfig> nvsCoeffs) {
+    if (!ok) {
+        setStatus("Unlock failed: " + error);
+        return;
+    }
+    m_calUnlocked = true;
+    m_calActive   = true;
+    m_chCaps      = chCaps;
+    m_nvsCoeffs   = nvsCoeffs;
+
+    int nch = m_sysInfo.supportedChannels;
+    m_calData.resize(nch);
+    for (int ch = 0; ch < nch; ++ch) {
+        auto& d   = m_calData[ch];
+        d.ch      = ch;
+        uint16_t caps = m_chCaps.value(ch, 0);
+        d.hasOut   = (caps & CH_CAP_RAW_OUTPUT_DRIVE)    != 0;
+        d.hasMeasV = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
+        d.hasMeasI = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
+        d.needsCal = d.hasOut || d.hasMeasV || d.hasMeasI;
+        d.points.clear();
+        d.coeffsWritten = false;
+        d.committed     = false;
+    }
+
+    emit calStateChanged();
+    setStatus("Calibration mode entered — NVS coefficients saved");
+}
+
+void CalibrationBackend::onExitCalDone(bool /*ok*/) {
+    m_calActive   = false;
+    m_calUnlocked = false;
+    emit calStateChanged();
+    setStatus("Calibration mode exited");
+}
+
+void CalibrationBackend::onWriteCoeffsDone(int ch, bool ok, QString error) {
+    if (ch < 0 || ch >= m_calData.size()) return;
+    m_calData[ch].coeffsWritten = ok;
+    emit writeCoeffsResult(ch, ok,
+        ok ? QString("CH%1 coefficients written").arg(ch)
+           : QString("CH%1 write failed: %2").arg(ch).arg(error));
+    setStatus(ok ? QString("CH%1 coefficients written").arg(ch)
+                 : QString("CH%1 write failed").arg(ch));
+}
+
+void CalibrationBackend::onCommitDone(int ch, bool ok, QString error) {
+    if (ch < 0 || ch >= m_calData.size()) return;
+    m_calData[ch].committed = ok;
+    if (ok) {
+        m_reportData.calResults = m_calData;
+        m_reportData.calRun     = true;
+        emit reportMetaChanged();
+    }
+    emit channelCommitted(ch, ok,
+        ok ? QString("CH%1 committed to NVS").arg(ch)
+           : QString("CH%1 commit failed: %2").arg(ch).arg(error));
+    setStatus(ok ? QString("CH%1 committed").arg(ch)
+                 : QString("CH%1 commit failed").arg(ch));
+}
+
+void CalibrationBackend::onSafeAllDone() {
+    setStatus("All outputs safe-off");
 }
 
 // ---------------------------------------------------------------------------

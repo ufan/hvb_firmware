@@ -1,4 +1,5 @@
 #include "CalibrationWorker.h"
+#include "reg_store/reg_map.h"
 #include <QMutexLocker>
 #include <QThread>
 
@@ -12,6 +13,116 @@ void CalibrationWorker::setClient(PsbModbusClient* client, QMutex* mutex) {
 }
 
 void CalibrationWorker::abort() { m_abort = true; }
+
+// ---------------------------------------------------------------------------
+// Quick operations — see the "Quick operations" comment in CalibrationWorker.h
+// ---------------------------------------------------------------------------
+
+void CalibrationWorker::doScanPorts() {
+    QStringList ports;
+    for (const auto& p : PsbModbusClient::scanPorts())
+        ports.append(QString::fromStdString(p));
+    emit portsScanned(ports);
+}
+
+void CalibrationWorker::doConnect(QString port, int baud, int slaveId) {
+    bool ok;
+    QString err;
+    psb::SystemInfo info;
+    QList<uint16_t> caps;
+    {
+        QMutexLocker lk(m_mutex);
+        ok = m_client->connect(port.toStdString(), baud, slaveId);
+        if (ok) {
+            info = m_client->readSystemInfo();
+            int nch = info.supportedChannels;
+            caps.reserve(nch);
+            for (int ch = 0; ch < nch; ++ch)
+                caps.append(m_client->readChannelInfo(ch).chCapFlags);
+        } else {
+            err = QString::fromStdString(m_client->lastError());
+        }
+    }
+    emit connectResult(ok, err, info, caps);
+}
+
+void CalibrationWorker::doDisconnect() {
+    QMutexLocker lk(m_mutex);
+    m_client->disconnect();
+    emit disconnectDone();
+}
+
+void CalibrationWorker::doUnlockAndEnter(int numChannels) {
+    bool ok;
+    QString err;
+    QList<uint16_t> caps;
+    QList<psb::ChannelCalConfig> nvsCoeffs;
+    {
+        QMutexLocker lk(m_mutex);
+        ok = m_client->unlockCalibrationStep(CAL_UNLOCK_STEP1)
+          && m_client->unlockCalibrationStep(CAL_UNLOCK_STEP2)
+          && m_client->enterCalibrationMode();
+        if (ok) {
+            caps.reserve(numChannels);
+            nvsCoeffs.reserve(numChannels);
+            for (int ch = 0; ch < numChannels; ++ch) {
+                uint16_t c = m_client->readChannelInfo(ch).chCapFlags;
+                caps.append(c);
+                nvsCoeffs.append(m_client->readChannelCalConfig(ch, c));
+            }
+        } else {
+            err = QString::fromStdString(m_client->lastError());
+        }
+    }
+    emit unlockResult(ok, err, caps, nvsCoeffs);
+}
+
+void CalibrationWorker::doExitCalMode() {
+    bool ok;
+    {
+        QMutexLocker lk(m_mutex);
+        ok = m_client->exitCalibrationMode();
+    }
+    emit exitCalDone(ok);
+}
+
+void CalibrationWorker::doWriteCoefficients(int ch, bool hasOut, bool hasMeasV, bool hasMeasI,
+                                             quint16 outK, qint16 outB,
+                                             quint16 measVK, qint16 measVB,
+                                             quint16 measIK, qint16 measIB) {
+    bool ok = true;
+    QString err;
+    {
+        QMutexLocker lk(m_mutex);
+        if (hasOut)   ok = ok && m_client->writeCalibrationOutput(ch, outK, outB);
+        if (hasMeasV) ok = ok && m_client->writeCalibrationMeasV(ch, measVK, measVB);
+        if (hasMeasI) ok = ok && m_client->writeCalibrationMeasI(ch, measIK, measIB);
+        if (!ok) err = QString::fromStdString(m_client->lastError());
+    }
+    emit writeCoeffsDone(ch, ok, err);
+}
+
+void CalibrationWorker::doCommitChannel(int ch) {
+    bool ok;
+    QString err;
+    {
+        QMutexLocker lk(m_mutex);
+        ok = m_client->sendCalibrationCommitCommand(ch);
+        if (!ok) err = QString::fromStdString(m_client->lastError());
+    }
+    emit commitDone(ch, ok, err);
+}
+
+void CalibrationWorker::doSafeAll(int numChannels) {
+    {
+        QMutexLocker lk(m_mutex);
+        for (int ch = 0; ch < numChannels; ++ch) {
+            m_client->writeConfiguredTargetVoltage(ch, 0);
+            m_client->sendOutputAction(ch, OutputAction::DisableImmediate);
+        }
+    }
+    emit safeAllDone();
+}
 
 void CalibrationWorker::runSweep(int ch, SweepConfig cfg,
                                   bool hasOut, bool hasMeasV, bool hasMeasI) {
