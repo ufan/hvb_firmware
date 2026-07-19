@@ -39,10 +39,18 @@ ScrollView {
                     visible: root.hasOutEn
                     Label { text: "Vset:"; opacity: 0.6 }
                     TextField {
+                        id: vsetField
                         implicitWidth: 100
                         placeholderText: "V"
-                        text: root.ci.operationalTargetV !== undefined
-                            ? root.ci.operationalTargetV.toFixed(1) : ""
+                        // Binding on text (rather than a plain text: assignment) so the
+                        // live-polled value only overwrites the field while the user
+                        // isn't editing it — otherwise a poll tick landing mid-edit
+                        // silently clobbers whatever the user just typed.
+                        Binding on text {
+                            value: root.ci.operationalTargetV !== undefined
+                                ? root.ci.operationalTargetV.toFixed(1) : ""
+                            when: !vsetField.activeFocus
+                        }
                         onAccepted: backend.writeTargetVoltage(root.channelIndex,
                             Math.round((parseFloat(text) || 0) / 0.1))
                     }
@@ -114,20 +122,28 @@ ScrollView {
                         spacing: 6
                         Label { text: "Ru:" }
                         TextField {
+                            id: ruField
                             implicitWidth: 85
                             placeholderText: "V/step"
-                            text: root.cc.rampUpStepRaw !== undefined
-                                ? (root.cc.rampUpStepRaw * 0.1).toFixed(1) : ""
+                            Binding on text {
+                                value: root.cc.rampUpStepRaw !== undefined
+                                    ? (root.cc.rampUpStepRaw * 0.1).toFixed(1) : ""
+                                when: !ruField.activeFocus
+                            }
                             onAccepted: backend.writeRampUp(root.channelIndex,
                                 Math.round((parseFloat(text) || 0) / 0.1),
                                 root.cc.rampUpInterval || 1)
                         }
                         Label { text: "Rd:" }
                         TextField {
+                            id: rdField
                             implicitWidth: 85
                             placeholderText: "V/step"
-                            text: root.cc.rampDownStepRaw !== undefined
-                                ? (root.cc.rampDownStepRaw * 0.1).toFixed(1) : ""
+                            Binding on text {
+                                value: root.cc.rampDownStepRaw !== undefined
+                                    ? (root.cc.rampDownStepRaw * 0.1).toFixed(1) : ""
+                                when: !rdField.activeFocus
+                            }
                             onAccepted: backend.writeRampDown(root.channelIndex,
                                 Math.round((parseFloat(text) || 0) / 0.1),
                                 root.cc.rampDownInterval || 1)
@@ -146,8 +162,12 @@ ScrollView {
                         spacing: 6
                         Label { text: "I-Limit (nA):" }
                         TextField {
+                            id: iLimitField
                             implicitWidth: 100
-                            text: (root.cc.iLimitThresholdRaw || 0).toString()
+                            Binding on text {
+                                value: (root.cc.iLimitThresholdRaw || 0).toString()
+                                when: !iLimitField.activeFocus
+                            }
                             onAccepted: backend.writeCurrentProtection(root.channelIndex,
                                 root.cc.iProtMode || 0,
                                 root.cc.iProtOutputAction || 0,
@@ -243,8 +263,12 @@ ScrollView {
                         spacing: 6
                         Label { text: "Derate (LSB):" }
                         TextField {
+                            id: derateField
                             implicitWidth: 100
-                            text: (root.cc.derateStepRaw || 0).toString()
+                            Binding on text {
+                                value: (root.cc.derateStepRaw || 0).toString()
+                                when: !derateField.activeFocus
+                            }
                             onAccepted: backend.writeDerateStep(root.channelIndex, parseInt(text) || 0)
                         }
                     }

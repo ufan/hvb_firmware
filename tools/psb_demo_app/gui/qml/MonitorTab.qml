@@ -150,13 +150,21 @@ Item {
                                 }
 
                                 TextField {
+                                    id: vsetField
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
                                     anchors.margins: 4
                                     visible: modelData.key === "vset" && (caps & 0x0001) !== 0
                                     font.pixelSize: 14
                                     placeholderText: "V"
-                                    text: ci.operationalTargetV !== undefined
-                                        ? ci.operationalTargetV.toFixed(1) : ""
+                                    // Binding on text (rather than a plain text: assignment) so
+                                    // the live-polled value only overwrites the field while the
+                                    // user isn't editing it — otherwise a poll tick landing
+                                    // mid-edit silently clobbers whatever was just typed.
+                                    Binding on text {
+                                        value: ci.operationalTargetV !== undefined
+                                            ? ci.operationalTargetV.toFixed(1) : ""
+                                        when: !vsetField.activeFocus
+                                    }
                                     onAccepted: backend.writeTargetVoltage(chIdx,
                                         Math.round((parseFloat(text) || 0) / 0.1))
                                 }
@@ -206,39 +214,51 @@ Item {
                                 }
 
                                 TextField {
+                                    id: ruField
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
                                     anchors.margins: 4
                                     visible: modelData.key === "ru" && (caps & 0x0001) !== 0
                                     font.pixelSize: 14
                                     placeholderText: "V"
-                                    text: cc.rampUpStepRaw !== undefined
-                                        ? (cc.rampUpStepRaw * 0.1).toFixed(1) : ""
+                                    Binding on text {
+                                        value: cc.rampUpStepRaw !== undefined
+                                            ? (cc.rampUpStepRaw * 0.1).toFixed(1) : ""
+                                        when: !ruField.activeFocus
+                                    }
                                     onAccepted: backend.writeRampUp(chIdx,
                                         Math.round((parseFloat(text) || 0) / 0.1),
                                         cc.rampUpInterval || 1)
                                 }
 
                                 TextField {
+                                    id: rdField
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
                                     anchors.margins: 4
                                     visible: modelData.key === "rd" && (caps & 0x0001) !== 0
                                     font.pixelSize: 14
                                     placeholderText: "V"
-                                    text: cc.rampDownStepRaw !== undefined
-                                        ? (cc.rampDownStepRaw * 0.1).toFixed(1) : ""
+                                    Binding on text {
+                                        value: cc.rampDownStepRaw !== undefined
+                                            ? (cc.rampDownStepRaw * 0.1).toFixed(1) : ""
+                                        when: !rdField.activeFocus
+                                    }
                                     onAccepted: backend.writeRampDown(chIdx,
                                         Math.round((parseFloat(text) || 0) / 0.1),
                                         cc.rampDownInterval || 1)
                                 }
 
                                 TextField {
+                                    id: limitField
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
                                     anchors.margins: 4
                                     visible: modelData.key === "limit" && (caps & 0x0008) !== 0
                                     font.pixelSize: 14
                                     placeholderText: "nA"
-                                    text: cc.iLimitThresholdRaw !== undefined
-                                        ? cc.iLimitThresholdRaw + "" : ""
+                                    Binding on text {
+                                        value: cc.iLimitThresholdRaw !== undefined
+                                            ? cc.iLimitThresholdRaw + "" : ""
+                                        when: !limitField.activeFocus
+                                    }
                                     onAccepted: backend.writeCurrentProtection(chIdx,
                                         cc.iProtMode || 0,
                                         cc.iProtOutputAction || 0,
