@@ -1,5 +1,6 @@
 #include "ReportEngine.h"
 #include "register_map.h"
+#include "board_catalog.h"
 #include <QFile>
 #include <QPageSize>
 #include <QPrinter>
@@ -104,8 +105,9 @@ td,th{ padding: 4px 8px; }
     kv("Operator",     data.operatorId.isEmpty()  ? "(not set)" : data.operatorId);
     kv("Timestamp",    data.timestamp);
     kv("Protocol",     QString("%1.%2").arg(data.deviceInfo.protoMajor).arg(data.deviceInfo.protoMinor));
-    kv("Firmware",     QString("0x%1").arg(data.deviceInfo.fwVersion, 8, 16, QChar('0')));
-    kv("Variant ID",   QString::number(data.deviceInfo.variantId));
+    kv("Firmware",     QString::fromStdString(psb::reg::formatFwVersion(data.deviceInfo.fwVersion)));
+    kv("Variant",      QString::fromStdString(psb::catalog::variantName(data.deviceInfo.variantId))
+                            + " (" + QString::fromStdString(psb::catalog::hwRevisionLabel(data.deviceInfo.boardHwRevision)) + ")");
     kv("Channels",     QString::number(data.deviceInfo.supportedChannels));
     h += "</table>";
 

@@ -1,6 +1,7 @@
 #include "CalibrationBackend.h"
 #include "SweepData.h"
 #include "register_map.h"
+#include "board_catalog.h"
 
 #include "dt-bindings/voltage_control/capabilities.h"
 #include "reg_store/reg_map.h"
@@ -127,9 +128,13 @@ QVariantMap CalibrationBackend::deviceInfo() const {
     m["protoMajor"]        = m_sysInfo.protoMajor;
     m["protoMinor"]        = m_sysInfo.protoMinor;
     m["variantId"]         = m_sysInfo.variantId;
+    m["variantName"]       = QString::fromStdString(psb::catalog::variantName(m_sysInfo.variantId));
+    m["variantFamily"]     = QString::fromStdString(psb::catalog::variantFamily(m_sysInfo.variantId));
+    m["boardHwRevision"]   = m_sysInfo.boardHwRevision;
+    m["boardHwRevisionLabel"] = QString::fromStdString(psb::catalog::hwRevisionLabel(m_sysInfo.boardHwRevision));
     m["supportedChannels"] = m_sysInfo.supportedChannels;
     m["activeChMask"]      = (int)m_sysInfo.activeChMask;
-    m["fwVersion"]         = QString("0x%1").arg(m_sysInfo.fwVersion, 8, 16, QChar('0'));
+    m["fwVersion"]         = QString::fromStdString(psb::reg::formatFwVersion(m_sysInfo.fwVersion));
     m["boardTemp"]         = m_sysInfo.boardTempRaw / 10.0;
     m["uptimeSec"]         = (int)m_sysInfo.uptimeSec;
     return m;
