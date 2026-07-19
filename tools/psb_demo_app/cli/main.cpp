@@ -1,6 +1,7 @@
 #include "psb_modbus_client.h"
 #include "config_manager.h"
 #include "register_map.h"
+#include "board_catalog.h"
 
 #include <CLI/CLI.hpp>
 
@@ -104,7 +105,9 @@ int cmdInfo() {
     if (!g_client->isConnected()) { std::cerr << "Error\n"; return 1; }
     std::cout << "=== System Info ===\n";
     printSep("Protocol:", std::to_string(info.protoMajor) + "." + std::to_string(info.protoMinor));
-    printSep("Variant ID:", std::to_string(info.variantId));
+    printSep("Variant:", psb::catalog::variantName(info.variantId) + " ("
+        + psb::catalog::variantFamily(info.variantId) + ", "
+        + psb::catalog::hwRevisionLabel(info.boardHwRevision) + ")");
     printSep("Cap Flags:", std::to_string(info.sysCapFlags) + " "
         + (info.sysCapFlags & psb::SysCap::AUTOMATIC_MODE ? "[Auto]" : "")
         + (info.sysCapFlags & psb::SysCap::ENV_SENSOR ? "[Env]" : "")
@@ -123,7 +126,7 @@ int cmdInfo() {
         printSep("Humidity:", "n/a — no environment sensor");
     }
     printSep("Uptime:", std::to_string(info.uptimeSec) + " s");
-    printSep("FW Version:", formatHex(info.fwVersion));
+    printSep("FW Version:", psb::reg::formatFwVersion(info.fwVersion));
     printSep("Active OpMode:", psb::opModeName(info.activeOpMode));
     printSep("Sys Status:", formatHex(info.sysStatus));
     printSep("Fault Cause:", formatHex(info.faultCause));
