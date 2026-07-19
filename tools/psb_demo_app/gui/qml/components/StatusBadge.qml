@@ -10,12 +10,12 @@ RowLayout {
     spacing: 6
 
     Rectangle {
-        implicitWidth: 10; implicitHeight: 10; radius: 5
+        implicitWidth: 12; implicitHeight: 12; radius: 6
         color: active ? parent.color : "#ccc"
     }
     Label {
         text: (active ? "● " : "○ ") + label
-        font.pixelSize: 12
+        font.pixelSize: 14
         color: active ? parent.color : "#999"
     }
 }

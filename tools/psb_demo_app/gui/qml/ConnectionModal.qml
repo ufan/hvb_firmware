@@ -6,30 +6,30 @@ Popup {
     id: root
     modal: true
     anchors.centerIn: parent
-    padding: 16
+    padding: 20
     closePolicy: Popup.CloseOnEscape
 
     onOpened: backend.scanPorts()
 
     ColumnLayout {
-        spacing: 12
-        width: 320
+        spacing: 14
+        width: 380
 
         Label {
             text: "Connection Settings"
             font.bold: true
-            font.pixelSize: 14
+            font.pixelSize: 18
             horizontalAlignment: Text.AlignHCenter
             Layout.fillWidth: true
         }
 
         GridLayout {
             columns: 2
-            rowSpacing: 8
-            columnSpacing: 8
+            rowSpacing: 10
+            columnSpacing: 10
             Layout.fillWidth: true
 
-            Label { text: "Port"; Layout.preferredWidth: 72 }
+            Label { text: "Port"; Layout.preferredWidth: 84 }
             ComboBox {
                 id: portCombo
                 Layout.fillWidth: true
@@ -42,7 +42,7 @@ Popup {
                 }
             }
 
-            Label { text: "Baud"; Layout.preferredWidth: 72 }
+            Label { text: "Baud"; Layout.preferredWidth: 84 }
             ComboBox {
                 id: baudCombo
                 Layout.fillWidth: true
@@ -51,7 +51,7 @@ Popup {
                 onActivated: backend.baudRate = parseInt(currentText)
             }
 
-            Label { text: "Slave ID"; Layout.preferredWidth: 72 }
+            Label { text: "Slave ID"; Layout.preferredWidth: 84 }
             SpinBox {
                 id: slaveSpin
                 Layout.fillWidth: true
@@ -60,7 +60,7 @@ Popup {
                 onValueModified: backend.slaveId = value
             }
 
-            Label { text: "Poll"; Layout.preferredWidth: 72 }
+            Label { text: "Poll"; Layout.preferredWidth: 84 }
             ComboBox {
                 id: pollCombo
                 Layout.fillWidth: true

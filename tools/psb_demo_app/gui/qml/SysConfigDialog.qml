@@ -7,24 +7,24 @@ Popup {
     id: root
     modal: true
     anchors.centerIn: parent
-    padding: 16
+    padding: 20
     closePolicy: Popup.CloseOnEscape
 
     ColumnLayout {
-        spacing: 12
-        width: 260
+        spacing: 14
+        width: 320
 
         Label {
             text: "System Config"
             font.bold: true
-            font.pixelSize: 14
+            font.pixelSize: 18
             Layout.alignment: Qt.AlignHCenter
         }
 
         GridLayout {
             columns: 2
-            rowSpacing: 8
-            columnSpacing: 8
+            rowSpacing: 10
+            columnSpacing: 10
 
             Label { text: "Working Mode" }
             ComboBox {
@@ -45,7 +45,7 @@ Popup {
 
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
-            spacing: 8
+            spacing: 10
 
             Button { text: "Save";    onClicked: backend.saveSystem() }
             Button { text: "Load";    onClicked: backend.loadSystem() }

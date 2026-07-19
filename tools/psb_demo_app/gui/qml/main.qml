@@ -8,9 +8,12 @@ import "components"
 ApplicationWindow {
     id: window
     visible: true
-    width: 1100
-    height: 780
+    width: 1300
+    height: 860
     title: "HVB Modbus Tool"
+    // App-wide base font — Qt Quick Controls propagate this to every
+    // descendant Control/Label that doesn't set its own font.pixelSize.
+    font.pixelSize: 16
 
     // Modals
     ConnectionModal { id: connModal }
@@ -36,17 +39,17 @@ ApplicationWindow {
         // Menu bar
         Pane {
             Layout.fillWidth: true
-            padding: 6
+            padding: 10
             Material.elevation: 4
 
             RowLayout {
                 anchors.fill: parent
-                spacing: 8
+                spacing: 12
 
                 Label {
                     text: "HVB"
                     font.bold: true
-                    font.pixelSize: 15
+                    font.pixelSize: 19
                 }
 
                 ToolSeparator {}
@@ -60,7 +63,7 @@ ApplicationWindow {
                     visible: backend.connected
                     model: ["Normal", "Automatic"]
                     currentIndex: backend.sysInfo.activeOpMode || 0
-                    implicitWidth: 110
+                    implicitWidth: 130
                     onActivated: backend.writeOperatingMode(currentIndex)
                 }
 
@@ -81,7 +84,7 @@ ApplicationWindow {
                     visible: backend.connected
                     text: backend.selectedPort + " @" + backend.baudRate + " #" + backend.slaveId
                     opacity: 0.6
-                    font.pixelSize: 11
+                    font.pixelSize: 13
                 }
 
                 Button {
@@ -141,12 +144,12 @@ ApplicationWindow {
         // Status bar
         Pane {
             Layout.fillWidth: true
-            padding: 4
+            padding: 8
             Material.elevation: 2
 
             RowLayout {
                 anchors.fill: parent
-                spacing: 8
+                spacing: 10
 
                 Button {
                     text: "⚙ Config"
@@ -214,7 +217,7 @@ ApplicationWindow {
                     color: backend.statusMessage.startsWith("✓") ? "#4CAF50"
                          : backend.statusMessage.startsWith("✗") ? "#F44336"
                          : Material.foreground
-                    Layout.preferredWidth: 300
+                    Layout.preferredWidth: 340
                     elide: Text.ElideRight
                 }
             }
@@ -224,7 +227,7 @@ ApplicationWindow {
         ScrollView {
             id: rawLogPanel
             Layout.fillWidth: true
-            Layout.preferredHeight: 120
+            Layout.preferredHeight: 140
             visible: debugToggle.checked
             clip: true
 
@@ -232,7 +235,7 @@ ApplicationWindow {
                 id: rawLogArea
                 readOnly: true
                 font.family: "monospace"
-                font.pixelSize: 10
+                font.pixelSize: 12
                 text: backend.rawLog
                 wrapMode: TextEdit.NoWrap
                 background: Rectangle { color: "#0d0d1a" }

@@ -7,6 +7,10 @@ Item {
     id: root
 
     // Column descriptor array — rebuilt from board capability flags; cleared on disconnect.
+    // Each entry: {key, label, minWidth, weight}. Rendered width is
+    // Math.max(minWidth, weight-proportional share of the available table
+    // width) — see colWidth() — so columns stretch to fill wide windows and
+    // fall back to their minimum (with a horizontal scrollbar) when narrow.
     property var activeColumns: []
 
     function computeActiveColumns() {
@@ -15,6 +19,16 @@ Item {
             return
         }
         var chList = backend.channelInfoList
+        if (chList.length === 0) return
+        // Wait for every channel's first real read — chCapFlags is undefined
+        // on the placeholder QVariantMap each channel starts with before its
+        // own doRefreshChannelInfo completes. Computing (and publishing) a
+        // column set from that placeholder produces a premature partial set
+        // that gets immediately replaced once real data arrives, which was
+        // observed to corrupt row layout during that extra transition.
+        for (var j = 0; j < chList.length; j++) {
+            if (chList[j].chCapFlags === undefined) return
+        }
         var hasOutEn = false, hasVolt = false, hasCurr = false
         for (var i = 0; i < chList.length; i++) {
             var caps = chList[i].chCapFlags || 0
@@ -22,25 +36,23 @@ Item {
             if (caps & 0x0004) hasVolt  = true
             if (caps & 0x0008) hasCurr  = true
         }
-        // Widths are duplicated from PsbTheme's col* constants rather than
-        // referenced directly: qmlcachegen's AOT compilation of this file
-        // hits a known Qt Quick Compiler limitation ("PsbTheme was a
-        // singleton at compile time, but is not a singleton anymore") when
-        // a singleton is read from inside a plain JS function body here,
-        // silently evaluating every PsbTheme.col* access to undefined
-        // (logged as a QML TypeError, not thrown) and collapsing every
-        // Monitor column to zero width.
+        // Widths are plain numbers rather than referencing a PsbTheme
+        // singleton: qmlcachegen's AOT compilation of this file hits a known
+        // Qt Quick Compiler limitation ("PsbTheme was a singleton at compile
+        // time, but is not a singleton anymore"), silently evaluating every
+        // PsbTheme.* access to undefined (logged as a QML TypeError, not
+        // thrown) instead of its real value.
         var cols = []
-        cols.push({ key: "ch",     label: "CH",        width: 50 })
-        if (hasOutEn) cols.push({ key: "vset",   label: "Vset (V)", width: 80 })
-        if (hasOutEn) cols.push({ key: "status", label: "Status",   width: 90 })
-        cols.push(    { key: "vop",    label: "Vop (V)",   width: 80 })
-        if (hasVolt)  cols.push({ key: "v",      label: "V (V)",    width: 80 })
-        if (hasCurr)  cols.push({ key: "i",      label: "I (nA)",   width: 90 })
-        if (hasOutEn) cols.push({ key: "ru",     label: "Ru (V)",   width: 72 })
-        if (hasOutEn) cols.push({ key: "rd",     label: "Rd (V)",   width: 72 })
-        if (hasCurr)  cols.push({ key: "limit",  label: "Lim(nA)",  width: 90 })
-        cols.push(    { key: "fault",  label: "Fault",     width: 110 })
+        cols.push({ key: "ch",     label: "CH",        minWidth: 55,  weight: 0.7  })
+        if (hasOutEn) cols.push({ key: "vset",   label: "Vset (V)", minWidth: 95,  weight: 1.0  })
+        if (hasOutEn) cols.push({ key: "status", label: "Status",   minWidth: 100, weight: 1.0  })
+        cols.push(    { key: "vop",    label: "Vop (V)",   minWidth: 90,  weight: 1.0  })
+        if (hasVolt)  cols.push({ key: "v",      label: "V (V)",    minWidth: 90,  weight: 1.0  })
+        if (hasCurr)  cols.push({ key: "i",      label: "I (nA)",   minWidth: 100, weight: 1.05 })
+        if (hasOutEn) cols.push({ key: "ru",     label: "Ru (V)",   minWidth: 85,  weight: 0.9  })
+        if (hasOutEn) cols.push({ key: "rd",     label: "Rd (V)",   minWidth: 85,  weight: 0.9  })
+        if (hasCurr)  cols.push({ key: "limit",  label: "Lim(nA)",  minWidth: 100, weight: 1.05 })
+        cols.push(    { key: "fault",  label: "Fault",     minWidth: 90,  weight: 0.95 })
 
         // Column set is derived from hardware capability flags, which are
         // fixed for the lifetime of a connection — only replace the array
@@ -51,6 +63,18 @@ Item {
         var newKeys = cols.map(function(c) { return c.key }).join(",")
         var oldKeys = activeColumns.map(function(c) { return c.key }).join(",")
         if (newKeys !== oldKeys) activeColumns = cols
+    }
+
+    // Proportional column width: fills the available table width on wide
+    // windows, clamped to each column's minWidth on narrow ones (the
+    // ScrollView then provides a horizontal scrollbar for the overflow).
+    function colWidth(col) {
+        if (!col) return 0
+        var totalWeight = 0
+        for (var i = 0; i < activeColumns.length; i++) totalWeight += activeColumns[i].weight
+        var avail = root.width - 20  // scrollbar + margin allowance
+        var share = avail * col.weight / (totalWeight || 1)
+        return Math.max(col.minWidth, share)
     }
 
     Connections {
@@ -65,7 +89,7 @@ Item {
         text: "Not connected — click Connect in the toolbar"
         visible: !backend.connected
         opacity: 0.5
-        font.pixelSize: 14
+        font.pixelSize: 16
     }
 
     ScrollView {
@@ -73,19 +97,20 @@ Item {
         visible: backend.connected && root.activeColumns.length > 0
         clip: true
 
-        ColumnLayout {
+        Column {
             spacing: 0
 
             // Header row
             Row {
                 id: headerRow
-                height: 32
+                height: 42
                 Repeater {
                     model: root.activeColumns
                     Label {
-                        width: modelData.width
-                        height: 32
+                        width: root.colWidth(modelData)
+                        height: 42
                         text: modelData.label
+                        font.pixelSize: 15
                         font.bold: true
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -107,26 +132,28 @@ Item {
                     property int caps: ci.chCapFlags || 0
 
                     Row {
-                        height: 36
+                        height: 46
 
                         Repeater {
                             model: root.activeColumns
 
                             Item {
-                                width: modelData.width
-                                height: 36
+                                width: root.colWidth(modelData)
+                                height: 46
 
                                 Label {
                                     anchors.centerIn: parent
                                     text: "CH" + chIdx
                                     visible: modelData.key === "ch"
+                                    font.pixelSize: 15
                                     font.bold: true
                                 }
 
                                 TextField {
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
-                                    anchors.margins: 2
+                                    anchors.margins: 4
                                     visible: modelData.key === "vset" && (caps & 0x0001) !== 0
+                                    font.pixelSize: 14
                                     placeholderText: "V"
                                     text: ci.operationalTargetV !== undefined
                                         ? ci.operationalTargetV.toFixed(1) : ""
@@ -137,6 +164,7 @@ Item {
                                 Button {
                                     anchors.centerIn: parent
                                     visible: modelData.key === "status" && (caps & 0x0001) !== 0
+                                    font.pixelSize: 14
                                     text: {
                                         if (ci.statusRamping) return "RAMP"
                                         return (ci.statusOutDrive && ci.operationalTargetV !== 0) ? "ON" : "OFF"
@@ -146,7 +174,8 @@ Item {
                                         return (ci.statusOutDrive && ci.operationalTargetV !== 0)
                                             ? Material.Green : Material.Grey
                                     }
-                                    implicitWidth: parent.width - 4
+                                    implicitWidth: parent.width - 8
+                                    implicitHeight: 36
                                     onClicked: {
                                         if (ci.statusRamping) return
                                         var on = ci.statusOutDrive && ci.operationalTargetV !== 0
@@ -157,6 +186,7 @@ Item {
                                 Label {
                                     anchors.centerIn: parent
                                     visible: modelData.key === "vop"
+                                    font.pixelSize: 14
                                     text: ci.operationalTargetV !== undefined
                                         ? ci.operationalTargetV.toFixed(1) : "--"
                                 }
@@ -164,19 +194,22 @@ Item {
                                 Label {
                                     anchors.centerIn: parent
                                     visible: modelData.key === "v"
+                                    font.pixelSize: 14
                                     text: ci.voltageV !== undefined ? ci.voltageV.toFixed(1) : "--"
                                 }
 
                                 Label {
                                     anchors.centerIn: parent
                                     visible: modelData.key === "i"
+                                    font.pixelSize: 14
                                     text: ci.currentRaw !== undefined ? ci.currentRaw + "" : "--"
                                 }
 
                                 TextField {
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
-                                    anchors.margins: 2
+                                    anchors.margins: 4
                                     visible: modelData.key === "ru" && (caps & 0x0001) !== 0
+                                    font.pixelSize: 14
                                     placeholderText: "V"
                                     text: cc.rampUpStepRaw !== undefined
                                         ? (cc.rampUpStepRaw * 0.1).toFixed(1) : ""
@@ -187,8 +220,9 @@ Item {
 
                                 TextField {
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
-                                    anchors.margins: 2
+                                    anchors.margins: 4
                                     visible: modelData.key === "rd" && (caps & 0x0001) !== 0
+                                    font.pixelSize: 14
                                     placeholderText: "V"
                                     text: cc.rampDownStepRaw !== undefined
                                         ? (cc.rampDownStepRaw * 0.1).toFixed(1) : ""
@@ -199,8 +233,9 @@ Item {
 
                                 TextField {
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
-                                    anchors.margins: 2
+                                    anchors.margins: 4
                                     visible: modelData.key === "limit" && (caps & 0x0008) !== 0
+                                    font.pixelSize: 14
                                     placeholderText: "nA"
                                     text: cc.iLimitThresholdRaw !== undefined
                                         ? cc.iLimitThresholdRaw + "" : ""
@@ -213,6 +248,7 @@ Item {
                                 Label {
                                     anchors.centerIn: parent
                                     visible: modelData.key === "fault"
+                                    font.pixelSize: 14
                                     text: {
                                         var f = ci.activeFault || 0
                                         return f ? "0x" + f.toString(16).toUpperCase() : "—"
@@ -224,6 +260,7 @@ Item {
                                 Label {
                                     anchors.centerIn: parent
                                     text: "--"
+                                    font.pixelSize: 14
                                     opacity: 0.3
                                     visible: {
                                         if (modelData.key === "vset"  || modelData.key === "status" ||

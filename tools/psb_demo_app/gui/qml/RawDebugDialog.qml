@@ -6,20 +6,21 @@ Dialog {
     id: dialog
     title: "Raw Modbus Debug"
     standardButtons: Dialog.Close
-    width: 480
-    height: 400
+    width: 560
+    height: 460
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 8
+        spacing: 10
 
         RowLayout {
+            spacing: 8
             Label { text: "FC:" }
-            ComboBox { id: rawFc; model: ["04 (Input)", "03 (Holding)"]; Layout.preferredWidth: 120 }
+            ComboBox { id: rawFc; model: ["04 (Input)", "03 (Holding)"]; Layout.preferredWidth: 140 }
             Label { text: "Addr:" }
-            TextField { id: rawAddr; Layout.preferredWidth: 70; text: "0" }
+            TextField { id: rawAddr; Layout.preferredWidth: 85; text: "0" }
             Label { text: "Count:" }
-            TextField { id: rawCount; Layout.preferredWidth: 50; text: "16" }
+            TextField { id: rawCount; Layout.preferredWidth: 65; text: "16" }
             Button {
                 text: "Read"
                 onClicked: {
@@ -32,9 +33,10 @@ Dialog {
         }
 
         RowLayout {
+            spacing: 8
             Label { text: "Write 16:" }
-            TextField { id: wAddr; Layout.preferredWidth: 70; text: "0" }
-            TextField { id: wVal; Layout.preferredWidth: 70; text: "0" }
+            TextField { id: wAddr; Layout.preferredWidth: 85; text: "0" }
+            TextField { id: wVal; Layout.preferredWidth: 85; text: "0" }
             Button {
                 text: "FC06"
                 onClicked: backend.rawWriteFc06(parseInt(wAddr.text)||0, parseInt(wVal.text)||0)
@@ -50,7 +52,7 @@ Dialog {
                 id: rawResult
                 readOnly: true
                 font.family: "monospace"
-                font.pixelSize: 12
+                font.pixelSize: 13
                 wrapMode: TextEdit.NoWrap
                 background: Rectangle { color: "#1a1a2e" }
                 color: "#cccccc"

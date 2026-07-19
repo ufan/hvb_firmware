@@ -35,11 +35,11 @@ ScrollView {
                 anchors.fill: parent
 
                 RowLayout {
-                    spacing: 4
+                    spacing: 6
                     visible: root.hasOutEn
                     Label { text: "Vset:"; opacity: 0.6 }
                     TextField {
-                        implicitWidth: 80
+                        implicitWidth: 100
                         placeholderText: "V"
                         text: root.ci.operationalTargetV !== undefined
                             ? root.ci.operationalTargetV.toFixed(1) : ""
@@ -95,6 +95,7 @@ ScrollView {
 
                 ColumnLayout {
                     RowLayout {
+                        spacing: 6
                         Button {
                             text: "Enable"
                             onClicked: backend.sendOutputAction(root.channelIndex, 1)
@@ -110,9 +111,10 @@ ScrollView {
                         }
                     }
                     RowLayout {
+                        spacing: 6
                         Label { text: "Ru:" }
                         TextField {
-                            implicitWidth: 70
+                            implicitWidth: 85
                             placeholderText: "V/step"
                             text: root.cc.rampUpStepRaw !== undefined
                                 ? (root.cc.rampUpStepRaw * 0.1).toFixed(1) : ""
@@ -122,7 +124,7 @@ ScrollView {
                         }
                         Label { text: "Rd:" }
                         TextField {
-                            implicitWidth: 70
+                            implicitWidth: 85
                             placeholderText: "V/step"
                             text: root.cc.rampDownStepRaw !== undefined
                                 ? (root.cc.rampDownStepRaw * 0.1).toFixed(1) : ""
@@ -141,9 +143,10 @@ ScrollView {
 
                 ColumnLayout {
                     RowLayout {
+                        spacing: 6
                         Label { text: "I-Limit (nA):" }
                         TextField {
-                            implicitWidth: 80
+                            implicitWidth: 100
                             text: (root.cc.iLimitThresholdRaw || 0).toString()
                             onAccepted: backend.writeCurrentProtection(root.channelIndex,
                                 root.cc.iProtMode || 0,
@@ -170,9 +173,11 @@ ScrollView {
                         }
                     }
                     RowLayout {
+                        spacing: 6
                         Label { text: "Safe Band %:" }
                         SpinBox {
                             from: 0; to: 50
+                            implicitWidth: 140
                             value: root.cc.currentSafeBandPct || 10
                             onValueModified: backend.writeChannelSafeBand(root.channelIndex, value)
                         }
@@ -214,26 +219,31 @@ ScrollView {
                         }
                     }
                     RowLayout {
+                        spacing: 6
                         Label { text: "Dly:" }
                         SpinBox { from: 0; to: 3600; value: root.cc.autoRetryDelay || 0
+                            implicitWidth: 150
                             onValueModified: backend.writeChannelRecovery(root.channelIndex,
                                 root.cc.recoveryPolicyMode || 0, value,
                                 root.cc.autoRetryMaxCount || 0, root.cc.autoRetryWindow || 0) }
                         Label { text: "Max:" }
                         SpinBox { from: 0; to: 100; value: root.cc.autoRetryMaxCount || 0
+                            implicitWidth: 140
                             onValueModified: backend.writeChannelRecovery(root.channelIndex,
                                 root.cc.recoveryPolicyMode || 0,
                                 root.cc.autoRetryDelay || 0, value, root.cc.autoRetryWindow || 0) }
                         Label { text: "Win:" }
                         SpinBox { from: 0; to: 86400; value: root.cc.autoRetryWindow || 0
+                            implicitWidth: 160
                             onValueModified: backend.writeChannelRecovery(root.channelIndex,
                                 root.cc.recoveryPolicyMode || 0,
                                 root.cc.autoRetryDelay || 0, root.cc.autoRetryMaxCount || 0, value) }
                     }
                     RowLayout {
+                        spacing: 6
                         Label { text: "Derate (LSB):" }
                         TextField {
-                            implicitWidth: 80
+                            implicitWidth: 100
                             text: (root.cc.derateStepRaw || 0).toString()
                             onAccepted: backend.writeDerateStep(root.channelIndex, parseInt(text) || 0)
                         }
@@ -260,7 +270,7 @@ ScrollView {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
-            height: 260
+            height: 280
 
             ChannelGraph {
                 Layout.fillWidth: true
@@ -269,7 +279,6 @@ ScrollView {
                 title: "Voltage"
                 windowMinutes: root.windowMinutes
                 seriesConfigs: [
-                    { name: "Vset", color: "#2196F3", valueKey: "configuredTargetV",  source: "config" },
                     { name: "Vop",  color: "#00BCD4", valueKey: "operationalTargetV", source: "info"   },
                     { name: "V",    color: "#4CAF50", valueKey: "voltageV",            source: "info"   }
                 ]
@@ -283,8 +292,7 @@ ScrollView {
                 title: "Current"
                 windowMinutes: root.windowMinutes
                 seriesConfigs: [
-                    { name: "I",     color: "#FF9800", valueKey: "currentRaw",         source: "info"   },
-                    { name: "Limit", color: "#F44336", valueKey: "iLimitThresholdRaw", source: "config" }
+                    { name: "I", color: "#FF9800", valueKey: "currentRaw", source: "info" }
                 ]
             }
         }
