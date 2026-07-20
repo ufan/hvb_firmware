@@ -154,6 +154,7 @@ void ModbusBackend::softwareReset()       { INVOKE("doSendParamAction", Q_ARG(in
 void ModbusBackend::sendOutputAction(int ch, int a)     { INVOKE("doSendOutputAction", Q_ARG(int,ch), Q_ARG(int,a)); }
 void ModbusBackend::sendFaultCmd(int ch, int c)         { INVOKE("doSendFaultCmd", Q_ARG(int,ch), Q_ARG(int,c)); }
 void ModbusBackend::writeTargetVoltage(int ch, int raw){ INVOKE("doWriteTargetVoltage", Q_ARG(int,ch), Q_ARG(int,raw)); }
+void ModbusBackend::writeOutputEnabled(int ch, bool enabled) { INVOKE("doWriteOutputEnabled", Q_ARG(int,ch), Q_ARG(bool,enabled)); }
 void ModbusBackend::writeRampUp(int ch, int s, int i)  { INVOKE("doWriteRampUp", Q_ARG(int,ch), Q_ARG(int,s), Q_ARG(int,i)); }
 void ModbusBackend::writeRampDown(int ch, int s, int i){ INVOKE("doWriteRampDown", Q_ARG(int,ch), Q_ARG(int,s), Q_ARG(int,i)); }
 void ModbusBackend::writeChannelRecovery(int ch, int p, int d, int m, int w)

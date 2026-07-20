@@ -29,10 +29,20 @@ Item {
         for (var j = 0; j < chList.length; j++) {
             if (chList[j].chCapFlags === undefined) return
         }
-        var hasOutEn = false, hasVolt = false, hasCurr = false
+        // CH_CAP_OUTPUT_ENABLE ("can be switched on/off") and
+        // CH_CAP_RAW_OUTPUT_DRIVE ("has a DAC, level is settable") are
+        // independent capabilities — see docs/guide/channel-capability-model.md
+        // §1. jw_lvb channels 1-9 have OUTPUT_ENABLE without RAW_OUTPUT_DRIVE
+        // (switchable, fixed-voltage); jw_hvb channels have both. The Vset
+        // column must render as a target-voltage input for drive channels but
+        // an on/off toggle for enable-only ones — conflating the two (gating
+        // everything on OUTPUT_ENABLE alone) was a real bug: it showed a
+        // target-voltage field with no DAC behind it on enable-only channels.
+        var hasOutEn = false, hasDrive = false, hasVolt = false, hasCurr = false
         for (var i = 0; i < chList.length; i++) {
             var caps = chList[i].chCapFlags || 0
             if (caps & 0x0001) hasOutEn = true
+            if (caps & 0x0002) hasDrive = true
             if (caps & 0x0004) hasVolt  = true
             if (caps & 0x0008) hasCurr  = true
         }
@@ -42,15 +52,19 @@ Item {
         // time, but is not a singleton anymore"), silently evaluating every
         // PsbTheme.* access to undefined (logged as a QML TypeError, not
         // thrown) instead of its real value.
+        // vset/status header label: per-board (capability is uniform across
+        // a board's channels in every real case), but each row still renders
+        // per its own channel's actual capability — see the Repeater below.
+        var vsetLabel = hasDrive ? "Vset (V)" : "En"
         var cols = []
         cols.push({ key: "ch",     label: "CH",        minWidth: 55,  weight: 0.7  })
-        if (hasOutEn) cols.push({ key: "vset",   label: "Vset (V)", minWidth: 95,  weight: 1.0  })
-        if (hasOutEn) cols.push({ key: "status", label: "Status",   minWidth: 100, weight: 1.0  })
+        if (hasOutEn || hasDrive) cols.push({ key: "vset",   label: vsetLabel, minWidth: 95,  weight: 1.0  })
+        if (hasOutEn || hasDrive) cols.push({ key: "status", label: "Status",   minWidth: 100, weight: 1.0  })
         cols.push(    { key: "vop",    label: "Vop (V)",   minWidth: 90,  weight: 1.0  })
         if (hasVolt)  cols.push({ key: "v",      label: "V (V)",    minWidth: 90,  weight: 1.0  })
         if (hasCurr)  cols.push({ key: "i",      label: "I (nA)",   minWidth: 100, weight: 1.05 })
-        if (hasOutEn) cols.push({ key: "ru",     label: "Ru (V)",   minWidth: 85,  weight: 0.9  })
-        if (hasOutEn) cols.push({ key: "rd",     label: "Rd (V)",   minWidth: 85,  weight: 0.9  })
+        if (hasDrive) cols.push({ key: "ru",     label: "Ru (V)",   minWidth: 85,  weight: 0.9  })
+        if (hasDrive) cols.push({ key: "rd",     label: "Rd (V)",   minWidth: 85,  weight: 0.9  })
         if (hasCurr)  cols.push({ key: "limit",  label: "Lim(nA)",  minWidth: 100, weight: 1.05 })
         cols.push(    { key: "fault",  label: "Fault",     minWidth: 90,  weight: 0.95 })
 
@@ -162,11 +176,12 @@ Item {
                                     font.bold: true
                                 }
 
+                                // DAC channels (CH_CAP_RAW_OUTPUT_DRIVE): target-voltage input.
                                 TextField {
                                     id: vsetField
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
                                     anchors.margins: 4
-                                    visible: modelData.key === "vset" && (caps & 0x0001) !== 0
+                                    visible: modelData.key === "vset" && !!ci.capRawDrive
                                     font.pixelSize: 14
                                     placeholderText: "V"
                                     // Binding on text (rather than a plain text: assignment) so
@@ -182,25 +197,52 @@ Item {
                                         Math.round((parseFloat(text) || 0) / 0.1))
                                 }
 
+                                // Fixed-voltage switchable channels (CH_CAP_OUTPUT_ENABLE
+                                // without CH_CAP_RAW_OUTPUT_DRIVE, e.g. jw_lvb ch1-9): no DAC
+                                // to set a level on, so this slot is an on/off toggle for
+                                // CFG_OUTPUT_ENABLED (startup intent) instead — occupies the
+                                // same table slot as vsetField; the two are mutually exclusive
+                                // per channel, same as demo_tui's tab_monitor.h. See
+                                // docs/guide/channel-capability-model.md §2/§7.
+                                Switch {
+                                    id: enSwitch
+                                    anchors.centerIn: parent
+                                    visible: modelData.key === "vset" && !!ci.capOutEn && !ci.capRawDrive
+                                    text: checked ? "On" : "Off"
+                                    // Binding element (not a plain `checked:` assignment) so a
+                                    // click's imperative set doesn't permanently sever the link
+                                    // to cc.outputEnabledCfg — mirrors vsetField's text Binding
+                                    // above. Paused only while actively pressed.
+                                    Binding on checked {
+                                        value: !!cc.outputEnabledCfg
+                                        when: !enSwitch.pressed
+                                    }
+                                    onToggled: backend.writeOutputEnabled(chIdx, checked)
+                                }
+
                                 Button {
                                     anchors.centerIn: parent
-                                    visible: modelData.key === "status" && (caps & 0x0001) !== 0
+                                    visible: modelData.key === "status" && (!!ci.capOutEn || !!ci.capRawDrive)
                                     font.pixelSize: 14
+                                    // "on" comes from the backend's capability-aware
+                                    // ci.isOn (psb::channelIsOn, channel_policy.h) — not a
+                                    // raw statusOutDrive/operationalTargetV check computed
+                                    // here, which would disagree with ChannelTab's badge and
+                                    // (worse) ignore OUTPUT_ENABLE_ACTIVE entirely. See
+                                    // docs/guide/client-architecture-and-pitfalls.md §2.9.
                                     text: {
                                         if (ci.statusRamping) return "RAMP"
-                                        return (ci.statusOutDrive && ci.operationalTargetV !== 0) ? "ON" : "OFF"
+                                        return ci.isOn ? "ON" : "OFF"
                                     }
                                     Material.background: {
                                         if (ci.statusRamping) return Material.Amber
-                                        return (ci.statusOutDrive && ci.operationalTargetV !== 0)
-                                            ? Material.Green : Material.Grey
+                                        return ci.isOn ? Material.Green : Material.Grey
                                     }
                                     implicitWidth: parent.width - 8
                                     implicitHeight: 36
                                     onClicked: {
                                         if (ci.statusRamping) return
-                                        var on = ci.statusOutDrive && ci.operationalTargetV !== 0
-                                        backend.sendOutputAction(chIdx, on ? 2 : 1)
+                                        backend.sendOutputAction(chIdx, ci.isOn ? 2 : 1)
                                     }
                                 }
 
@@ -208,7 +250,9 @@ Item {
                                     anchors.centerIn: parent
                                     visible: modelData.key === "vop"
                                     font.pixelSize: 14
-                                    text: ci.operationalTargetV !== undefined
+                                    // Only meaningful on DAC channels — fixed-voltage channels
+                                    // have no target-voltage concept at all (§7).
+                                    text: (ci.capRawDrive && ci.operationalTargetV !== undefined)
                                         ? ci.operationalTargetV.toFixed(1) : "--"
                                 }
 
@@ -230,7 +274,7 @@ Item {
                                     id: ruField
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
                                     anchors.margins: 4
-                                    visible: modelData.key === "ru" && (caps & 0x0001) !== 0
+                                    visible: modelData.key === "ru" && !!ci.capRawDrive
                                     font.pixelSize: 14
                                     placeholderText: "V"
                                     Binding on text {
@@ -247,7 +291,7 @@ Item {
                                     id: rdField
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
                                     anchors.margins: 4
-                                    visible: modelData.key === "rd" && (caps & 0x0001) !== 0
+                                    visible: modelData.key === "rd" && !!ci.capRawDrive
                                     font.pixelSize: 14
                                     placeholderText: "V"
                                     Binding on text {
@@ -298,9 +342,12 @@ Item {
                                     font.pixelSize: 14
                                     opacity: 0.3
                                     visible: {
-                                        if (modelData.key === "vset"  || modelData.key === "status" ||
-                                            modelData.key === "ru"    || modelData.key === "rd")
-                                            return (caps & 0x0001) === 0
+                                        if (modelData.key === "vset")
+                                            return !ci.capOutEn && !ci.capRawDrive
+                                        if (modelData.key === "status")
+                                            return !ci.capOutEn && !ci.capRawDrive
+                                        if (modelData.key === "ru" || modelData.key === "rd")
+                                            return !ci.capRawDrive
                                         if (modelData.key === "i" || modelData.key === "limit")
                                             return (caps & 0x0008) === 0
                                         return false

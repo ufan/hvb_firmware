@@ -15,7 +15,15 @@ ScrollView {
     property var cc: (backend.channelConfigList || [])[channelIndex] || {}
     property int caps: ci.chCapFlags || 0xFFFF
 
+    // CH_CAP_OUTPUT_ENABLE ("switchable on/off") and CH_CAP_RAW_OUTPUT_DRIVE
+    // ("has a DAC, level is settable") are independent — see
+    // docs/guide/channel-capability-model.md §1. jw_lvb ch1-9 have
+    // hasOutEn without hasDrive (fixed-voltage, switchable); jw_hvb has
+    // both together. Anything gated on hasOutEn alone that should really
+    // require a DAC (target voltage, ramp, output calibration) is wrong on
+    // that shape of channel — see §7.
     property bool hasOutEn: (caps & 0x0001) !== 0
+    property bool hasDrive: (caps & 0x0002) !== 0
     property bool hasVolt:  (caps & 0x0004) !== 0
     property bool hasCurr:  (caps & 0x0008) !== 0
 
@@ -39,6 +47,7 @@ ScrollView {
         target: backend
         function onChannelConfigUpdated(ch) {
             if (ch !== root.channelIndex) return
+            enSwitch.checked = root.cc.outputEnabledCfg || false
             iModeCombo.currentIndex = root.cc.iProtMode || 0
             iActCombo.currentIndex = root.cc.iProtOutputAction || 0
             safeBandSpin.value = root.cc.currentSafeBandPct || 10
@@ -62,9 +71,10 @@ ScrollView {
                 spacing: 16
                 anchors.fill: parent
 
+                // DAC channels (CH_CAP_RAW_OUTPUT_DRIVE): target-voltage input.
                 RowLayout {
                     spacing: 6
-                    visible: root.hasOutEn
+                    visible: root.hasDrive
                     Label { text: "Vset:"; opacity: 0.6 }
                     TextField {
                         id: vsetField
@@ -83,6 +93,23 @@ ScrollView {
                             Math.round((parseFloat(text) || 0) / 0.1))
                     }
                     Label { text: "V"; opacity: 0.6 }
+                }
+
+                // Fixed-voltage switchable channels (CH_CAP_OUTPUT_ENABLE without
+                // CH_CAP_RAW_OUTPUT_DRIVE, e.g. jw_lvb ch1-9): no DAC to set a level
+                // on, so this is CFG_OUTPUT_ENABLED (startup intent) as a plain
+                // on/off toggle instead — mutually exclusive with the Vset row above
+                // by capability. See docs/guide/channel-capability-model.md §2/§7.
+                RowLayout {
+                    spacing: 6
+                    visible: root.hasOutEn && !root.hasDrive
+                    Label { text: "Startup:"; opacity: 0.6 }
+                    Switch {
+                        id: enSwitch
+                        text: checked ? "On" : "Off"
+                        checked: root.cc.outputEnabledCfg || false
+                        onToggled: backend.writeOutputEnabled(root.channelIndex, checked)
+                    }
                 }
 
                 LabeledValue {
@@ -106,10 +133,25 @@ ScrollView {
                     visible: root.hasCurr
                 }
 
+                // active/label both come from the backend's capability-aware
+                // ci.isOn (psb::channelIsOn, channel_policy.h) — previously
+                // active used statusOutEn while label used statusOutDrive,
+                // two different bits that can disagree with each other and
+                // with MonitorTab's badge on an output-enable-only channel
+                // (no drive concept at all). See
+                // docs/guide/client-architecture-and-pitfalls.md §2.9.
                 StatusBadge {
-                    active: root.ci.statusOutEn || false
+                    visible: root.hasOutEn || root.hasDrive
+                    active: root.ci.isOn || false
                     label: root.ci.statusRamping ? "RAMP"
-                         : (root.ci.statusOutDrive ? "ON" : "OFF")
+                         : (root.ci.isOn ? "ON" : "OFF")
+                }
+                // Neither capability: locked always-on with no software on/off
+                // concept at all (e.g. jw_lvb ch0) — not "off", genuinely n/a.
+                LabeledValue {
+                    label: "Status"
+                    value: "n/a"
+                    visible: !root.hasOutEn && !root.hasDrive
                 }
 
                 LabeledValue {
@@ -140,7 +182,10 @@ ScrollView {
                     value: root.cc.outCalK !== undefined
                         ? root.cc.outCalK + " / " + root.cc.outCalKExp + " / " + root.cc.outCalB
                         : "--"
-                    visible: root.hasOutEn
+                    // OUTPUT_CAL_K/B require RAW_OUTPUT_DRIVE, not OUTPUT_ENABLE
+                    // (channel-capability-model.md §2) — there's no output
+                    // calibration to speak of on a channel with no DAC.
+                    visible: root.hasDrive
                 }
                 LabeledValue {
                     label: "Vmeas K/e/b"
@@ -173,7 +218,12 @@ ScrollView {
                 title: "Control"
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
-                visible: root.hasOutEn
+                // Enable/Disable/Kill are meaningful whenever there's any output
+                // capability at all (Disable is coerced to force-off without a
+                // DAC to ramp — channel-capability-model.md §3 rule 2); Ru/Rd
+                // below are gated individually on hasDrive since ramping only
+                // applies to DAC channels.
+                visible: root.hasOutEn || root.hasDrive
 
                 ColumnLayout {
                     anchors.left: parent.left
@@ -196,6 +246,7 @@ ScrollView {
                     }
                     RowLayout {
                         spacing: 6
+                        visible: root.hasDrive
                         Label { text: "Ru:" }
                         TextField {
                             id: ruField
@@ -214,6 +265,7 @@ ScrollView {
                     }
                     RowLayout {
                         spacing: 6
+                        visible: root.hasDrive
                         Label { text: "Rd:" }
                         TextField {
                             id: rdField
@@ -362,6 +414,11 @@ ScrollView {
                     }
                     RowLayout {
                         spacing: 6
+                        // AUTO_DERATE_STEP requires RAW_OUTPUT_DRIVE *and*
+                        // VOLTAGE_MEASUREMENT (channel-capability-model.md §2) —
+                        // derating only means something on a DAC channel that can
+                        // also see the voltage it's derating.
+                        visible: root.hasDrive && root.hasVolt
                         Label { text: "Derate:" }
                         TextField {
                             id: derateField

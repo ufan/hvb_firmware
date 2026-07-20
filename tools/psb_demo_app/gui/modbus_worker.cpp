@@ -1,4 +1,5 @@
 #include "modbus_worker.h"
+#include "channel_policy.h"
 #include "register_map.h"
 #include "board_catalog.h"
 
@@ -119,10 +120,24 @@ QVariantMap ModbusWorker::channelInfoToMap(int ch, const psb::ChannelInfo& info)
     m["faultConfigInvalid"] = (info.activeFault & psb::FaultCause::CFG_INVALID) != 0;
     m["faultMeasStale"] = (info.activeFault & psb::FaultCause::STALE) != 0;
 
-    m["capOutEn"] = (info.chCapFlags & CH_CAP_OUTPUT_ENABLE) != 0;
-    m["capRawDrive"] = (info.chCapFlags & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
+    bool capOutEn = (info.chCapFlags & CH_CAP_OUTPUT_ENABLE) != 0;
+    bool capRawDrive = (info.chCapFlags & CH_CAP_RAW_OUTPUT_DRIVE) != 0;
+    m["capOutEn"] = capOutEn;
+    m["capRawDrive"] = capRawDrive;
     m["capVoltageMeas"] = (info.chCapFlags & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
     m["capCurrentMeas"] = (info.chCapFlags & CH_CAP_CURRENT_MEASUREMENT) != 0;
+
+    // Capability-aware "is this channel's output on" — single source of
+    // truth (psb::channelIsOn, channel_policy.h) shared with psb_demo_tui,
+    // so Monitor/Channel views can't each derive their own answer and
+    // disagree (see docs/guide/client-architecture-and-pitfalls.md §2.9). A
+    // bare OUTPUT_DRIVE_NONZERO/operationalTargetV!=0 check — the previous
+    // QML-side logic — is wrong on its own: it never looks at
+    // OUTPUT_ENABLE_ACTIVE at all, so a disabled channel with a stale
+    // nonzero drive register would still read "on".
+    m["isOn"] = psb::channelIsOn(capOutEn, capRawDrive,
+        (info.status & psb::ChStatus::OUTPUT_ENABLE_ACTIVE) != 0,
+        (info.status & psb::ChStatus::OUTPUT_DRIVE_NONZERO) != 0);
     return m;
 }
 
@@ -141,6 +156,11 @@ QVariantMap ModbusWorker::channelConfigToMap(int /*ch*/, const psb::ChannelConfi
     QVariantMap m;
     m["configuredTargetVRaw"]  = cfg.configuredTargetVRaw;
     m["configuredTargetV"]     = psb::reg::voltageToV(cfg.configuredTargetVRaw);
+    // CFG_OUTPUT_ENABLED — startup on/off intent for fixed-voltage channels
+    // (CH_CAP_OUTPUT_ENABLE without CH_CAP_RAW_OUTPUT_DRIVE, e.g. jw_lvb
+    // channels 1-9). Mutually exclusive with configuredTargetV by capability
+    // — see docs/guide/channel-capability-model.md §2.
+    m["outputEnabledCfg"]      = cfg.outputEnabledCfg;
     m["outputAction"]          = static_cast<int>(cfg.outputAction);
     m["faultCommand"]          = static_cast<int>(cfg.faultCommand);
     m["rampUpStepRaw"]         = cfg.rampUpStepRaw;
@@ -370,6 +390,12 @@ void ModbusWorker::doSendFaultCmd(int ch, int cmd) {
 void ModbusWorker::doWriteTargetVoltage(int ch, int raw) {
     bool ok = m_client.writeConfiguredTargetVoltage(ch, static_cast<int16_t>(raw));
     if (ok) refreshChannelOutput(ch);
+    emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
+}
+
+void ModbusWorker::doWriteOutputEnabled(int ch, bool enabled) {
+    bool ok = m_client.writeOutputEnabled(ch, enabled);
+    if (ok) refreshChannelOutputEnabled(ch);
     emit operationComplete(ok, ok ? "OK" : QString::fromStdString(m_client.lastError()));
 }
 

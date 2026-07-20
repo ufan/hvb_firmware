@@ -98,6 +98,7 @@ public slots:
     void sendOutputAction(int ch, int action);
     void sendFaultCmd(int ch, int cmd);
     void writeTargetVoltage(int ch, int raw);
+    void writeOutputEnabled(int ch, bool enabled);
     void writeRampUp(int ch, int stepRaw, int interval);
     void writeRampDown(int ch, int stepRaw, int interval);
     void writeChannelRecovery(int ch, int policy, int delay, int max, int window);

@@ -28,6 +28,7 @@ public slots:
     void doSendOutputAction(int ch, int action);
     void doSendFaultCmd(int ch, int cmd);
     void doWriteTargetVoltage(int ch, int raw);
+    void doWriteOutputEnabled(int ch, bool enabled);
     void doWriteOperatingMode(int mode);
     void doWriteStartupChannelPolicy(int policy);
     void doWriteSlaveAddress(int addr);
