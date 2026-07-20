@@ -1,6 +1,7 @@
 #pragma once
 #include "tui_format.h"
 #include "psb_modbus_client.h"
+#include "psb_board_session.h"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_options.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -20,7 +21,7 @@ namespace psb::tui {
 using namespace ftxui;
 
 struct AppState {
-    psb::PsbModbusClient&                    client;
+    psb::PsbBoardSession&                    client;
     std::atomic<bool>&                       connected;
     ScannedData&                             data;
     std::string&                             statusMsg;
