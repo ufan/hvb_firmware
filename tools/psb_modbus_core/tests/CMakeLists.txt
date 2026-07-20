@@ -1,5 +1,6 @@
 add_executable(psb_tests
     test_connection.cpp
+    test_serial_bus.cpp
     test_system_reads.cpp
     test_channel_reads.cpp
     test_writes.cpp
