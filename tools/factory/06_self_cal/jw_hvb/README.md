@@ -35,7 +35,7 @@ running this.
 ## Install
 
 ```bash
-pip install -r tools/jw_hvb_selfcal/requirements.txt
+pip install -r tools/factory/06_self_cal/jw_hvb/requirements.txt
 ```
 
 ## Run
@@ -43,14 +43,14 @@ pip install -r tools/jw_hvb_selfcal/requirements.txt
 Always preview first:
 
 ```bash
-python3 tools/jw_hvb_selfcal/jw_hvb_selfcal.py --port /dev/ttyUSB0 --dry-run
+python3 tools/factory/06_self_cal/jw_hvb/jw_hvb_selfcal.py --port /dev/ttyUSB0 --dry-run
 ```
 
 Then, for real (asks a typed "yes" confirmation per channel before
 commanding any voltage on it):
 
 ```bash
-python3 tools/jw_hvb_selfcal/jw_hvb_selfcal.py --port /dev/ttyUSB0
+python3 tools/factory/06_self_cal/jw_hvb/jw_hvb_selfcal.py --port /dev/ttyUSB0
 ```
 
 Options:

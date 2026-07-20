@@ -109,7 +109,7 @@ JW_HVB_MAX_TARGET_VOLTAGE_RAW = 20000  # 2000.0 V
 DEFAULT_FRACTIONS = [0.10, 0.30, 0.50, 0.70, 0.90]
 DEFAULT_SAMPLES_PER_POINT = [8, 5, 4, 3, 2]
 
-# A "looks like a real load/detector" guard, mirroring tools/jw_lvb_calib's
+# A "looks like a real load/detector" guard, mirroring tools/factory/06_self_cal/jw_lvb's
 # real-load guard but checking every test point (not just one) — see
 # calibrate_channel(). Default fraction of the int16 register range above
 # which a current reading is "too large to be leakage."

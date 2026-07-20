@@ -684,7 +684,7 @@ def report_ci(args, results, started_at, ended_at, major, minor, channels,
         lines.append(f"| {name} | {'PASS' if ok else 'FAIL'} | {detail} |\n")
     lines.append("\n")
     lines.append(f"**Overall: {'PASS' if overall else 'FAIL'}**\n")
-    lines.append(f"\n---\n*`tools/stress_test/stress_test.py --mode ci`*\n")
+    lines.append(f"\n---\n*`tools/factory/04_stress_test/stress_test.py --mode ci`*\n")
 
     os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
     with open(report_path, "w") as f:
@@ -718,7 +718,7 @@ def report_qa(args, results, started_at, ended_at, major, minor, channels,
         lines.append(f"| {label} | {'PASS' if ok else 'FAIL'} | {detail} |\n")
     lines.append("\n")
     lines.append(f"**Overall: {'PASS' if overall else 'FAIL'}**\n")
-    lines.append(f"\n---\n*`tools/stress_test/stress_test.py --mode qa`*\n")
+    lines.append(f"\n---\n*`tools/factory/04_stress_test/stress_test.py --mode qa`*\n")
 
     os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
     with open(report_path, "w") as f:

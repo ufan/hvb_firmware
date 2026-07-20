@@ -6,7 +6,7 @@ interface using `tools/bin/psb_demo_cli`.
 ## Run
 
 ```bash
-tools/dac_sweep_test/dac_sweep_test.sh --port /dev/ttyUSB0
+tools/factory/05_sweep_test/dac_sweep_test.sh --port /dev/ttyUSB0
 ```
 
 Options:
@@ -20,7 +20,7 @@ Options:
 --report PATH     Markdown report path
 ```
 
-Without `--report`, reports are written to `tools/dac_sweep_test/reports/`.
+Without `--report`, reports are written to `tools/factory/05_sweep_test/reports/`.
 The script requires `gnuplot` with `pngcairo` support.
 
 ## Behavior
@@ -67,5 +67,5 @@ The cleanup and overall results are included in the Markdown report.
 The regression test uses a mock CLI and does not access hardware:
 
 ```bash
-bash tools/dac_sweep_test/tests/test_dac_sweep_test.sh
+bash tools/factory/05_sweep_test/tests/test_dac_sweep_test.sh
 ```

@@ -16,13 +16,13 @@ docstring and calibration-guide.md §7 for the rationale.
 ## Install
 
 ```bash
-pip install -r tools/jw_lvb_calib/requirements.txt
+pip install -r tools/factory/06_self_cal/jw_lvb/requirements.txt
 ```
 
 ## Run
 
 ```bash
-python3 tools/jw_lvb_calib/jw_lvb_calibrate.py --port /dev/ttyUSB0
+python3 tools/factory/06_self_cal/jw_lvb/jw_lvb_calibrate.py --port /dev/ttyUSB0
 ```
 
 Recommended: preview first with `--dry-run` (read-only, no writes).
@@ -55,5 +55,5 @@ rerun, or pass `--force-loaded` only if you're certain the flag is wrong.
 ## Dependencies
 
 `minimalmodbus` (see `requirements.txt`; also used by
-`tools/stress_test/stress_test.py`) — the only third-party dependency,
+`tools/factory/04_stress_test/stress_test.py`) — the only third-party dependency,
 so the script itself is otherwise self-contained (stdlib only).

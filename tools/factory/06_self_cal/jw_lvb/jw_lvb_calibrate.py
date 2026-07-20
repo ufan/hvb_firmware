@@ -32,7 +32,7 @@ import minimalmodbus
 
 # ---------------------------------------------------------------------------
 # Register map (absolute Modbus addresses, 0-based). Same conventions as
-# tools/stress_test/stress_test.py.
+# tools/factory/04_stress_test/stress_test.py.
 # ---------------------------------------------------------------------------
 SYS_VARIANT_ID = 2
 SYS_SUPPORTED_CH = 4

@@ -7,15 +7,15 @@ variant-agnostic: channel count and every per-channel `CH_CAP_*` flag are
 discovered at runtime, so the same script covers `jw_hvb`, `jw_lvb`, and any
 future variant without modification.
 
-This complements `tools/stress_test/` (Modbus-protocol load/QA testing) and
-`tools/dac_sweep_test/` (DAC linearity characterization) rather than
+This complements `tools/factory/04_stress_test/` (Modbus-protocol load/QA testing) and
+`tools/factory/05_sweep_test/` (DAC linearity characterization) rather than
 replacing them — this one is specifically about validating the CLI tool's
 own command surface and capability-gating logic against real hardware.
 
 ## Run
 
 ```bash
-tools/board_test/board_test.sh --port /dev/ttyUSB0
+tools/factory/03_feature_test/board_test.sh --port /dev/ttyUSB0
 ```
 
 Options:
@@ -39,7 +39,7 @@ Options:
                         affects --assert-fresh.
 ```
 
-Without `--report`, reports are written to `tools/board_test/reports/`.
+Without `--report`, reports are written to `tools/factory/03_feature_test/reports/`.
 
 ## Clean bring-up
 
@@ -55,7 +55,7 @@ current value, write it back, verify unchanged), which pass regardless of
 whether "current value" happens to be the correct default.
 
 ```bash
-tools/board_test/factory_bringup.sh --build-dir build_psb_lvb --port /dev/ttyUSB0
+tools/factory/02_bringup/factory_bringup.sh --build-dir build_psb_lvb --port /dev/ttyUSB0
 ```
 
 This mass-erases the chip (wiping the NVS partition too), reflashes, and runs
