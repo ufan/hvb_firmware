@@ -1000,7 +1000,7 @@ git commit -m "feat(psb_demo_tui): add wizard_screen.h — setup wizard UI (not 
 
 **Interfaces:**
 - Consumes: `psb::tui::makeWizardScreen`/`WizardOutcome` (Task 5), `psb::tui::BoardSwitcher`/`makeBoardSwitcher` (Task 4), everything Phase 2's `main.cpp` already used.
-- Produces: a `buildRuntime(topo, screen, running, timeoutMs, autoConnectAll) -> RuntimeHandle` extraction (used by both the direct-startup path and the post-wizard path), plus the `--setup` CLI flag and the design spec's case-3 auto-launch (`--topology <path>` given but the file doesn't exist).
+- Produces: a `buildRuntime(topo, screen, running, timeoutMs, autoConnectAll) -> RuntimeHandle` extraction (used by both the direct-startup path and the post-wizard path), plus the `--setup` CLI flag and the design spec's case-3 auto-launch (`--topology <path>` given but the file doesn't exist). Also produces `runBusWorkerLoop(BusWorker&, ScreenInteractive&, std::atomic<bool>& running)` — the per-bus polling loop body (wait/drain-queue/poll), factored out so Task 7's `applyNewBoardsLive` can start an identical loop for a hot-attached bus without duplicating it.
 
 - [ ] **Step 1: Extract `buildRuntime()`**
 
@@ -1047,6 +1047,43 @@ struct Runtime {
     psb::tui::BoardSwitcher switcher;
     std::thread animThread;
 };
+
+// The per-bus polling loop body: wait for work-or-timeout, drain the work
+// queue, then poll every connected board once. Identical for every bus
+// worker thread regardless of when that thread was started — factored out
+// so Task 7's applyNewBoardsLive (hot-attaching a new bus mid-session) can
+// start an identical loop without duplicating it verbatim.
+void runBusWorkerLoop(psb::tui::BusWorker& bw, ScreenInteractive& screen, std::atomic<bool>& running) {
+    while (running) {
+        {
+            bool anyConnected = false;
+            for (psb::tui::BoardSession* b : bw.boards)
+                if (b->connected.load()) { anyConnected = true; break; }
+            auto waitDur = anyConnected ? std::chrono::milliseconds(50)
+                                        : std::chrono::seconds(g_pollInterval);
+            std::unique_lock<std::mutex> lk(bw.workMutex);
+            bw.workCv.wait_for(lk, waitDur, [&] { return !bw.workQueue.empty() || !running; });
+        }
+        for (;;) {
+            std::function<void()> item;
+            { std::lock_guard<std::mutex> lk(bw.workMutex);
+              if (bw.workQueue.empty()) break;
+              item = std::move(bw.workQueue.front()); bw.workQueue.pop(); }
+            item();
+        }
+        for (psb::tui::BoardSession* b : bw.boards) {
+            if (!running) break;
+            if (b->connected.load()) {
+                auto hasPendingWork = [&bw] {
+                    std::lock_guard<std::mutex> lk(bw.workMutex);
+                    return !bw.workQueue.empty();
+                };
+                psb::tui::doPollScan(*b->client, b->data, screen, running, hasPendingWork, b->statusMsg, b->statusMutex);
+                b->data.valid = b->connected.load() && b->client->isConnected();
+            }
+        }
+    }
+}
 
 // Builds BusWorker/BoardSession for every bus/board in `topo`, starts one
 // worker thread per bus (Phase 2), starts the shared animation thread, and
@@ -1102,35 +1139,7 @@ Runtime buildRuntime(const psb::TopologyConfig& topo, ScreenInteractive& screen,
                     screen.PostEvent(Event::Custom);
                 }
             }
-            while (running) {
-                {
-                    bool anyConnected = false;
-                    for (psb::tui::BoardSession* b : bw.boards)
-                        if (b->connected.load()) { anyConnected = true; break; }
-                    auto waitDur = anyConnected ? std::chrono::milliseconds(50)
-                                                : std::chrono::seconds(g_pollInterval);
-                    std::unique_lock<std::mutex> lk(bw.workMutex);
-                    bw.workCv.wait_for(lk, waitDur, [&] { return !bw.workQueue.empty() || !running; });
-                }
-                for (;;) {
-                    std::function<void()> item;
-                    { std::lock_guard<std::mutex> lk(bw.workMutex);
-                      if (bw.workQueue.empty()) break;
-                      item = std::move(bw.workQueue.front()); bw.workQueue.pop(); }
-                    item();
-                }
-                for (psb::tui::BoardSession* b : bw.boards) {
-                    if (!running) break;
-                    if (b->connected.load()) {
-                        auto hasPendingWork = [&bw] {
-                            std::lock_guard<std::mutex> lk(bw.workMutex);
-                            return !bw.workQueue.empty();
-                        };
-                        psb::tui::doPollScan(*b->client, b->data, screen, running, hasPendingWork, b->statusMsg, b->statusMutex);
-                        b->data.valid = b->connected.load() && b->client->isConnected();
-                    }
-                }
-            }
+            runBusWorkerLoop(bw, screen, running);
         });
     }
 
@@ -1477,34 +1486,7 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                 rt.busWorkers.push_back(std::move(bw));
                 psb::tui::BusWorker& bwRef = *targetBw;
                 bwRef.thread = std::thread([&bwRef, &running, &screen] {
-                    while (running) {
-                        {
-                            bool anyConnected = false;
-                            for (auto* b : bwRef.boards) if (b->connected.load()) { anyConnected = true; break; }
-                            auto waitDur = anyConnected ? std::chrono::milliseconds(50)
-                                                        : std::chrono::seconds(g_pollInterval);
-                            std::unique_lock<std::mutex> lk(bwRef.workMutex);
-                            bwRef.workCv.wait_for(lk, waitDur, [&] { return !bwRef.workQueue.empty() || !running; });
-                        }
-                        for (;;) {
-                            std::function<void()> item;
-                            { std::lock_guard<std::mutex> lk(bwRef.workMutex);
-                              if (bwRef.workQueue.empty()) break;
-                              item = std::move(bwRef.workQueue.front()); bwRef.workQueue.pop(); }
-                            item();
-                        }
-                        for (auto* b : bwRef.boards) {
-                            if (!running) break;
-                            if (b->connected.load()) {
-                                auto hasPendingWork = [&bwRef] {
-                                    std::lock_guard<std::mutex> lk(bwRef.workMutex);
-                                    return !bwRef.workQueue.empty();
-                                };
-                                psb::tui::doPollScan(*b->client, b->data, screen, running, hasPendingWork, b->statusMsg, b->statusMutex);
-                                b->data.valid = b->connected.load() && b->client->isConnected();
-                            }
-                        }
-                    }
+                    runBusWorkerLoop(bwRef, screen, running);
                 });
                 existingBw = targetBw;
             }
