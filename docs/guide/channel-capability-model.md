@@ -173,9 +173,9 @@ single register probe. As of this writing, that's:
   `enable-cfg`, and the capability-branched display in `channel <n> config`.
 - `tools/psb_demo_app/tui` — same branching, rendered as widget visibility
   instead of text.
-- `tools/psb_factory_tool/repl` — capability pre-checks before
+- `tools/factory/07_instrumental_cal/psb_factory_tool/repl` — capability pre-checks before
   `target`/`enable-cfg`/`cal enable`/`cal disable`/`cal dac`/`cal coeff`.
-- `tools/board_test/board_test.sh` — asserts the expected accept/reject
+- `tools/factory/03_feature_test/board_test.sh` — asserts the expected accept/reject
   outcome of every write against a live board, per channel, from its
   capability flags.
 

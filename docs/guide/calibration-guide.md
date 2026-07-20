@@ -267,14 +267,14 @@ correction. This is why the procedure is a **single zero-offset measurement
 per channel**, not a two-point sweep: no reference ammeter, precision load,
 or DAC codes needed at all.
 
-**Automated tool (recommended):** `tools/jw_lvb_calib/jw_lvb_calibrate.py`
-— see `tools/jw_lvb_calib/README.md`. jw_lvb-only; jw_hvb needs external
+**Automated tool (recommended):** `tools/factory/06_self_cal/jw_lvb/jw_lvb_calibrate.py`
+— see `tools/factory/06_self_cal/jw_lvb/README.md`. jw_lvb-only; jw_hvb needs external
 reference instruments and a DAC sweep, so it isn't automatable the same
 way. Run with `--dry-run` first.
 
 ```bash
-python3 tools/jw_lvb_calib/jw_lvb_calibrate.py --port /dev/ttyUSB0 --dry-run
-python3 tools/jw_lvb_calib/jw_lvb_calibrate.py --port /dev/ttyUSB0
+python3 tools/factory/06_self_cal/jw_lvb/jw_lvb_calibrate.py --port /dev/ttyUSB0 --dry-run
+python3 tools/factory/06_self_cal/jw_lvb/jw_lvb_calibrate.py --port /dev/ttyUSB0
 ```
 
 **Why the channel must be ON (relay closed), not forced off:** an earlier

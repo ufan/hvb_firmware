@@ -15,7 +15,7 @@ execution (~10s), exit-code driven:
 
 ```sh
 # CI pipeline invocation
-python3 tools/stress_test/stress_test.py --mode ci \
+python3 tools/factory/04_stress_test/stress_test.py --mode ci \
     --port /dev/ttyUSB0 \
     --rounds 200 \
     --burst-duration 5 \
@@ -41,7 +41,7 @@ Generates a detailed register-level pass/fail report for inspection:
 
 ```sh
 # Production line QA invocation
-python3 tools/stress_test/stress_test.py --mode qa \
+python3 tools/factory/04_stress_test/stress_test.py --mode qa \
     --port /dev/ttyUSB0 \
     --burst-duration 15 \
     --report reports/qa_$(date -u +%Y%m%d_%H%M%S).md
@@ -83,7 +83,7 @@ not latency profiling.
 ### CI mode
 
 ```sh
-python3 tools/stress_test/stress_test.py \
+python3 tools/factory/04_stress_test/stress_test.py \
     --mode ci \
     --port /dev/ttyUSB0 \
     --baud 115200 \
@@ -107,7 +107,7 @@ python3 tools/stress_test/stress_test.py \
 ### QA mode
 
 ```sh
-python3 tools/stress_test/stress_test.py \
+python3 tools/factory/04_stress_test/stress_test.py \
     --mode qa \
     --port /dev/ttyUSB0 \
     --burst-duration 15 \
@@ -119,7 +119,7 @@ Same options as CI mode. `--rounds` is ignored in QA mode (checks are exhaustive
 ### Native CLI (functional smoke test)
 
 ```sh
-bash tools/stress_test/stress_test_native.sh \
+bash tools/factory/04_stress_test/stress_test_native.sh \
     --port /dev/ttyUSB0 \
     --rounds 500 \
     --burst 10 \

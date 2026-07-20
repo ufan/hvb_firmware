@@ -211,7 +211,7 @@ loaded.
 | `v_cal_b` | `int16_t` | 0 | ×100 mV |
 
 Factory calibration derives k and b from a DAC sweep against a reference
-voltmeter (see `tools/dac_sweep_test/`), accounting for the ADC input divider
+voltmeter (see `tools/factory/05_sweep_test/`), accounting for the ADC input divider
 ratio and offset.
 
 ### Current Measurement

@@ -77,7 +77,7 @@ compare the reported variant ID against the board's Kconfig default
 jw_hvb, `2` for jw_lvb):
 
 ```bash
-tools/board_test/board_test.sh --port /dev/ttyACM0 --read-only | grep variant
+tools/factory/03_feature_test/board_test.sh --port /dev/ttyACM0 --read-only | grep variant
 ```
 
 ### Flashing
@@ -92,7 +92,7 @@ Uses `boards/jianwei/<board>/support/openocd.cfg`, which sources
 4000 kHz SWD. `factory_bringup.sh` also accepts this runner:
 
 ```bash
-tools/board_test/factory_bringup.sh --runner openocd --build-dir <build-dir> --port /dev/ttyACM0
+tools/factory/02_bringup/factory_bringup.sh --runner openocd --build-dir <build-dir> --port /dev/ttyACM0
 ```
 
 ### Debugging
@@ -139,7 +139,7 @@ openocd -f boards/jianwei/jw_lvb/support/openocd.cfg -c "init; reset halt; exit"
 tooling (`JLinkRTTViewer`/`JLinkRTTLogger`) only talks to J-Link probes, so
 a CMSIS-DAP probe on `jw_lvb` gives you flashing and gdb debugging, but not
 shell/log access — use J-Link for that, or fall back to Modbus-level
-inspection via `tools/board_test/board_test.sh` / `psb_demo_cli`.
+inspection via `tools/factory/03_feature_test/board_test.sh` / `psb_demo_cli`.
 `jw_hvb` isn't affected by this — nothing here changes its console.
 
 ## Troubleshooting

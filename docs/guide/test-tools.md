@@ -8,10 +8,10 @@ answering a different question:
 
 | Tool | Location | Answers | Needs real hardware? |
 |---|---|---|---|
-| `board_test.sh` | `tools/board_test/` | Does `psb_demo_cli`'s whole command surface and capability-gating logic work against this board, right now? | Yes |
-| `factory_bringup.sh` | `tools/board_test/` | Does this board come up at its true, clean factory-default state after a firmware change? | Yes (+ SWD: J-Link or CMSIS-DAP) |
-| `dac_sweep_test.sh` | `tools/dac_sweep_test/` | Is DAC output linear across its range, and what's the raw-ADC-vs-DAC-code fit per channel? | Yes |
-| `stress_test.py` | `tools/stress_test/` | Is Modbus communication fast/reliable enough — deadtime, blocking time, throughput? | Yes |
+| `board_test.sh` | `tools/factory/03_feature_test/` | Does `psb_demo_cli`'s whole command surface and capability-gating logic work against this board, right now? | Yes |
+| `factory_bringup.sh` | `tools/factory/02_bringup/` | Does this board come up at its true, clean factory-default state after a firmware change? | Yes (+ SWD: J-Link or CMSIS-DAP) |
+| `dac_sweep_test.sh` | `tools/factory/05_sweep_test/` | Is DAC output linear across its range, and what's the raw-ADC-vs-DAC-code fit per channel? | Yes |
+| `stress_test.py` | `tools/factory/04_stress_test/` | Is Modbus communication fast/reliable enough — deadtime, blocking time, throughput? | Yes |
 | `psb_tests` | `tools/psb_modbus_core/tests/` | Does the shared host library (register map, scaling, parsing) behave correctly in isolation? | No (mock virtual board) |
 
 **Quick picks:**
@@ -32,7 +32,7 @@ RTU. Variant-agnostic by construction: channel count and every per-channel
 `jw_hvb`, `jw_lvb`, and any future variant unmodified.
 
 ```bash
-tools/board_test/board_test.sh --port /dev/ttyUSB0
+tools/factory/03_feature_test/board_test.sh --port /dev/ttyUSB0
 ```
 
 Phase 0 connectivity, Phase 1 system-level commands (`info`, `status`,
@@ -41,7 +41,7 @@ capability-gated rejections, the always-on safety invariant). All
 per-channel writes are same-value round trips — read the current value,
 write it back, verify unchanged — so it never changes configured behavior.
 Full details, flags (`--read-only`, `--exercise-outputs`, `--assert-fresh`,
-...), and the safety model: [`../../tools/board_test/README.md`](../../tools/board_test/README.md).
+...), and the safety model: [`../../tools/factory/03_feature_test/README.md`](../../tools/factory/03_feature_test/README.md).
 
 ## `factory_bringup.sh` — deterministic clean bring-up
 
@@ -55,10 +55,10 @@ at, indistinguishable from a genuine factory-default boot. This wraps
 Kconfig defaults, not just self-consistency) into one command:
 
 ```bash
-tools/board_test/factory_bringup.sh --build-dir build_psb_lvb --port /dev/ttyUSB0
+tools/factory/02_bringup/factory_bringup.sh --build-dir build_psb_lvb --port /dev/ttyUSB0
 ```
 
-See [`../../tools/board_test/README.md`](../../tools/board_test/README.md#clean-bring-up)
+See [`../../tools/factory/03_feature_test/README.md`](../../tools/factory/03_feature_test/README.md#clean-bring-up)
 for flags, and
 [`../superpowers/plans/2026-07-16-board-lifecycle-state-management.md`](../superpowers/plans/2026-07-16-board-lifecycle-state-management.md)
 for the broader board-lifecycle-state roadmap this is the first step of.
@@ -70,7 +70,7 @@ generic CMSIS-DAP probe (e.g. the Raspberry Pi Debug Probe) is also
 available via `-r openocd` when a J-Link isn't on the bench:
 
 ```bash
-tools/board_test/factory_bringup.sh --runner openocd --build-dir build_psb_lvb --port /dev/ttyACM0
+tools/factory/02_bringup/factory_bringup.sh --runner openocd --build-dir build_psb_lvb --port /dev/ttyACM0
 ```
 
 Full host setup, wiring, flashing, and gdb-debugging instructions:
@@ -85,13 +85,13 @@ characterization tool, not a calibration-writing one (it enters Calibration
 Mode to sample but never writes coefficients, commits, or saves to NVS).
 
 ```bash
-tools/dac_sweep_test/dac_sweep_test.sh --port /dev/ttyUSB0
+tools/factory/05_sweep_test/dac_sweep_test.sh --port /dev/ttyUSB0
 ```
 
 Requires `gnuplot` (`pngcairo` support) for the report's plots. Has its own
-hardware-free self-test (`tools/dac_sweep_test/tests/test_dac_sweep_test.sh`,
+hardware-free self-test (`tools/factory/05_sweep_test/tests/test_dac_sweep_test.sh`,
 against a mock `psb_demo_cli`) for changes to the script itself. Full
-details: [`../../tools/dac_sweep_test/README.md`](../../tools/dac_sweep_test/README.md).
+details: [`../../tools/factory/05_sweep_test/README.md`](../../tools/factory/05_sweep_test/README.md).
 
 ## `stress_test.py` — Modbus timing and throughput
 

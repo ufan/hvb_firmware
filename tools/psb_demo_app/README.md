@@ -3,7 +3,7 @@
 Modbus RTU engineering/demo tools for Jianwei voltage-control boards:
 a scriptable CLI, an interactive TUI dashboard, and an optional Qt GUI, all
 built on the shared `psb_modbus_core` client library. These are bring-up and
-demo tools — for factory calibration, see `tools/psb_factory_tool` and
+demo tools — for factory calibration, see `tools/factory/07_instrumental_cal/psb_factory_tool` and
 [`docs/guide/calibration-guide.md`](../../docs/guide/calibration-guide.md).
 
 ## Build

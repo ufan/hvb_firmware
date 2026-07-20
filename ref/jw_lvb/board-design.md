@@ -268,7 +268,7 @@ The schematic-nominal zero-current value is about `-25000` in the current
 from ACS712 `VCC/2` followed by the equal 20K/20K network. The committed
 per-channel defaults are live-board zero-load offsets in the same post-gain
 unit (currently in the `-27017` to `-27946` range), measured with
-`tools/jw_lvb_calib/jw_lvb_calibrate.py` — each channel genuinely on and
+`tools/factory/06_self_cal/jw_lvb/jw_lvb_calibrate.py` — each channel genuinely on and
 unloaded, not Calibration Mode's forced-off state (see
 `docs/guide/calibration-guide.md` §7 for why that distinction matters).
 These are one reference board's numbers, not a guarantee for every unit;
