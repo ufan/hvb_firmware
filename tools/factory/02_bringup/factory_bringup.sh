@@ -11,9 +11,13 @@
 # script makes that the only path, so nobody has to remember the flag.
 #
 # What it does:
-#   1. `west flash -d <build-dir> -r <runner> --erase` — mass-erases the
-#      whole chip (including the NVS partition) before flashing, guaranteeing
-#      every persisted field reverts to its Kconfig-defined default.
+#   1. Mass-erases the whole chip (including the NVS partition) before
+#      flashing, guaranteeing every persisted field reverts to its
+#      Kconfig-defined default: `west flash -d <build-dir> -r jlink --erase`
+#      for the default runner. The `openocd` runner has no --erase
+#      equivalent, so for `--runner openocd` this instead runs the chip's
+#      flash driver `mass_erase` command directly via a raw openocd
+#      invocation before `west flash -r openocd` (no --erase flag).
 #   2. Waits for the board to reboot and settle.
 #   3. Runs board_test.sh with --assert-fresh, which additionally checks that
 #      every channel's CFG_OUTPUT_ENABLED/CFG_TARGET_VOLTAGE actually matches
@@ -90,7 +94,33 @@ if (( ! ASSUME_YES )); then
 fi
 
 echo "== Mass-erase + flash =="
-west flash -d "$BUILD_DIR" -r "$RUNNER" --erase
+if [[ "$RUNNER" == "openocd" ]]; then
+    REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    CACHE_FILE="$BUILD_DIR/CMakeCache.txt"
+    if [[ ! -f "$CACHE_FILE" ]]; then
+        echo "Error: $CACHE_FILE not found — build the project first" >&2
+        exit 2
+    fi
+    BOARD="$(sed -n 's/^CACHED_BOARD:STRING=//p' "$CACHE_FILE")"
+    OPENOCD_CFG="$REPO_ROOT/boards/jianwei/$BOARD/support/openocd.cfg"
+    if [[ ! -f "$OPENOCD_CFG" ]]; then
+        echo "Error: no openocd.cfg for board '$BOARD' at $OPENOCD_CFG" >&2
+        exit 2
+    fi
+    # west's openocd runner has no --erase equivalent (only jlink does), so
+    # mass-erase directly via the chip's flash driver first. The driver name
+    # matches the sourced target config's basename (e.g. stm32f4x, stm32f1x).
+    FLASH_DRIVER="$(sed -n 's#.*target/\([a-z0-9]*\)\.cfg.*#\1#p' "$OPENOCD_CFG" | tail -1)"
+    if [[ -z "$FLASH_DRIVER" ]]; then
+        echo "Error: could not determine flash driver from $OPENOCD_CFG" >&2
+        exit 2
+    fi
+    echo "-- mass-erasing via openocd ($FLASH_DRIVER) --"
+    openocd -f "$OPENOCD_CFG" -c "init; reset halt; $FLASH_DRIVER mass_erase 0; exit"
+    west flash -d "$BUILD_DIR" -r openocd
+else
+    west flash -d "$BUILD_DIR" -r "$RUNNER" --erase
+fi
 
 echo "== Waiting for board to settle =="
 sleep 3
