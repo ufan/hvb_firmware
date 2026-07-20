@@ -1,5 +1,5 @@
 #include "psb_modbus_client.h"
-#include "config_manager.h"
+#include "topology_config.h"
 #include "register_map.h"
 #include "board_catalog.h"
 #include "tool_version.h"
@@ -11,11 +11,14 @@
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 
+#include <CLI/CLI.hpp>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <functional>
+#include <iostream>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -25,7 +28,6 @@
 using namespace ftxui;
 
 static psb::PsbModbusClient g_client;
-static psb::ConfigManager   g_cfg;
 static std::atomic<bool>    g_connected{false};
 static int g_pollInterval = 1;
 
@@ -231,22 +233,64 @@ static void rebuildChannelTitles(std::vector<std::string>& titles, int numChanne
 }
 
 int main(int argc, char** argv) {
-    g_cfg.load();
+    CLI::App app{"PSB Demo TUI"};
+    app.set_version_flag("--version", std::string("psb_demo_tui ") + TOOL_VERSION_STRING);
 
     std::string portArg;
     int baudArg = 115200, slaveArg = 1, timeoutArg = 3000;
-    for (int i = 1; i < argc; ++i) {
-        std::string a = argv[i];
-        if      (a == "-p" && i+1 < argc) portArg        = argv[++i];
-        else if (a == "-b" && i+1 < argc) baudArg        = std::stoi(argv[++i]);
-        else if (a == "-i" && i+1 < argc) slaveArg       = std::stoi(argv[++i]);
-        else if (a == "-t" && i+1 < argc) timeoutArg     = std::stoi(argv[++i]);
-        else if (a == "-s" && i+1 < argc) g_pollInterval = std::stoi(argv[++i]);
-    }
+    std::string topologyPath = psb::TopologyConfig::defaultPath();
+    app.add_option("-p,--port", portArg, "Serial port (quick single-board connect; auto-connects at startup)");
+    auto* baudOpt = app.add_option("-b,--baud", baudArg, "Baud rate")
+        ->check(CLI::IsMember({9600, 19200, 38400, 115200}));
+    auto* slaveOpt = app.add_option("-i,--id", slaveArg, "Slave ID")->check(CLI::Range(0, 247));
+    app.add_option("-t,--timeout", timeoutArg, "Timeout ms");
+    app.add_option("-s,--poll-interval", g_pollInterval, "Idle poll interval (s)");
+    auto* topologyOpt = app.add_option("-T,--topology", topologyPath,
+        "Topology config file (default: " + topologyPath + ")");
+    CLI11_PARSE(app, argc, argv);
 
-    std::string cfgPort    = portArg.empty() ? (g_cfg.port.empty() ? "/dev/ttyUSB0" : g_cfg.port) : portArg;
-    std::string cfgBaud    = std::to_string(baudArg != 115200 ? baudArg : g_cfg.baudRate);
-    std::string cfgSlaveId = std::to_string(slaveArg != 1     ? slaveArg : g_cfg.slaveId);
+    // -p auto-connects at startup, exactly like today; --topology (or its
+    // default path) only pre-fills the connection modal's fields — it does
+    // NOT by itself auto-connect, same distinction ConfigManager's old
+    // auto-load-as-default behavior had (the user still clicks Connect).
+    bool autoConnect = !portArg.empty();
+    std::string cfgPort = portArg;
+    if (portArg.empty()) {
+        bool topologyExplicit = topologyOpt->count() > 0;
+        if (psb::TopologyConfig::exists(topologyPath)) {
+            auto topo = psb::TopologyConfig::load(topologyPath);
+            if (!topo.has_value()) {
+                std::cerr << "Topology config error: could not parse " << topologyPath << "\n";
+                return 1;
+            }
+            // Phase 1: the dashboard below is still single-board only. A
+            // topology resolving to more than one board is a clear, named
+            // error rather than silently only using the first one — the
+            // multi-board dashboard lands in a later phase (see
+            // docs/superpowers/specs/2026-07-20-multi-board-topology-design.md).
+            if (topo->totalBoardCount() > 1) {
+                std::cerr << "Topology config " << topologyPath << " has " << topo->totalBoardCount()
+                          << " boards — the multi-board dashboard isn't available yet in this build.\n"
+                          << "Use --port for a specific board, or trim the topology file to one board.\n";
+                return 1;
+            }
+            if (topo->totalBoardCount() == 1) {
+                const auto& bus = topo->buses.front();
+                const auto& board = bus.boards.front();
+                cfgPort = bus.port;
+                if (baudOpt->count() == 0) baudArg = bus.baudRate;
+                if (slaveOpt->count() == 0) slaveArg = board.slaveId;
+            }
+        } else if (topologyExplicit) {
+            std::cerr << "Topology config error: " << topologyPath << " not found\n";
+            return 1;
+        }
+        // Neither -p nor a resolvable --topology: fall back to today's
+        // hardcoded first-run guess.
+        if (cfgPort.empty()) cfgPort = "/dev/ttyUSB0";
+    }
+    std::string cfgBaud    = std::to_string(baudArg);
+    std::string cfgSlaveId = std::to_string(slaveArg);
 
     auto screen = ScreenInteractive::Fullscreen();
     int  activeTab    = 0;
@@ -749,7 +793,7 @@ int main(int argc, char** argv) {
            return false;
        });
 
-    if (!portArg.empty()) doConnect();
+    if (autoConnect) doConnect();
 
     screen.Loop(root);
     running = false;
