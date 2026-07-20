@@ -180,6 +180,17 @@ void ModbusWorker::doRefreshChannelInfo(int ch)
 {
     if (ch < 0 || ch >= WORKER_MAX_CH) return;
     m_cachedChInfo[ch] = m_client.readChannelInfo(ch);
+    // chCapFlags==0 means the capability probe inside readChannelInfo — one
+    // all-or-nothing transaction — failed both of its internal retry
+    // attempts (no real channel reports zero capability bits). Left
+    // uncorrected here, every later poll reuses this cached 0 forever,
+    // since doPollStatus's readChannelStatus only ever reuses the caps it's
+    // handed and never re-derives them — the channel would show nothing but
+    // init values for the rest of the session. Worth fighting harder for at
+    // connect time (doPollStatus also self-heals this case below, in case
+    // it's still unlucky here).
+    for (int attempt = 0; attempt < 2 && m_cachedChInfo[ch].chCapFlags == 0; ++attempt)
+        m_cachedChInfo[ch] = m_client.readChannelInfo(ch);
     if (!m_client.isConnected()) { emit operationComplete(false, "Read failed"); return; }
     emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
 }
@@ -467,6 +478,19 @@ void ModbusWorker::doPollStatus()
     uint16_t activeMask = m_cachedSysInfo.activeChMask;
     for (int ch = 0; ch < m_channelCount; ++ch) {
         if ((activeMask & (1u << ch)) == 0) continue;
+        // Self-heal a channel whose capability flags never got captured at
+        // connect (doRefreshChannelInfo's harder retry can still miss a
+        // persistent glitch). 0 is not a real capability set — every
+        // channel reports at least one bit — so a channel stuck at 0 would
+        // otherwise skip every capability-gated field in readChannelStatus
+        // below forever, showing nothing but init values for the rest of
+        // the session. One cheap extra transaction per affected channel per
+        // poll cycle, only while still unknown.
+        if (m_cachedChInfo[ch].chCapFlags == 0) {
+            uint16_t caps = 0;
+            if (m_client.readChannelCapabilities(ch, caps, kPollTimeoutMs) && caps != 0)
+                m_cachedChInfo[ch].chCapFlags = caps;
+        }
         m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch], kPollTimeoutMs);
         if (!m_client.isConnected()) return;
     }
