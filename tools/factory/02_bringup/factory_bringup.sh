@@ -95,7 +95,7 @@ fi
 
 echo "== Mass-erase + flash =="
 if [[ "$RUNNER" == "openocd" ]]; then
-    REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
     CACHE_FILE="$BUILD_DIR/CMakeCache.txt"
     if [[ ! -f "$CACHE_FILE" ]]; then
         echo "Error: $CACHE_FILE not found — build the project first" >&2
@@ -126,4 +126,4 @@ echo "== Waiting for board to settle =="
 sleep 3
 
 echo "== Verifying clean factory-default state =="
-exec "$SCRIPT_DIR/board_test.sh" --port "$PORT" --assert-fresh "${PASSTHROUGH[@]}"
+exec "$SCRIPT_DIR/../03_feature_test/board_test.sh" --port "$PORT" --assert-fresh "${PASSTHROUGH[@]}"
