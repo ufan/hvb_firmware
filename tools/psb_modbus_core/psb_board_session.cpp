@@ -60,6 +60,7 @@ bool PsbBoardSession::verifyProtocol() {
 }
 
 void PsbBoardSession::disconnect() { m_impl->verified = false; }
+void PsbBoardSession::rebind(int slaveId) { m_impl->slaveId = slaveId; m_impl->verified = false; }
 bool PsbBoardSession::isConnected() const { return m_impl->verified; }
 std::string PsbBoardSession::lastError() const { return m_impl->errorText; }
 int PsbBoardSession::slaveId() const { return m_impl->slaveId; }

@@ -64,3 +64,26 @@ TEST_CASE("PsbBoardSession — attachTestArrays bypasses verifyProtocol, matchin
     session.detachTestArrays();
     CHECK_FALSE(session.isConnected());
 }
+
+TEST_CASE("PsbBoardSession — rebind() changes slave ID without changing object identity", "[board_session]") {
+    auto bus = std::make_shared<psb::PsbSerialBus>();
+    uint16_t inputA[8] = {}, holdingA[8] = {};
+    uint16_t inputB[8] = {}, holdingB[8] = {};
+    inputA[0] = VC_PROTOCOL_MAJOR; inputA[1] = VC_PROTOCOL_MINOR;
+    inputB[0] = VC_PROTOCOL_MAJOR; inputB[1] = VC_PROTOCOL_MINOR;
+    bus->attachTestArrays(1, inputA, holdingA, 8);
+    bus->attachTestArrays(2, inputB, holdingB, 8);
+
+    psb::PsbBoardSession session(bus, 1);
+    REQUIRE(session.verifyProtocol());
+    CHECK(session.slaveId() == 1);
+
+    session.rebind(2);
+    CHECK(session.slaveId() == 2);
+    // rebind() resets verified state — the previous verifyProtocol() result
+    // was for slave 1, not slave 2, even though this happens to also be a
+    // valid slave here.
+    CHECK_FALSE(session.isConnected());
+    REQUIRE(session.verifyProtocol());
+    CHECK(session.isConnected());
+}

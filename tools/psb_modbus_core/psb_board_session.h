@@ -35,6 +35,15 @@ public:
     int slaveId() const;
     int16_t currentUnitExp() const;
 
+    // Changes which slave ID this session addresses on its bus, in place —
+    // same object, same address, so existing references to it (e.g.
+    // AppState::client in psb_demo_tui) stay valid. Resets verified state:
+    // the previous verifyProtocol() result was for the old slave ID and
+    // doesn't apply to the new one. Used by the TUI's connection modal to
+    // let the user correct a wrong slave ID and reconnect without
+    // restarting the session that references this object.
+    void rebind(int slaveId);
+
     // Direct test mode — inject register arrays (bypasses Modbus RTU),
     // scoped to this session's slave ID on its bus. Unlike verifyProtocol(),
     // this marks the session connected immediately without probing —
