@@ -91,9 +91,13 @@ int main(int argc, char** argv) {
             b->portVal = busCfg.port;
             b->baudVal = std::to_string(busCfg.baudRate);
             b->slaveVal = std::to_string(boardCfg.slaveId);
-            b->appState = std::make_unique<psb::tui::AppState>(
+            // AppState has only reference members and no user-declared
+            // constructor — it's an aggregate, initializable via brace-init
+            // (`new AppState{...}`) but not paren-init, so make_unique<>()
+            // (which calls `new T(args...)`) can't construct it directly.
+            b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
-                bw->workQueue, bw->workMutex, bw->workCv, screen);
+                bw->workQueue, bw->workMutex, bw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutArg);
             bw->boards.push_back(b.get());
             boards.push_back(std::move(b));

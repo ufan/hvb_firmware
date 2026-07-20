@@ -152,7 +152,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         board.showConnModal = false; screen.PostEvent(Event::Custom);
     });
     auto connModalForm   = Container::Vertical({visiblePortDropdown, bScan, baudInp, slaveInp, bConnInModal, bCancelConn});
-    auto connModalPopup  = Renderer(connModalForm, [&board, portList, portIdx, visiblePortDropdown, bScan, bConnInModal, bCancelConn] {
+    auto connModalPopup  = Renderer(connModalForm, [&board, portList, portIdx, visiblePortDropdown, bScan, baudInp, slaveInp, bConnInModal, bCancelConn] {
         if (*portIdx >= 0 && *portIdx < static_cast<int>(portList->size()))
             board.portVal = (*portList)[*portIdx];
         Element portChoice = portList->empty()
