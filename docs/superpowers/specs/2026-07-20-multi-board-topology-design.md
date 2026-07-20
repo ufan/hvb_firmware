@@ -11,10 +11,14 @@ that may or may not share a physical serial bus (RS-485 multi-drop). This
 document covers `tools/psb_modbus_core` and `tools/psb_demo_app/tui`.
 `psb_demo_gui` multi-board support is explicitly deferred (see Out of Scope).
 
-The existing single-board connection flow (`-p/-b/-i/-t` flags, no config
-file) is the baseline and stays the default, most-frequently-used path —
-nothing about it should look or feel different for a user who only ever
-connects to one board.
+The existing single-board connection flow — `-p/-b/-i/-t` flags, with
+`psb_modbus_core`'s `ConfigManager` (`~/.psb_demo_app.toml`) supplying
+fallback defaults when a flag is omitted, and `psb_demo_cli --save`
+persisting the currently-used settings back to that file — is the baseline
+and stays the default, most-frequently-used path. Nothing about it should
+look or feel different for a user who only ever connects to one board;
+`TopologyConfig` (below) supersedes `ConfigManager` and preserves this exact
+convenience (auto-load-as-default, a `--save` flag), just on the new format.
 
 ## Motivation
 
@@ -28,12 +32,14 @@ safe way to have two boards share one physical RS-485 line — two independent
 see `docs/guide/client-architecture-and-pitfalls.md` §3's `mbpoll`
 contention warning, which is the same failure mode).
 
-There is also no working config-file precedent to build on:
-`psb_modbus_core`'s `ConfigManager` (`~/.psb_demo_app.toml`) is dead code —
-grepping the whole tree turns up zero call sites in `psb_demo_tui` or
-`psb_demo_cli`. Both tools take connection settings purely from CLI flags
-today, and `psb_demo_tui` parses its flags with a hand-rolled `argv` loop
-rather than CLI11 (which `psb_demo_cli` already uses).
+The existing config precedent (`ConfigManager`) is single-board-only and
+flat (`[connection]` port/baud/slave-id/timeout, `[display]` poll interval
+— see `config_manager.cpp`) with no notion of multiple boards or buses, so
+it can't be extended in place to a nested topology; it needs a like-for-like
+replacement (`TopologyConfig`) rather than an extension. `psb_demo_tui` also
+parses its flags with a hand-rolled `argv` loop rather than CLI11 (which
+`psb_demo_cli` already uses), which the new `--topology` flag is a natural
+occasion to fix.
 
 ## Design Decisions
 
@@ -114,8 +120,10 @@ psb_serial_bus.h/.cpp       new: owns one physical serial connection
 psb_board_session.h/.cpp    new: one board (slave ID) on a PsbSerialBus
 psb_modbus_client.h/.cpp    unchanged public API; internally a PsbSerialBus
                              + PsbBoardSession(bus, slaveId) owned together
-topology_config.h/.cpp      new: TOML topology load/save (replaces ConfigManager)
-config_manager.h/.cpp       removed — dead code, superseded by topology_config
+topology_config.h/.cpp      new: TOML topology load/save (supersedes config_manager)
+config_manager.h/.cpp       removed — live today (single-board load/--save
+                             fallback in both tools), behavior migrated to
+                             topology_config, see CLI flags precedence below
 ```
 
 `PsbSerialBus` (sketch):
@@ -173,6 +181,7 @@ struct TopologyConfig {
     static TopologyConfig singleBoard(const std::string& port, int baud,
                                        int slaveId, const std::string& nickname = "board1");
     static std::string defaultPath();  // ~/.psb_demo_app/topology.toml
+    int totalBoardCount() const;       // sum of boards across all buses
 };
 ```
 
@@ -216,18 +225,35 @@ purely "how do I physically reach this hardware."
 -i, --slave-id <id>      Quick single-board: slave ID (default 1)
 -t, --timeout <ms>       Response timeout ms (existing default per tool)
 -s, --poll-interval <ms> Poll interval ms, session-wide across all buses (TUI only)
+--save                   psb_demo_cli only: persist the settings just used as a
+                          one-board topology at the --topology path (or default
+                          path if none given) — supersedes ConfigManager's --save
 --setup                  TUI only: launch interactive topology setup wizard
 ```
 
-Precedence: `-p` (explicit single board) wins over `--topology` if both are
-given, with a warning. If neither is given and no topology file exists at
-the default path, `psb_demo_tui` auto-launches `--setup`; `psb_demo_cli`
-reports a clear error asking for one or the other (a one-shot command tool
-has no interactive fallback). If `--topology <path>` is given explicitly
-(default or not) and that file doesn't exist, `psb_demo_tui` treats it the
-same as the no-file case — auto-launches `--setup` pre-targeting that path
-as the Save destination — rather than erroring; `psb_demo_cli` still
-errors, since it has no interactive path to create one.
+Precedence, replacing today's `ConfigManager` load order like-for-like:
+
+1. `-p` given → quick single-board connect, exactly as today; ignores any
+   topology file for connecting (`--save`, if also given to `psb_demo_cli`,
+   still persists these settings to the topology path afterward).
+2. Else `--topology <path>` given (explicitly, or defaulted) and that file
+   **exists** → load and use it, same as `ConfigManager.load()` succeeding
+   today. Must resolve to exactly one board in this phase (§ below) or error
+   clearly naming the multi-board restriction.
+3. Else `--topology <path>` given and that file **doesn't exist**:
+   `psb_demo_tui` auto-launches `--setup` pre-targeting that path as the Save
+   destination (new — today's `ConfigManager.load()` would just silently
+   fall through to hardcoded defaults); `psb_demo_cli` errors, since it has
+   no interactive path to create one.
+4. Else (neither given) → same as case 2/3 but against the **default**
+   topology path, matching today's implicit `ConfigManager` auto-load: if it
+   exists, connect with it directly, no prompt, exactly like today picking
+   up a previously-`--save`d `~/.psb_demo_app.toml`; if it doesn't exist,
+   `psb_demo_tui` falls back to today's hardcoded `/dev/ttyUSB0` guess for
+   a genuinely first-ever run rather than erroring — matching current
+   behavior exactly, an interactive wizard is offered but connecting is
+   still attempted first, same as today never having required setup before
+   first connecting.
 
 `psb_demo_cli` gains `--topology <path> --board <nickname>` as an
 alternative to typing `-p/-b/-i` for a board already saved in a topology
