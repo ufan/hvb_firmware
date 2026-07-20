@@ -18,6 +18,17 @@ ColumnLayout {
     property var _buffers: []
     // Checkbox visible states parallel to seriesConfigs
     property var _visible: []
+    // backend.channelDataChanged is a single shared "something changed"
+    // signal fired once per channel per poll cycle (see modbus_backend.cpp
+    // onChInfoReady) — with N channels it fires N times/second, not once.
+    // Every ChannelGraph instance for every channel listens to it (all
+    // ChannelTabs stay alive under main.qml's StackLayout+Repeater), so
+    // without this throttle each graph rebuilt its whole point buffer N
+    // times/second instead of once, growing buffers ~N× past the intended
+    // windowMinutes point count and re-appending all of them each time —
+    // on jw_lvb's 10 channels this pegged the main thread at 100% CPU and
+    // froze the UI after a few minutes, once the buffers grew large enough.
+    property real _lastAppendT: 0
 
     Component.onCompleted: {
         for (var i = 0; i < seriesConfigs.length; i++) {
@@ -165,7 +176,10 @@ ColumnLayout {
         target: backend
         function onChannelDataChanged() {
             if (!backend.connected) return
-            root._appendAndTrim(Date.now())
+            var now = Date.now()
+            if (now - root._lastAppendT < 900) return
+            root._lastAppendT = now
+            root._appendAndTrim(now)
         }
         function onConnectedChanged() {
             if (!backend.connected) {

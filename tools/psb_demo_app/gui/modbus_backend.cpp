@@ -39,8 +39,21 @@ ModbusBackend::~ModbusBackend()
 {
     m_pollTimer.stop();
     m_thread->quit();
-    m_thread->wait(2000);
-    delete m_worker;
+    // m_thread->quit() only posts a quit event — it doesn't cancel work
+    // already queued on the worker's event loop. Right after connecting to
+    // a high channel-count board (e.g. jw_lvb's 10 channels), the connect
+    // scan queues a per-channel doRefreshChannelInfo + doReadChannelConfig,
+    // each several blocking serial reads; quitting while that scan is still
+    // in flight left dozens of already-posted reads to drain before the
+    // thread could even see the quit event, routinely exceeding the old
+    // fixed 2s wait. When wait() timed out we deleted m_worker anyway,
+    // racing a delete against a QObject still executing on a live thread —
+    // that's what showed up as the app going unresponsive and needing a
+    // force-exit. Wait long enough for the scan to actually drain, and
+    // never delete a worker that's still running.
+    if (m_thread->wait(10000)) {
+        delete m_worker;
+    }
 }
 
 // ---------------------------------------------------------------------------
