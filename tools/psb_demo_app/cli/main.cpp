@@ -1,5 +1,5 @@
 #include "psb_modbus_client.h"
-#include "config_manager.h"
+#include "topology_config.h"
 #include "register_map.h"
 #include "board_catalog.h"
 #include "tool_version.h"
@@ -299,8 +299,6 @@ int cmdRawFc06(uint16_t addr, uint16_t value) {
 int main(int argc, char** argv) {
     CLI::App app{"PSB Demo App"};
     app.set_version_flag("--version", std::string("psb_demo_cli ") + TOOL_VERSION_STRING);
-    psb::ConfigManager cfgMgr;
-    cfgMgr.load();
 
     // ===================================================================
     //  ALL option variables MUST be declared here — nested {} scopes
@@ -311,12 +309,18 @@ int main(int argc, char** argv) {
     std::string port;
     int baud = 115200, slaveId = 1, timeout = 500;
     bool save = false;
-    app.add_option("-p,--port", port, "Serial port");
+    std::string topologyPath = psb::TopologyConfig::defaultPath();
+    std::string boardNickname;
+    app.add_option("-p,--port", port, "Serial port (quick single-board connect, bypasses --topology)");
     app.add_option("-b,--baud", baud, "Baud rate")
         ->check(CLI::IsMember({9600, 19200, 38400, 115200}));
     app.add_option("-i,--id", slaveId, "Slave ID")->check(CLI::Range(0, 247));
     app.add_option("-t,--timeout", timeout, "Timeout ms");
-    app.add_flag("--save", save, "Save connection to config");
+    auto* topologyOpt = app.add_option("-T,--topology", topologyPath,
+        "Topology config file (default: " + topologyPath + ")");
+    app.add_option("--board", boardNickname,
+        "Board nickname to use from --topology (required if it has more than one board)");
+    app.add_flag("--save", save, "Save the connection just used to --topology (or its default path)");
 
     // Monitor
     int interval = 2;
@@ -548,13 +552,56 @@ int main(int argc, char** argv) {
     psb::PsbModbusClient client;
     g_client = &client;
 
-    // Resolve port from config early (CLI args override below)
-    if (port.empty() && cfgMgr.hasConnectionSettings()) {
-        port = cfgMgr.port; baud = cfgMgr.baudRate; slaveId = cfgMgr.slaveId; timeout = cfgMgr.timeoutMs;
-    }
-
-    // Connect after parsing but before subcommand callbacks fire
+    // Connect after parsing but before subcommand callbacks fire. Must run
+    // post-parse (not before, like the old ConfigManager fallback could)
+    // because --topology/--board are themselves CLI flags — their final
+    // values, and whether --topology was explicitly passed at all
+    // (topologyOpt->count()), are only known once parsing has happened.
     app.parse_complete_callback([&]() {
+        bool topologyExplicit = topologyOpt->count() > 0;
+        if (port.empty()) {
+            if (psb::TopologyConfig::exists(topologyPath)) {
+                auto topo = psb::TopologyConfig::load(topologyPath);
+                if (!topo.has_value()) {
+                    std::cerr << "Topology config error: could not parse " << topologyPath << "\n";
+                    std::exit(1);
+                }
+                const psb::BoardConfig* board = nullptr;
+                const psb::BusConfig* bus = nullptr;
+                if (!boardNickname.empty()) {
+                    for (const auto& b : topo->buses) {
+                        for (const auto& brd : b.boards) {
+                            if (brd.nickname == boardNickname) { board = &brd; bus = &b; break; }
+                        }
+                        if (board) break;
+                    }
+                    if (!board) {
+                        std::cerr << "Topology config error: no board named '" << boardNickname
+                                  << "' in " << topologyPath << "\n";
+                        std::exit(1);
+                    }
+                } else if (topo->totalBoardCount() == 1) {
+                    bus = &topo->buses.front();
+                    board = &bus->boards.front();
+                } else if (topo->totalBoardCount() > 1) {
+                    std::cerr << "Topology config " << topologyPath << " has " << topo->totalBoardCount()
+                              << " boards — specify one with --board <nickname>\n";
+                    std::exit(1);
+                }
+                if (board && bus) {
+                    port = bus->port;
+                    baud = bus->baudRate;
+                    slaveId = board->slaveId;
+                }
+            } else if (topologyExplicit) {
+                std::cerr << "Topology config error: " << topologyPath << " not found\n";
+                std::exit(1);
+            }
+            // Neither -p nor a resolvable --topology: port stays empty,
+            // exactly like today — commands that don't need a connection
+            // still work; connection-needing ones fail with the client's
+            // own "not connected" error, unchanged.
+        }
         if (!port.empty()) {
             if (!client.connect(port, baud, slaveId, timeout)) {
                 std::cerr << "Connection error: " << client.lastError() << "\n";
@@ -565,9 +612,9 @@ int main(int argc, char** argv) {
 
     CLI11_PARSE(app, argc, argv);
 
-    if (!port.empty()) {
-        cfgMgr.setFromArgs(port, baud, slaveId, timeout);
-        if (save) cfgMgr.save();
+    if (!port.empty() && save) {
+        auto cfg = psb::TopologyConfig::singleBoard(port, baud, slaveId);
+        cfg.save(topologyPath);
     }
 
     return 0;
