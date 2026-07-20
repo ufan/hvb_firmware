@@ -385,7 +385,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             ? connectedMenuSave->Render()
             : text("[ Save ]") | dim;
         auto menuBarEl = hbox({
-            text(" " + board.nickname + " (" + variantTxt + ") ") | bold,
+            text(" " + variantTxt + " ") | bold,
             separator(),
             text(" " + chTxt + " Channels "),
             separator(),

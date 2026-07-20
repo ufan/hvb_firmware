@@ -44,7 +44,15 @@ inline Component makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>>& b
     auto dashboardStack = Container::Tab(dashboards, activeBoard.get());
 
     auto mainContainer = Container::Vertical({switcherBar, dashboardStack});
-    return Renderer(mainContainer, [switcherBar, dashboardStack] {
+    // Capture boardNames/activeBoard (not just switcherBar/dashboardStack)
+    // into the returned Component's closure — Menu()/Container::Tab() only
+    // hold raw pointers into them (FTXUI's non-owning-pointer widget
+    // convention), so if nothing keeps these shared_ptrs alive past this
+    // function returning, the vector/int they own get freed while the Menu
+    // widget still points at them — a real use-after-free found live via
+    // gdb (std::length_error inside MenuBase::Clamp(), corrupted vector
+    // size read from freed memory).
+    return Renderer(mainContainer, [switcherBar, dashboardStack, boardNames, activeBoard] {
         return vbox({
             text(" Boards ") | bold | dim,
             switcherBar->Render(),
