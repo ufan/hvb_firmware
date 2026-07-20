@@ -84,9 +84,10 @@ QVariantMap ModbusWorker::systemInfoToMap(const psb::SystemInfo& info)
     return m;
 }
 
-QVariantMap ModbusWorker::channelInfoToMap(int /*ch*/, const psb::ChannelInfo& info)
+QVariantMap ModbusWorker::channelInfoToMap(int ch, const psb::ChannelInfo& info)
 {
     QVariantMap m;
+    m["offline"] = (ch >= 0 && ch < WORKER_MAX_CH) ? m_chOffline[ch] : false;
     m["voltageRaw"] = info.voltageRaw;
     m["currentRaw"] = info.currentRaw;
     m["operationalTargetVRaw"] = info.operationalTargetVoltageRaw;
@@ -162,7 +163,12 @@ QVariantMap ModbusWorker::channelConfigToMap(int /*ch*/, const psb::ChannelConfi
 
 void ModbusWorker::doRefreshSystemInfo()
 {
-    m_cachedSysInfo = m_client.readSystemInfo();
+    // Merge-on-success: readSystemInfo() is reachable repeatedly (backend's
+    // refreshAll(), not just the one-shot connect read), and the old
+    // value-returning call reset every cached field — protocol version,
+    // uptime, variant — to 0/default on a single transient failure, even
+    // though the board never actually reset.
+    m_client.readSystemInfo(m_cachedSysInfo);
     int n = m_cachedSysInfo.supportedChannels;
     if (m_cachedSysInfo.protoMajor < 1 || n < 1 || n > WORKER_MAX_CH) {
         m_channelCount = 0;
@@ -179,7 +185,11 @@ void ModbusWorker::doRefreshSystemInfo()
 void ModbusWorker::doRefreshChannelInfo(int ch)
 {
     if (ch < 0 || ch >= WORKER_MAX_CH) return;
-    m_cachedChInfo[ch] = m_client.readChannelInfo(ch);
+    // Merge-on-success: readChannelInfo() is reachable repeatedly via
+    // refreshChannels()/refreshAll(), not just the one-shot connect scan —
+    // a transient failure must not wipe this channel's last-good display
+    // values back to init/zero.
+    m_client.readChannelInfo(ch, 0, m_cachedChInfo[ch]);
     // chCapFlags==0 means the capability probe inside readChannelInfo — one
     // all-or-nothing transaction — failed both of its internal retry
     // attempts (no real channel reports zero capability bits). Left
@@ -190,7 +200,7 @@ void ModbusWorker::doRefreshChannelInfo(int ch)
     // connect time (doPollStatus also self-heals this case below, in case
     // it's still unlucky here).
     for (int attempt = 0; attempt < 2 && m_cachedChInfo[ch].chCapFlags == 0; ++attempt)
-        m_cachedChInfo[ch] = m_client.readChannelInfo(ch);
+        m_client.readChannelInfo(ch, 0, m_cachedChInfo[ch]);
     if (!m_client.isConnected()) { emit operationComplete(false, "Read failed"); return; }
     emit channelInfoReady(ch, channelInfoToMap(ch, m_cachedChInfo[ch]));
 }
@@ -205,7 +215,13 @@ void ModbusWorker::doReadSystemConfig()
 void ModbusWorker::doReadChannelConfig(int ch)
 {
     if (ch < 0 || ch >= WORKER_MAX_CH) return;
-    m_cachedChConfig[ch] = m_client.readChannelConfig(ch);
+    // Merge-on-success, and pass the already-cached caps (populated by the
+    // doRefreshChannelInfo queued just before this in the connect scan and
+    // in every refresh path) instead of 0 — avoids an extra capability
+    // probe transaction and, more importantly, means one flaky register
+    // block within this read no longer wipes the channel's other,
+    // successfully-read config fields back to defaults.
+    m_client.readChannelConfig(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChConfig[ch]);
     if (!m_client.isConnected()) { emit operationComplete(false, "Read failed"); return; }
     auto map = channelConfigToMap(ch, m_cachedChConfig[ch]);
     mergeCalConfig(ch, map);
@@ -215,7 +231,8 @@ void ModbusWorker::doReadChannelConfig(int ch)
 void ModbusWorker::mergeCalConfig(int ch, QVariantMap& map)
 {
     if ((m_cachedSysInfo.sysCapFlags & psb::SysCap::CALIBRATION_MODE) == 0) return;
-    auto cal = m_client.readChannelCalConfig(ch);
+    psb::ChannelCalConfig cal{};
+    m_client.readChannelCalConfig(ch, m_cachedChInfo[ch].chCapFlags, cal);
     if (!m_client.isConnected()) return;
     map["outCalK"]      = cal.outCalK;
     map["outCalKExp"]   = cal.outCalKExp;
@@ -491,7 +508,20 @@ void ModbusWorker::doPollStatus()
             if (m_client.readChannelCapabilities(ch, caps, kPollTimeoutMs) && caps != 0)
                 m_cachedChInfo[ch].chCapFlags = caps;
         }
-        m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch], kPollTimeoutMs);
+        bool ok = m_client.readChannelStatus(ch, m_cachedChInfo[ch].chCapFlags, m_cachedChInfo[ch], kPollTimeoutMs);
+        // Track consecutive per-channel poll failures (mirrors demo_tui's
+        // kChannelOfflineThreshold): one failure is expected noise on real
+        // hardware, but a run of kChannelOfflineThreshold in a row means the
+        // channel has actually stopped responding — worth flagging
+        // explicitly rather than letting it silently keep showing stale
+        // cached values indistinguishable from a healthy, freshly-polled
+        // channel. A single subsequent success clears it immediately.
+        if (ok) {
+            m_chFailCount[ch] = 0;
+            m_chOffline[ch] = false;
+        } else if (++m_chFailCount[ch] >= kChannelOfflineThreshold) {
+            m_chOffline[ch] = true;
+        }
         if (!m_client.isConnected()) return;
     }
 

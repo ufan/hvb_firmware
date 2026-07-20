@@ -134,6 +134,19 @@ Item {
                     Row {
                         height: 46
 
+                        // A channel that fails kChannelOfflineThreshold
+                        // (modbus_worker.cpp) polls in a row is flagged
+                        // offline rather than silently left showing its
+                        // last-known values with no visual distinction from
+                        // a healthy, freshly-polled channel — mirrors
+                        // demo_tui's explicit red OFFLINE row treatment.
+                        Rectangle {
+                            anchors.fill: parent
+                            visible: !!ci.offline
+                            color: "#4a1414"
+                            opacity: 0.5
+                        }
+
                         Repeater {
                             model: root.activeColumns
 
@@ -269,11 +282,13 @@ Item {
                                     anchors.centerIn: parent
                                     visible: modelData.key === "fault"
                                     font.pixelSize: 14
+                                    font.bold: !!ci.offline
                                     text: {
+                                        if (ci.offline) return "OFFLINE"
                                         var f = ci.activeFault || 0
                                         return f ? "0x" + f.toString(16).toUpperCase() : "—"
                                     }
-                                    color: (ci.activeFault || 0) ? "#F44336" : "#aaaaaa"
+                                    color: ci.offline ? "#F44336" : (ci.activeFault || 0) ? "#F44336" : "#aaaaaa"
                                 }
 
                                 // "--" placeholder for capability-absent cells

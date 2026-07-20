@@ -354,38 +354,42 @@ bool PsbModbusClient::readChannelStatus(int ch, uint16_t caps, ChannelInfo& info
 //  High-level reads — all single UINT16, no INT32 packing
 // ============================================================================
 
-SystemInfo PsbModbusClient::readSystemInfo() {
-    SystemInfo info;
-    if (!checkConnected()) return info;
+void PsbModbusClient::readSystemInfo(SystemInfo& out) {
+    if (!checkConnected()) return;
 
     uint16_t buf[17] = {};
-    if (!readRegsInternal(false, reg::sysAddr(0), 17, buf)) return info;
+    if (!readRegsInternal(false, reg::sysAddr(0), 17, buf)) return;
 
-    info.protoMajor       = static_cast<int>(buf[SYS_PROTOCOL_MAJOR]);
-    info.protoMinor       = static_cast<int>(buf[SYS_PROTOCOL_MINOR]);
-    info.variantId        = static_cast<int>(buf[SYS_VARIANT_ID]);
-    info.boardHwRevision  = static_cast<int>(buf[SYS_BOARD_HW_REVISION]);
-    info.sysCapFlags      = buf[SYS_CAPABILITY_FLAGS];
-    info.supportedChannels = static_cast<int>(buf[SYS_SUPPORTED_CHANNELS]);
-    info.activeChMask     = buf[SYS_ACTIVE_CHANNEL_MASK];
-    info.boardTempRaw     = static_cast<int16_t>(buf[SYS_BOARD_TEMPERATURE]);
-    info.boardHumidityRaw = buf[SYS_BOARD_HUMIDITY];
-    info.uptimeSec        = reg::uint32FromRegs(buf[SYS_UPTIME_HI], buf[SYS_UPTIME_LO]);
-    info.fwVersion        = reg::uint32FromRegs(buf[SYS_FW_VERSION_HI], buf[SYS_FW_VERSION_LO]);
-    info.activeOpMode     = static_cast<OpMode>(buf[SYS_ACTIVE_OPERATING_MODE]);
-    info.sysStatus        = buf[SYS_STATUS];
-    info.faultCause       = buf[SYS_FAULT_CAUSE];
+    out.protoMajor       = static_cast<int>(buf[SYS_PROTOCOL_MAJOR]);
+    out.protoMinor       = static_cast<int>(buf[SYS_PROTOCOL_MINOR]);
+    out.variantId        = static_cast<int>(buf[SYS_VARIANT_ID]);
+    out.boardHwRevision  = static_cast<int>(buf[SYS_BOARD_HW_REVISION]);
+    out.sysCapFlags      = buf[SYS_CAPABILITY_FLAGS];
+    out.supportedChannels = static_cast<int>(buf[SYS_SUPPORTED_CHANNELS]);
+    out.activeChMask     = buf[SYS_ACTIVE_CHANNEL_MASK];
+    out.boardTempRaw     = static_cast<int16_t>(buf[SYS_BOARD_TEMPERATURE]);
+    out.boardHumidityRaw = buf[SYS_BOARD_HUMIDITY];
+    out.uptimeSec        = reg::uint32FromRegs(buf[SYS_UPTIME_HI], buf[SYS_UPTIME_LO]);
+    out.fwVersion        = reg::uint32FromRegs(buf[SYS_FW_VERSION_HI], buf[SYS_FW_VERSION_LO]);
+    out.activeOpMode     = static_cast<OpMode>(buf[SYS_ACTIVE_OPERATING_MODE]);
+    out.sysStatus        = buf[SYS_STATUS];
+    out.faultCause       = buf[SYS_FAULT_CAUSE];
     // v3.2+: declares the decimal exponent for MEASURED_CURRENT/
     // CURRENT_LIMIT_THRESHOLD (10^exp amperes/LSB), board-specific. Offset 15
     // is "reserved, reads as 0" on a pre-v3.2 board (not a read failure — the
     // protocol convention is reserved registers read 0, not an exception), so
     // reading 0 there does NOT mean "0.1nA/LSB" for an old board; it means
     // "no such register." Gate on the protocol version, not the raw value.
-    info.currentUnitExp = (info.protoMajor > 3 ||
-                           (info.protoMajor == 3 && info.protoMinor >= 2))
+    out.currentUnitExp = (out.protoMajor > 3 ||
+                          (out.protoMajor == 3 && out.protoMinor >= 2))
         ? static_cast<int16_t>(buf[SYS_CURRENT_UNIT_EXP])
         : -10;
-    m_impl->currentUnitExp = info.currentUnitExp;
+    m_impl->currentUnitExp = out.currentUnitExp;
+}
+
+SystemInfo PsbModbusClient::readSystemInfo() {
+    SystemInfo info;
+    readSystemInfo(info);
     return info;
 }
 
@@ -397,43 +401,48 @@ bool PsbModbusClient::readChannelCapabilities(int ch, uint16_t& caps, int timeou
     return true;
 }
 
-ChannelInfo PsbModbusClient::readChannelInfo(int ch, uint16_t caps) {
-    ChannelInfo info;
-    if (!checkConnected()) return info;
+void PsbModbusClient::readChannelInfo(int ch, uint16_t caps, ChannelInfo& out) {
+    if (!checkConnected()) return;
 
     uint16_t base = reg::chAddr(ch, 0);
 
     if (caps == 0) {
-        /* Full read — fetch capability flags from device (connect / Refresh). */
+        /* Full read — fetch capability flags from device (connect / Refresh).
+           On failure, fall back to whatever caps `out` already carries (0 on
+           a first-ever connect attempt, a real value on a later Refresh) so
+           the measurement-gating below still has something sane to work
+           with instead of silently gating everything off. */
         uint16_t buf[10] = {};
-        if (!readRegsInternal(false, base, 10, buf)) return info;
-
-        info.status                      = buf[CH_STATUS_BITS];
-        info.activeFault                 = buf[CH_ACTIVE_FAULT_CAUSE];
-        info.faultHistory                = buf[CH_FAULT_HISTORY_CAUSE];
-        info.lastProtOutputAction        = buf[CH_LAST_PROT_OUT_ACTION];
-        info.retryCount                  = static_cast<int>(buf[CH_AUTO_RETRY_COUNT]);
-        info.cooldownSec                 = static_cast<int>(buf[CH_AUTO_COOLDOWN_REMAINING]);
-        info.lastFaultTimestamp          = reg::uint32FromRegs(buf[CH_LAST_FAULT_TIMESTAMP_HI],
-                                                               buf[CH_LAST_FAULT_TIMESTAMP_LO]);
-        info.operationalTargetVoltageRaw = static_cast<int16_t>(buf[CH_OPER_TARGET_VOLTAGE]);
-        caps = buf[CH_CAPABILITY_FLAGS];
-        info.chCapFlags = caps;
+        if (readRegsInternal(false, base, 10, buf)) {
+            out.status                      = buf[CH_STATUS_BITS];
+            out.activeFault                 = buf[CH_ACTIVE_FAULT_CAUSE];
+            out.faultHistory                = buf[CH_FAULT_HISTORY_CAUSE];
+            out.lastProtOutputAction        = buf[CH_LAST_PROT_OUT_ACTION];
+            out.retryCount                  = static_cast<int>(buf[CH_AUTO_RETRY_COUNT]);
+            out.cooldownSec                 = static_cast<int>(buf[CH_AUTO_COOLDOWN_REMAINING]);
+            out.lastFaultTimestamp          = reg::uint32FromRegs(buf[CH_LAST_FAULT_TIMESTAMP_HI],
+                                                                   buf[CH_LAST_FAULT_TIMESTAMP_LO]);
+            out.operationalTargetVoltageRaw = static_cast<int16_t>(buf[CH_OPER_TARGET_VOLTAGE]);
+            caps = buf[CH_CAPABILITY_FLAGS];
+            out.chCapFlags = caps;
+        } else {
+            caps = out.chCapFlags;
+        }
     } else {
         /* Poll read — caps are fixed hardware; use cached value, skip offset 9. */
         uint16_t buf[9] = {};
-        if (!readRegsInternal(false, base, 9, buf)) return info;
-
-        info.status                      = buf[CH_STATUS_BITS];
-        info.activeFault                 = buf[CH_ACTIVE_FAULT_CAUSE];
-        info.faultHistory                = buf[CH_FAULT_HISTORY_CAUSE];
-        info.lastProtOutputAction        = buf[CH_LAST_PROT_OUT_ACTION];
-        info.retryCount                  = static_cast<int>(buf[CH_AUTO_RETRY_COUNT]);
-        info.cooldownSec                 = static_cast<int>(buf[CH_AUTO_COOLDOWN_REMAINING]);
-        info.lastFaultTimestamp          = reg::uint32FromRegs(buf[CH_LAST_FAULT_TIMESTAMP_HI],
-                                                               buf[CH_LAST_FAULT_TIMESTAMP_LO]);
-        info.operationalTargetVoltageRaw = static_cast<int16_t>(buf[CH_OPER_TARGET_VOLTAGE]);
-        info.chCapFlags = caps;
+        if (readRegsInternal(false, base, 9, buf)) {
+            out.status                      = buf[CH_STATUS_BITS];
+            out.activeFault                 = buf[CH_ACTIVE_FAULT_CAUSE];
+            out.faultHistory                = buf[CH_FAULT_HISTORY_CAUSE];
+            out.lastProtOutputAction        = buf[CH_LAST_PROT_OUT_ACTION];
+            out.retryCount                  = static_cast<int>(buf[CH_AUTO_RETRY_COUNT]);
+            out.cooldownSec                 = static_cast<int>(buf[CH_AUTO_COOLDOWN_REMAINING]);
+            out.lastFaultTimestamp          = reg::uint32FromRegs(buf[CH_LAST_FAULT_TIMESTAMP_HI],
+                                                                   buf[CH_LAST_FAULT_TIMESTAMP_LO]);
+            out.operationalTargetVoltageRaw = static_cast<int16_t>(buf[CH_OPER_TARGET_VOLTAGE]);
+            out.chCapFlags = caps;
+        }
     }
 
     /* Measured voltage / current — conditional on channel capabilities.
@@ -445,24 +454,29 @@ ChannelInfo PsbModbusClient::readChannelInfo(int ch, uint16_t caps) {
     if (hasV && hasI) {
         uint16_t m[2] = {};
         if (readRegsInternal(false, base + CH_MEASURED_VOLTAGE, 2, m)) {
-            info.voltageRaw = static_cast<int16_t>(m[0]);
-            info.currentRaw = static_cast<int16_t>(m[1]);
+            out.voltageRaw = static_cast<int16_t>(m[0]);
+            out.currentRaw = static_cast<int16_t>(m[1]);
         }
     } else {
         if (hasV) {
             uint16_t v = 0;
             if (readRegsInternal(false, base + CH_MEASURED_VOLTAGE, 1, &v))
-                info.voltageRaw = static_cast<int16_t>(v);
+                out.voltageRaw = static_cast<int16_t>(v);
         }
         if (hasI) {
             uint16_t c = 0;
             if (readRegsInternal(false, base + CH_MEASURED_CURRENT, 1, &c))
-                info.currentRaw = static_cast<int16_t>(c);
+                out.currentRaw = static_cast<int16_t>(c);
         }
     }
 
     /* rawAdcVoltage / rawAdcCurrent are calibration-mode-gated and belong
        in readCalibrationSnapshot(); not requested here. */
+}
+
+ChannelInfo PsbModbusClient::readChannelInfo(int ch, uint16_t caps) {
+    ChannelInfo info;
+    readChannelInfo(ch, caps, info);
     return info;
 }
 

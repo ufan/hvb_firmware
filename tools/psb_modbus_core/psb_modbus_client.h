@@ -70,6 +70,12 @@ public:
     // keeps a long-lived cache and refreshes it repeatedly — e.g. the TUI.
     void readChannelConfig(int ch, uint16_t caps, ChannelConfig& out);
     void readChannelCalConfig(int ch, uint16_t caps, ChannelCalConfig& out);
+    // readSystemInfo/readChannelInfo are the two other connect-time/on-demand
+    // reads that share the value-returning family's reset-on-failure risk —
+    // any caller that re-invokes these against a live cache (a GUI "Refresh"
+    // action, not just the one-shot connect read) should use these instead.
+    void readSystemInfo(SystemInfo& out);
+    void readChannelInfo(int ch, uint16_t caps, ChannelInfo& out);
 
     // Per-block reads — the same Modbus transactions readChannelConfig()
     // performs internally, exposed individually so a caller that knows

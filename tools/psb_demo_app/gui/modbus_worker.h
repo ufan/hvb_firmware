@@ -74,6 +74,15 @@ private:
     psb::ChannelConfig m_cachedChConfig[WORKER_MAX_CH]{};
     int m_channelCount = 0;
 
+    // Offline-channel detection (mirrors demo_tui's tab_monitor.h/main.cpp):
+    // a channel that fails kChannelOfflineThreshold polls in a row is shown
+    // as explicitly offline rather than silently keeping stale cached values
+    // indistinguishable from a healthy, freshly-polled channel. One failure
+    // is expected noise on real hardware; a run of them is a real signal.
+    int m_chFailCount[WORKER_MAX_CH]{};
+    bool m_chOffline[WORKER_MAX_CH]{};
+    static constexpr int kChannelOfflineThreshold = 5;
+
     // Poll timeout override (ms) for doPollStatus()'s routine reads — short,
     // matching demo_tui's kPollTimeoutMs, so a single unresponsive poll
     // transaction fails fast and retries next cycle instead of blocking for

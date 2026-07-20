@@ -82,6 +82,55 @@ TEST_CASE("ChannelInfo — enabled channel has measurements", "[channel-reads]")
     CHECK(ci.status == 0x0003);
 }
 
+TEST_CASE("readChannelInfo merge-on-success — failed measurement read preserves prior value", "[channel-reads][merge]") {
+    uint16_t inputRegs[280] = {};
+    uint16_t holdingRegs[280] = {};
+    fillChannelDefaults(inputRegs, holdingRegs);
+    inputRegs[40 + 10] = 5000;    // CH_MEASURED_VOLTAGE
+    inputRegs[40 + 11] = 1234;    // CH_MEASURED_CURRENT
+
+    psb::PsbModbusClient client;
+    client.attachTestArrays(inputRegs, holdingRegs, 280);
+
+    psb::ChannelInfo info;
+    client.readChannelInfo(0, 0x000F, info);
+    REQUIRE(info.voltageRaw == 5000);
+    REQUIRE(info.currentRaw == 1234);
+    REQUIRE(info.chCapFlags == 0x000F);
+
+    // Shrink the addressable window so the measurement pair (offsets 10-11)
+    // falls out of range while the base 9-register status batch (offsets
+    // 0-8) still succeeds.
+    client.attachTestArrays(inputRegs, holdingRegs, 40 + 9);
+    client.readChannelInfo(0, 0x000F, info);
+
+    // Measurement read failed this time — merge-on-success must retain the
+    // previous good values instead of resetting to the zero default a fresh
+    // struct (or the old value-returning readChannelInfo()) would have.
+    CHECK(info.voltageRaw == 5000);
+    CHECK(info.currentRaw == 1234);
+    CHECK(info.chCapFlags == 0x000F);
+}
+
+TEST_CASE("readChannelInfo merge-on-success — failed capability probe leaves caps untouched", "[channel-reads][merge]") {
+    uint16_t inputRegs[280] = {};
+    uint16_t holdingRegs[280] = {};
+    fillChannelDefaults(inputRegs, holdingRegs);
+
+    psb::PsbModbusClient client;
+    // Window too small for the 10-register caps==0 connect-time batch.
+    client.attachTestArrays(inputRegs, holdingRegs, 40 + 5);
+
+    psb::ChannelInfo info;  // chCapFlags starts at its default, 0
+    client.readChannelInfo(0, 0, info);
+
+    // Base read failed outright — merge-on-success must leave `info`
+    // untouched (still 0/default), not silently derive garbage caps and
+    // attempt a measurement read against them.
+    CHECK(info.chCapFlags == 0);
+    CHECK(info.voltageRaw == 0);
+}
+
 TEST_CASE("readChannelStatus/readSystemStatus accept an explicit poll timeout override", "[channel-reads]") {
     // Test-mode reads bypass the real port entirely, so an explicit
     // timeoutOverrideMs is a no-op here — this just confirms the added

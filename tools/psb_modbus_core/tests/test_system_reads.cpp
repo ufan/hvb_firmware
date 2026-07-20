@@ -55,6 +55,31 @@ TEST_CASE("SystemInfo — defaults", "[system-reads]") {
     CHECK(info.faultCause == 0);
 }
 
+TEST_CASE("readSystemInfo merge-on-success — failed read preserves prior value", "[system-reads][merge]") {
+    uint16_t inputRegs[280] = {};
+    uint16_t holdingRegs[280] = {};
+    fillDefaultInputRegs(inputRegs);
+
+    psb::PsbModbusClient client;
+    client.attachTestArrays(inputRegs, holdingRegs, 280);
+
+    psb::SystemInfo info;
+    client.readSystemInfo(info);
+    REQUIRE(info.protoMajor == 3);
+    REQUIRE(info.supportedChannels == 2);
+
+    // Shrink the addressable window below the 17-register system info batch
+    // so the read fails outright.
+    client.attachTestArrays(inputRegs, holdingRegs, 10);
+    client.readSystemInfo(info);
+
+    // Read failed this time — merge-on-success must retain the previous
+    // good values instead of resetting to the zero default a fresh struct
+    // (or the old value-returning readSystemInfo()) would have.
+    CHECK(info.protoMajor == 3);
+    CHECK(info.supportedChannels == 2);
+}
+
 TEST_CASE("SystemConfig — defaults", "[system-reads]") {
     uint16_t inputRegs[280] = {};
     uint16_t holdingRegs[280] = {};
