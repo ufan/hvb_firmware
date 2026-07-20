@@ -75,3 +75,9 @@ hardware revision — see
 §5 for the full rationale and the mechanical test for when a hardware
 change needs a new overlay vs. a new board name vs. a new
 `board.yml` revision.
+
+## Flashing and Debugging
+
+See [`docs/guide/flashing-and-debug-guide.md`](docs/guide/flashing-and-debug-guide.md)
+for `west flash`/`west debug` with either a J-Link (default) or a
+CMSIS-DAP probe such as the Raspberry Pi Debug Probe (`-r openocd`).

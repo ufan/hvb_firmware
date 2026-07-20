@@ -42,7 +42,8 @@ usage() {
 Usage: $(basename "$0") --build-dir PATH [options] [-- board_test.sh-args...]
   --build-dir PATH      west build directory to flash (required)
   --port PATH           Serial port for board_test.sh (default: /dev/ttyUSB0)
-  --runner NAME          west flash runner (default: jlink)
+  --runner NAME          west flash runner (default: jlink; also: openocd
+                         for CMSIS-DAP probes, e.g. Raspberry Pi Debug Probe)
   -y, --yes              Skip the "this erases everything" confirmation prompt
   -h, --help              Show this help
 

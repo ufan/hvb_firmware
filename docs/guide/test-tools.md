@@ -9,7 +9,7 @@ answering a different question:
 | Tool | Location | Answers | Needs real hardware? |
 |---|---|---|---|
 | `board_test.sh` | `tools/board_test/` | Does `psb_demo_cli`'s whole command surface and capability-gating logic work against this board, right now? | Yes |
-| `factory_bringup.sh` | `tools/board_test/` | Does this board come up at its true, clean factory-default state after a firmware change? | Yes (+ SWD/JLink) |
+| `factory_bringup.sh` | `tools/board_test/` | Does this board come up at its true, clean factory-default state after a firmware change? | Yes (+ SWD: J-Link or CMSIS-DAP) |
 | `dac_sweep_test.sh` | `tools/dac_sweep_test/` | Is DAC output linear across its range, and what's the raw-ADC-vs-DAC-code fit per channel? | Yes |
 | `stress_test.py` | `tools/stress_test/` | Is Modbus communication fast/reliable enough — deadtime, blocking time, throughput? | Yes |
 | `psb_tests` | `tools/psb_modbus_core/tests/` | Does the shared host library (register map, scaling, parsing) behave correctly in isolation? | No (mock virtual board) |
@@ -63,6 +63,19 @@ for flags, and
 [`../superpowers/plans/2026-07-16-board-lifecycle-state-management.md`](../superpowers/plans/2026-07-16-board-lifecycle-state-management.md)
 for the broader board-lifecycle-state roadmap this is the first step of.
 
+### Alternative debug probe: CMSIS-DAP / OpenOCD
+
+J-Link is the default flash/debug runner for both `jw_hvb` and `jw_lvb`; a
+generic CMSIS-DAP probe (e.g. the Raspberry Pi Debug Probe) is also
+available via `-r openocd` when a J-Link isn't on the bench:
+
+```bash
+tools/board_test/factory_bringup.sh --runner openocd --build-dir build_psb_lvb --port /dev/ttyACM0
+```
+
+Full host setup, wiring, flashing, and gdb-debugging instructions:
+[`flashing-and-debug-guide.md`](flashing-and-debug-guide.md).
+
 ## `dac_sweep_test.sh` — DAC linearity characterization
 
 Sweeps every DAC-capable channel through a fixed set of DAC codes, sampling
@@ -109,6 +122,7 @@ plumbing) and wanting fast feedback before touching real hardware at all.
 ## Related docs
 
 - [`build-tools.md`](build-tools.md) — building the host applications these tools drive or link against
+- [`flashing-and-debug-guide.md`](flashing-and-debug-guide.md) — getting firmware onto the board in the first place (J-Link or CMSIS-DAP/OpenOCD), which every real-hardware tool here assumes has already happened
 - [`calibration-guide.md`](calibration-guide.md) — the factory calibration *procedure* (a human workflow, not a test tool)
 - [`channel-capability-model.md`](channel-capability-model.md) — the `CH_CAP_*` semantics `board_test.sh`'s capability-branch checks verify against
 - [`modbus-reference.md`](modbus-reference.md) — the wire protocol every one of these tools ultimately speaks
