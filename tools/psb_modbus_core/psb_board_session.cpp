@@ -28,9 +28,9 @@ PsbBoardSession::~PsbBoardSession() = default;
 // PsbModbusClient::connect(), which used to run this inline right after
 // opening the port. Now decoupled from opening the port at all: the bus is
 // already connected (or in test mode) by the time this runs.
-bool PsbBoardSession::verifyProtocol() {
+bool PsbBoardSession::verifyProtocol(int timeoutOverrideMs) {
     uint16_t probe[2] = {0xFFFF, 0xFFFF};
-    if (!readRegsInternal(false, reg::sysAddr(0), 2, probe)) {
+    if (!readRegsInternal(false, reg::sysAddr(0), 2, probe, timeoutOverrideMs)) {
         m_impl->errorText = "no response from board — check baud rate, slave ID, and cabling";
         m_impl->verified = false;
         return false;

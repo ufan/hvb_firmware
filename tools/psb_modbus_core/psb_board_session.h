@@ -28,7 +28,13 @@ public:
     // contract); a future topology scan can run it repeatedly against
     // different candidate slave IDs on an already-connected bus without
     // reconnecting anything.
-    bool verifyProtocol();
+    // timeoutOverrideMs: -1 uses the bus's normal timeout (today's
+    // behavior, unchanged for every existing caller). A short override is
+    // for the setup wizard's slave-ID scan (wizard_scan.h) — sweeping up to
+    // ~32 candidate IDs at the bus's normal multi-second timeout would make
+    // a scan take minutes; a non-responding ID is the overwhelmingly common
+    // case during a sweep and must fail fast.
+    bool verifyProtocol(int timeoutOverrideMs = -1);
     void disconnect();
     bool isConnected() const;
     std::string lastError() const;

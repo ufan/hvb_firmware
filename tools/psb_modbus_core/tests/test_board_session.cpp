@@ -87,3 +87,18 @@ TEST_CASE("PsbBoardSession — rebind() changes slave ID without changing object
     REQUIRE(session.verifyProtocol());
     CHECK(session.isConnected());
 }
+
+TEST_CASE("PsbBoardSession — verifyProtocol accepts a timeout override without changing behavior", "[board_session]") {
+    auto bus = std::make_shared<psb::PsbSerialBus>();
+    uint16_t inputRegs[8] = {}, holdingRegs[8] = {};
+    inputRegs[0] = VC_PROTOCOL_MAJOR;
+    inputRegs[1] = VC_PROTOCOL_MINOR;
+    bus->attachTestArrays(1, inputRegs, holdingRegs, 8);
+
+    psb::PsbBoardSession session(bus, 1);
+    // Test-mode arrays respond instantly regardless of the timeout value —
+    // this only proves the overload compiles and still succeeds, matching
+    // the existing no-argument call's behavior exactly.
+    REQUIRE(session.verifyProtocol(50));
+    CHECK(session.isConnected());
+}
