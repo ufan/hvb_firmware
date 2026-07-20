@@ -43,8 +43,8 @@ qt_add_qml_module(psb_factory_gui
 )
 
 target_include_directories(psb_factory_gui PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../psb_modbus_core
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../psb_modbus_core
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../include
     ${MODBUSLIB_INCLUDE_DIR}
 )
 

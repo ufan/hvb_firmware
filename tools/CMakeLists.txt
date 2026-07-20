@@ -122,5 +122,5 @@ add_subdirectory(psb_modbus_core)
 add_subdirectory(psb_demo_app)
 
 if(BUILD_FACTORY)
-    add_subdirectory(psb_factory_tool)
+    add_subdirectory(factory/07_instrumental_cal/psb_factory_tool)
 endif()
