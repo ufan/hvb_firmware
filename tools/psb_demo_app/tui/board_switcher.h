@@ -5,6 +5,7 @@
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -13,18 +14,22 @@ namespace psb::tui {
 
 using namespace ftxui;
 
-// With exactly one board, returns its dashboard directly — pixel-identical
-// to today's single-board layout, no switcher visible (Global Constraints).
-// With more than one, adds a board-switcher bar above the active board's
-// dashboard, reusing each board's already-built Component from
-// makeBoardDashboard() unchanged — nothing about a board's own UI is aware
-// a switcher exists around it. Mirrors the existing Monitor/CHx tab pattern
-// (Container::Tab + a Menu selecting the index) one level up.
-inline Component makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>>& boards,
-                                    ScreenInteractive& screen) {
-    (void)screen;  // not needed directly here — each dashboard already captured it
-    if (boards.size() == 1) return boards.front()->dashboard;
+// The switcher's root Component (always Menu + Container::Tab, never just a
+// bare dashboard) plus a live-append hook. Building it this way — instead of
+// Phase 2's "collapse to a bare dashboard when there's only one board" —
+// means a board can be attached after construction (Task 7's mid-session
+// wizard) without rebuilding or swapping the root: Container::Tab and Menu
+// both already support dynamic children (ComponentBase::Add; Menu re-reads
+// its backing vector's live size every render), so appending is enough.
+// Pixel-identical single-board rendering (Phase 2's Global Constraint) is
+// preserved by omitting the switcher bar *element* — not the underlying
+// component — whenever fewer than two boards exist.
+struct BoardSwitcher {
+    Component root;
+    std::function<void(const std::string& nickname, Component dashboard)> attachBoard;
+};
 
+inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>>& boards) {
     auto boardNames = std::make_shared<std::vector<std::string>>();
     for (auto& b : boards) boardNames->push_back(b->nickname);
     auto activeBoard = std::make_shared<int>(0);
@@ -39,27 +44,37 @@ inline Component makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>>& b
     };
     auto switcherBar = Menu(boardNames.get(), activeBoard.get(), switcherOpt);
 
-    Components dashboards;
-    for (auto& b : boards) dashboards.push_back(b->dashboard);
-    auto dashboardStack = Container::Tab(dashboards, activeBoard.get());
+    auto dashboardStack = Container::Tab({}, activeBoard.get());
+    for (auto& b : boards) dashboardStack->Add(b->dashboard);
 
     auto mainContainer = Container::Vertical({switcherBar, dashboardStack});
-    // Capture boardNames/activeBoard (not just switcherBar/dashboardStack)
-    // into the returned Component's closure — Menu()/Container::Tab() only
-    // hold raw pointers into them (FTXUI's non-owning-pointer widget
-    // convention), so if nothing keeps these shared_ptrs alive past this
-    // function returning, the vector/int they own get freed while the Menu
-    // widget still points at them — a real use-after-free found live via
-    // gdb (std::length_error inside MenuBase::Clamp(), corrupted vector
-    // size read from freed memory).
-    return Renderer(mainContainer, [switcherBar, dashboardStack, boardNames, activeBoard] {
-        return vbox({
-            text(" Boards ") | bold | dim,
-            switcherBar->Render(),
-            separator(),
-            dashboardStack->Render() | flex,
-        });
+    // Capture boardNames/activeBoard, not just switcherBar/dashboardStack —
+    // Menu()/Container::Tab() only hold raw pointers into them (FTXUI's
+    // non-owning-pointer widget convention); losing the owning shared_ptrs
+    // here was a real use-after-free, found live via gdb during Phase 2
+    // (std::length_error inside MenuBase::Clamp() reading a corrupted
+    // vector size from freed memory) — see that fix's commit for the full
+    // diagnosis. The lesson generalizes: anything Menu/Tab is given a raw
+    // pointer into must outlive this returned Component, which this closure
+    // is what accomplishes.
+    auto root = Renderer(mainContainer, [switcherBar, dashboardStack, boardNames, activeBoard] {
+        bool showBar = boardNames->size() > 1;
+        Elements top;
+        if (showBar) {
+            top.push_back(text(" Boards ") | bold | dim);
+            top.push_back(switcherBar->Render());
+            top.push_back(separator());
+        }
+        top.push_back(dashboardStack->Render() | flex);
+        return vbox(std::move(top));
     });
+
+    auto attachBoard = [boardNames, dashboardStack](const std::string& nickname, Component dashboard) {
+        boardNames->push_back(nickname);
+        dashboardStack->Add(std::move(dashboard));
+    };
+
+    return BoardSwitcher{root, attachBoard};
 }
 
 } // namespace psb::tui

@@ -186,9 +186,9 @@ int main(int argc, char** argv) {
     });
 
     // ---- Board switcher + active dashboard ----
-    auto root = psb::tui::makeBoardSwitcher(boards, screen);
+    auto switcher = psb::tui::makeBoardSwitcher(boards);
 
-    screen.Loop(root);
+    screen.Loop(switcher.root);
     running = false;
     for (auto& bw : busWorkers) bw->workCv.notify_all();
     for (auto& bw : busWorkers) if (bw->thread.joinable()) bw->thread.join();
