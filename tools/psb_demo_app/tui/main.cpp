@@ -42,15 +42,33 @@ struct Runtime {
 // worker thread regardless of when that thread was started — factored out
 // so Task 7's applyNewBoardsLive (hot-attaching a new bus mid-session) can
 // start an identical loop without duplicating it verbatim.
+//
+// bw.boards is read here on the worker thread and — since Task 7 — can be
+// appended to from the UI thread (applyNewBoardsLive, hot-attaching a board
+// to an already-running bus) while this loop is live. Before Task 7,
+// boards was only ever populated once, before any worker thread started,
+// so an unguarded read/iterate was safe; it no longer is. Both read sites
+// below take a locked snapshot copy (workMutex, the same mutex
+// applyNewBoardsLive's push_back now holds) rather than holding the lock
+// for the whole iteration — the poll loop calls doPollScan(), which blocks
+// on real I/O, and holding a lock the UI thread also needs (to enqueue
+// work) across that would serialize UI responsiveness against bus latency.
+// A pointer to a board added after a snapshot is taken simply isn't polled
+// until the next cycle (at most ~50ms/g_pollInterval later, matching the
+// underlying poll cadence) — not a correctness issue, since a board is
+// never removed from `boards` once added, so every pointer any snapshot
+// ever holds stays valid for the program's lifetime.
 void runBusWorkerLoop(psb::tui::BusWorker& bw, ScreenInteractive& screen, std::atomic<bool>& running) {
     while (running) {
+        std::vector<psb::tui::BoardSession*> boardsSnapshot;
         {
+            std::unique_lock<std::mutex> lk(bw.workMutex);
+            boardsSnapshot = bw.boards;
             bool anyConnected = false;
-            for (psb::tui::BoardSession* b : bw.boards)
+            for (psb::tui::BoardSession* b : boardsSnapshot)
                 if (b->connected.load()) { anyConnected = true; break; }
             auto waitDur = anyConnected ? std::chrono::milliseconds(50)
                                         : std::chrono::seconds(g_pollInterval);
-            std::unique_lock<std::mutex> lk(bw.workMutex);
             bw.workCv.wait_for(lk, waitDur, [&] { return !bw.workQueue.empty() || !running; });
         }
         for (;;) {
@@ -60,7 +78,13 @@ void runBusWorkerLoop(psb::tui::BusWorker& bw, ScreenInteractive& screen, std::a
               item = std::move(bw.workQueue.front()); bw.workQueue.pop(); }
             item();
         }
-        for (psb::tui::BoardSession* b : bw.boards) {
+        // Re-snapshot after draining the queue — a hot-attach's connect
+        // work item (applyNewBoardsLive) may have just run above, and its
+        // board should be eligible for this very poll cycle rather than
+        // waiting one extra tick.
+        { std::lock_guard<std::mutex> lk(bw.workMutex);
+          boardsSnapshot = bw.boards; }
+        for (psb::tui::BoardSession* b : boardsSnapshot) {
             if (!running) break;
             if (b->connected.load()) {
                 auto hasPendingWork = [&bw] {
@@ -116,12 +140,19 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
     for (auto& bwPtr : rt.busWorkers) {
         psb::tui::BusWorker& bw = *bwPtr;
         bw.thread = std::thread([&bw, &running, &screen, autoConnectAll, timeoutMs] {
-            if (autoConnectAll && !bw.boards.empty()) {
-                std::string port = bw.boards.front()->portVal;
+            // Locked snapshot for the same reason runBusWorkerLoop's own
+            // reads take one — a fast mid-session Setup click can hot-attach
+            // a board to this same bus (applyNewBoardsLive, UI thread)
+            // while this initial connect sweep is still running here.
+            std::vector<psb::tui::BoardSession*> initialBoards;
+            { std::lock_guard<std::mutex> lk(bw.workMutex);
+              initialBoards = bw.boards; }
+            if (autoConnectAll && !initialBoards.empty()) {
+                std::string port = initialBoards.front()->portVal;
                 int baud = 115200;
-                try { baud = std::stoi(bw.boards.front()->baudVal); } catch (...) {}
+                try { baud = std::stoi(initialBoards.front()->baudVal); } catch (...) {}
                 bool busOk = bw.bus->connect(port, baud, timeoutMs);
-                for (psb::tui::BoardSession* b : bw.boards) {
+                for (psb::tui::BoardSession* b : initialBoards) {
                     b->connecting = true;
                     screen.PostEvent(Event::Custom);
                     bool ok = busOk && b->client->verifyProtocol();
@@ -218,6 +249,15 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
             // doConnect() in board_dashboard.h already follows.
             psb::tui::BoardSession* bPtr = b.get();
             psb::tui::BusWorker* bwPtr = targetBw;
+            // boards.push_back happens under the same lock as the
+            // workQueue push (not just the queue push alone) — runBusWorkerLoop
+            // (the worker thread) reads bw.boards without holding this lock
+            // for the whole iteration, but always takes a locked snapshot
+            // first; this push_back is the write that snapshot must never
+            // observe half-finished. Before Task 7, boards was only ever
+            // populated once, before any worker thread existed, so this
+            // wasn't a concern — it is now, since this bus's worker thread
+            // may already be live and running its own read loop.
             { std::lock_guard<std::mutex> lk(bwPtr->workMutex);
               bwPtr->workQueue.push([bPtr, &screen, &running] {
                   bool ok = bPtr->client->verifyProtocol();
@@ -231,10 +271,11 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                       bPtr->pendingSync.store(true, std::memory_order_release);
                   }
                   screen.PostEvent(Event::Custom);
-              }); }
+              });
+              targetBw->boards.push_back(bPtr);
+            }
             bwPtr->workCv.notify_one();
 
-            targetBw->boards.push_back(bPtr);
             rt.switcher.attachBoard(b->nickname, b->dashboard);
             rt.boards.push_back(std::move(b));
         }
