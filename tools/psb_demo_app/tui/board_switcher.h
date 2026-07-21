@@ -41,7 +41,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     // reasoning as before Sub-project B, just re-indexed for the new
     // 3-slot scheme (0=globalMenuBar, 1=switcherBar, 2=dashboardStack):
     // with a single board the switcher bar is a Menu with one entry, which
-    // unconditionally swallows Event::Return and doesn't handle Left/Right
+    // unconditionally swallows Event::Return and doesn't handle Up/Down
     // at all (see MenuBase::OnEvent in the vendored FTXUI source) — if it
     // held initial focus, keys typed immediately at launch would be
     // silently dropped until the user happened to Tab/Down into
@@ -55,7 +55,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     // not the first thing a keypress lands on.
     auto mainSelected = std::make_shared<int>(boards.size() > 1 ? 1 : 2);
 
-    MenuOption switcherOpt = MenuOption::Horizontal();
+    MenuOption switcherOpt = MenuOption::Vertical();
     switcherOpt.entries_option.transform = [](const EntryState& e) -> Element {
         auto t = text("  " + e.label + "  ");
         if (e.active)                t = t | bold | color(Color::Cyan);
@@ -90,18 +90,26 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     // per call; only *parenting*, unchanged here, is singular). This is
     // the visual-only single-row merge described in
     // docs/superpowers/specs/2026-07-21-mode-architecture-design.md.
+    //
+    // switcherBar renders as an unlabeled vertical sidebar (nicknames
+    // only) to the left of the active board's dashboard — deliberately
+    // not marked `| flex`, so it sizes to its own content width instead
+    // of splitting the terminal 50/50 with dashboardStack, which is the
+    // one that gets the remaining space.
     auto root = Renderer(mainContainer, [switcherBar, dashboardStack, globalMenuBar, boardNames, activeBoard, mainSelected] {
         bool showBar = boardNames->size() > 1;
-        Elements top;
-        if (showBar) {
-            top.push_back(globalMenuBar->Render());
-            top.push_back(separator());
-            top.push_back(text(" Boards ") | bold | dim);
-            top.push_back(switcherBar->Render());
-            top.push_back(separator());
+        if (!showBar) {
+            return vbox({ dashboardStack->Render() | flex });
         }
-        top.push_back(dashboardStack->Render() | flex);
-        return vbox(std::move(top));
+        return vbox({
+            globalMenuBar->Render(),
+            separator(),
+            hbox({
+                switcherBar->Render(),
+                separator(),
+                dashboardStack->Render() | flex,
+            }) | flex,
+        });
     });
 
     auto attachBoard = [boardNames, dashboardStack](const std::string& nickname, Component dashboard) {
