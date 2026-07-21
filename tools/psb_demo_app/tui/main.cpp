@@ -4,6 +4,8 @@
 #include "board_session.h"
 #include "board_dashboard.h"
 #include "board_switcher.h"
+#include "wizard_state.h"
+#include "wizard_screen.h"
 #include "tool_version.h"
 
 #include <ftxui/component/component.hpp>
@@ -24,62 +26,62 @@ using namespace ftxui;
 
 static int g_pollInterval = 1;
 
-int main(int argc, char** argv) {
-    CLI::App app{"PSB Demo TUI"};
-    app.set_version_flag("--version", std::string("psb_demo_tui ") + TOOL_VERSION_STRING);
-
-    std::string portArg;
-    int baudArg = 115200, slaveArg = 1, timeoutArg = 3000;
-    std::string topologyPath = psb::TopologyConfig::defaultPath();
-    app.add_option("-p,--port", portArg, "Serial port (quick single-board connect; auto-connects at startup)");
-    app.add_option("-b,--baud", baudArg, "Baud rate")
-        ->check(CLI::IsMember({9600, 19200, 38400, 115200}));
-    app.add_option("-i,--id", slaveArg, "Slave ID")->check(CLI::Range(0, 247));
-    app.add_option("-t,--timeout", timeoutArg, "Timeout ms");
-    app.add_option("-s,--poll-interval", g_pollInterval, "Idle poll interval (s)");
-    auto* topologyOpt = app.add_option("-T,--topology", topologyPath,
-        "Topology config file (default: " + topologyPath + ")");
-    CLI11_PARSE(app, argc, argv);
-
-    psb::TopologyConfig topo;
-    if (!portArg.empty()) {
-        topo = psb::TopologyConfig::singleBoard(portArg, baudArg, slaveArg, "board1");
-    } else {
-        bool topologyExplicit = topologyOpt->count() > 0;
-        if (psb::TopologyConfig::exists(topologyPath)) {
-            auto loaded = psb::TopologyConfig::load(topologyPath);
-            if (!loaded.has_value()) {
-                std::cerr << "Topology config error: could not parse " << topologyPath << "\n";
-                return 1;
-            }
-            topo = std::move(*loaded);
-        } else if (topologyExplicit) {
-            std::cerr << "Topology config error: " << topologyPath << " not found\n";
-            return 1;
-        } else {
-            // Neither -p nor a resolvable --topology: fall back to today's
-            // hardcoded first-run guess.
-            topo = psb::TopologyConfig::singleBoard("/dev/ttyUSB0", 115200, 1, "board1");
-        }
-    }
-    if (topo.totalBoardCount() == 0) {
-        std::cerr << "Topology config " << topologyPath << " has no boards configured.\n";
-        return 1;
-    }
-    // -p or a genuinely multi-board topology auto-connects every resolved
-    // board at startup; a topology resolving to exactly one board only
-    // pre-fills that board's connection modal — same distinction the
-    // single-board Phase established (ConfigManager's old
-    // auto-load-as-default behavior never auto-connected by itself either;
-    // the user still clicked Connect).
-    bool autoConnectAll = !portArg.empty() || topo.totalBoardCount() > 1;
-
-    auto screen = ScreenInteractive::Fullscreen();
-    std::atomic<bool> running{true};
-
-    // ---- Build one BusWorker per bus, one BoardSession per board ----
+// Everything the running program needs to join/tear down cleanly — built
+// once by buildRuntime(), used identically whether that happened before the
+// wizard even ran (the common case) or right after it finished (Task 5's
+// Connect Now).
+struct Runtime {
     std::vector<std::unique_ptr<psb::tui::BusWorker>> busWorkers;
     std::vector<std::unique_ptr<psb::tui::BoardSession>> boards;
+    psb::tui::BoardSwitcher switcher;
+    std::thread animThread;
+};
+
+// The per-bus polling loop body: wait for work-or-timeout, drain the work
+// queue, then poll every connected board once. Identical for every bus
+// worker thread regardless of when that thread was started — factored out
+// so Task 7's applyNewBoardsLive (hot-attaching a new bus mid-session) can
+// start an identical loop without duplicating it verbatim.
+void runBusWorkerLoop(psb::tui::BusWorker& bw, ScreenInteractive& screen, std::atomic<bool>& running) {
+    while (running) {
+        {
+            bool anyConnected = false;
+            for (psb::tui::BoardSession* b : bw.boards)
+                if (b->connected.load()) { anyConnected = true; break; }
+            auto waitDur = anyConnected ? std::chrono::milliseconds(50)
+                                        : std::chrono::seconds(g_pollInterval);
+            std::unique_lock<std::mutex> lk(bw.workMutex);
+            bw.workCv.wait_for(lk, waitDur, [&] { return !bw.workQueue.empty() || !running; });
+        }
+        for (;;) {
+            std::function<void()> item;
+            { std::lock_guard<std::mutex> lk(bw.workMutex);
+              if (bw.workQueue.empty()) break;
+              item = std::move(bw.workQueue.front()); bw.workQueue.pop(); }
+            item();
+        }
+        for (psb::tui::BoardSession* b : bw.boards) {
+            if (!running) break;
+            if (b->connected.load()) {
+                auto hasPendingWork = [&bw] {
+                    std::lock_guard<std::mutex> lk(bw.workMutex);
+                    return !bw.workQueue.empty();
+                };
+                psb::tui::doPollScan(*b->client, b->data, screen, running, hasPendingWork, b->statusMsg, b->statusMutex);
+                b->data.valid = b->connected.load() && b->client->isConnected();
+            }
+        }
+    }
+}
+
+// Builds BusWorker/BoardSession for every bus/board in `topo`, starts one
+// worker thread per bus (Phase 2), starts the shared animation thread, and
+// returns everything needed to run the dashboard loop and join cleanly
+// afterward. Identical to Phase 2's inline main() body, extracted so Task 6
+// can call it either at startup or after the wizard finishes.
+Runtime buildRuntime(const psb::TopologyConfig& topo, ScreenInteractive& screen,
+                     std::atomic<bool>& running, int timeoutMs, bool autoConnectAll) {
+    Runtime rt;
     for (const auto& busCfg : topo.buses) {
         auto bw = std::make_unique<psb::tui::BusWorker>();
         bw->bus = std::make_shared<psb::PsbSerialBus>();
@@ -91,36 +93,24 @@ int main(int argc, char** argv) {
             b->portVal = busCfg.port;
             b->baudVal = std::to_string(busCfg.baudRate);
             b->slaveVal = std::to_string(boardCfg.slaveId);
-            // AppState has only reference members and no user-declared
-            // constructor — it's an aggregate, initializable via brace-init
-            // (`new AppState{...}`) but not paren-init, so make_unique<>()
-            // (which calls `new T(args...)`) can't construct it directly.
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 bw->workQueue, bw->workMutex, bw->workCv, screen});
-            b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutArg);
+            b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs);
             bw->boards.push_back(b.get());
-            boards.push_back(std::move(b));
+            rt.boards.push_back(std::move(b));
         }
-        busWorkers.push_back(std::move(bw));
+        rt.busWorkers.push_back(std::move(bw));
     }
 
-    // ---- Bus worker threads — one per bus, serialises all I/O for every
-    //      board sharing it (client-architecture-and-pitfalls.md §2.1,
-    //      generalized from one port total to one port per bus). Each
-    //      thread's first action, before entering its poll loop, is an
-    //      auto-connect sweep over its own boards if autoConnectAll — the
-    //      bus itself connects once (all boards on it share one physical
-    //      port/baud, by definition of "same bus" in the topology schema),
-    //      then each board is verified and full-scanned in turn. ----
-    for (auto& bwPtr : busWorkers) {
+    for (auto& bwPtr : rt.busWorkers) {
         psb::tui::BusWorker& bw = *bwPtr;
-        bw.thread = std::thread([&bw, &running, &screen, autoConnectAll, timeoutArg] {
+        bw.thread = std::thread([&bw, &running, &screen, autoConnectAll, timeoutMs] {
             if (autoConnectAll && !bw.boards.empty()) {
                 std::string port = bw.boards.front()->portVal;
                 int baud = 115200;
                 try { baud = std::stoi(bw.boards.front()->baudVal); } catch (...) {}
-                bool busOk = bw.bus->connect(port, baud, timeoutArg);
+                bool busOk = bw.bus->connect(port, baud, timeoutMs);
                 for (psb::tui::BoardSession* b : bw.boards) {
                     b->connecting = true;
                     screen.PostEvent(Event::Custom);
@@ -138,61 +128,120 @@ int main(int argc, char** argv) {
                     screen.PostEvent(Event::Custom);
                 }
             }
-            while (running) {
-                {
-                    bool anyConnected = false;
-                    for (psb::tui::BoardSession* b : bw.boards)
-                        if (b->connected.load()) { anyConnected = true; break; }
-                    auto waitDur = anyConnected ? std::chrono::milliseconds(50)
-                                                : std::chrono::seconds(g_pollInterval);
-                    std::unique_lock<std::mutex> lk(bw.workMutex);
-                    bw.workCv.wait_for(lk, waitDur, [&] { return !bw.workQueue.empty() || !running; });
-                }
-                for (;;) {
-                    std::function<void()> item;
-                    { std::lock_guard<std::mutex> lk(bw.workMutex);
-                      if (bw.workQueue.empty()) break;
-                      item = std::move(bw.workQueue.front()); bw.workQueue.pop(); }
-                    item();
-                }
-                for (psb::tui::BoardSession* b : bw.boards) {
-                    if (!running) break;
-                    if (b->connected.load()) {
-                        auto hasPendingWork = [&bw] {
-                            std::lock_guard<std::mutex> lk(bw.workMutex);
-                            return !bw.workQueue.empty();
-                        };
-                        psb::tui::doPollScan(*b->client, b->data, screen, running, hasPendingWork, b->statusMsg, b->statusMutex);
-                        b->data.valid = b->connected.load() && b->client->isConnected();
-                    }
-                }
-            }
+            runBusWorkerLoop(bw, screen, running);
         });
     }
 
-    // ---- Animation thread — drives breathing LED at ~12 Hz for whichever
-    //      board is currently visible. Each board's Renderer computes its
-    //      own breathing color fresh every repaint (a pure function of
-    //      wall-clock time), so one shared periodic repaint trigger is
-    //      enough regardless of which board is on screen. ----
-    std::thread animThread([&] {
+    rt.animThread = std::thread([&rt, &screen, &running] {
         while (running) {
             std::this_thread::sleep_for(std::chrono::milliseconds(80));
             if (!running) break;
             bool anyConnected = false;
-            for (auto& b : boards) if (b->connected.load()) { anyConnected = true; break; }
+            for (auto& b : rt.boards) if (b->connected.load()) { anyConnected = true; break; }
             if (anyConnected) screen.PostEvent(Event::Custom);
         }
     });
 
-    // ---- Board switcher + active dashboard ----
-    auto switcher = psb::tui::makeBoardSwitcher(boards);
+    rt.switcher = psb::tui::makeBoardSwitcher(rt.boards);
+    return rt;
+}
 
-    screen.Loop(switcher.root);
+void joinRuntime(Runtime& rt, std::atomic<bool>& running) {
     running = false;
-    for (auto& bw : busWorkers) bw->workCv.notify_all();
-    for (auto& bw : busWorkers) if (bw->thread.joinable()) bw->thread.join();
-    if (animThread.joinable()) animThread.join();
-    for (auto& bw : busWorkers) bw->bus->disconnect();
+    for (auto& bw : rt.busWorkers) bw->workCv.notify_all();
+    for (auto& bw : rt.busWorkers) if (bw->thread.joinable()) bw->thread.join();
+    if (rt.animThread.joinable()) rt.animThread.join();
+    for (auto& bw : rt.busWorkers) bw->bus->disconnect();
+}
+
+int main(int argc, char** argv) {
+    CLI::App app{"PSB Demo TUI"};
+    app.set_version_flag("--version", std::string("psb_demo_tui ") + TOOL_VERSION_STRING);
+
+    std::string portArg;
+    int baudArg = 115200, slaveArg = 1, timeoutArg = 3000;
+    std::string topologyPath = psb::TopologyConfig::defaultPath();
+    bool setupFlag = false;
+    app.add_option("-p,--port", portArg, "Serial port (quick single-board connect; auto-connects at startup)");
+    app.add_option("-b,--baud", baudArg, "Baud rate")
+        ->check(CLI::IsMember({9600, 19200, 38400, 115200}));
+    app.add_option("-i,--id", slaveArg, "Slave ID")->check(CLI::Range(0, 247));
+    app.add_option("-t,--timeout", timeoutArg, "Timeout ms");
+    app.add_option("-s,--poll-interval", g_pollInterval, "Idle poll interval (s)");
+    auto* topologyOpt = app.add_option("-T,--topology", topologyPath,
+        "Topology config file (default: " + topologyPath + ")");
+    app.add_flag("--setup", setupFlag, "Launch the interactive topology setup wizard");
+    CLI11_PARSE(app, argc, argv);
+
+    auto screen = ScreenInteractive::Fullscreen();
+
+    // ---- Resolve (or build) the topology, running the wizard first when
+    //      asked to or when needed (design spec case 3: a --topology path
+    //      that doesn't exist yet auto-launches the wizard pre-targeting it
+    //      as the Save destination, instead of silently falling through to
+    //      hardcoded defaults). ----
+    psb::TopologyConfig topo;
+    bool haveTopo = false;
+    bool topologyExplicit = topologyOpt->count() > 0;
+
+    if (!portArg.empty() && !setupFlag) {
+        topo = psb::TopologyConfig::singleBoard(portArg, baudArg, slaveArg, "board1");
+        haveTopo = true;
+    } else if (psb::TopologyConfig::exists(topologyPath) && !setupFlag) {
+        auto loaded = psb::TopologyConfig::load(topologyPath);
+        if (!loaded.has_value()) {
+            std::cerr << "Topology config error: could not parse " << topologyPath << "\n";
+            return 1;
+        }
+        topo = std::move(*loaded);
+        haveTopo = true;
+    } else if (topologyExplicit && !psb::TopologyConfig::exists(topologyPath)) {
+        // Case 3 — file named but missing: wizard runs regardless of
+        // --setup, pre-targeting this path.
+    } else if (!setupFlag && !portArg.empty()) {
+        // unreachable (portArg branch above already handled) — kept out for clarity.
+    } else if (!setupFlag) {
+        // Neither -p nor a resolvable/explicit --topology, and --setup not
+        // given: today's genuinely-first-run hardcoded guess.
+        topo = psb::TopologyConfig::singleBoard("/dev/ttyUSB0", 115200, 1, "board1");
+        haveTopo = true;
+    }
+    // else: setupFlag is true — always run the wizard next, regardless of
+    // what topo/haveTopo currently hold (a pre-existing topology, if any,
+    // seeds the wizard for editing rather than starting from empty).
+
+    bool runWizard = setupFlag || !haveTopo;
+    if (runWizard) {
+        psb::tui::WizardState wiz;
+        wiz.topologyPath = topologyPath;
+        if (haveTopo) wiz.topo = topo;
+
+        psb::tui::WizardOutcome outcome = psb::tui::WizardOutcome::Cancelled;
+        auto wizardRoot = psb::tui::makeWizardScreen(wiz, screen, [&](psb::tui::WizardOutcome o) {
+            outcome = o;
+            screen.ExitLoopClosure()();
+        });
+        screen.Loop(wizardRoot);
+
+        if (outcome == psb::tui::WizardOutcome::Cancelled) {
+            if (!haveTopo) return 0;  // first run, cancelled — nothing to connect to
+            // else: fall through using the pre-existing topo unchanged.
+        } else {
+            topo = wiz.topo;
+            haveTopo = true;
+        }
+        if (topo.totalBoardCount() == 0) {
+            std::cerr << "Topology has no boards configured — exiting.\n";
+            return 0;
+        }
+    }
+
+    bool autoConnectAll = !portArg.empty() || runWizard || topo.totalBoardCount() > 1;
+
+    std::atomic<bool> running{true};
+    Runtime rt = buildRuntime(topo, screen, running, timeoutArg, autoConnectAll);
+
+    screen.Loop(rt.switcher.root);
+    joinRuntime(rt, running);
     return 0;
 }
