@@ -297,7 +297,20 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
         rebuildBusNames(); rebuildBoardNames();
         screen.PostEvent(Event::Custom);
     });
-    auto busSelectable = Maybe(bRemoveBus, [&s] { return s.selectedBus >= 0; });
+    // FTXUI's MenuBase::Clamp() runs on every Render() and, for an empty
+    // list, evaluates util::clamp(-1, 0, -1) to 0 — silently promoting
+    // busMenu/boardMenu's "-1 = none selected" sentinel to 0 the moment an
+    // empty wizard first renders. A plain `s.selectedBus >= 0` check is
+    // fooled by that promotion (0 >= 0 is true even with zero buses), so
+    // these predicates check the index is actually in range instead —
+    // robust to the same promotion for boards, and to any other stale
+    // out-of-range selection value, not just the empty-list case.
+    auto busInRange = [&s] { return s.selectedBus >= 0 && s.selectedBus < static_cast<int>(s.topo.buses.size()); };
+    auto boardInRange = [&s, busInRange] {
+        return busInRange() && s.selectedBoard >= 0
+            && s.selectedBoard < static_cast<int>(s.topo.buses[s.selectedBus].boards.size());
+    };
+    auto busSelectable = Maybe(bRemoveBus, busInRange);
 
     auto bAddBoard = ActionButton("Add Board", [showAddBoardPtr, scanResultLabels, scanResults,
                                                  scanUpdateReady, &screen] {
@@ -308,14 +321,14 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
         scanUpdateReady->store(false);
         *showAddBoardPtr = true; screen.PostEvent(Event::Custom);
     });
-    auto addBoardEnabled = Maybe(bAddBoard, [&s] { return s.selectedBus >= 0; });
+    auto addBoardEnabled = Maybe(bAddBoard, busInRange);
     auto bRemoveBoard = ActionButton("Remove Board", [&s, rebuildBoardNames, &screen] {
         if (s.selectedBus < 0 || s.selectedBoard < 0) return;
         s.statusMsg = removeBoard(s, s.selectedBus, s.selectedBoard);
         rebuildBoardNames();
         screen.PostEvent(Event::Custom);
     });
-    auto boardSelectable = Maybe(bRemoveBoard, [&s] { return s.selectedBus >= 0 && s.selectedBoard >= 0; });
+    auto boardSelectable = Maybe(bRemoveBoard, boardInRange);
 
     // ---- Save / Save As / Load / Connect / Cancel ----
     auto topologyPathInp = Input(&s.topologyPath, "topology file path");
