@@ -67,7 +67,7 @@ struct Runtime {
 // never removed from `boards` once added, so every pointer any snapshot
 // ever holds stays valid for the program's lifetime.
 void runBusWorkerLoop(psb::tui::BusWorker& bw, ScreenInteractive& screen, std::atomic<bool>& running) {
-    while (running) {
+    while (running && !bw.stopRequested) {
         std::vector<psb::tui::BoardSession*> boardsSnapshot;
         {
             std::unique_lock<std::mutex> lk(bw.workMutex);

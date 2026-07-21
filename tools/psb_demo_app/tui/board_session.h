@@ -80,6 +80,13 @@ struct BusWorker {
     std::mutex workMutex;
     std::condition_variable workCv;
     std::thread thread;
+    // Set (only ever by the UI thread, only once this bus's `boards` is
+    // confirmed empty — see main.cpp's drainPendingRemovals) to stop this
+    // one bus's worker thread without touching any other bus's thread.
+    // Every bus thread today shares one global `running` flag with no
+    // per-bus granularity; this is what removing the last board on a bus
+    // needs that `running` alone can't provide.
+    std::atomic<bool> stopRequested{false};
 };
 
 // Reads never surface failure to the caller (readChannelInfo/Config/CalConfig
