@@ -36,7 +36,9 @@ inline const std::vector<std::string> kBaudNames = {"115200", "9600", "19200", "
 inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                     ScreenInteractive& screen, std::atomic<bool>& running,
                                     int timeoutMs, std::function<void()> openSetup,
-                                    std::function<void()> requestRemove) {
+                                    std::function<void()> requestRemove,
+                                    Component globalQuit, Component globalSetup,
+                                    std::function<size_t()> liveBoardCount) {
     // ---- Connection inputs (live in the connection modal) ----
     auto baudInp  = Input(&board.baudVal,  "baud");
     auto slaveInp = Input(&board.slaveVal, "id");
@@ -171,10 +173,6 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         }) | border | size(WIDTH, EQUAL, 42);
     });
 
-    auto bQuit = ActionButton("Quit", [&running, &busWorker, &screen] {
-        running = false; busWorker.workCv.notify_all(); screen.ExitLoopClosure()();
-    });
-
     // Always available (not gated on connection state) — the exact case
     // this exists for is a stale board that can never connect, which
     // otherwise has no way to leave the topology short of a restart. No
@@ -292,7 +290,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
 
     auto menuSave = ActionButton("Save", saveSystemConfig);
     auto connectedMenuSave = Maybe(menuSave, [&board] { return board.connected.load(); });
-    auto menuBar = Container::Horizontal({menuModeC, connectedMenuSave, bConnToggle, bRemove, bQuit});
+    auto menuBar = Container::Horizontal({menuModeC, connectedMenuSave, bConnToggle, bRemove});
 
     // ---- Tab bar ----
     MenuOption tabOpt = MenuOption::Horizontal();
@@ -312,11 +310,11 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto tabContent = Container::Tab(tabComponents, &board.activeTab);
 
     // ---- Status bar (connection details + SysConfig; Connect lives in the menu) ----
-    auto bOpenSetup = ActionButton("Setup", [openSetup] { openSetup(); });
-    auto statusBar    = Container::Horizontal({bSysCfg, bOpenSetup});
+    auto statusBar    = Container::Horizontal({bSysCfg});
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
-    auto root = Renderer(mainContainer, [&board, &screen, menuModeC, connectedMenuSave, bConnToggle, bRemove, bQuit, tabBar, tabContent, bSysCfg, bOpenSetup] {
+    auto root = Renderer(mainContainer, [&board, &screen, menuModeC, connectedMenuSave, bConnToggle, bRemove,
+                                         tabBar, tabContent, bSysCfg, globalQuit, globalSetup, liveBoardCount] {
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
                 int nc = board.pendingChannelCount.load(std::memory_order_acquire);
@@ -394,7 +392,15 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         Element saveElement = isOnline
             ? connectedMenuSave->Render()
             : text("[ Save ]") | dim;
-        auto menuBarEl = hbox({
+        // Remove only makes sense with a sibling to remove down to — see
+        // Global Constraints. In single-board mode, this row also folds in
+        // globalQuit/globalSetup's own rendered output (visual-only merge
+        // — see Task 3's comment in board_switcher.h): with 2+ boards,
+        // those same Components render as their own separate row one level
+        // up instead, so they're omitted here to avoid rendering twice.
+        size_t boardCount = liveBoardCount();
+        Element removeElement = boardCount > 1 ? bRemove->Render() : text("");
+        Elements menuBarParts = {
             text(" " + variantTxt + " ") | bold,
             separator(),
             text(" " + chTxt + " Channels "),
@@ -407,10 +413,15 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             filler(),
             bConnToggle->Render(),
             text(" "),
-            bRemove->Render(),
-            text(" "),
-            bQuit->Render(),
-        });
+            removeElement,
+        };
+        if (boardCount <= 1) {
+            menuBarParts.push_back(text(" "));
+            menuBarParts.push_back(globalQuit->Render());
+            menuBarParts.push_back(text(" "));
+            menuBarParts.push_back(globalSetup->Render());
+        }
+        auto menuBarEl = hbox(std::move(menuBarParts));
 
         // --- Status bar (static colour — no breathing) ---
         auto connColor = board.connected.load() ? Color::Green
@@ -436,8 +447,6 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             connTextEl,
             text(" "),
             bSysCfg->Render(),
-            text(" "),
-            bOpenSetup->Render(),
         });
 
         return vbox({
