@@ -5,6 +5,7 @@
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <string>
@@ -27,6 +28,7 @@ using namespace ftxui;
 struct BoardSwitcher {
     Component root;
     std::function<void(const std::string& nickname, Component dashboard)> attachBoard;
+    std::function<void(const std::string& nickname)> detachBoard;
 };
 
 inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>>& boards) {
@@ -88,7 +90,40 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         dashboardStack->Add(std::move(dashboard));
     };
 
-    return BoardSwitcher{root, attachBoard};
+    // Symmetric to attachBoard. FTXUI's Container::Tab indexes its active
+    // child via `*selector_ % children_.size()` (confirmed in the vendored
+    // source, container.cpp) — not a clamp, a modulo — so after an erase,
+    // activeBoard needs explicit adjustment or it can silently jump to an
+    // unrelated board rather than either staying on the same one or landing
+    // on a sensible neighbor. The two adjustments below cover every case:
+    // if the removed tab was before the active one, decrement to keep
+    // tracking the same logical board (which just shifted down one index);
+    // then clamp into the new valid range (handles the removed tab being
+    // the active one, especially if it was also the last slot).
+    //
+    // mainSelected also needs attention: shrinking to <=1 board makes the
+    // switcher bar invisible again (see root's Renderer below), and if
+    // mainSelected were still pointing at switcherBar (index 0), keyboard
+    // input would land on an invisible single-entry Menu — the exact class
+    // of bug already found and fixed for single-board startup (see
+    // mainSelected's own comment above). Forcing it back to dashboardStack
+    // (index 1) whenever the board count drops to <=1 prevents recreating
+    // that regression via removal instead of via startup.
+    auto detachBoard = [boardNames, dashboardStack, activeBoard, mainSelected](const std::string& nickname) {
+        for (size_t i = 0; i < boardNames->size(); ++i) {
+            if ((*boardNames)[i] != nickname) continue;
+            dashboardStack->ChildAt(i)->Detach();
+            boardNames->erase(boardNames->begin() + i);
+            int removedIdx = static_cast<int>(i);
+            if (*activeBoard > removedIdx) --*activeBoard;
+            if (*activeBoard >= static_cast<int>(boardNames->size()))
+                *activeBoard = std::max(0, static_cast<int>(boardNames->size()) - 1);
+            if (boardNames->size() <= 1) *mainSelected = 1;
+            return;
+        }
+    };
+
+    return BoardSwitcher{root, attachBoard, detachBoard};
 }
 
 } // namespace psb::tui
