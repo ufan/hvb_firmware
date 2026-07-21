@@ -92,10 +92,21 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     auto showAddBusPtr = std::make_shared<bool>(false);
 
     auto bAddBusConfirm = ActionButton("Add", [&s, newBusName, newBusPort, newBusBaud,
+                                                portList, portIdx,
                                                 rebuildBusNames, showAddBusPtr, &screen] {
         int baud = 115200;
         try { baud = std::stoi(*newBusBaud); } catch (...) {}
-        std::string err = addBus(s, *newBusName, *newBusPort, baud);
+        // Dropdown() only ever mutates portIdx as the user navigates it —
+        // newBusPort is a separate string, written once by doScanPorts()
+        // right after a scan and never re-synced afterward. Reading
+        // portList[*portIdx] here (the live selection) instead of the
+        // stale *newBusPort fixes Add always using whichever port was
+        // selected at scan time (index 0) regardless of what the user
+        // picked in the dropdown afterward. Falls back to *newBusPort only
+        // when the list is empty (dropdown hidden, nothing to select).
+        std::string port = (*portIdx >= 0 && *portIdx < static_cast<int>(portList->size()))
+            ? (*portList)[*portIdx] : *newBusPort;
+        std::string err = addBus(s, *newBusName, port, baud);
         s.statusMsg = err.empty() ? "" : "Error: " + err;
         if (err.empty()) {
             rebuildBusNames();
