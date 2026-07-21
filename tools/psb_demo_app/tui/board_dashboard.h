@@ -35,7 +35,8 @@ inline const std::vector<std::string> kBaudNames = {"115200", "9600", "19200", "
 // state, so N of these coexisting is safe.
 inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                     ScreenInteractive& screen, std::atomic<bool>& running,
-                                    int timeoutMs, std::function<void()> openSetup) {
+                                    int timeoutMs, std::function<void()> openSetup,
+                                    std::function<void()> requestRemove) {
     // ---- Connection inputs (live in the connection modal) ----
     auto baudInp  = Input(&board.baudVal,  "baud");
     auto slaveInp = Input(&board.slaveVal, "id");
@@ -174,6 +175,13 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         running = false; busWorker.workCv.notify_all(); screen.ExitLoopClosure()();
     });
 
+    // Always available (not gated on connection state) — the exact case
+    // this exists for is a stale board that can never connect, which
+    // otherwise has no way to leave the topology short of a restart. No
+    // confirmation prompt, matching Remove Bus/Remove Board in the wizard
+    // (Global Constraints) — reversible via Add.
+    auto bRemove = ActionButton("Remove", [requestRemove] { requestRemove(); });
+
     // ---- SysConfig popup ----
     auto bSysCfg = ActionButton("Setting", [&board, &screen] {
         if (!board.showSysCfg && board.data.valid) syncDataToInputs(board.data, board.inputs);
@@ -284,7 +292,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
 
     auto menuSave = ActionButton("Save", saveSystemConfig);
     auto connectedMenuSave = Maybe(menuSave, [&board] { return board.connected.load(); });
-    auto menuBar = Container::Horizontal({menuModeC, connectedMenuSave, bConnToggle, bQuit});
+    auto menuBar = Container::Horizontal({menuModeC, connectedMenuSave, bConnToggle, bRemove, bQuit});
 
     // ---- Tab bar ----
     MenuOption tabOpt = MenuOption::Horizontal();
@@ -308,7 +316,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto statusBar    = Container::Horizontal({bSysCfg, bOpenSetup});
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
-    auto root = Renderer(mainContainer, [&board, &screen, menuModeC, connectedMenuSave, bConnToggle, bQuit, tabBar, tabContent, bSysCfg, bOpenSetup] {
+    auto root = Renderer(mainContainer, [&board, &screen, menuModeC, connectedMenuSave, bConnToggle, bRemove, bQuit, tabBar, tabContent, bSysCfg, bOpenSetup] {
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
                 int nc = board.pendingChannelCount.load(std::memory_order_acquire);
@@ -398,6 +406,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             centerGroup,
             filler(),
             bConnToggle->Render(),
+            text(" "),
+            bRemove->Render(),
             text(" "),
             bQuit->Render(),
         });
