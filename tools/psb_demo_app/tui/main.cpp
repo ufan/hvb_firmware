@@ -183,12 +183,31 @@ void removeBoardLive(Runtime& rt, ScreenInteractive& screen,
 // removal machinery where a brief block is an accepted tradeoff rather than
 // a further staged hand-off, since it's bounded, small, and rare (only
 // happens when a user removes the last board on a given bus).
-void drainPendingRemovals(Runtime& rt, ScreenInteractive& screen, std::atomic<bool>& running) {
+void drainPendingRemovals(Runtime& rt, psb::TopologyConfig& topo,
+                          ScreenInteractive& screen, std::atomic<bool>& running) {
     for (size_t i = 0; i < rt.pendingRemovals.size(); ) {
         auto& pr = rt.pendingRemovals[i];
         if (!pr.done->load()) { ++i; continue; }
 
         rt.switcher.detachBoard(pr.board->nickname);
+
+        // Keep main()'s topo in sync — the dashboard's Remove button (the
+        // only removal path that lands here without first going through
+        // the wizard's own topo edit) has no other way to make a
+        // subsequent Setup reopen or Save reflect the removal. Harmless,
+        // redundant no-op for a wizard-triggered removal: onMidSessionFinish
+        // already overwrites topo wholesale from the wizard's edited state
+        // (which no longer contains this board) before this async drain
+        // ever runs, so the search below simply finds nothing to erase.
+        for (auto& busCfg : topo.buses) {
+            auto& boards = busCfg.boards;
+            for (size_t m = 0; m < boards.size(); ++m) {
+                if (boards[m].nickname == pr.board->nickname) {
+                    boards.erase(boards.begin() + m);
+                    break;
+                }
+            }
+        }
 
         {
             std::lock_guard<std::mutex> lk(rt.boardsMutex);
@@ -573,8 +592,8 @@ int main(int argc, char** argv) {
     };
     auto midSessionWizardRoot = psb::tui::makeWizardScreen(*midSessionWiz, screen, onMidSessionFinish, /*allowScan=*/false);
 
-    auto rootWithSetup = Renderer(rt.switcher.root, [&rt, &screen, &running] {
-        drainPendingRemovals(rt, screen, running);
+    auto rootWithSetup = Renderer(rt.switcher.root, [&rt, &topo, &screen, &running] {
+        drainPendingRemovals(rt, topo, screen, running);
         return rt.switcher.root->Render();
     }) | Modal(midSessionWizardRoot, showSetup.get());
 
