@@ -3,6 +3,7 @@ add_executable(psb_tests
     test_serial_bus.cpp
     test_board_session.cpp
     test_topology_config.cpp
+    test_app_preferences.cpp
     test_system_reads.cpp
     test_channel_reads.cpp
     test_writes.cpp
