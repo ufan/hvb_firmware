@@ -22,6 +22,26 @@ using namespace ftxui;
 
 enum class WizardOutcome { Cancelled, SavedOnly, ConnectNow };
 
+// Hand-off payload for the scan thread → UI thread transition. The scan
+// thread never writes scanResults/scanResultLabels/scanStatus directly —
+// those vectors have Menu/Renderer widgets holding raw pointers into them
+// (the same non-owning-pointer convention documented in board_switcher.h),
+// and FTXUI's Menu reads its backing vector internally during Render()/
+// OnEvent() with no lock of its own, so a background thread mutating that
+// vector concurrently (clear()/push_back() can reallocate) would be
+// unsynchronized access to memory the UI thread's Render() is also
+// touching — undefined behavior, not just a display glitch. Instead the
+// scan thread stages a completed result set here under scanMutex and flips
+// scanUpdateReady; the UI thread (which is the only thread that ever
+// touches the live vectors) drains it at the top of addBoardPopup's
+// Renderer, before any widget that reads those vectors runs — so the live
+// vectors are never touched by more than one thread.
+struct ScanUpdate {
+    std::vector<DiscoveredBoard> results;
+    std::vector<std::string> labels;
+    std::string status;
+};
+
 // Builds the setup wizard's Component — a bus/board list plus Add Bus, Add
 // Board (Manual or Scan), Remove, Save/Save As, and Connect Now/Done.
 // Reused unmodified as both `main()`'s standalone pre-dashboard root (Task
@@ -115,6 +135,12 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     auto scanResultLabels = std::make_shared<std::vector<std::string>>();
     auto scanResultIdx = std::make_shared<int>(-1);
     auto scanStatus = std::make_shared<std::string>();
+    // Cross-thread hand-off for scanResults/scanResultLabels/scanStatus —
+    // see ScanUpdate's comment above. scanMutex guards scanStaged only; the
+    // live vectors above are touched exclusively by the UI thread.
+    auto scanMutex = std::make_shared<std::mutex>();
+    auto scanStaged = std::make_shared<ScanUpdate>();
+    auto scanUpdateReady = std::make_shared<std::atomic<bool>>(false);
 
     auto boardNickInp = Input(newBoardNick.get(), "nickname");
     auto boardSlaveInp = Input(newBoardSlave.get(), "1-247");
@@ -137,8 +163,8 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     });
 
     auto bStartScan = ActionButton("Start Scan", [&s, scanStart, scanEnd, scanning,
-                                                   scanProgress, scanResults, scanResultLabels,
-                                                   scanStatus, &screen] {
+                                                   scanProgress, scanMutex, scanStaged,
+                                                   scanUpdateReady, &screen] {
         if (scanning->load() || s.selectedBus < 0) return;
         int start = 1, end = 32;
         try { start = std::stoi(*scanStart); } catch (...) {}
@@ -150,16 +176,30 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
         const std::string port = s.topo.buses[s.selectedBus].port;
         const int baud = s.topo.buses[s.selectedBus].baudRate;
         scanning->store(true);
-        scanResults->clear();
-        scanResultLabels->clear();
-        *scanStatus = "Connecting to " + port + "...";
+        // Stage the "connecting" status through the same hand-off as the
+        // final result — bStartScan runs on the UI thread, so writing
+        // scanStatus directly here would be safe in isolation, but staging
+        // it too keeps exactly one path ever touching the live vectors.
+        {
+            std::lock_guard<std::mutex> lk(*scanMutex);
+            scanStaged->results.clear();
+            scanStaged->labels.clear();
+            scanStaged->status = "Connecting to " + port + "...";
+        }
+        scanUpdateReady->store(true);
         screen.PostEvent(Event::Custom);
 
-        std::thread([&screen, scanning, scanProgress, scanResults, scanResultLabels,
-                     scanStatus, port, baud, start, end] {
+        std::thread([&screen, scanning, scanProgress, scanMutex, scanStaged,
+                     scanUpdateReady, port, baud, start, end] {
             auto scanBusHandle = std::make_shared<PsbSerialBus>();
             if (!scanBusHandle->connect(port, baud, 500)) {
-                *scanStatus = "Error: " + scanBusHandle->lastError();
+                {
+                    std::lock_guard<std::mutex> lk(*scanMutex);
+                    scanStaged->results.clear();
+                    scanStaged->labels.clear();
+                    scanStaged->status = "Error: " + scanBusHandle->lastError();
+                }
+                scanUpdateReady->store(true);
                 scanning->store(false);
                 screen.PostEvent(Event::Custom);
                 return;
@@ -169,12 +209,19 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
                 screen.PostEvent(Event::Custom);
             });
             scanBusHandle->disconnect();
-            *scanResults = results;
+            std::vector<std::string> labels;
             for (const auto& r : results)
-                scanResultLabels->push_back(r.variantName + "  #" + std::to_string(r.slaveId));
-            *scanStatus = results.empty()
+                labels.push_back(r.variantName + "  #" + std::to_string(r.slaveId));
+            std::string status = results.empty()
                 ? "No boards found in range."
                 : std::to_string(results.size()) + " board(s) found.";
+            {
+                std::lock_guard<std::mutex> lk(*scanMutex);
+                scanStaged->results = std::move(results);
+                scanStaged->labels = std::move(labels);
+                scanStaged->status = std::move(status);
+            }
+            scanUpdateReady->store(true);
             scanning->store(false);
             screen.PostEvent(Event::Custom);
         }).detach();
@@ -201,7 +248,22 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     auto addBoardPopup = Renderer(addBoardForm, [&s, boardNickInp, boardSlaveInp, bAddBoardConfirm,
                                                   scanStartInp, scanEndInp, bStartScan,
                                                   scanResultsMenu, bUseScanResult, bAddBoardCancel,
-                                                  scanning, scanProgress, scanStatus, scanResultLabels] {
+                                                  scanning, scanProgress, scanStatus, scanResults,
+                                                  scanResultLabels, scanMutex, scanStaged,
+                                                  scanUpdateReady] {
+        // Drain any scan-thread hand-off before any widget below reads
+        // scanResultLabels/scanResults/scanStatus (scanResultsMenu->Render()
+        // in particular touches scanResultLabels internally) — this Renderer
+        // lambda only ever runs on the UI/event-loop thread, so applying the
+        // staged update here means the live vectors are never touched by
+        // more than one thread. See ScanUpdate's comment for why a mutex
+        // around the live vectors alone wouldn't be enough.
+        if (scanUpdateReady->exchange(false)) {
+            std::lock_guard<std::mutex> lk(*scanMutex);
+            *scanResults = scanStaged->results;
+            *scanResultLabels = scanStaged->labels;
+            *scanStatus = scanStaged->status;
+        }
         std::string busLabel = (s.selectedBus >= 0 && s.selectedBus < static_cast<int>(s.topo.buses.size()))
             ? s.topo.buses[s.selectedBus].name : "(none)";
         Element scanStatusEl = scanning->load()
@@ -237,8 +299,13 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     });
     auto busSelectable = Maybe(bRemoveBus, [&s] { return s.selectedBus >= 0; });
 
-    auto bAddBoard = ActionButton("Add Board", [showAddBoardPtr, scanResultLabels, scanResults, &screen] {
+    auto bAddBoard = ActionButton("Add Board", [showAddBoardPtr, scanResultLabels, scanResults,
+                                                 scanUpdateReady, &screen] {
         scanResultLabels->clear(); scanResults->clear();
+        // Discard any not-yet-applied result from a scan started before
+        // this reopen — without this, a stale scanUpdateReady could
+        // overwrite this fresh clear the next time addBoardPopup renders.
+        scanUpdateReady->store(false);
         *showAddBoardPtr = true; screen.PostEvent(Event::Custom);
     });
     auto addBoardEnabled = Maybe(bAddBoard, [&s] { return s.selectedBus >= 0; });
@@ -279,9 +346,17 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     auto bConnectNow = ActionButton("Connect Now", [&s, onFinish] {
         onFinish(WizardOutcome::ConnectNow);
     });
-    auto bDone = ActionButton("Save & Exit", [&s, onFinish] {
-        bool saved = s.topo.save(s.topologyPath);
-        onFinish(saved ? WizardOutcome::SavedOnly : WizardOutcome::Cancelled);
+    auto bDone = ActionButton("Save & Exit", [&s, onFinish, &screen] {
+        if (s.topo.save(s.topologyPath)) {
+            s.dirty = false;
+            onFinish(WizardOutcome::SavedOnly);
+        } else {
+            // Stay in the wizard on failure — exiting via onFinish(Cancelled)
+            // here would be indistinguishable from the user clicking plain
+            // Cancel, silently discarding their edits with no diagnostic.
+            s.statusMsg = "Error: could not save to " + s.topologyPath;
+            screen.PostEvent(Event::Custom);
+        }
     });
     auto bCancel = ActionButton("Cancel", [onFinish] { onFinish(WizardOutcome::Cancelled); });
 
