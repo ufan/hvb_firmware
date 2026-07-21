@@ -33,6 +33,18 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     auto boardNames = std::make_shared<std::vector<std::string>>();
     for (auto& b : boards) boardNames->push_back(b->nickname);
     auto activeBoard = std::make_shared<int>(0);
+    // Starting focus for the switcher's own outer container: with a single
+    // board the switcher bar is a Menu with one entry, which unconditionally
+    // swallows Event::Return and doesn't handle Left/Right at all (see
+    // MenuBase::OnEvent in the vendored FTXUI source) — if it held initial
+    // focus, keys typed immediately at launch would be silently dropped
+    // until the user happened to Tab/Down into dashboardStack. So focus
+    // starts on dashboardStack (index 1) for a single board, restoring
+    // Phase 2's "keys reach the dashboard immediately" behavior. With 2+
+    // boards, focus starts on switcherBar (index 0) as already established
+    // and verified in Phase 2 — arrow keys need to reach the switcher first
+    // so the user can move between boards.
+    auto mainSelected = std::make_shared<int>(boards.size() > 1 ? 0 : 1);
 
     MenuOption switcherOpt = MenuOption::Horizontal();
     switcherOpt.entries_option.transform = [](const EntryState& e) -> Element {
@@ -47,7 +59,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     auto dashboardStack = Container::Tab({}, activeBoard.get());
     for (auto& b : boards) dashboardStack->Add(b->dashboard);
 
-    auto mainContainer = Container::Vertical({switcherBar, dashboardStack});
+    auto mainContainer = Container::Vertical({switcherBar, dashboardStack}, mainSelected.get());
     // Capture boardNames/activeBoard, not just switcherBar/dashboardStack —
     // Menu()/Container::Tab() only hold raw pointers into them (FTXUI's
     // non-owning-pointer widget convention); losing the owning shared_ptrs
@@ -56,8 +68,10 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     // vector size from freed memory) — see that fix's commit for the full
     // diagnosis. The lesson generalizes: anything Menu/Tab is given a raw
     // pointer into must outlive this returned Component, which this closure
-    // is what accomplishes.
-    auto root = Renderer(mainContainer, [switcherBar, dashboardStack, boardNames, activeBoard] {
+    // is what accomplishes. mainSelected is captured for the identical
+    // reason: Container::Vertical's selector overload holds a raw int*
+    // into it.
+    auto root = Renderer(mainContainer, [switcherBar, dashboardStack, boardNames, activeBoard, mainSelected] {
         bool showBar = boardNames->size() > 1;
         Elements top;
         if (showBar) {
