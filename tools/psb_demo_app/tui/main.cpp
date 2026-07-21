@@ -421,6 +421,34 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
     }
 }
 
+// Mirror of applyNewBoardsLive: finds every board currently live in `rt`
+// but absent (by nickname) from `newTopo`, and removes each one via
+// removeBoardLive — this is what makes the wizard's mid-session Remove
+// Board (previously an in-memory-only edit that never touched the live
+// session, see removeBoardLive's own history) actually take effect.
+// Deliberately does not take rt.boardsMutex while calling removeBoardLive
+// for each match — removeBoardLive only enqueues a work item and appends
+// to pendingRemovals, it never itself touches rt.boards, so there's no
+// double-lock/deadlock risk in taking the lock only for the initial scan.
+void removeGoneBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
+                          ScreenInteractive& screen, std::atomic<bool>& running) {
+    std::vector<psb::tui::BoardSession*> toRemove;
+    {
+        std::lock_guard<std::mutex> lk(rt.boardsMutex);
+        for (auto& b : rt.boards) {
+            bool stillPresent = false;
+            for (const auto& busCfg : newTopo.buses) {
+                for (const auto& boardCfg : busCfg.boards) {
+                    if (boardCfg.nickname == b->nickname) { stillPresent = true; break; }
+                }
+                if (stillPresent) break;
+            }
+            if (!stillPresent) toRemove.push_back(b.get());
+        }
+    }
+    for (auto* b : toRemove) removeBoardLive(rt, screen, running, b);
+}
+
 int main(int argc, char** argv) {
     CLI::App app{"PSB Demo TUI"};
     app.set_version_flag("--version", std::string("psb_demo_tui ") + TOOL_VERSION_STRING);
@@ -527,15 +555,17 @@ int main(int argc, char** argv) {
     auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &screen, &running, timeoutArg, openSetup]
                               (psb::tui::WizardOutcome outcome) {
         if (outcome == psb::tui::WizardOutcome::ConnectNow) {
+            // Tear down what's gone before attaching what's new — the two
+            // sets are always disjoint (a board can't be both removed and
+            // newly-added in the same edit), so the order between them
+            // doesn't affect correctness, but removing first reads slightly
+            // more naturally. topo is overwritten immediately below; the
+            // live teardown/attach these two calls kick off both finish
+            // asynchronously a frame or two later (removeBoardLive's
+            // staged hand-off, applyNewBoardsLive's queued connect) — topo
+            // is already correct by the time either one completes.
+            removeGoneBoardsLive(rt, midSessionWiz->topo, screen, running);
             applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, timeoutArg, openSetup);
-            // applyNewBoardsLive is strictly additive (Global Constraints) —
-            // if the wizard's in-memory edits also removed a board that's
-            // still running in rt, this overwrite makes topo stop
-            // describing what's actually connected (a later Save would
-            // just omit that board, which is likely what the user wanted,
-            // but it's worth knowing this doesn't reconcile the two). Not a
-            // bug: live removal was deliberately out of scope for this
-            // task — see applyNewBoardsLive's own scope-note comment.
             topo = midSessionWiz->topo;
         }
         *showSetup = false;
