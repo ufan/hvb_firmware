@@ -139,12 +139,12 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 bw->workQueue, bw->workMutex, bw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup);
-            bw->boards.push_back(b.get());
-            // Provably safe unlocked here too (animThread doesn't exist
-            // yet), but locked anyway — same rt.boardsMutex as the
-            // mid-session write in applyNewBoardsLive — so this isn't a
-            // "safe only because of ordering" invariant a future edit could
-            // silently break.
+            // Same "lock even though provably safe here" reasoning as the
+            // rt.boards push right below — this bw's worker thread hasn't
+            // been spawned yet at this point, but locking anyway means
+            // that isn't a fact a future edit could silently invalidate.
+            { std::lock_guard<std::mutex> lk(bw->workMutex);
+              bw->boards.push_back(b.get()); }
             { std::lock_guard<std::mutex> lk(rt.boardsMutex);
               rt.boards.push_back(std::move(b)); }
         }
