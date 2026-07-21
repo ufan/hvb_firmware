@@ -85,3 +85,7 @@ TEST_CASE("TopologyConfig — save creates parent directories that don't exist y
     std::remove(path.c_str());
     std::remove(dir.c_str());
 }
+
+TEST_CASE("TopologyConfig — lastSingleConnectPath differs from defaultPath", "[topology_config]") {
+    CHECK(psb::TopologyConfig::lastSingleConnectPath() != psb::TopologyConfig::defaultPath());
+}

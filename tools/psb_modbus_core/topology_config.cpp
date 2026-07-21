@@ -32,6 +32,10 @@ std::string TopologyConfig::defaultPath() {
     return homeDir() + "/.psb_demo_app/topology.toml";
 }
 
+std::string TopologyConfig::lastSingleConnectPath() {
+    return homeDir() + "/.psb_demo_app/last_single.toml";
+}
+
 bool TopologyConfig::exists(const std::string& path) {
     std::ifstream ifs(path);
     return ifs.good();

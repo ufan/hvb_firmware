@@ -33,6 +33,11 @@ struct TopologyConfig {
     static TopologyConfig singleBoard(const std::string& port, int baud,
                                        int slaveId, const std::string& nickname = "board1");
     static std::string defaultPath();  // ~/.psb_demo_app/topology.toml
+    // Deliberately separate from defaultPath() — single-board mode's quick-
+    // connect form (mode_select.h) pre-fills from and saves to this path,
+    // never the real multi-board topology file, so the two can never be
+    // confused for one another.
+    static std::string lastSingleConnectPath();  // ~/.psb_demo_app/last_single.toml
     int totalBoardCount() const;       // sum of boards across all buses
 };
 
