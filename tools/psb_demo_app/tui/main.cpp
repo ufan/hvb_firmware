@@ -6,6 +6,7 @@
 #include "board_switcher.h"
 #include "wizard_state.h"
 #include "wizard_screen.h"
+#include "mode_select.h"
 #include "tool_version.h"
 
 #include <ftxui/component/component.hpp>
@@ -257,7 +258,7 @@ void drainPendingRemovals(Runtime& rt, psb::TopologyConfig& topo,
 // less certain to hold).
 void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractive& screen,
                   std::atomic<bool>& running, int timeoutMs, bool autoConnectAll,
-                  std::function<void()> openSetup) {
+                  std::function<void()> openSetup, Component globalQuit, Component globalSetup) {
     for (const auto& busCfg : topo.buses) {
         auto bw = std::make_unique<psb::tui::BusWorker>();
         bw->bus = std::make_shared<psb::PsbSerialBus>();
@@ -273,7 +274,8 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 bw->workQueue, bw->workMutex, bw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup,
-                [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); });
+                [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
+                globalQuit, globalSetup, [&rt] { return rt.boards.size(); });
             // Same "lock even though provably safe here" reasoning as the
             // rt.boards push right below — this bw's worker thread hasn't
             // been spawned yet at this point, but locking anyway means
@@ -336,7 +338,7 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
         }
     });
 
-    rt.switcher = psb::tui::makeBoardSwitcher(rt.boards);
+    rt.switcher = psb::tui::makeBoardSwitcher(rt.boards, globalQuit, globalSetup);
 }
 
 void joinRuntime(Runtime& rt, std::atomic<bool>& running) {
@@ -357,7 +359,8 @@ void joinRuntime(Runtime& rt, std::atomic<bool>& running) {
 // same runBusWorkerLoop() body — no duplicated loop logic).
 void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                         ScreenInteractive& screen, std::atomic<bool>& running,
-                        int timeoutMs, std::function<void()> openSetup) {
+                        int timeoutMs, std::function<void()> openSetup,
+                        Component globalQuit, Component globalSetup) {
     for (const auto& busCfg : newTopo.buses) {
         psb::tui::BusWorker* existingBw = nullptr;
         for (auto& bw : rt.busWorkers)
@@ -396,7 +399,8 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 targetBw->workQueue, targetBw->workMutex, targetBw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *targetBw, screen, running, timeoutMs, openSetup,
-                [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); });
+                [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
+                globalQuit, globalSetup, [&rt] { return rt.boards.size(); });
 
             // Connect + full-scan this one board right away, on its bus's
             // own worker queue — never block the UI thread, same discipline
@@ -517,9 +521,24 @@ int main(int argc, char** argv) {
         // above): wizard runs regardless of --setup, pre-targeting this path.
     } else if (!setupFlag) {
         // Neither -p nor a resolvable/explicit --topology, and --setup not
-        // given: today's genuinely-first-run hardcoded guess.
-        topo = psb::TopologyConfig::singleBoard("/dev/ttyUSB0", 115200, 1, "board1");
-        haveTopo = true;
+        // given: no CLI signal at all resolves what to do. Show the
+        // mode-selection popup instead of guessing a hardcoded port (Sub-
+        // project B; see mode_select.h and docs/superpowers/specs/
+        // 2026-07-21-mode-architecture-design.md). Every other branch in
+        // this chain (-p, an existing topology file, --topology naming a
+        // missing file, --setup) is untouched — this replaces only the
+        // old /dev/ttyUSB0 fallback.
+        auto choice = psb::tui::showModeChoicePopup(screen);
+        if (choice == psb::tui::ModeChoice::Cancelled) return 0;
+        if (choice == psb::tui::ModeChoice::Single) {
+            auto quick = psb::tui::showQuickConnectForm(screen);
+            if (!quick.has_value()) return 0;
+            topo = *quick;
+            haveTopo = true;
+        }
+        // else Multi: leave haveTopo false — the existing runWizard logic
+        // below launches the standalone wizard exactly as --setup/case-3
+        // already do, with no changes needed here.
     }
     // else: setupFlag is true — always run the wizard next, regardless of
     // what topo/haveTopo currently hold (a pre-existing topology, if any,
@@ -569,9 +588,23 @@ int main(int argc, char** argv) {
     };
 
     Runtime rt;
-    buildRuntime(rt, topo, screen, running, timeoutArg, autoConnectAll, openSetup);
 
-    auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &screen, &running, timeoutArg, openSetup]
+    // Constructed once, not once per board — Quit notifies every bus's
+    // worker (not just one board's, unlike the old per-board version this
+    // replaces), so quitting wakes every bus thread immediately rather
+    // than letting some wait out their idle poll interval. Setup reuses
+    // the existing openSetup closure unchanged.
+    auto bGlobalQuit = psb::tui::ActionButton("Quit", [&running, &rt, &screen] {
+        running = false;
+        for (auto& bw : rt.busWorkers) bw->workCv.notify_all();
+        screen.ExitLoopClosure()();
+    });
+    auto bGlobalSetup = psb::tui::ActionButton("Setup", [openSetup] { openSetup(); });
+
+    buildRuntime(rt, topo, screen, running, timeoutArg, autoConnectAll, openSetup, bGlobalQuit, bGlobalSetup);
+
+    auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &screen, &running, timeoutArg, openSetup,
+                               bGlobalQuit, bGlobalSetup]
                               (psb::tui::WizardOutcome outcome) {
         if (outcome == psb::tui::WizardOutcome::ConnectNow) {
             // Tear down what's gone before attaching what's new — the two
@@ -584,7 +617,8 @@ int main(int argc, char** argv) {
             // staged hand-off, applyNewBoardsLive's queued connect) — topo
             // is already correct by the time either one completes.
             removeGoneBoardsLive(rt, midSessionWiz->topo, screen, running);
-            applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, timeoutArg, openSetup);
+            applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, timeoutArg, openSetup,
+                               bGlobalQuit, bGlobalSetup);
             topo = midSessionWiz->topo;
         }
         *showSetup = false;
