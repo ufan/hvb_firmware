@@ -35,7 +35,7 @@ inline ModeChoice showModeChoicePopup(ScreenInteractive& screen) {
         *result = ModeChoice::Single;
         screen.ExitLoopClosure()();
     });
-    auto bMulti = ActionButton("Multi-Board Setup", [result, &screen] {
+    auto bMulti = ActionButton("Multi-Board Topology", [result, &screen] {
         *result = ModeChoice::Multi;
         screen.ExitLoopClosure()();
     });
@@ -52,7 +52,7 @@ inline ModeChoice showModeChoicePopup(ScreenInteractive& screen) {
             text("Choose how you want to start.") | center,
             separator(),
             hbox({ bSingle->Render(), text("  "), bMulti->Render(), text("  "), bCancel->Render() }) | center,
-        }) | border | size(WIDTH, EQUAL, 56);
+        }) | border | size(WIDTH, EQUAL, 60);
     });
 
     screen.Loop(root);

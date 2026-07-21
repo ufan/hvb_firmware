@@ -42,7 +42,7 @@ struct ScanUpdate {
     std::string status;
 };
 
-// Builds the setup wizard's Component — a bus/board list plus Add Bus, Add
+// Builds the Topology wizard's Component — a bus/board list plus Add Bus, Add
 // Board (Manual or Scan), Remove, Save/Save As, and Connect Now/Done.
 // Reused unmodified as both `main()`'s standalone pre-dashboard root (Task
 // 6) and a Modal overlay atop a live dashboard (Task 7's mid-session entry)
@@ -483,7 +483,7 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
         rebuildBusNames();
         rebuildBoardNames();
         return vbox({
-            text(" Setup Wizard " + std::string(s.dirty ? "*" : "") + " ") | bold | center,
+            text(" Topology Wizard " + std::string(s.dirty ? "*" : "") + " ") | bold | center,
             separator(),
             hbox({
                 vbox({ text("Buses") | bold, busMenu->Render() | frame | flex,
@@ -497,7 +497,7 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
             separator(),
             hbox({ bSave->Render(), text("  "), bConnectNow->Render(), text("  "),
                    bDone->Render(), text("  "), bCancel->Render() }) | center,
-        });
+        }) | border;
     }) | Modal(addBusPopup, showAddBusPtr.get())
        | Modal(addBoardPopup, showAddBoardPtr.get());
 

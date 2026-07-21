@@ -479,12 +479,15 @@ void removeGoneBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
 int main(int argc, char** argv) {
     // psb_demo_tui is a double-click-launched UI app (Sub-project C) — the
     // only CLI-level concept left is --version (and CLI11's own --help),
-    // both standard conventions even for GUI-first tools. Port/baud/slave,
-    // topology path, and the setup wizard are all reachable from the UI
-    // itself (the mode-select popup, the wizard's own path field, and the
-    // global Setup button — Sub-project B); connection timeout and idle
-    // poll interval are reachable via the global Preferences button (see
-    // preferences_dialog.h) and persist across launches via AppPreferences.
+    // both standard conventions even for GUI-first tools. Every launch is a
+    // fresh launch: the mode-selection popup always shows first, letting
+    // the user choose single-board quick-connect or the standalone
+    // Topology wizard (which is also where an existing topology file gets
+    // loaded, via its own Path field — never silently auto-loaded here).
+    // The global Topology button (main() below) reopens that same wizard
+    // mid-session; connection timeout and idle poll interval are reachable
+    // via the global Preferences button (see preferences_dialog.h) and
+    // persist across launches via AppPreferences.
     CLI::App app{"PSB Demo TUI"};
     app.set_version_flag("--version", std::string("psb_demo_tui ") + TOOL_VERSION_STRING);
     CLI11_PARSE(app, argc, argv);
@@ -498,43 +501,30 @@ int main(int argc, char** argv) {
 
     auto screen = ScreenInteractive::Fullscreen();
 
-    // ---- Resolve (or build) the topology. With every CLI flag gone
-    //      (Sub-project C), there are only two ways to get here: an
-    //      existing topology.toml auto-loads and auto-connects directly; or
-    //      (first run, or the file was removed) the mode-selection popup
-    //      decides between a single-board quick-connect and the standalone
-    //      Setup wizard. See docs/superpowers/specs/
-    //      2026-07-21-cli-to-preferences-design.md's main()-simplification
-    //      section — this collapses what used to be a 4-branch chain built
-    //      around -p/-T/--setup, none of which exist anymore. Editing an
-    //      already-existing topology via the wizard before it auto-connects
-    //      (--setup's old trick) is no longer reachable from a cold launch
-    //      — a direct, accepted consequence of removing that flag; the
-    //      wizard is still reachable afterward via the global Setup button,
-    //      identical to today's mid-session editing. ----
+    // ---- Every launch is a fresh launch: the mode-selection popup shows
+    //      unconditionally, regardless of whether a topology.toml already
+    //      exists on disk — no CLI flag or "existing file" check bypasses
+    //      it. An existing file is never auto-loaded or auto-connected
+    //      silently; it's one [Load] click away inside the standalone
+    //      wizard's own Path field (which defaults to topologyPath below),
+    //      the same way any other topology file is opened there. The
+    //      wizard's own Load handler already reports a parse failure via
+    //      its status line, so there's no separate eager load-and-exit-on-
+    //      error path here anymore. ----
     psb::TopologyConfig topo;
     bool haveTopo = false;
 
-    if (psb::TopologyConfig::exists(topologyPath)) {
-        auto loaded = psb::TopologyConfig::load(topologyPath);
-        if (!loaded.has_value()) {
-            std::cerr << "Topology config error: could not parse " << topologyPath << "\n";
-            return 1;
-        }
-        topo = std::move(*loaded);
+    auto choice = psb::tui::showModeChoicePopup(screen);
+    if (choice == psb::tui::ModeChoice::Cancelled) return 0;
+    if (choice == psb::tui::ModeChoice::Single) {
+        auto quick = psb::tui::showQuickConnectForm(screen);
+        if (!quick.has_value()) return 0;
+        topo = *quick;
         haveTopo = true;
-    } else {
-        auto choice = psb::tui::showModeChoicePopup(screen);
-        if (choice == psb::tui::ModeChoice::Cancelled) return 0;
-        if (choice == psb::tui::ModeChoice::Single) {
-            auto quick = psb::tui::showQuickConnectForm(screen);
-            if (!quick.has_value()) return 0;
-            topo = *quick;
-            haveTopo = true;
-        }
-        // else Multi: leave haveTopo false — runWizard below launches the
-        // standalone wizard, exactly as before.
     }
+    // else Multi: leave haveTopo false — runWizard below launches the
+    // standalone wizard, empty except for the Path field defaulting to
+    // topologyPath, ready for [Load] to pull in an existing file.
 
     bool runWizard = !haveTopo;
     if (runWizard) {
@@ -591,7 +581,7 @@ int main(int argc, char** argv) {
         for (auto& bw : rt.busWorkers) bw->workCv.notify_all();
         screen.ExitLoopClosure()();
     });
-    auto bGlobalSetup = psb::tui::ActionButton("Setup", [openSetup] { openSetup(); });
+    auto bGlobalSetup = psb::tui::ActionButton("Topology", [openSetup] { openSetup(); });
 
     auto showPreferences = std::make_shared<bool>(false);
     auto prefsDialog = psb::tui::makePreferencesDialog(screen, showPreferences,
