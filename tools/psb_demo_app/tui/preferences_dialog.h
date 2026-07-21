@@ -53,8 +53,27 @@ inline PreferencesDialog makePreferencesDialog(ScreenInteractive& screen,
         screen.PostEvent(Event::Custom);
     });
 
-    auto timeoutInp = Input(timeoutVal.get(), "ms");
-    auto pollInp = Input(pollVal.get(), "s");
+    // cursor_position defaults to an internally-owned int starting at 0 and
+    // is never touched by code that mutates the bound string directly
+    // (as open() does below, bypassing Input's own edit path entirely) —
+    // left unbound, a freshly-populated multi-character value renders with
+    // the cursor stuck mid-string, which visibly corrupts the layout for
+    // anything longer than a single character (found via manual tmux
+    // testing: "1" rendered fine, "3000" wrapped onto its own line).
+    // Binding it explicitly and resetting it to end-of-string in open()
+    // keeps it in sync with the string every time the dialog reopens.
+    auto cursorTimeout = std::make_shared<int>(0);
+    auto cursorPoll = std::make_shared<int>(0);
+
+    InputOption timeoutOpt;
+    timeoutOpt.placeholder = "ms";
+    timeoutOpt.cursor_position = cursorTimeout.get();
+    auto timeoutInp = Input(timeoutVal.get(), timeoutOpt);
+
+    InputOption pollOpt;
+    pollOpt.placeholder = "s";
+    pollOpt.cursor_position = cursorPoll.get();
+    auto pollInp = Input(pollVal.get(), pollOpt);
 
     auto container = Container::Vertical({timeoutInp, pollInp, bSave, bCancel});
     auto root = Renderer(container, [timeoutVal, pollVal, timeoutInp, pollInp, bSave, bCancel] {
@@ -68,9 +87,11 @@ inline PreferencesDialog makePreferencesDialog(ScreenInteractive& screen,
         }) | border | size(WIDTH, EQUAL, 44);
     });
 
-    auto open = [timeoutVal, pollVal, showPreferences, &screen, &timeoutMs, &pollIntervalS] {
+    auto open = [timeoutVal, pollVal, cursorTimeout, cursorPoll, showPreferences, &screen, &timeoutMs, &pollIntervalS] {
         *timeoutVal = std::to_string(timeoutMs);
         *pollVal = std::to_string(pollIntervalS);
+        *cursorTimeout = static_cast<int>(timeoutVal->size());
+        *cursorPoll = static_cast<int>(pollVal->size());
         *showPreferences = true;
         screen.PostEvent(Event::Custom);
     };
