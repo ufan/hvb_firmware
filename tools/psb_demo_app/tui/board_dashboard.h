@@ -38,6 +38,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                     int timeoutMs, std::function<void()> openSetup,
                                     std::function<void()> requestRemove,
                                     Component globalQuit, Component globalSetup,
+                                    Component globalPreferences,
                                     std::function<size_t()> liveBoardCount) {
     // ---- Connection inputs (live in the connection modal) ----
     auto baudInp  = Input(&board.baudVal,  "baud");
@@ -314,7 +315,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
     auto root = Renderer(mainContainer, [&board, &screen, menuModeC, connectedMenuSave, bConnToggle, bRemove,
-                                         tabBar, tabContent, bSysCfg, globalQuit, globalSetup, liveBoardCount] {
+                                         tabBar, tabContent, bSysCfg, globalQuit, globalSetup, globalPreferences,
+                                         liveBoardCount] {
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
                 int nc = board.pendingChannelCount.load(std::memory_order_acquire);
@@ -420,6 +422,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             menuBarParts.push_back(globalQuit->Render());
             menuBarParts.push_back(text(" "));
             menuBarParts.push_back(globalSetup->Render());
+            menuBarParts.push_back(text(" "));
+            menuBarParts.push_back(globalPreferences->Render());
         }
         auto menuBarEl = hbox(std::move(menuBarParts));
 
