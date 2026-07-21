@@ -52,7 +52,7 @@ inline ModeChoice showModeChoicePopup(ScreenInteractive& screen) {
             text("Choose how you want to start.") | center,
             separator(),
             hbox({ bSingle->Render(), text("  "), bMulti->Render(), text("  "), bCancel->Render() }) | center,
-        }) | border | size(WIDTH, EQUAL, 46);
+        }) | border | size(WIDTH, EQUAL, 56);
     });
 
     screen.Loop(root);
