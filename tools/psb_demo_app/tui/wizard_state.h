@@ -52,6 +52,14 @@ inline std::string addBus(WizardState& s, const std::string& name,
     return "";
 }
 
+// Only clamps selectedBus when it falls past the end after the erase; does
+// not shift it when busIdx is strictly before the current selection (a
+// caller removing bus 0 while bus 1 is selected leaves selectedBus == 1,
+// now pointing at what used to be bus 2). Harmless for every call site in
+// this codebase — the wizard UI (wizard_screen.h) only ever calls
+// removeBus(s, s.selectedBus), i.e. always removes exactly the selected
+// row — but a caller passing an arbitrary busIdx decoupled from selection
+// would see a silently wrong post-removal selection.
 inline std::string removeBus(WizardState& s, int busIdx) {
     if (busIdx < 0 || busIdx >= static_cast<int>(s.topo.buses.size()))
         return "invalid bus index";
@@ -79,6 +87,8 @@ inline std::string addBoard(WizardState& s, int busIdx, const std::string& nickn
     return "";
 }
 
+// Same known limitation as removeBus above: only clamps past the end,
+// doesn't shift selectedBoard when boardIdx is strictly before it.
 inline std::string removeBoard(WizardState& s, int busIdx, int boardIdx) {
     if (busIdx < 0 || busIdx >= static_cast<int>(s.topo.buses.size()))
         return "invalid bus index";
