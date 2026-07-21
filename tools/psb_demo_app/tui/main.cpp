@@ -30,6 +30,19 @@ static int g_pollInterval = 1;
 // once by buildRuntime(), used identically whether that happened before the
 // wizard even ran (the common case) or right after it finished (Task 5's
 // Connect Now).
+// One in-flight board removal — see removeBoardLive/drainPendingRemovals.
+// `done` is set by the board's own BusWorker thread (inside a queued work
+// item) once it has erased this board from its own `boards` list; the UI
+// thread polls it once per frame and only finishes cleanup (destroying the
+// BoardSession, detaching from the switcher, tearing the bus down if now
+// empty) once it observes `done == true` — guaranteeing the object is never
+// touched by more than one thread at a time.
+struct PendingRemoval {
+    psb::tui::BusWorker* bw;
+    psb::tui::BoardSession* board;
+    std::shared_ptr<std::atomic<bool>> done;
+};
+
 struct Runtime {
     std::vector<std::unique_ptr<psb::tui::BusWorker>> busWorkers;
     std::vector<std::unique_ptr<psb::tui::BoardSession>> boards;
@@ -43,6 +56,7 @@ struct Runtime {
     std::mutex boardsMutex;
     psb::tui::BoardSwitcher switcher;
     std::thread animThread;
+    std::vector<PendingRemoval> pendingRemovals;
 };
 
 // The per-bus polling loop body: wait for work-or-timeout, drain the work
@@ -106,6 +120,107 @@ void runBusWorkerLoop(psb::tui::BusWorker& bw, ScreenInteractive& screen, std::a
     }
 }
 
+// Entry point for both removal paths (Global Constraints: dashboard Remove
+// button and the wizard's mid-session Remove-then-Apply must call this same
+// function, never two separate implementations). Finds the BusWorker
+// currently owning `board`, and enqueues a work item on that bus's own
+// queue that does the actual detach from bw.boards — on the worker thread
+// itself, so nothing on the UI thread ever races that thread's own reads of
+// its `boards` list. Registers a pendingRemoval; the real cleanup (object
+// destruction, switcher detach, bus teardown if now empty) happens later,
+// once drainPendingRemovals observes the work item finished.
+//
+// No-op if `board` isn't found in any BusWorker — defensive; both callers
+// only ever pass boards they can see are currently live.
+void removeBoardLive(Runtime& rt, ScreenInteractive& screen,
+                     std::atomic<bool>& running, psb::tui::BoardSession* board) {
+    psb::tui::BusWorker* owningBw = nullptr;
+    for (auto& bwPtr : rt.busWorkers) {
+        for (auto* b : bwPtr->boards) {
+            if (b == board) { owningBw = bwPtr.get(); break; }
+        }
+        if (owningBw) break;
+    }
+    if (!owningBw) return;
+
+    auto done = std::make_shared<std::atomic<bool>>(false);
+    {
+        std::lock_guard<std::mutex> lk(owningBw->workMutex);
+        owningBw->workQueue.push([owningBw, board, done, &screen] {
+            {
+                std::lock_guard<std::mutex> lk2(owningBw->workMutex);
+                for (size_t i = 0; i < owningBw->boards.size(); ++i) {
+                    if (owningBw->boards[i] == board) {
+                        owningBw->boards.erase(owningBw->boards.begin() + i);
+                        break;
+                    }
+                }
+            }
+            done->store(true);
+            screen.PostEvent(Event::Custom);
+        });
+    }
+    owningBw->workCv.notify_one();
+
+    rt.pendingRemovals.push_back({owningBw, board, done});
+}
+
+// Drains completed removals once per frame (called from main()'s root
+// Renderer). For each entry whose worker-thread detach has finished:
+// detaches from the switcher, destroys the BoardSession (only safe now —
+// the owning BusWorker thread has confirmed it will never touch this
+// pointer again), and — if that was the bus's last board — tears the bus
+// down too (Global Constraints: empty-bus teardown).
+//
+// The bus-teardown join below is a bounded, brief exception to "never block
+// the UI thread on worker activity": by this point bw->boards is already
+// empty, so the worker thread has at most one harmless empty-loop iteration
+// left (no doPollScan calls, since there's nothing left to poll) before it
+// observes stopRequested and exits — worst case is bounded by
+// kPollTimeoutMs (300ms) if a poll for the just-removed board was already
+// in flight from a snapshot taken before this cycle's queue drain, not a
+// full connect-timeout-scale stall. This is the one case in this codebase's
+// removal machinery where a brief block is an accepted tradeoff rather than
+// a further staged hand-off, since it's bounded, small, and rare (only
+// happens when a user removes the last board on a given bus).
+void drainPendingRemovals(Runtime& rt, ScreenInteractive& screen, std::atomic<bool>& running) {
+    for (size_t i = 0; i < rt.pendingRemovals.size(); ) {
+        auto& pr = rt.pendingRemovals[i];
+        if (!pr.done->load()) { ++i; continue; }
+
+        rt.switcher.detachBoard(pr.board->nickname);
+
+        {
+            std::lock_guard<std::mutex> lk(rt.boardsMutex);
+            for (size_t j = 0; j < rt.boards.size(); ++j) {
+                if (rt.boards[j].get() == pr.board) {
+                    rt.boards.erase(rt.boards.begin() + j);
+                    break;
+                }
+            }
+        }
+
+        bool busEmpty = false;
+        { std::lock_guard<std::mutex> lk(pr.bw->workMutex);
+          busEmpty = pr.bw->boards.empty(); }
+        if (busEmpty) {
+            pr.bw->stopRequested = true;
+            pr.bw->workCv.notify_all();
+            if (pr.bw->thread.joinable()) pr.bw->thread.join();
+            pr.bw->bus->disconnect();
+            for (size_t k = 0; k < rt.busWorkers.size(); ++k) {
+                if (rt.busWorkers[k].get() == pr.bw) {
+                    rt.busWorkers.erase(rt.busWorkers.begin() + k);
+                    break;
+                }
+            }
+        }
+
+        rt.pendingRemovals.erase(rt.pendingRemovals.begin() + i);
+        // Do not increment i — the next element (if any) shifted into this slot.
+    }
+}
+
 // Builds BusWorker/BoardSession for every bus/board in `topo` into `rt`,
 // starts one worker thread per bus (Phase 2), starts the shared animation
 // thread. Identical to Phase 2's inline main() body, extracted so Task 6 can
@@ -138,7 +253,8 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 bw->workQueue, bw->workMutex, bw->workCv, screen});
-            b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup);
+            b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup,
+                [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); });
             // Same "lock even though provably safe here" reasoning as the
             // rt.boards push right below — this bw's worker thread hasn't
             // been spawned yet at this point, but locking anyway means
@@ -260,7 +376,8 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 targetBw->workQueue, targetBw->workMutex, targetBw->workCv, screen});
-            b->dashboard = psb::tui::makeBoardDashboard(*b, *targetBw, screen, running, timeoutMs, openSetup);
+            b->dashboard = psb::tui::makeBoardDashboard(*b, *targetBw, screen, running, timeoutMs, openSetup,
+                [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); });
 
             // Connect + full-scan this one board right away, on its bus's
             // own worker queue — never block the UI thread, same discipline
@@ -426,8 +543,10 @@ int main(int argc, char** argv) {
     };
     auto midSessionWizardRoot = psb::tui::makeWizardScreen(*midSessionWiz, screen, onMidSessionFinish, /*allowScan=*/false);
 
-    auto rootWithSetup = Renderer(rt.switcher.root, [&rt] { return rt.switcher.root->Render(); })
-        | Modal(midSessionWizardRoot, showSetup.get());
+    auto rootWithSetup = Renderer(rt.switcher.root, [&rt, &screen, &running] {
+        drainPendingRemovals(rt, screen, running);
+        return rt.switcher.root->Render();
+    }) | Modal(midSessionWizardRoot, showSetup.get());
 
     screen.Loop(rootWithSetup);
     joinRuntime(rt, running);
