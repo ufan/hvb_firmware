@@ -154,22 +154,59 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     auto scanStaged = std::make_shared<ScanUpdate>();
     auto scanUpdateReady = std::make_shared<std::atomic<bool>>(false);
 
+    // Removes already-added boards from the candidate list, keeping
+    // scanResults/scanResultLabels in sync and scanResultIdx clamped into
+    // range. Run after every successful Add (so the candidate list narrows
+    // to what's still worth adding, without forcing a Rescan) and after
+    // every scan-thread drain (so a fresh Rescan's results are filtered the
+    // same way against whatever's already in s.topo by then). This is what
+    // makes "select/add one board" leave the rest of a multi-board scan's
+    // results visible and ready for the next Add, instead of the whole
+    // list vanishing until the user rescans from scratch.
+    auto filterAlreadyAdded = [&s, scanResults, scanResultLabels, scanResultIdx] {
+        if (s.selectedBus < 0 || s.selectedBus >= static_cast<int>(s.topo.buses.size())) return;
+        const auto& existing = s.topo.buses[s.selectedBus].boards;
+        std::vector<DiscoveredBoard> keptResults;
+        std::vector<std::string> keptLabels;
+        for (size_t i = 0; i < scanResults->size(); ++i) {
+            bool already = false;
+            for (const auto& b : existing)
+                if (b.slaveId == (*scanResults)[i].slaveId) { already = true; break; }
+            if (!already) {
+                keptResults.push_back((*scanResults)[i]);
+                keptLabels.push_back((*scanResultLabels)[i]);
+            }
+        }
+        *scanResults = std::move(keptResults);
+        *scanResultLabels = std::move(keptLabels);
+        if (*scanResultIdx >= static_cast<int>(scanResultLabels->size()))
+            *scanResultIdx = scanResultLabels->empty() ? -1 : static_cast<int>(scanResultLabels->size()) - 1;
+    };
+
     auto boardNickInp = Input(newBoardNick.get(), "nickname");
     auto boardSlaveInp = Input(newBoardSlave.get(), "1-247");
     auto scanStartInp = Input(scanStart.get(), "start");
     auto scanEndInp = Input(scanEnd.get(), "end");
     auto scanResultsMenu = Menu(scanResultLabels.get(), scanResultIdx.get());
 
+    // Deliberately does not close the modal on success (no
+    // `*showAddBoardPtr = false`) — closing after every single add forced
+    // the user to reopen "Add Board" from scratch for each board on the
+    // same bus. Staying open lets them add several boards back-to-back
+    // (manual entry or scan-assisted) in one uninterrupted pass; Cancel is
+    // now the only way to close it, once they're done with this bus.
     auto bAddBoardConfirm = ActionButton("Add", [&s, newBoardNick, newBoardSlave,
-                                                  rebuildBoardNames, showAddBoardPtr, &screen] {
+                                                  rebuildBoardNames, filterAlreadyAdded, &screen] {
         int slave = 1;
         try { slave = std::stoi(*newBoardSlave); } catch (...) {}
         std::string err = addBoard(s, s.selectedBus, *newBoardNick, slave);
-        s.statusMsg = err.empty() ? "" : "Error: " + err;
         if (err.empty()) {
+            s.statusMsg = "Added " + *newBoardNick + " (#" + std::to_string(slave) + ").";
             rebuildBoardNames();
-            *showAddBoardPtr = false;
+            filterAlreadyAdded();
             newBoardNick->clear(); *newBoardSlave = "1";
+        } else {
+            s.statusMsg = "Error: " + err;
         }
         screen.PostEvent(Event::Custom);
     });
@@ -276,7 +313,7 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
                                                   scanResultsMenu, bUseScanResult, bAddBoardCancel,
                                                   scanning, scanProgress, scanStatus, scanResults,
                                                   scanResultLabels, scanMutex, scanStaged,
-                                                  scanUpdateReady, allowScan] {
+                                                  scanUpdateReady, filterAlreadyAdded, allowScan] {
         // Drain any scan-thread hand-off before any widget below reads
         // scanResultLabels/scanResults/scanStatus (scanResultsMenu->Render()
         // in particular touches scanResultLabels internally) — this Renderer
@@ -285,10 +322,17 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
         // more than one thread. See ScanUpdate's comment for why a mutex
         // around the live vectors alone wouldn't be enough.
         if (scanUpdateReady->exchange(false)) {
-            std::lock_guard<std::mutex> lk(*scanMutex);
-            *scanResults = scanStaged->results;
-            *scanResultLabels = scanStaged->labels;
-            *scanStatus = scanStaged->status;
+            {
+                std::lock_guard<std::mutex> lk(*scanMutex);
+                *scanResults = scanStaged->results;
+                *scanResultLabels = scanStaged->labels;
+                *scanStatus = scanStaged->status;
+            }
+            // A fresh scan can rediscover a board added since the previous
+            // scan (e.g. add one, then sweep the range again) — filter it
+            // back out so the candidate list only ever shows what's still
+            // worth adding.
+            filterAlreadyAdded();
         }
         std::string busLabel = (s.selectedBus >= 0 && s.selectedBus < static_cast<int>(s.topo.buses.size()))
             ? s.topo.buses[s.selectedBus].name : "(none)";
