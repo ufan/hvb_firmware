@@ -32,7 +32,8 @@ struct BoardSwitcher {
 };
 
 inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>>& boards,
-                                       Component globalQuit, Component globalSetup) {
+                                       Component globalQuit, Component globalSetup,
+                                       Component globalPreferences) {
     auto boardNames = std::make_shared<std::vector<std::string>>();
     for (auto& b : boards) boardNames->push_back(b->nickname);
     auto activeBoard = std::make_shared<int>(0);
@@ -67,7 +68,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     auto dashboardStack = Container::Tab({}, activeBoard.get());
     for (auto& b : boards) dashboardStack->Add(b->dashboard);
 
-    auto globalMenuBar = Container::Horizontal({globalQuit, globalSetup});
+    auto globalMenuBar = Container::Horizontal({globalQuit, globalSetup, globalPreferences});
 
     auto mainContainer = Container::Vertical({globalMenuBar, switcherBar, dashboardStack}, mainSelected.get());
     // Capture boardNames/activeBoard, not just switcherBar/dashboardStack —
