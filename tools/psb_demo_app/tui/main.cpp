@@ -411,6 +411,14 @@ int main(int argc, char** argv) {
                               (psb::tui::WizardOutcome outcome) {
         if (outcome == psb::tui::WizardOutcome::ConnectNow) {
             applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, timeoutArg, openSetup);
+            // applyNewBoardsLive is strictly additive (Global Constraints) —
+            // if the wizard's in-memory edits also removed a board that's
+            // still running in rt, this overwrite makes topo stop
+            // describing what's actually connected (a later Save would
+            // just omit that board, which is likely what the user wanted,
+            // but it's worth knowing this doesn't reconcile the two). Not a
+            // bug: live removal was deliberately out of scope for this
+            // task — see applyNewBoardsLive's own scope-note comment.
             topo = midSessionWiz->topo;
         }
         *showSetup = false;

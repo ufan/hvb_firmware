@@ -376,10 +376,17 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
         }
         screen.PostEvent(Event::Custom);
     });
-    auto bConnectNow = ActionButton("Connect Now", [&s, onFinish] {
+    // Mid-session (allowScan=false), ConnectNow applies additive changes to
+    // the already-running session rather than starting one, and Save &
+    // Exit only closes this modal — the dashboard underneath keeps running,
+    // nothing actually "exits". Reusing allowScan as the mid-session signal
+    // (the same construction-time parameter that already distinguishes the
+    // two call sites) to pick the labels that describe what each button
+    // does in context, rather than always showing the pre-dashboard wording.
+    auto bConnectNow = ActionButton(allowScan ? "Connect Now" : "Apply", [&s, onFinish] {
         onFinish(WizardOutcome::ConnectNow);
     });
-    auto bDone = ActionButton("Save & Exit", [&s, onFinish, &screen] {
+    auto bDone = ActionButton(allowScan ? "Save & Exit" : "Save & Close", [&s, onFinish, &screen] {
         if (s.topo.save(s.topologyPath)) {
             s.dirty = false;
             onFinish(WizardOutcome::SavedOnly);
