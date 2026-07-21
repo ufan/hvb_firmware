@@ -1,32 +1,13 @@
 #include "topology_config.h"
+#include "platform_paths.h"
 
 #include <toml++/toml.hpp>
 
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 
-#if defined(_WIN32)
-#include <cstdlib>
-#else
-#include <unistd.h>
-#include <pwd.h>
-#endif
-
 namespace psb {
-
-static std::string homeDir() {
-#if defined(_WIN32)
-    const char* hd = std::getenv("USERPROFILE");
-    return hd ? hd : ".";
-#else
-    const char* hd = std::getenv("HOME");
-    if (hd) return hd;
-    struct passwd* pw = getpwuid(getuid());
-    return pw && pw->pw_dir ? pw->pw_dir : ".";
-#endif
-}
 
 std::string TopologyConfig::defaultPath() {
     return homeDir() + "/.psb_demo_app/topology.toml";

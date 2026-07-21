@@ -3,6 +3,7 @@ add_library(psb_modbus_core STATIC
     psb_serial_bus.cpp
     psb_board_session.cpp
     topology_config.cpp
+    platform_paths.cpp
     monitor_render.cpp
 )
 target_include_directories(psb_modbus_core
