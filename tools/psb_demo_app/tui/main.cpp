@@ -74,14 +74,23 @@ void runBusWorkerLoop(psb::tui::BusWorker& bw, ScreenInteractive& screen, std::a
     }
 }
 
-// Builds BusWorker/BoardSession for every bus/board in `topo`, starts one
-// worker thread per bus (Phase 2), starts the shared animation thread, and
-// returns everything needed to run the dashboard loop and join cleanly
-// afterward. Identical to Phase 2's inline main() body, extracted so Task 6
-// can call it either at startup or after the wizard finishes.
-Runtime buildRuntime(const psb::TopologyConfig& topo, ScreenInteractive& screen,
-                     std::atomic<bool>& running, int timeoutMs, bool autoConnectAll) {
-    Runtime rt;
+// Builds BusWorker/BoardSession for every bus/board in `topo` into `rt`,
+// starts one worker thread per bus (Phase 2), starts the shared animation
+// thread. Identical to Phase 2's inline main() body, extracted so Task 6 can
+// call it either at startup or after the wizard finishes.
+//
+// Takes `rt` as an out-parameter rather than returning it by value: the
+// animation thread below captures `&rt` by reference, and that capture must
+// refer to the one object that lives for the rest of main()'s frame — a
+// return-by-value here would only be safe under NRVO, which the standard
+// doesn't guarantee. Passing the caller's already-in-place `Runtime rt;` by
+// reference removes that dependency entirely (this codebase already had one
+// real use-after-free from a similar lifetime assumption — see
+// board_switcher.h's history — not worth risking a second, especially since
+// Task 7 adds more branches to this function that would make NRVO even
+// less certain to hold).
+void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractive& screen,
+                  std::atomic<bool>& running, int timeoutMs, bool autoConnectAll) {
     for (const auto& busCfg : topo.buses) {
         auto bw = std::make_unique<psb::tui::BusWorker>();
         bw->bus = std::make_shared<psb::PsbSerialBus>();
@@ -143,7 +152,6 @@ Runtime buildRuntime(const psb::TopologyConfig& topo, ScreenInteractive& screen,
     });
 
     rt.switcher = psb::tui::makeBoardSwitcher(rt.boards);
-    return rt;
 }
 
 void joinRuntime(Runtime& rt, std::atomic<bool>& running) {
@@ -187,7 +195,10 @@ int main(int argc, char** argv) {
     if (!portArg.empty() && !setupFlag) {
         topo = psb::TopologyConfig::singleBoard(portArg, baudArg, slaveArg, "board1");
         haveTopo = true;
-    } else if (psb::TopologyConfig::exists(topologyPath) && !setupFlag) {
+    } else if (psb::TopologyConfig::exists(topologyPath)) {
+        // Not gated on !setupFlag — --setup on an existing topology must
+        // still seed the wizard with it (per the comment below); setupFlag
+        // only decides whether the wizard also runs afterward.
         auto loaded = psb::TopologyConfig::load(topologyPath);
         if (!loaded.has_value()) {
             std::cerr << "Topology config error: could not parse " << topologyPath << "\n";
@@ -195,11 +206,9 @@ int main(int argc, char** argv) {
         }
         topo = std::move(*loaded);
         haveTopo = true;
-    } else if (topologyExplicit && !psb::TopologyConfig::exists(topologyPath)) {
-        // Case 3 — file named but missing: wizard runs regardless of
-        // --setup, pre-targeting this path.
-    } else if (!setupFlag && !portArg.empty()) {
-        // unreachable (portArg branch above already handled) — kept out for clarity.
+    } else if (topologyExplicit) {
+        // Case 3 — file named but missing (exists() already ruled out
+        // above): wizard runs regardless of --setup, pre-targeting this path.
     } else if (!setupFlag) {
         // Neither -p nor a resolvable/explicit --topology, and --setup not
         // given: today's genuinely-first-run hardcoded guess.
@@ -239,7 +248,8 @@ int main(int argc, char** argv) {
     bool autoConnectAll = !portArg.empty() || runWizard || topo.totalBoardCount() > 1;
 
     std::atomic<bool> running{true};
-    Runtime rt = buildRuntime(topo, screen, running, timeoutArg, autoConnectAll);
+    Runtime rt;
+    buildRuntime(rt, topo, screen, running, timeoutArg, autoConnectAll);
 
     screen.Loop(rt.switcher.root);
     joinRuntime(rt, running);
