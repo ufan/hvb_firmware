@@ -7,6 +7,8 @@
 #include "wizard_state.h"
 #include "wizard_screen.h"
 #include "mode_select.h"
+#include "preferences_dialog.h"
+#include "app_preferences.h"
 #include "tool_version.h"
 
 #include <ftxui/component/component.hpp>
@@ -26,6 +28,7 @@
 using namespace ftxui;
 
 static int g_pollInterval = 1;
+static int g_connectTimeoutMs = 3000;
 
 // Everything the running program needs to join/tear down cleanly — built
 // once by buildRuntime(), used identically whether that happened before the
@@ -258,7 +261,8 @@ void drainPendingRemovals(Runtime& rt, psb::TopologyConfig& topo,
 // less certain to hold).
 void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractive& screen,
                   std::atomic<bool>& running, int timeoutMs, bool autoConnectAll,
-                  std::function<void()> openSetup, Component globalQuit, Component globalSetup) {
+                  std::function<void()> openSetup, Component globalQuit, Component globalSetup,
+                  Component globalPreferences) {
     for (const auto& busCfg : topo.buses) {
         auto bw = std::make_unique<psb::tui::BusWorker>();
         bw->bus = std::make_shared<psb::PsbSerialBus>();
@@ -275,7 +279,7 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
                 bw->workQueue, bw->workMutex, bw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
-                globalQuit, globalSetup, [&rt] { return rt.boards.size(); });
+                globalQuit, globalSetup, globalPreferences, [&rt] { return rt.boards.size(); });
             // Same "lock even though provably safe here" reasoning as the
             // rt.boards push right below — this bw's worker thread hasn't
             // been spawned yet at this point, but locking anyway means
@@ -338,7 +342,7 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
         }
     });
 
-    rt.switcher = psb::tui::makeBoardSwitcher(rt.boards, globalQuit, globalSetup);
+    rt.switcher = psb::tui::makeBoardSwitcher(rt.boards, globalQuit, globalSetup, globalPreferences);
 }
 
 void joinRuntime(Runtime& rt, std::atomic<bool>& running) {
@@ -360,7 +364,7 @@ void joinRuntime(Runtime& rt, std::atomic<bool>& running) {
 void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                         ScreenInteractive& screen, std::atomic<bool>& running,
                         int timeoutMs, std::function<void()> openSetup,
-                        Component globalQuit, Component globalSetup) {
+                        Component globalQuit, Component globalSetup, Component globalPreferences) {
     for (const auto& busCfg : newTopo.buses) {
         psb::tui::BusWorker* existingBw = nullptr;
         for (auto& bw : rt.busWorkers)
@@ -400,7 +404,7 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                 targetBw->workQueue, targetBw->workMutex, targetBw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *targetBw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
-                globalQuit, globalSetup, [&rt] { return rt.boards.size(); });
+                globalQuit, globalSetup, globalPreferences, [&rt] { return rt.boards.size(); });
 
             // Connect + full-scan this one board right away, on its bus's
             // own worker queue — never block the UI thread, same discipline
@@ -473,42 +477,45 @@ void removeGoneBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
 }
 
 int main(int argc, char** argv) {
+    // psb_demo_tui is a double-click-launched UI app (Sub-project C) — the
+    // only CLI-level concept left is --version (and CLI11's own --help),
+    // both standard conventions even for GUI-first tools. Port/baud/slave,
+    // topology path, and the setup wizard are all reachable from the UI
+    // itself (the mode-select popup, the wizard's own path field, and the
+    // global Setup button — Sub-project B); connection timeout and idle
+    // poll interval are reachable via the global Preferences button (see
+    // preferences_dialog.h) and persist across launches via AppPreferences.
     CLI::App app{"PSB Demo TUI"};
     app.set_version_flag("--version", std::string("psb_demo_tui ") + TOOL_VERSION_STRING);
-
-    std::string portArg;
-    int baudArg = 115200, slaveArg = 1, timeoutArg = 3000;
-    std::string topologyPath = psb::TopologyConfig::defaultPath();
-    bool setupFlag = false;
-    app.add_option("-p,--port", portArg, "Serial port (quick single-board connect; auto-connects at startup)");
-    app.add_option("-b,--baud", baudArg, "Baud rate")
-        ->check(CLI::IsMember({9600, 19200, 38400, 115200}));
-    app.add_option("-i,--id", slaveArg, "Slave ID")->check(CLI::Range(0, 247));
-    app.add_option("-t,--timeout", timeoutArg, "Timeout ms");
-    app.add_option("-s,--poll-interval", g_pollInterval, "Idle poll interval (s)");
-    auto* topologyOpt = app.add_option("-T,--topology", topologyPath,
-        "Topology config file (default: " + topologyPath + ")");
-    app.add_flag("--setup", setupFlag, "Launch the interactive topology setup wizard");
     CLI11_PARSE(app, argc, argv);
+
+    if (auto prefs = psb::AppPreferences::load(psb::AppPreferences::defaultPath()); prefs.has_value()) {
+        g_connectTimeoutMs = prefs->timeoutMs;
+        g_pollInterval = prefs->pollIntervalS;
+    }
+
+    const std::string topologyPath = psb::TopologyConfig::defaultPath();
 
     auto screen = ScreenInteractive::Fullscreen();
 
-    // ---- Resolve (or build) the topology, running the wizard first when
-    //      asked to or when needed (design spec case 3: a --topology path
-    //      that doesn't exist yet auto-launches the wizard pre-targeting it
-    //      as the Save destination, instead of silently falling through to
-    //      hardcoded defaults). ----
+    // ---- Resolve (or build) the topology. With every CLI flag gone
+    //      (Sub-project C), there are only two ways to get here: an
+    //      existing topology.toml auto-loads and auto-connects directly; or
+    //      (first run, or the file was removed) the mode-selection popup
+    //      decides between a single-board quick-connect and the standalone
+    //      Setup wizard. See docs/superpowers/specs/
+    //      2026-07-21-cli-to-preferences-design.md's main()-simplification
+    //      section — this collapses what used to be a 4-branch chain built
+    //      around -p/-T/--setup, none of which exist anymore. Editing an
+    //      already-existing topology via the wizard before it auto-connects
+    //      (--setup's old trick) is no longer reachable from a cold launch
+    //      — a direct, accepted consequence of removing that flag; the
+    //      wizard is still reachable afterward via the global Setup button,
+    //      identical to today's mid-session editing. ----
     psb::TopologyConfig topo;
     bool haveTopo = false;
-    bool topologyExplicit = topologyOpt->count() > 0;
 
-    if (!portArg.empty() && !setupFlag) {
-        topo = psb::TopologyConfig::singleBoard(portArg, baudArg, slaveArg, "board1");
-        haveTopo = true;
-    } else if (psb::TopologyConfig::exists(topologyPath)) {
-        // Not gated on !setupFlag — --setup on an existing topology must
-        // still seed the wizard with it (per the comment below); setupFlag
-        // only decides whether the wizard also runs afterward.
+    if (psb::TopologyConfig::exists(topologyPath)) {
         auto loaded = psb::TopologyConfig::load(topologyPath);
         if (!loaded.has_value()) {
             std::cerr << "Topology config error: could not parse " << topologyPath << "\n";
@@ -516,18 +523,7 @@ int main(int argc, char** argv) {
         }
         topo = std::move(*loaded);
         haveTopo = true;
-    } else if (topologyExplicit) {
-        // Case 3 — file named but missing (exists() already ruled out
-        // above): wizard runs regardless of --setup, pre-targeting this path.
-    } else if (!setupFlag) {
-        // Neither -p nor a resolvable/explicit --topology, and --setup not
-        // given: no CLI signal at all resolves what to do. Show the
-        // mode-selection popup instead of guessing a hardcoded port (Sub-
-        // project B; see mode_select.h and docs/superpowers/specs/
-        // 2026-07-21-mode-architecture-design.md). Every other branch in
-        // this chain (-p, an existing topology file, --topology naming a
-        // missing file, --setup) is untouched — this replaces only the
-        // old /dev/ttyUSB0 fallback.
+    } else {
         auto choice = psb::tui::showModeChoicePopup(screen);
         if (choice == psb::tui::ModeChoice::Cancelled) return 0;
         if (choice == psb::tui::ModeChoice::Single) {
@@ -536,15 +532,11 @@ int main(int argc, char** argv) {
             topo = *quick;
             haveTopo = true;
         }
-        // else Multi: leave haveTopo false — the existing runWizard logic
-        // below launches the standalone wizard exactly as --setup/case-3
-        // already do, with no changes needed here.
+        // else Multi: leave haveTopo false — runWizard below launches the
+        // standalone wizard, exactly as before.
     }
-    // else: setupFlag is true — always run the wizard next, regardless of
-    // what topo/haveTopo currently hold (a pre-existing topology, if any,
-    // seeds the wizard for editing rather than starting from empty).
 
-    bool runWizard = setupFlag || !haveTopo;
+    bool runWizard = !haveTopo;
     if (runWizard) {
         psb::tui::WizardState wiz;
         wiz.topologyPath = topologyPath;
@@ -570,7 +562,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    bool autoConnectAll = !portArg.empty() || runWizard || topo.totalBoardCount() > 1;
+    bool autoConnectAll = runWizard || topo.totalBoardCount() > 1;
 
     std::atomic<bool> running{true};
 
@@ -601,10 +593,16 @@ int main(int argc, char** argv) {
     });
     auto bGlobalSetup = psb::tui::ActionButton("Setup", [openSetup] { openSetup(); });
 
-    buildRuntime(rt, topo, screen, running, timeoutArg, autoConnectAll, openSetup, bGlobalQuit, bGlobalSetup);
+    auto showPreferences = std::make_shared<bool>(false);
+    auto prefsDialog = psb::tui::makePreferencesDialog(screen, showPreferences,
+                                                        g_connectTimeoutMs, g_pollInterval);
+    auto bGlobalPreferences = psb::tui::ActionButton("Preferences", prefsDialog.open);
 
-    auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &screen, &running, timeoutArg, openSetup,
-                               bGlobalQuit, bGlobalSetup]
+    buildRuntime(rt, topo, screen, running, g_connectTimeoutMs, autoConnectAll, openSetup,
+                bGlobalQuit, bGlobalSetup, bGlobalPreferences);
+
+    auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &screen, &running, openSetup,
+                               bGlobalQuit, bGlobalSetup, bGlobalPreferences]
                               (psb::tui::WizardOutcome outcome) {
         if (outcome == psb::tui::WizardOutcome::ConnectNow) {
             // Tear down what's gone before attaching what's new — the two
@@ -617,8 +615,8 @@ int main(int argc, char** argv) {
             // staged hand-off, applyNewBoardsLive's queued connect) — topo
             // is already correct by the time either one completes.
             removeGoneBoardsLive(rt, midSessionWiz->topo, screen, running);
-            applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, timeoutArg, openSetup,
-                               bGlobalQuit, bGlobalSetup);
+            applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, g_connectTimeoutMs, openSetup,
+                               bGlobalQuit, bGlobalSetup, bGlobalPreferences);
             topo = midSessionWiz->topo;
         }
         *showSetup = false;
@@ -629,7 +627,8 @@ int main(int argc, char** argv) {
     auto rootWithSetup = Renderer(rt.switcher.root, [&rt, &topo, &screen, &running] {
         drainPendingRemovals(rt, topo, screen, running);
         return rt.switcher.root->Render();
-    }) | Modal(midSessionWizardRoot, showSetup.get());
+    }) | Modal(midSessionWizardRoot, showSetup.get())
+       | Modal(prefsDialog.root, showPreferences.get());
 
     screen.Loop(rootWithSetup);
     joinRuntime(rt, running);
