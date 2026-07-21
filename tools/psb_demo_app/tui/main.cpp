@@ -90,7 +90,8 @@ void runBusWorkerLoop(psb::tui::BusWorker& bw, ScreenInteractive& screen, std::a
 // Task 7 adds more branches to this function that would make NRVO even
 // less certain to hold).
 void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractive& screen,
-                  std::atomic<bool>& running, int timeoutMs, bool autoConnectAll) {
+                  std::atomic<bool>& running, int timeoutMs, bool autoConnectAll,
+                  std::function<void()> openSetup) {
     for (const auto& busCfg : topo.buses) {
         auto bw = std::make_unique<psb::tui::BusWorker>();
         bw->bus = std::make_shared<psb::PsbSerialBus>();
@@ -105,7 +106,7 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 bw->workQueue, bw->workMutex, bw->workCv, screen});
-            b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs);
+            b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup);
             bw->boards.push_back(b.get());
             rt.boards.push_back(std::move(b));
         }
@@ -160,6 +161,84 @@ void joinRuntime(Runtime& rt, std::atomic<bool>& running) {
     for (auto& bw : rt.busWorkers) if (bw->thread.joinable()) bw->thread.join();
     if (rt.animThread.joinable()) rt.animThread.join();
     for (auto& bw : rt.busWorkers) bw->bus->disconnect();
+}
+
+// Attaches every bus/board present in `newTopo` but absent from the
+// currently-running `rt` — strictly additive (see Task 7's Global
+// Constraints scope note). A bus already running is matched by port,
+// following the same technique the bus worker thread itself already uses
+// to learn its own port (bw.boards.front()->portVal) — BusWorker has no
+// port field of its own. A brand-new bus gets its own BusWorker and thread,
+// built the same way buildRuntime() builds every other bus (and runs the
+// same runBusWorkerLoop() body — no duplicated loop logic).
+void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
+                        ScreenInteractive& screen, std::atomic<bool>& running,
+                        int timeoutMs, std::function<void()> openSetup) {
+    for (const auto& busCfg : newTopo.buses) {
+        psb::tui::BusWorker* existingBw = nullptr;
+        for (auto& bw : rt.busWorkers)
+            if (!bw->boards.empty() && bw->boards.front()->portVal == busCfg.port)
+                { existingBw = bw.get(); break; }
+
+        for (const auto& boardCfg : busCfg.boards) {
+            bool alreadyRunning = false;
+            if (existingBw)
+                for (auto* b : existingBw->boards)
+                    if (b->nickname == boardCfg.nickname) { alreadyRunning = true; break; }
+            if (alreadyRunning) continue;
+
+            psb::tui::BusWorker* targetBw = existingBw;
+            if (!targetBw) {
+                auto bw = std::make_unique<psb::tui::BusWorker>();
+                bw->bus = std::make_shared<psb::PsbSerialBus>();
+                bw->bus->connect(busCfg.port, busCfg.baudRate, timeoutMs);
+                targetBw = bw.get();
+                rt.busWorkers.push_back(std::move(bw));
+                psb::tui::BusWorker& bwRef = *targetBw;
+                bwRef.thread = std::thread([&bwRef, &running, &screen] {
+                    runBusWorkerLoop(bwRef, screen, running);
+                });
+                existingBw = targetBw;
+            }
+
+            auto b = std::make_unique<psb::tui::BoardSession>();
+            b->nickname = boardCfg.nickname;
+            b->bus = targetBw->bus;
+            b->client = std::make_unique<psb::PsbBoardSession>(targetBw->bus, boardCfg.slaveId);
+            b->portVal = busCfg.port;
+            b->baudVal = std::to_string(busCfg.baudRate);
+            b->slaveVal = std::to_string(boardCfg.slaveId);
+            b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
+                *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
+                targetBw->workQueue, targetBw->workMutex, targetBw->workCv, screen});
+            b->dashboard = psb::tui::makeBoardDashboard(*b, *targetBw, screen, running, timeoutMs, openSetup);
+
+            // Connect + full-scan this one board right away, on its bus's
+            // own worker queue — never block the UI thread, same discipline
+            // doConnect() in board_dashboard.h already follows.
+            psb::tui::BoardSession* bPtr = b.get();
+            psb::tui::BusWorker* bwPtr = targetBw;
+            { std::lock_guard<std::mutex> lk(bwPtr->workMutex);
+              bwPtr->workQueue.push([bPtr, &screen, &running] {
+                  bool ok = bPtr->client->verifyProtocol();
+                  bPtr->connected = ok;
+                  { std::lock_guard<std::mutex> lk2(bPtr->statusMutex);
+                    bPtr->statusMsg = ok ? "" : "Error: " + bPtr->client->lastError(); }
+                  if (ok) {
+                      psb::tui::doFullScan(*bPtr->client, bPtr->connected, bPtr->data, screen, running);
+                      bPtr->data.valid = bPtr->connected.load();
+                      bPtr->pendingChannelCount.store(bPtr->data.numChannels(), std::memory_order_release);
+                      bPtr->pendingSync.store(true, std::memory_order_release);
+                  }
+                  screen.PostEvent(Event::Custom);
+              }); }
+            bwPtr->workCv.notify_one();
+
+            targetBw->boards.push_back(bPtr);
+            rt.switcher.attachBoard(b->nickname, b->dashboard);
+            rt.boards.push_back(std::move(b));
+        }
+    }
 }
 
 int main(int argc, char** argv) {
@@ -248,10 +327,38 @@ int main(int argc, char** argv) {
     bool autoConnectAll = !portArg.empty() || runWizard || topo.totalBoardCount() > 1;
 
     std::atomic<bool> running{true};
-    Runtime rt;
-    buildRuntime(rt, topo, screen, running, timeoutArg, autoConnectAll);
 
-    screen.Loop(rt.switcher.root);
+    auto showSetup = std::make_shared<bool>(false);
+    auto midSessionWiz = std::make_shared<psb::tui::WizardState>();
+    midSessionWiz->topologyPath = topologyPath;
+
+    std::function<void()> openSetup = [showSetup, midSessionWiz, &topo, &screen] {
+        midSessionWiz->topo = topo;  // seed with the currently-running topology
+        midSessionWiz->selectedBus = -1;
+        midSessionWiz->selectedBoard = -1;
+        midSessionWiz->statusMsg.clear();
+        *showSetup = true;
+        screen.PostEvent(Event::Custom);
+    };
+
+    Runtime rt;
+    buildRuntime(rt, topo, screen, running, timeoutArg, autoConnectAll, openSetup);
+
+    auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &screen, &running, timeoutArg, openSetup]
+                              (psb::tui::WizardOutcome outcome) {
+        if (outcome == psb::tui::WizardOutcome::ConnectNow) {
+            applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, timeoutArg, openSetup);
+            topo = midSessionWiz->topo;
+        }
+        *showSetup = false;
+        screen.PostEvent(Event::Custom);
+    };
+    auto midSessionWizardRoot = psb::tui::makeWizardScreen(*midSessionWiz, screen, onMidSessionFinish, /*allowScan=*/false);
+
+    auto rootWithSetup = Renderer(rt.switcher.root, [&rt] { return rt.switcher.root->Render(); })
+        | Modal(midSessionWizardRoot, showSetup.get());
+
+    screen.Loop(rootWithSetup);
     joinRuntime(rt, running);
     return 0;
 }

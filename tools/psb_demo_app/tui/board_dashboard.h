@@ -14,6 +14,7 @@
 
 #include <cmath>
 #include <chrono>
+#include <functional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -34,7 +35,7 @@ inline const std::vector<std::string> kBaudNames = {"115200", "9600", "19200", "
 // state, so N of these coexisting is safe.
 inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                     ScreenInteractive& screen, std::atomic<bool>& running,
-                                    int timeoutMs) {
+                                    int timeoutMs, std::function<void()> openSetup) {
     // ---- Connection inputs (live in the connection modal) ----
     auto baudInp  = Input(&board.baudVal,  "baud");
     auto slaveInp = Input(&board.slaveVal, "id");
@@ -303,10 +304,11 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto tabContent = Container::Tab(tabComponents, &board.activeTab);
 
     // ---- Status bar (connection details + SysConfig; Connect lives in the menu) ----
-    auto statusBar    = Container::Horizontal({bSysCfg});
+    auto bOpenSetup = ActionButton("Setup", [openSetup] { openSetup(); });
+    auto statusBar    = Container::Horizontal({bSysCfg, bOpenSetup});
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
-    auto root = Renderer(mainContainer, [&board, &screen, menuModeC, connectedMenuSave, bConnToggle, bQuit, tabBar, tabContent, bSysCfg] {
+    auto root = Renderer(mainContainer, [&board, &screen, menuModeC, connectedMenuSave, bConnToggle, bQuit, tabBar, tabContent, bSysCfg, bOpenSetup] {
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
                 int nc = board.pendingChannelCount.load(std::memory_order_acquire);
@@ -424,6 +426,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             connTextEl,
             text(" "),
             bSysCfg->Render(),
+            text(" "),
+            bOpenSetup->Render(),
         });
 
         return vbox({

@@ -49,7 +49,8 @@ struct ScanUpdate {
 // — this function has no opinion on which; `onFinish` is how the caller
 // finds out what happened.
 inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
-                                  std::function<void(WizardOutcome)> onFinish) {
+                                  std::function<void(WizardOutcome)> onFinish,
+                                  bool allowScan = true) {
     // ---- Bus/board list (left pane) ----
     auto busNames = std::make_shared<std::vector<std::string>>();
     auto rebuildBusNames = [&s, busNames] {
@@ -240,17 +241,31 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
         *showAddBoardPtr = false; screen.PostEvent(Event::Custom);
     });
 
-    auto addBoardForm = Container::Vertical({
-        boardNickInp, boardSlaveInp, bAddBoardConfirm,
-        scanStartInp, scanEndInp, bStartScan, scanResultsMenu, bUseScanResult,
-        bAddBoardCancel,
-    });
+    // Scan-related Components (scanStartInp/scanEndInp/bStartScan/
+    // scanResultsMenu/bUseScanResult) are only added to the container tree
+    // when allowScan is true. Hiding them from the Renderer's Elements
+    // alone would not be enough: FTXUI's keyboard navigation (Tab/Down)
+    // walks the *container* tree, not what a Renderer chooses to draw, so a
+    // Component present here but merely undrawn would still be reachable
+    // and clickable. Mid-session (allowScan=false) that would let a user
+    // Tab onto the invisible "Start Scan" button and open a second
+    // PsbSerialBus on a port a BusWorker thread may already be driving —
+    // the exact two-threads-on-one-port hazard this task's scope note
+    // explicitly rules out. So the exclusion happens here, at container
+    // construction, not just in the Renderer below.
+    Components addBoardChildren = { boardNickInp, boardSlaveInp, bAddBoardConfirm };
+    if (allowScan) {
+        addBoardChildren.insert(addBoardChildren.end(),
+            { scanStartInp, scanEndInp, bStartScan, scanResultsMenu, bUseScanResult });
+    }
+    addBoardChildren.push_back(bAddBoardCancel);
+    auto addBoardForm = Container::Vertical(addBoardChildren);
     auto addBoardPopup = Renderer(addBoardForm, [&s, boardNickInp, boardSlaveInp, bAddBoardConfirm,
                                                   scanStartInp, scanEndInp, bStartScan,
                                                   scanResultsMenu, bUseScanResult, bAddBoardCancel,
                                                   scanning, scanProgress, scanStatus, scanResults,
                                                   scanResultLabels, scanMutex, scanStaged,
-                                                  scanUpdateReady] {
+                                                  scanUpdateReady, allowScan] {
         // Drain any scan-thread hand-off before any widget below reads
         // scanResultLabels/scanResults/scanStatus (scanResultsMenu->Render()
         // in particular touches scanResultLabels internally) — this Renderer
@@ -269,22 +284,27 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
         Element scanStatusEl = scanning->load()
             ? text("Scanning... #" + std::to_string(scanProgress->load())) | color(Color::Yellow)
             : text(*scanStatus) | dim;
-        return vbox({
+        Elements body = {
             text(" Add Board — " + busLabel + " ") | bold | center, separator(),
             hbox({ text("Nickname : "), boardNickInp->Render() }),
             hbox({ text("Slave ID : "), boardSlaveInp->Render() | size(WIDTH, EQUAL, 5) }),
             bAddBoardConfirm->Render() | center,
-            separator(),
-            text(" Or scan for boards ") | bold | center,
-            hbox({ text("Range: "), scanStartInp->Render() | size(WIDTH, EQUAL, 4),
-                   text(" - "), scanEndInp->Render() | size(WIDTH, EQUAL, 4),
-                   text(" "), bStartScan->Render() }),
-            scanStatusEl,
-            scanResultLabels->empty() ? text("") : scanResultsMenu->Render() | frame | size(HEIGHT, LESS_THAN, 6),
-            scanResultLabels->empty() ? filler() : bUseScanResult->Render() | center,
-            separator(),
-            bAddBoardCancel->Render() | center,
-        }) | border | size(WIDTH, EQUAL, 46);
+        };
+        if (allowScan) {
+            body.push_back(separator());
+            body.push_back(text(" Or scan for boards ") | bold | center);
+            body.push_back(hbox({ text("Range: "), scanStartInp->Render() | size(WIDTH, EQUAL, 4),
+                                   text(" - "), scanEndInp->Render() | size(WIDTH, EQUAL, 4),
+                                   text(" "), bStartScan->Render() }));
+            body.push_back(scanStatusEl);
+            if (!scanResultLabels->empty()) {
+                body.push_back(scanResultsMenu->Render() | frame | size(HEIGHT, LESS_THAN, 6));
+                body.push_back(bUseScanResult->Render() | center);
+            }
+        }
+        body.push_back(separator());
+        body.push_back(bAddBoardCancel->Render() | center);
+        return vbox(std::move(body)) | border | size(WIDTH, EQUAL, 46);
     });
 
     // ---- List actions ----
@@ -383,7 +403,23 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     auto root = Renderer(mainContainer, [&s, busMenu, bAddBus, busSelectable,
                                          boardMenu, addBoardEnabled, boardSelectable,
                                          topologyPathInp, bLoadTopology,
-                                         bSave, bConnectNow, bDone, bCancel] {
+                                         bSave, bConnectNow, bDone, bCancel,
+                                         rebuildBusNames, rebuildBoardNames] {
+        // Re-derive busNames/boardNames from s.topo on every render rather
+        // than relying solely on the wizard's own Add/Remove/Load handlers
+        // to keep them in sync. Those handlers are the only writers when the
+        // wizard drives its own topo end-to-end (Tasks 5/6's pre-dashboard
+        // entry point), but Task 7's mid-session entry point reseeds s.topo
+        // from main()'s live `openSetup` closure — a write to s.topo that
+        // happens entirely outside this file, which busNames/boardNames
+        // would otherwise never learn about, leaving the modal's Buses/
+        // Boards panels stuck showing whatever was cached at construction
+        // time (empty, the very first time) instead of the pre-populated
+        // list the mid-session entry point promises. Rebuilding here is
+        // idempotent and cheap (two small string vectors) so it's harmless
+        // for the pre-dashboard callers too.
+        rebuildBusNames();
+        rebuildBoardNames();
         return vbox({
             text(" Setup Wizard " + std::string(s.dirty ? "*" : "") + " ") | bold | center,
             separator(),
