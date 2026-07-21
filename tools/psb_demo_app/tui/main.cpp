@@ -33,6 +33,14 @@ static int g_pollInterval = 1;
 struct Runtime {
     std::vector<std::unique_ptr<psb::tui::BusWorker>> busWorkers;
     std::vector<std::unique_ptr<psb::tui::BoardSession>> boards;
+    // Guards `boards` specifically — animThread reads it every 80ms for the
+    // program's entire runtime, and applyNewBoardsLive (UI thread) appends
+    // to it mid-session (hot-attach). Before Task 7, every push_back into
+    // `boards` happened in buildRuntime, before animThread existed, so no
+    // lock was needed; applyNewBoardsLive is the first write that can race
+    // a live reader, the same class of bug fixed for BusWorker::boards —
+    // see runBusWorkerLoop's comment for the full reasoning.
+    std::mutex boardsMutex;
     psb::tui::BoardSwitcher switcher;
     std::thread animThread;
 };
@@ -132,7 +140,13 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
                 bw->workQueue, bw->workMutex, bw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup);
             bw->boards.push_back(b.get());
-            rt.boards.push_back(std::move(b));
+            // Provably safe unlocked here too (animThread doesn't exist
+            // yet), but locked anyway — same rt.boardsMutex as the
+            // mid-session write in applyNewBoardsLive — so this isn't a
+            // "safe only because of ordering" invariant a future edit could
+            // silently break.
+            { std::lock_guard<std::mutex> lk(rt.boardsMutex);
+              rt.boards.push_back(std::move(b)); }
         }
         rt.busWorkers.push_back(std::move(bw));
     }
@@ -178,7 +192,11 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
             std::this_thread::sleep_for(std::chrono::milliseconds(80));
             if (!running) break;
             bool anyConnected = false;
-            for (auto& b : rt.boards) if (b->connected.load()) { anyConnected = true; break; }
+            { // rt.boardsMutex — see Runtime::boardsMutex's comment. Held
+              // only for this cheap atomic-flag scan, not across PostEvent.
+              std::lock_guard<std::mutex> lk(rt.boardsMutex);
+              for (auto& b : rt.boards) if (b->connected.load()) { anyConnected = true; break; }
+            }
             if (anyConnected) screen.PostEvent(Event::Custom);
         }
     });
@@ -277,7 +295,11 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
             bwPtr->workCv.notify_one();
 
             rt.switcher.attachBoard(b->nickname, b->dashboard);
-            rt.boards.push_back(std::move(b));
+            // Same class of race as BusWorker.boards above, this time
+            // against animThread (live for the program's whole runtime) —
+            // see Runtime::boardsMutex's comment.
+            { std::lock_guard<std::mutex> lk(rt.boardsMutex);
+              rt.boards.push_back(std::move(b)); }
         }
     }
 }
