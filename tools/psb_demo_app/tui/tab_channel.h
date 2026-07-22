@@ -6,7 +6,8 @@
 
 namespace psb::tui {
 
-inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
+inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch,
+                                std::function<void(int, const std::string&)> saveAlias) {
     static const std::vector<std::string> kProtModes  = {"Disabled","FlagOnly","Apply-Action"};
     static const std::vector<std::string> kIActNames  = {"None","Dis-Graceful","Dis-Immed","ForceZero"};
     static const std::vector<OutputAction> kIActVals  = {
@@ -80,6 +81,14 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
     };
 
+    // Same backing field (inputs.chAlias[ch]) the Monitor table's own alias
+    // Input binds to — a second widget instance pointed at the same
+    // std::string, exactly like tgtInp/ruStepInp/rdStepInp below already
+    // are relative to Monitor's vsetInp/rampUpInp/rampDownInp. Editing here
+    // shows on Monitor's next render and vice versa.
+    auto aliasInp = CommitInput(&inputs.chAlias[ch], "CH" + std::to_string(ch), [&inputs, ch, saveAlias] {
+        saveAlias(ch, inputs.chAlias[ch]);
+    });
     auto tgtInp    = CommitInput(&inputs.targetV[ch],   "+0.0", onTarget);
     auto ruStepInp = CommitInput(&inputs.ruStep[ch],    "0.0",  onRampUp);
     auto rdStepInp = CommitInput(&inputs.rdStep[ch],    "0.0",  onRampDown);
@@ -197,6 +206,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
     auto visibleProtectionControls = Maybe(protectionControls, hasProtection);
 
     auto container = Container::Vertical({
+        aliasInp,
         visibleOutputControls, visibleTgtInp,
         visibleRuStepInp, visibleRdStepInp, visibleOutputEnabledCyc,
         visibleProtectionControls,
@@ -256,6 +266,9 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch) {
             liveBar = hbox(std::move(liveParts));
         }
         auto livePanel = hbox({
+            text(" Alias: ") | bold | color(Color::Cyan),
+            aliasInp->Render() | size(WIDTH, EQUAL, 14),
+            separator(),
             text(" Live ") | bold | color(Color::Cyan),
             separator(),
             liveBar,
