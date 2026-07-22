@@ -103,15 +103,22 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
               board.client->rebind(slave);
               bool ok = board.bus->isConnected() || board.bus->connect(board.portVal, baud, timeoutMs);
               if (ok) ok = board.client->verifyProtocol();
-              board.connected = ok && !board.abortConnect;
-              if (board.abortConnect) { ok = false; }
+              if (board.abortConnect) ok = false;
               if (!running) { board.connecting = false; return; }
+              // A board only counts as connected once it has discovered all
+              // its channels, not merely once the protocol handshake
+              // passes — otherwise every UI surface reading board.connected
+              // (status dot, sidebar indicator, toggle label) would show
+              // "connected" while still mid-scan. board.connected is set
+              // exactly once, below, from this fuller ok.
               if (ok) {
-                  doFullScan(*board.client, board.connected, board.data, screen, running);
-                  board.data.valid = board.connected.load();
+                  doFullScan(*board.client, board.abortConnect, board.data, screen, running);
+                  ok = board.data.allChannelsLoaded() && !board.abortConnect;
                   board.pendingChannelCount.store(board.data.numChannels(), std::memory_order_release);
                   board.pendingSync.store(true, std::memory_order_release);
               }
+              board.connected = ok;
+              board.data.valid = board.connected.load();
               auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                   std::chrono::steady_clock::now() - board.connectStart).count();
               { std::lock_guard<std::mutex> lk(board.statusMutex);
