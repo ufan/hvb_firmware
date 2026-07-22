@@ -33,7 +33,8 @@ struct BoardSwitcher {
 
 inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>>& boards,
                                        Component globalQuit, Component globalSetup,
-                                       Component globalPreferences) {
+                                       Component globalPreferences,
+                                       Component globalConnectAll, Component globalDisconnectAll) {
     auto boardNames = std::make_shared<std::vector<std::string>>();
     for (auto& b : boards) boardNames->push_back(b->nickname);
     auto activeBoard = std::make_shared<int>(0);
@@ -69,12 +70,13 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     for (auto& b : boards) dashboardStack->Add(b->dashboard);
 
     // Order matches the visual/Tab order the Renderer below produces
-    // (Setup, Preferences, then Quit pushed to the right corner) — Container
-    // children order drives keyboard Tab traversal even though the actual
-    // visual arrangement is decided entirely in the Renderer, so keeping
-    // the two in sync avoids Tab jumping in an order that doesn't match
-    // what's on screen.
-    auto globalMenuBar = Container::Horizontal({globalSetup, globalPreferences, globalQuit});
+    // (Setup, Preferences, then Connect All/Disconnect All/Quit pushed to
+    // the right corner) — Container children order drives keyboard Tab
+    // traversal even though the actual visual arrangement is decided
+    // entirely in the Renderer, so keeping the two in sync avoids Tab
+    // jumping in an order that doesn't match what's on screen.
+    auto globalMenuBar = Container::Horizontal(
+        {globalSetup, globalPreferences, globalConnectAll, globalDisconnectAll, globalQuit});
 
     auto mainContainer = Container::Vertical({globalMenuBar, switcherBar, dashboardStack}, mainSelected.get());
     // Capture boardNames/activeBoard, not just switcherBar/dashboardStack —
@@ -103,15 +105,18 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     // of splitting the terminal 50/50 with dashboardStack, which is the
     // one that gets the remaining space.
     //
-    // The global row renders globalSetup/globalPreferences/globalQuit
-    // individually rather than calling globalMenuBar->Render() as one
-    // unit, so a filler() can push Quit to the right corner, separated
-    // from Setup/Preferences — Quit is the one destructive, high-
-    // consequence action here and reads more safely set apart from the
-    // routine buttons next to it. globalMenuBar itself still exists and
-    // still owns these three as children (for mainContainer's focus
-    // tree); only its own Render() call is unused.
-    auto root = Renderer(mainContainer, [switcherBar, dashboardStack, globalSetup, globalPreferences, globalQuit,
+    // The global row renders globalSetup/globalPreferences/globalConnectAll/
+    // globalDisconnectAll/globalQuit individually rather than calling
+    // globalMenuBar->Render() as one unit, so a filler() can push the last
+    // three to the right corner, separated from Setup/Preferences — Quit is
+    // the one destructive, high-consequence action here, and Connect All/
+    // Disconnect All are impactful-but-reversible enough to sit right next
+    // to it rather than blend into the routine Setup/Preferences group.
+    // globalMenuBar itself still exists and still owns all five as children
+    // (for mainContainer's focus tree); only its own Render() call is
+    // unused.
+    auto root = Renderer(mainContainer, [switcherBar, dashboardStack, globalSetup, globalPreferences,
+                                         globalConnectAll, globalDisconnectAll, globalQuit,
                                          boardNames, activeBoard, mainSelected] {
         bool showBar = boardNames->size() > 1;
         if (!showBar) {
@@ -121,6 +126,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
             hbox({
                 globalSetup->Render(), text(" "), globalPreferences->Render(),
                 filler(),
+                globalConnectAll->Render(), text(" "), globalDisconnectAll->Render(), text(" "),
                 globalQuit->Render(),
             }),
             separator(),
