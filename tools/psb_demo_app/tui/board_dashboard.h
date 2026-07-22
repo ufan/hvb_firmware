@@ -16,7 +16,6 @@
 #include <chrono>
 #include <functional>
 #include <string>
-#include <thread>
 #include <vector>
 
 namespace psb::tui {
@@ -76,46 +75,60 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         board.connectStart = std::chrono::steady_clock::now();
         { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg = "Connecting to " + board.portVal + "..."; }
         screen.PostEvent(Event::Custom);
-        std::thread([&board, &busWorker, &screen, &running, timeoutMs] {
-            int baud = 115200, slave = 1;
-            try { baud  = std::stoi(board.baudVal);  } catch (...) {}
-            try { slave = std::stoi(board.slaveVal); } catch (...) {}
-            // rebind() first so a corrected slave ID takes effect even if
-            // the bus itself is already open (a sibling board on this bus
-            // connected first).
-            board.client->rebind(slave);
-            bool ok = board.bus->isConnected() || board.bus->connect(board.portVal, baud, timeoutMs);
-            if (ok) ok = board.client->verifyProtocol();
-            board.connected = ok && !board.abortConnect;
-            if (board.abortConnect) { ok = false; }
-            if (!running) { board.connecting = false; return; }
-            if (ok) {
-                { std::lock_guard<std::mutex> lk(busWorker.workMutex);
-                  busWorker.workQueue.push([&board, &screen, &running] {
-                      doFullScan(*board.client, board.connected, board.data, screen, running);
-                      board.data.valid = board.connected.load();
-                      board.pendingChannelCount.store(board.data.numChannels(), std::memory_order_release);
-                      board.pendingSync.store(true, std::memory_order_release);
-                      screen.PostEvent(Event::Custom);
-                  }); }
-                busWorker.workCv.notify_one();
-            }
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - board.connectStart).count();
-            { std::lock_guard<std::mutex> lk(board.statusMutex);
-              if (board.abortConnect)
-                  board.statusMsg = "Connection aborted";
-              else if (ok)
-                  board.statusMsg = "";
-              else {
-                  auto e = board.client->lastError();
-                  board.statusMsg = "Error: " + (e.empty() ? "connection failed" : e)
-                              + " (after " + std::to_string(static_cast<int>(elapsed / 1000.0)) + "s)";
+        // Enqueued on this bus's own worker queue rather than run on a
+        // separate detached thread — PsbSerialBus's own contract is that
+        // exactly one thread drives a given bus at a time (see its doc
+        // comment), and this bus's worker thread is that one thread,
+        // already polling every *other* connected board sharing it. A
+        // detached thread calling rebind()/connect()/verifyProtocol()
+        // directly raced that polling (and any sibling board's own
+        // concurrent connect attempt) on the same non-thread-safe
+        // ModbusClientPort — confirmed live via a captured backtrace
+        // (segfault in ModbusObject::objectName(), reached through this
+        // same verifyProtocol() call) after disconnecting and immediately
+        // reconnecting one board while its sibling stayed connected and
+        // polling. Enqueuing here — instead of the previous detached
+        // thread plus a *second*, separately-queued full-scan item —
+        // naturally serializes the whole sequence (connect I/O, then
+        // scan) on the one thread already responsible for this bus, no
+        // second queue hop needed.
+        { std::lock_guard<std::mutex> lk(busWorker.workMutex);
+          busWorker.workQueue.push([&board, &busWorker, &screen, &running, timeoutMs] {
+              int baud = 115200, slave = 1;
+              try { baud  = std::stoi(board.baudVal);  } catch (...) {}
+              try { slave = std::stoi(board.slaveVal); } catch (...) {}
+              // rebind() first so a corrected slave ID takes effect even if
+              // the bus itself is already open (a sibling board on this bus
+              // connected first).
+              board.client->rebind(slave);
+              bool ok = board.bus->isConnected() || board.bus->connect(board.portVal, baud, timeoutMs);
+              if (ok) ok = board.client->verifyProtocol();
+              board.connected = ok && !board.abortConnect;
+              if (board.abortConnect) { ok = false; }
+              if (!running) { board.connecting = false; return; }
+              if (ok) {
+                  doFullScan(*board.client, board.connected, board.data, screen, running);
+                  board.data.valid = board.connected.load();
+                  board.pendingChannelCount.store(board.data.numChannels(), std::memory_order_release);
+                  board.pendingSync.store(true, std::memory_order_release);
               }
-            }
-            board.connecting = false;
-            screen.PostEvent(Event::Custom);
-        }).detach();
+              auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                  std::chrono::steady_clock::now() - board.connectStart).count();
+              { std::lock_guard<std::mutex> lk(board.statusMutex);
+                if (board.abortConnect)
+                    board.statusMsg = "Connection aborted";
+                else if (ok)
+                    board.statusMsg = "";
+                else {
+                    auto e = board.client->lastError();
+                    board.statusMsg = "Error: " + (e.empty() ? "connection failed" : e)
+                                + " (after " + std::to_string(static_cast<int>(elapsed / 1000.0)) + "s)";
+                }
+              }
+              board.connecting = false;
+              screen.PostEvent(Event::Custom);
+          }); }
+        busWorker.workCv.notify_one();
     };
 
     auto doDisconnect = [&board, &busWorker, &screen] {
