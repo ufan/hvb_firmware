@@ -9,6 +9,10 @@ namespace psb {
 struct BoardConfig {
     std::string nickname;
     int slaveId = 1;
+    // Index = channel number; "" means no alias set for that channel. Only
+    // as long as the highest-set channel needs it — never pre-sized to
+    // MAX_CHANNELS on disk.
+    std::vector<std::string> channelAliases;
 };
 
 struct BusConfig {

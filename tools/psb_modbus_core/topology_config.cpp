@@ -46,6 +46,10 @@ std::optional<TopologyConfig> TopologyConfig::load(const std::string& path) {
                     BoardConfig board;
                     board.nickname = (*boardTbl)["nickname"].value_or(std::string(""));
                     board.slaveId = static_cast<int>((*boardTbl)["slave_id"].value_or(1));
+                    if (auto aliasArr = (*boardTbl)["channel_aliases"].as_array()) {
+                        for (auto&& aliasNode : *aliasArr)
+                            board.channelAliases.push_back(aliasNode.value_or(std::string("")));
+                    }
                     bus.boards.push_back(std::move(board));
                 }
             }
@@ -72,6 +76,12 @@ bool TopologyConfig::save(const std::string& path) const {
                 toml::table boardTbl;
                 boardTbl.insert_or_assign("nickname", board.nickname);
                 boardTbl.insert_or_assign("slave_id", board.slaveId);
+                if (!board.channelAliases.empty()) {
+                    toml::array aliasArr;
+                    for (const auto& alias : board.channelAliases)
+                        aliasArr.push_back(alias);
+                    boardTbl.insert_or_assign("channel_aliases", std::move(aliasArr));
+                }
                 boardArr.push_back(std::move(boardTbl));
             }
             busTbl.insert_or_assign("board", std::move(boardArr));
