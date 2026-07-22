@@ -325,16 +325,31 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
                     b->connecting = true;
                     screen.PostEvent(Event::Custom);
                     bool ok = busOk && b->client->verifyProtocol();
-                    b->connected = ok;
-                    b->connecting = false;
-                    { std::lock_guard<std::mutex> lk(b->statusMutex);
-                      b->statusMsg = ok ? "" : "Error: " + (busOk ? b->client->lastError() : bw.bus->lastError()); }
+                    if (b->abortConnect) ok = false;
+                    // b->connecting stays true through the scan below (not
+                    // cleared right after verifyProtocol, as a prior version
+                    // of this loop did) — this dashboard is already live and
+                    // interactive at this point (built earlier in
+                    // buildRuntime, before this sweep runs on the bus
+                    // worker thread), so a fast user can reach the toggle
+                    // button's Abort branch, which itself checks
+                    // board.connecting.load() to decide whether a click sets
+                    // abortConnect. Clearing connecting early would make a
+                    // multi-second scan look fully idle instead of
+                    // in-progress, and would make Abort unreachable during
+                    // that window.
                     if (ok) {
-                        psb::tui::doFullScan(*b->client, b->connected, b->data, screen, running);
-                        b->data.valid = b->connected.load();
+                        psb::tui::doFullScan(*b->client, b->abortConnect, b->data, screen, running);
+                        ok = b->data.allChannelsLoaded() && !b->abortConnect;
                         b->pendingChannelCount.store(b->data.numChannels(), std::memory_order_release);
                         b->pendingSync.store(true, std::memory_order_release);
                     }
+                    b->connected = ok;
+                    b->data.valid = b->connected.load();
+                    b->connecting = false;
+                    { std::lock_guard<std::mutex> lk(b->statusMutex);
+                      b->statusMsg = b->abortConnect ? "Connection aborted"
+                                   : ok ? "" : "Error: " + (busOk ? b->client->lastError() : bw.bus->lastError()); }
                     screen.PostEvent(Event::Custom);
                 }
             }
