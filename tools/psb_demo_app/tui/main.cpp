@@ -565,6 +565,16 @@ int main(int argc, char** argv) {
     //      its status line, so there's no separate eager load-and-exit-on-
     //      error path here anymore. ----
     psb::TopologyConfig topo;
+    // Tracks wherever topo's content actually came from / belongs, since
+    // topologyPath above is fixed at defaultPath() for the whole session
+    // but the user can load a completely different file (quick-connect's
+    // own lastSingleConnectPath(), or any file Browsed to inside the
+    // wizard) — anything that needs to save topo back to disk outside the
+    // wizard's own scope (which always correctly uses its own live
+    // WizardState::topologyPath) must use this, not topologyPath, or it
+    // silently writes into the wrong file. Updated at every point below
+    // where topo itself is replaced.
+    std::string currentTopologyPath = topologyPath;
 
     // Loops instead of the old popup-once-then-maybe-wizard sequence so
     // Back (from either the quick-connect form or the standalone wizard)
@@ -583,6 +593,7 @@ int main(int argc, char** argv) {
             if (quick.outcome == psb::tui::QuickConnectOutcome::Exit) return 0;
             if (quick.outcome == psb::tui::QuickConnectOutcome::Back) continue;
             topo = quick.topo;
+            currentTopologyPath = psb::TopologyConfig::lastSingleConnectPath();
             break;
         }
 
@@ -601,6 +612,7 @@ int main(int argc, char** argv) {
         if (outcome == psb::tui::WizardOutcome::Back) continue;
         if (outcome == psb::tui::WizardOutcome::Cancelled) return 0;  // first run, exited — nothing to connect to
         topo = wiz.topo;
+        currentTopologyPath = wiz.topologyPath;
         if (topo.totalBoardCount() == 0) {
             std::cerr << "Topology has no boards configured — exiting.\n";
             return 0;
@@ -681,7 +693,14 @@ int main(int argc, char** argv) {
     // mid-session Setup edit (onMidSessionFinish below) at any time,
     // invalidating any index captured earlier — the same reasoning
     // detachBoard (board_switcher.h) already applies to board lookups.
-    auto saveChannelAliasToTopology = [&topo, topologyPath]
+    // Captures currentTopologyPath by reference, not topologyPath by value
+    // — topologyPath is fixed at defaultPath() for the whole session, but
+    // the user can load a completely different file (quick-connect's own
+    // lastSingleConnectPath(), or anything Browsed to inside the wizard);
+    // saving to the wrong one would silently corrupt a topology file the
+    // user isn't even using. currentTopologyPath tracks the real answer
+    // and is updated at every point topo itself is replaced.
+    auto saveChannelAliasToTopology = [&topo, &currentTopologyPath]
                                       (const std::string& nickname, int ch, const std::string& alias) {
         for (auto& bus : topo.buses) {
             for (auto& brd : bus.boards) {
@@ -689,7 +708,7 @@ int main(int argc, char** argv) {
                 if (static_cast<int>(brd.channelAliases.size()) <= ch)
                     brd.channelAliases.resize(ch + 1);
                 brd.channelAliases[ch] = alias;
-                topo.save(topologyPath);
+                topo.save(currentTopologyPath);
                 return;
             }
         }
@@ -699,8 +718,8 @@ int main(int argc, char** argv) {
                 bGlobalQuit, bGlobalSetup, bGlobalPreferences, bGlobalConnectAll, bGlobalDisconnectAll,
                 saveChannelAliasToTopology);
 
-    auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &screen, &running, openSetup,
-                               bGlobalQuit, bGlobalSetup, bGlobalPreferences, saveChannelAliasToTopology]
+    auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &currentTopologyPath, &screen, &running,
+                               openSetup, bGlobalQuit, bGlobalSetup, bGlobalPreferences, saveChannelAliasToTopology]
                               (psb::tui::WizardOutcome outcome) {
         if (outcome == psb::tui::WizardOutcome::ConnectNow) {
             // Tear down what's gone before attaching what's new — the two
@@ -716,6 +735,7 @@ int main(int argc, char** argv) {
             applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, g_connectTimeoutMs, openSetup,
                                bGlobalQuit, bGlobalSetup, bGlobalPreferences, saveChannelAliasToTopology);
             topo = midSessionWiz->topo;
+            currentTopologyPath = midSessionWiz->topologyPath;
         }
         *showSetup = false;
         screen.PostEvent(Event::Custom);
