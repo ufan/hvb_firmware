@@ -49,6 +49,49 @@ TEST_CASE("TopologyConfig — round trip through TOML preserves all fields", "[t
     std::remove(path.c_str());
 }
 
+TEST_CASE("TopologyConfig — round trip preserves per-channel aliases", "[topology_config]") {
+    psb::TopologyConfig cfg;
+    psb::BusConfig bus;
+    bus.name = "bus1";
+    bus.port = "/dev/ttyUSB0";
+    bus.baudRate = 115200;
+    psb::BoardConfig board;
+    board.nickname = "hvb-bench";
+    board.slaveId = 1;
+    board.channelAliases = {"Cell1", "", "Cell3"};
+    bus.boards.push_back(board);
+    cfg.buses.push_back(bus);
+
+    const std::string path = "/tmp/psb_topology_test_aliases.toml";
+    std::remove(path.c_str());
+    REQUIRE(cfg.save(path));
+
+    auto loaded = psb::TopologyConfig::load(path);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->buses.size() == 1);
+    REQUIRE(loaded->buses[0].boards.size() == 1);
+    REQUIRE(loaded->buses[0].boards[0].channelAliases.size() == 3);
+    CHECK(loaded->buses[0].boards[0].channelAliases[0] == "Cell1");
+    CHECK(loaded->buses[0].boards[0].channelAliases[1] == "");
+    CHECK(loaded->buses[0].boards[0].channelAliases[2] == "Cell3");
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("TopologyConfig — a board with no aliases round-trips with an empty channelAliases", "[topology_config]") {
+    auto cfg = psb::TopologyConfig::singleBoard("/dev/ttyUSB0", 115200, 1, "board1");
+    const std::string path = "/tmp/psb_topology_test_no_aliases.toml";
+    std::remove(path.c_str());
+    REQUIRE(cfg.save(path));
+
+    auto loaded = psb::TopologyConfig::load(path);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->buses[0].boards.size() == 1);
+    CHECK(loaded->buses[0].boards[0].channelAliases.empty());
+
+    std::remove(path.c_str());
+}
+
 TEST_CASE("TopologyConfig — load returns nullopt for missing file", "[topology_config]") {
     auto loaded = psb::TopologyConfig::load("/tmp/psb_topology_test_does_not_exist.toml");
     CHECK_FALSE(loaded.has_value());
