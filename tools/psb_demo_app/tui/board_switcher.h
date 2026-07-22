@@ -33,7 +33,7 @@ struct BoardSwitcher {
 };
 
 inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>>& boards,
-                                       Component globalQuit, Component globalSetup,
+                                       Component globalQuit, Component globalSetup, Component globalGroup,
                                        Component globalPreferences,
                                        Component globalConnectAll, Component globalDisconnectAll) {
     auto boardNames = std::make_shared<std::vector<std::string>>();
@@ -119,7 +119,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     // entirely in the Renderer, so keeping the two in sync avoids Tab
     // jumping in an order that doesn't match what's on screen.
     auto globalMenuBar = Container::Horizontal(
-        {globalSetup, globalPreferences, globalConnectAll, globalDisconnectAll, globalQuit});
+        {globalSetup, globalGroup, globalPreferences, globalConnectAll, globalDisconnectAll, globalQuit});
 
     auto mainContainer = Container::Vertical({globalMenuBar, switcherBar, dashboardStack}, mainSelected.get());
     // Capture boardNames/activeBoard, not just switcherBar/dashboardStack —
@@ -158,7 +158,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     // globalMenuBar itself still exists and still owns all five as children
     // (for mainContainer's focus tree); only its own Render() call is
     // unused.
-    auto root = Renderer(mainContainer, [switcherBar, dashboardStack, globalSetup, globalPreferences,
+    auto root = Renderer(mainContainer, [switcherBar, dashboardStack, globalSetup, globalGroup, globalPreferences,
                                          globalConnectAll, globalDisconnectAll, globalQuit,
                                          boardNames, activeBoard, mainSelected] {
         bool showBar = boardNames->size() > 1;
@@ -167,7 +167,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         }
         return vbox({
             hbox({
-                globalSetup->Render(), text(" "), globalPreferences->Render(),
+                globalSetup->Render(), text(" "), globalGroup->Render(), text(" "), globalPreferences->Render(),
                 filler(),
                 globalConnectAll->Render(), text(" "), globalDisconnectAll->Render(), text(" "),
                 globalQuit->Render(),

@@ -36,7 +36,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                     ScreenInteractive& screen, std::atomic<bool>& running,
                                     int timeoutMs, std::function<void()> openSetup,
                                     std::function<void()> requestRemove,
-                                    Component globalQuit, Component globalSetup,
+                                    Component globalQuit, Component globalSetup, Component globalGroup,
                                     Component globalPreferences,
                                     std::function<size_t()> liveBoardCount,
                                     std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
@@ -384,8 +384,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
     auto root = Renderer(mainContainer, [&board, &screen, menuModeC, connectedMenuSave, bConnToggle, bRemove,
-                                         tabBar, tabContent, bSysCfg, globalQuit, globalSetup, globalPreferences,
-                                         liveBoardCount] {
+                                         tabBar, tabContent, bSysCfg, globalQuit, globalSetup, globalGroup,
+                                         globalPreferences, liveBoardCount] {
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
                 int nc = board.pendingChannelCount.load(std::memory_order_acquire);
@@ -488,12 +488,14 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         if (boardCount <= 1) {
             // Quit last — the same right-corner placement board_switcher.h's
             // multi-board row uses, keeping this one destructive action set
-            // apart from Setup/Preferences even without a dedicated filler
-            // here (the row's existing pair of fillers around centerGroup
-            // already pushes this whole tail block flush to the right edge;
-            // adding a third filler would unbalance that split).
+            // apart from Setup/Group/Preferences even without a dedicated
+            // filler here (the row's existing pair of fillers around
+            // centerGroup already pushes this whole tail block flush to the
+            // right edge; adding a third filler would unbalance that split).
             menuBarParts.push_back(text(" "));
             menuBarParts.push_back(globalSetup->Render());
+            menuBarParts.push_back(text(" "));
+            menuBarParts.push_back(globalGroup->Render());
             menuBarParts.push_back(text(" "));
             menuBarParts.push_back(globalPreferences->Render());
             menuBarParts.push_back(text(" "));
