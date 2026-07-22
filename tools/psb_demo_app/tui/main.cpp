@@ -203,14 +203,28 @@ void drainPendingRemovals(Runtime& rt, psb::TopologyConfig& topo,
         // already overwrites topo wholesale from the wizard's edited state
         // (which no longer contains this board) before this async drain
         // ever runs, so the search below simply finds nothing to erase.
-        for (auto& busCfg : topo.buses) {
-            auto& boards = busCfg.boards;
+        //
+        // Erasing the bus entry itself when its last board is removed (not
+        // just the board) mirrors the busEmpty teardown of rt.busWorkers
+        // below — a bus that's actually live always has at least one board
+        // while running, so an empty one here can only be the bus whose
+        // last board this iteration just removed. Leaving it behind was a
+        // real bug: it showed up as a dead, boardless entry in the Buses
+        // panel the next time Setup/Topology reopened, and got needlessly
+        // re-saved to disk.
+        for (size_t b = 0; b < topo.buses.size(); ) {
+            auto& boards = topo.buses[b].boards;
             for (size_t m = 0; m < boards.size(); ++m) {
                 if (boards[m].nickname == pr.board->nickname) {
                     boards.erase(boards.begin() + m);
                     break;
                 }
             }
+            if (boards.empty()) {
+                topo.buses.erase(topo.buses.begin() + b);
+                continue;  // next bus (if any) shifted into this slot
+            }
+            ++b;
         }
 
         {
@@ -552,7 +566,18 @@ int main(int argc, char** argv) {
         }
     }
 
-    bool autoConnectAll = runWizard || topo.totalBoardCount() > 1;
+    // Always true by this point — every surviving path here represents a
+    // deliberate "connect now" gesture: the wizard's Connect Now/Save &
+    // Exit (runWizard was true; a Cancel with no topology already returned
+    // above), or a single-board quick-connect's own Connect button. The old
+    // `runWizard || topo.totalBoardCount() > 1` condition was a leftover
+    // from before Sub-project C removed the topology.toml auto-load
+    // bypass: quick-connect (exactly 1 board, runWizard false) fell through
+    // both clauses and was silently left un-auto-connected — the user had
+    // to click Connect a second time and re-enter values that had already
+    // been supplied once, even though quick-connect's whole point is to
+    // connect immediately. Found via manual testing.
+    bool autoConnectAll = true;
 
     std::atomic<bool> running{true};
 
