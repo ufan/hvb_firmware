@@ -39,7 +39,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                     Component globalQuit, Component globalSetup,
                                     Component globalPreferences,
                                     std::function<size_t()> liveBoardCount,
-                                    std::function<void(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
+                                    std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
     // ---- Connection inputs (live in the connection modal) ----
     auto baudInp  = Input(&board.baudVal,  "baud");
     auto slaveInp = Input(&board.slaveVal, "id");
@@ -189,8 +189,12 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     // staging that connect/scan completion uses.
     board.saveChannelAlias = [&board, &screen, saveChannelAliasToTopology, nickname = board.nickname]
                              (int ch, const std::string& alias) {
-        saveChannelAliasToTopology(nickname, ch, alias);
+        bool ok = saveChannelAliasToTopology(nickname, ch, alias);
         rebuildChannelTitles(board.tabTitles, board.data.numChannels(), board.inputs.chAlias);
+        if (!ok) {
+            std::lock_guard<std::mutex> lk(board.statusMutex);
+            board.statusMsg = "Error: could not save alias";
+        }
         screen.PostEvent(Event::Custom);
     };
 
