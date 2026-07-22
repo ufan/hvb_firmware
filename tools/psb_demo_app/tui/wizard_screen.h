@@ -5,6 +5,7 @@
 #include "widgets.h"
 #include "tui_policy.h"
 #include "psb_serial_bus.h"
+#include "topology_path_picker.h"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -430,9 +431,12 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     });
     auto boardSelectable = Maybe(bRemoveBoard, boardInRange);
 
-    // ---- Save / Save As / Load / Connect / Cancel ----
+    // ---- Save / Save As / Load / Browse / Connect / Cancel ----
     auto topologyPathInp = Input(&s.topologyPath, "topology file path");
-    auto bLoadTopology = ActionButton("Load", [&s, rebuildBusNames, rebuildBoardNames, &screen] {
+    // Extracted so the path picker's own "Open" (on a selected file) runs
+    // the identical load — Load's own button and a picked file both funnel
+    // through this one place, never two copies of the same logic.
+    auto doLoadTopology = [&s, rebuildBusNames, rebuildBoardNames, &screen] {
         auto loaded = psb::TopologyConfig::load(s.topologyPath);
         if (loaded.has_value()) {
             s.topo = std::move(*loaded);
@@ -446,7 +450,11 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
             s.statusMsg = "Error: could not load " + s.topologyPath;
         }
         screen.PostEvent(Event::Custom);
-    });
+    };
+    auto bLoadTopology = ActionButton("Load", doLoadTopology);
+    auto showPathPicker = std::make_shared<bool>(false);
+    auto pathPicker = makePathPicker(screen, showPathPicker, s.topologyPath, doLoadTopology);
+    auto bBrowsePath = ActionButton("Browse...", pathPicker.open);
     auto bSave = ActionButton("Save", [&s, onFinish, &screen] {
         if (s.topo.save(s.topologyPath)) {
             s.dirty = false;
@@ -483,13 +491,13 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     auto mainContainer = Container::Vertical({
         busMenu, bAddBus, busSelectable,
         boardMenu, addBoardEnabled, boardSelectable,
-        topologyPathInp, bLoadTopology,
+        topologyPathInp, bBrowsePath, bLoadTopology,
         bSave, bConnectNow, bDone, bCancel,
     });
 
     auto root = Renderer(mainContainer, [&s, busMenu, bAddBus, busSelectable,
                                          boardMenu, addBoardEnabled, boardSelectable,
-                                         topologyPathInp, bLoadTopology,
+                                         topologyPathInp, bBrowsePath, bLoadTopology,
                                          bSave, bConnectNow, bDone, bCancel,
                                          rebuildBusNames, rebuildBoardNames] {
         // Re-derive busNames/boardNames from s.topo on every render rather
@@ -517,14 +525,16 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
                        hbox({ addBoardEnabled->Render(), text(" "), boardSelectable->Render() }) }) | flex | border,
             }) | flex,
             separator(),
-            hbox({ text("Path: "), topologyPathInp->Render() | flex, text(" "), bLoadTopology->Render() }),
+            hbox({ text("Path: "), topologyPathInp->Render() | flex, text(" "), bBrowsePath->Render(),
+                   text(" "), bLoadTopology->Render() }),
             text(" " + s.statusMsg + " ") | (s.statusMsg.rfind("Error", 0) == 0 ? color(Color::Red) : color(Color::Green)),
             separator(),
             hbox({ bSave->Render(), text("  "), bConnectNow->Render(), text("  "),
                    bDone->Render(), text("  "), bCancel->Render() }) | center,
         }) | border | size(WIDTH, GREATER_THAN, 100) | size(HEIGHT, GREATER_THAN, 30);
     }) | Modal(addBusPopup, showAddBusPtr.get())
-       | Modal(addBoardPopup, showAddBoardPtr.get());
+       | Modal(addBoardPopup, showAddBoardPtr.get())
+       | Modal(pathPicker.root, showPathPicker.get());
 
     return root;
 }
