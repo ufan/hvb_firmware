@@ -68,7 +68,13 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     auto dashboardStack = Container::Tab({}, activeBoard.get());
     for (auto& b : boards) dashboardStack->Add(b->dashboard);
 
-    auto globalMenuBar = Container::Horizontal({globalQuit, globalSetup, globalPreferences});
+    // Order matches the visual/Tab order the Renderer below produces
+    // (Setup, Preferences, then Quit pushed to the right corner) — Container
+    // children order drives keyboard Tab traversal even though the actual
+    // visual arrangement is decided entirely in the Renderer, so keeping
+    // the two in sync avoids Tab jumping in an order that doesn't match
+    // what's on screen.
+    auto globalMenuBar = Container::Horizontal({globalSetup, globalPreferences, globalQuit});
 
     auto mainContainer = Container::Vertical({globalMenuBar, switcherBar, dashboardStack}, mainSelected.get());
     // Capture boardNames/activeBoard, not just switcherBar/dashboardStack —
@@ -96,13 +102,27 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     // not marked `| flex`, so it sizes to its own content width instead
     // of splitting the terminal 50/50 with dashboardStack, which is the
     // one that gets the remaining space.
-    auto root = Renderer(mainContainer, [switcherBar, dashboardStack, globalMenuBar, boardNames, activeBoard, mainSelected] {
+    //
+    // The global row renders globalSetup/globalPreferences/globalQuit
+    // individually rather than calling globalMenuBar->Render() as one
+    // unit, so a filler() can push Quit to the right corner, separated
+    // from Setup/Preferences — Quit is the one destructive, high-
+    // consequence action here and reads more safely set apart from the
+    // routine buttons next to it. globalMenuBar itself still exists and
+    // still owns these three as children (for mainContainer's focus
+    // tree); only its own Render() call is unused.
+    auto root = Renderer(mainContainer, [switcherBar, dashboardStack, globalSetup, globalPreferences, globalQuit,
+                                         boardNames, activeBoard, mainSelected] {
         bool showBar = boardNames->size() > 1;
         if (!showBar) {
             return vbox({ dashboardStack->Render() | flex });
         }
         return vbox({
-            globalMenuBar->Render(),
+            hbox({
+                globalSetup->Render(), text(" "), globalPreferences->Render(),
+                filler(),
+                globalQuit->Render(),
+            }),
             separator(),
             hbox({
                 switcherBar->Render(),

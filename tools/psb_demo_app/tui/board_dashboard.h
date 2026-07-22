@@ -418,12 +418,18 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             removeElement,
         };
         if (boardCount <= 1) {
-            menuBarParts.push_back(text(" "));
-            menuBarParts.push_back(globalQuit->Render());
+            // Quit last — the same right-corner placement board_switcher.h's
+            // multi-board row uses, keeping this one destructive action set
+            // apart from Setup/Preferences even without a dedicated filler
+            // here (the row's existing pair of fillers around centerGroup
+            // already pushes this whole tail block flush to the right edge;
+            // adding a third filler would unbalance that split).
             menuBarParts.push_back(text(" "));
             menuBarParts.push_back(globalSetup->Render());
             menuBarParts.push_back(text(" "));
             menuBarParts.push_back(globalPreferences->Render());
+            menuBarParts.push_back(text(" "));
+            menuBarParts.push_back(globalQuit->Render());
         }
         auto menuBarEl = hbox(std::move(menuBarParts));
 
