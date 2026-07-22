@@ -178,10 +178,20 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     board.disconnect = doDisconnect;
     // Binds this board's own nickname so the Monitor/Channel tabs' alias
     // Input widgets (below) never need to know anything about topology
-    // files — see BoardSession::saveChannelAlias's own comment.
-    board.saveChannelAlias = [saveChannelAliasToTopology, nickname = board.nickname]
+    // files — see BoardSession::saveChannelAlias's own comment. Also
+    // rebuilds this board's own tab titles immediately, since an alias
+    // edit changes what CHn's tab should be labeled but isn't itself a new
+    // scan — the pendingSync-driven rebuild further down only fires after
+    // a fresh connect/scan changes the channel count, not on every alias
+    // edit. Called directly on the UI thread (the alias Input's commit
+    // handler runs synchronously), so board.data.numChannels() is read
+    // live here rather than through the cross-thread pendingChannelCount
+    // staging that connect/scan completion uses.
+    board.saveChannelAlias = [&board, &screen, saveChannelAliasToTopology, nickname = board.nickname]
                              (int ch, const std::string& alias) {
         saveChannelAliasToTopology(nickname, ch, alias);
+        rebuildChannelTitles(board.tabTitles, board.data.numChannels(), board.inputs.chAlias);
+        screen.PostEvent(Event::Custom);
     };
 
     // ---- Connect/Disconnect/Abort toggle button ----
