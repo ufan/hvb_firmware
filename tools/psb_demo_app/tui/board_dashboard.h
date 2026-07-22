@@ -390,7 +390,6 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             return Color::RGB(0, 50 + static_cast<int>(b * 200), 0);
         };
 
-        static constexpr auto kSysStaleThreshold = std::chrono::seconds(10);
         bool sysStale = board.connected.load() && board.data.sysStale(kSysStaleThreshold);
         Element connDotEl;
         if (sysStale) {
