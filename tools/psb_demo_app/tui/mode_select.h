@@ -45,6 +45,10 @@ inline ModeChoice showModeChoicePopup(ScreenInteractive& screen) {
     });
 
     auto container = Container::Horizontal({bSingle, bMulti, bCancel});
+    // `| center` on the returned Element is the whole fix for this popup
+    // rendering pinned to the top-left of the fullscreen root (looking
+    // like it "spans the left edge") — an unconstrained bordered box has
+    // no reason to move there otherwise.
     auto root = Renderer(container, [bSingle, bMulti, bCancel] {
         return vbox({
             text(" How many boards? ") | bold | center,
@@ -52,7 +56,7 @@ inline ModeChoice showModeChoicePopup(ScreenInteractive& screen) {
             text("Choose how you want to start.") | center,
             separator(),
             hbox({ bSingle->Render(), text("  "), bMulti->Render(), text("  "), bCancel->Render() }) | center,
-        }) | border | size(WIDTH, EQUAL, 60);
+        }) | border | size(WIDTH, EQUAL, 60) | center;
     });
 
     screen.Loop(root);

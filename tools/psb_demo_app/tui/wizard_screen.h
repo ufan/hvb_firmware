@@ -497,7 +497,7 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
             separator(),
             hbox({ bSave->Render(), text("  "), bConnectNow->Render(), text("  "),
                    bDone->Render(), text("  "), bCancel->Render() }) | center,
-        }) | border;
+        }) | border | size(WIDTH, GREATER_THAN, 100) | size(HEIGHT, GREATER_THAN, 30);
     }) | Modal(addBusPopup, showAddBusPtr.get())
        | Modal(addBoardPopup, showAddBoardPtr.get());
 
