@@ -12,10 +12,12 @@ namespace psb::tui {
 struct MonitorRow {
     Component row;  // Container::Horizontal — focus chain
     Component statusBtn, vsetInp, outputEnabledCyc, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn;
+    Component aliasInp;
 };
 
 // Build one row — creates all widgets, returns them in a MonitorRow.
-inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
+inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch,
+                                 std::function<void(int, const std::string&)> saveAlias) {
     // Narrow, action-specific refreshes — each re-reads only the Modbus
     // block the corresponding write actually touched (merging in place via
     // the reference-taking client methods, never a wholesale struct
@@ -175,8 +177,16 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
         saveChannelConfig(s, inputs, ch, refreshFull);
     });
 
+    // No hardware write — just a display name, so no CommitInput try/catch
+    // body needed beyond forwarding the committed string straight to the
+    // save closure. Placeholder is the canonical CHn name, per the
+    // confirmed "empty means unset, never pre-filled" design.
+    auto aliasInp = CommitInput(&inputs.chAlias[ch], "CH" + std::to_string(ch), [&inputs, ch, saveAlias] {
+        saveAlias(ch, inputs.chAlias[ch]);
+    });
+
     auto rowWidgets = Container::Horizontal({
-        vsetInp, outputEnabledCyc, statusBtn, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
+        aliasInp, vsetInp, outputEnabledCyc, statusBtn, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
     });
 
     return MonitorRow{
@@ -185,14 +195,16 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             return !s.data.valid || ch >= s.data.numChannels();
         }),
         statusBtn, vsetInp, outputEnabledCyc, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
+        aliasInp,
     };
 }
 
-inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
+inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs,
+                                std::function<void(int, const std::string&)> saveAlias) {
     auto rows = std::make_shared<std::vector<MonitorRow>>();
     Components rowComps;
     for (int ch = 0; ch < MAX_CHANNELS; ++ch) {
-        auto r = makeMonitorRow(s, inputs, ch);
+        auto r = makeMonitorRow(s, inputs, ch, saveAlias);
         rowComps.push_back(r.row);
         rows->push_back(std::move(r));
     }
@@ -242,7 +254,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
         // column and belongs in the header instead of every cell.
         CurrentUnit iu = currentUnitFor(s.data.sysInfo.currentUnitExp);
         const std::vector<std::string> headers = {
-            "", vsetEnHeader, "Status", "Vop", "V (V)",
+            "", "Alias", vsetEnHeader, "Status", "Vop", "V (V)",
             std::string("I (") + iu.label + ")",
             "Ru", "Rd", std::string("Limit (") + iu.label + ")",
             "Fault", "Clear", "Save",
@@ -270,8 +282,9 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
             if (s.data.chOffline[ch]) {
                 std::vector<Element> cells;
                 cells.push_back(text(chLabel) | center);
+                cells.push_back(rows->at(ch).aliasInp->Render() | center);
                 cells.push_back(text("OFFLINE") | color(Color::Red) | bold | center);
-                for (size_t c = 2; c < headers.size(); ++c)
+                for (size_t c = 3; c < headers.size(); ++c)
                     cells.push_back(text("--") | color(Color::Red) | dim | center);
                 grid.push_back(std::move(cells));
                 continue;
@@ -286,6 +299,7 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
 
             std::vector<Element> cells;
             cells.push_back(text(chLabel) | center);
+            cells.push_back(rows->at(ch).aliasInp->Render() | center);
             // Vset slot: target-voltage input (DAC channels), on/off cycler
             // (fixed-voltage switchable channels), or "n/a" (locked always-on,
             // e.g. jw_lvb ch0 — no CH_CAP_OUTPUT_ENABLE at all).
