@@ -38,7 +38,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                     std::function<void()> requestRemove,
                                     Component globalQuit, Component globalSetup,
                                     Component globalPreferences,
-                                    std::function<size_t()> liveBoardCount) {
+                                    std::function<size_t()> liveBoardCount,
+                                    std::function<void(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
     // ---- Connection inputs (live in the connection modal) ----
     auto baudInp  = Input(&board.baudVal,  "baud");
     auto slaveInp = Input(&board.slaveVal, "id");
@@ -175,6 +176,13 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     // see BoardSession::connect/disconnect's own comment.
     board.connect = doConnect;
     board.disconnect = doDisconnect;
+    // Binds this board's own nickname so the Monitor/Channel tabs' alias
+    // Input widgets (below) never need to know anything about topology
+    // files — see BoardSession::saveChannelAlias's own comment.
+    board.saveChannelAlias = [saveChannelAliasToTopology, nickname = board.nickname]
+                             (int ch, const std::string& alias) {
+        saveChannelAliasToTopology(nickname, ch, alias);
+    };
 
     // ---- Connect/Disconnect/Abort toggle button ----
     ButtonOption connBtnOpt{};
@@ -352,9 +360,9 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto tabBar = Menu(&board.tabTitles, &board.activeTab, tabOpt);
 
     // ---- Tab content: Monitor + CH0..CH15 ----
-    Components tabComponents = { makeMonitorTab(*board.appState, board.inputs) };
+    Components tabComponents = { makeMonitorTab(*board.appState, board.inputs, board.saveChannelAlias) };
     for (int ch = 0; ch < MAX_CHANNELS; ++ch)
-        tabComponents.push_back(makeChannelTab(*board.appState, board.inputs, ch));
+        tabComponents.push_back(makeChannelTab(*board.appState, board.inputs, ch, board.saveChannelAlias));
     auto tabContent = Container::Tab(tabComponents, &board.activeTab);
 
     // ---- Status bar (connection details + SysConfig; Connect lives in the menu) ----
@@ -367,7 +375,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
                 int nc = board.pendingChannelCount.load(std::memory_order_acquire);
-                rebuildChannelTitles(board.tabTitles, nc);
+                rebuildChannelTitles(board.tabTitles, nc, board.inputs.chAlias);
                 int maxTab = static_cast<int>(board.tabTitles.size()) - 1;
                 if (board.activeTab > maxTab) board.activeTab = maxTab;
                 syncDataToInputs(board.data, board.inputs);
