@@ -276,7 +276,8 @@ void drainPendingRemovals(Runtime& rt, psb::TopologyConfig& topo,
 void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractive& screen,
                   std::atomic<bool>& running, int timeoutMs, bool autoConnectAll,
                   std::function<void()> openSetup, Component globalQuit, Component globalSetup,
-                  Component globalPreferences, Component globalConnectAll, Component globalDisconnectAll) {
+                  Component globalPreferences, Component globalConnectAll, Component globalDisconnectAll,
+                  std::function<void(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
     for (const auto& busCfg : topo.buses) {
         auto bw = std::make_unique<psb::tui::BusWorker>();
         bw->bus = std::make_shared<psb::PsbSerialBus>();
@@ -288,12 +289,15 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
             b->portVal = busCfg.port;
             b->baudVal = std::to_string(busCfg.baudRate);
             b->slaveVal = std::to_string(boardCfg.slaveId);
+            for (int ch = 0; ch < static_cast<int>(boardCfg.channelAliases.size()); ++ch)
+                b->inputs.chAlias[ch] = boardCfg.channelAliases[ch];
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 bw->workQueue, bw->workMutex, bw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
-                globalQuit, globalSetup, globalPreferences, [&rt] { return rt.boards.size(); });
+                globalQuit, globalSetup, globalPreferences, [&rt] { return rt.boards.size(); },
+                saveChannelAliasToTopology);
             // Same "lock even though provably safe here" reasoning as the
             // rt.boards push right below — this bw's worker thread hasn't
             // been spawned yet at this point, but locking anyway means
@@ -394,7 +398,8 @@ void joinRuntime(Runtime& rt, std::atomic<bool>& running) {
 void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                         ScreenInteractive& screen, std::atomic<bool>& running,
                         int timeoutMs, std::function<void()> openSetup,
-                        Component globalQuit, Component globalSetup, Component globalPreferences) {
+                        Component globalQuit, Component globalSetup, Component globalPreferences,
+                        std::function<void(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
     for (const auto& busCfg : newTopo.buses) {
         psb::tui::BusWorker* existingBw = nullptr;
         for (auto& bw : rt.busWorkers)
@@ -429,12 +434,15 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
             b->portVal = busCfg.port;
             b->baudVal = std::to_string(busCfg.baudRate);
             b->slaveVal = std::to_string(boardCfg.slaveId);
+            for (int ch = 0; ch < static_cast<int>(boardCfg.channelAliases.size()); ++ch)
+                b->inputs.chAlias[ch] = boardCfg.channelAliases[ch];
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 targetBw->workQueue, targetBw->workMutex, targetBw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *targetBw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
-                globalQuit, globalSetup, globalPreferences, [&rt] { return rt.boards.size(); });
+                globalQuit, globalSetup, globalPreferences, [&rt] { return rt.boards.size(); },
+                saveChannelAliasToTopology);
 
             // Connect + full-scan this one board right away, on its bus's
             // own worker queue — never block the UI thread, same discipline
@@ -653,11 +661,34 @@ int main(int argc, char** argv) {
         for (auto& b : rt.boards) if (b->disconnect) b->disconnect();
     });
 
+    // The one place that knows both the live topo object and where it's
+    // saved — every board's own saveChannelAlias (board_dashboard.h) is a
+    // thin per-board wrapper around this, so the Monitor/Channel tabs never
+    // need direct access to either. Looks the board up by nickname (not a
+    // cached bus/board index) since topo can be wholesale replaced by a
+    // mid-session Setup edit (onMidSessionFinish below) at any time,
+    // invalidating any index captured earlier — the same reasoning
+    // detachBoard (board_switcher.h) already applies to board lookups.
+    auto saveChannelAliasToTopology = [&topo, topologyPath]
+                                      (const std::string& nickname, int ch, const std::string& alias) {
+        for (auto& bus : topo.buses) {
+            for (auto& brd : bus.boards) {
+                if (brd.nickname != nickname) continue;
+                if (static_cast<int>(brd.channelAliases.size()) <= ch)
+                    brd.channelAliases.resize(ch + 1);
+                brd.channelAliases[ch] = alias;
+                topo.save(topologyPath);
+                return;
+            }
+        }
+    };
+
     buildRuntime(rt, topo, screen, running, g_connectTimeoutMs, autoConnectAll, openSetup,
-                bGlobalQuit, bGlobalSetup, bGlobalPreferences, bGlobalConnectAll, bGlobalDisconnectAll);
+                bGlobalQuit, bGlobalSetup, bGlobalPreferences, bGlobalConnectAll, bGlobalDisconnectAll,
+                saveChannelAliasToTopology);
 
     auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &screen, &running, openSetup,
-                               bGlobalQuit, bGlobalSetup, bGlobalPreferences]
+                               bGlobalQuit, bGlobalSetup, bGlobalPreferences, saveChannelAliasToTopology]
                               (psb::tui::WizardOutcome outcome) {
         if (outcome == psb::tui::WizardOutcome::ConnectNow) {
             // Tear down what's gone before attaching what's new — the two
@@ -671,7 +702,7 @@ int main(int argc, char** argv) {
             // is already correct by the time either one completes.
             removeGoneBoardsLive(rt, midSessionWiz->topo, screen, running);
             applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, g_connectTimeoutMs, openSetup,
-                               bGlobalQuit, bGlobalSetup, bGlobalPreferences);
+                               bGlobalQuit, bGlobalSetup, bGlobalPreferences, saveChannelAliasToTopology);
             topo = midSessionWiz->topo;
         }
         *showSetup = false;
