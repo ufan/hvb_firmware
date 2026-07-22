@@ -15,6 +15,7 @@ add_executable(psb_tests
     test_tui_modbus_settings.cpp
     test_calibration.cpp
     test_wizard_state.cpp
+    test_group_wizard_state.cpp
     test_wizard_scan.cpp
 )
 
