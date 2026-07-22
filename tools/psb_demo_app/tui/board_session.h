@@ -138,7 +138,7 @@ inline auto readWithRetry(PsbBoardSession& client, Fn&& fn) -> decltype(fn()) {
 // serial bus is still shared with the channel reads (can't run truly
 // concurrently), but this keeps the readout at most one channel's-worth
 // stale rather than stuck for the whole scan.
-inline void doFullScan(PsbBoardSession& client, std::atomic<bool>& connected,
+inline void doFullScan(PsbBoardSession& client, std::atomic<bool>& abortConnect,
                        ScannedData& data, ftxui::ScreenInteractive& screen,
                        std::atomic<bool>& running) {
     for (int ch = 0; ch < MAX_CHANNELS; ++ch) {
@@ -150,11 +150,13 @@ inline void doFullScan(PsbBoardSession& client, std::atomic<bool>& connected,
     data.lastSysUpdate = std::chrono::steady_clock::now();
     data.sysCfg  = readWithRetry(client, [&] { return client.readSystemConfig(); });
     int n = data.numChannels();
-    // Gate on `connected`, not an unconditional true — if the user hits
-    // Disconnect while this (queued) scan is running, `connected` already
-    // flipped false on the UI thread, and this must not resurrect `valid`
-    // out from under it.
-    data.valid = connected.load();
+    // Gate on abortConnect, not connected — connected no longer flips true
+    // until *after* this scan succeeds (see each call site), so it can't be
+    // used as an "was this scan invalidated mid-flight" signal anymore.
+    // abortConnect already means exactly that: set true by doDisconnect if
+    // the user bails out of an in-flight connect (board_dashboard.h), left
+    // false throughout for call sites that aren't interruptible.
+    data.valid = !abortConnect.load();
     data.scanProgress = 0;
     if (running) screen.PostEvent(ftxui::Event::Custom);
 
