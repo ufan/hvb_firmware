@@ -37,6 +37,7 @@ struct AppState {
 // Each tab's Input/InlineCycler widgets bind to fields in this struct.
 struct ConfigInputs {
     // Monitor table editable columns
+    std::string chAlias [MAX_CHANNELS];  // User-editable display name, "" = unset (shows CHn placeholder)
     std::string targetV [MAX_CHANNELS];  // Vset  — configured target voltage in V — DAC channels
     int outputEnabledIdx[MAX_CHANNELS]{}; // Vset slot for fixed-voltage channels — 0=Off, 1=On
                                           // (CH_CAP_OUTPUT_ENABLE without CH_CAP_RAW_OUTPUT_DRIVE;
