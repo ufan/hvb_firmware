@@ -32,8 +32,7 @@ struct PathPicker {
 
 inline PathPicker makePathPicker(ScreenInteractive& screen,
                                  std::shared_ptr<bool> showPicker,
-                                 std::string& targetPath,
-                                 std::function<void()> onFileSelected) {
+                                 std::string& targetPath) {
     auto currentDir = std::make_shared<std::string>();
     auto entries = std::make_shared<std::vector<std::string>>();
     auto entryIsDir = std::make_shared<std::vector<bool>>();
@@ -80,9 +79,14 @@ inline PathPicker makePathPicker(ScreenInteractive& screen,
 
     auto entriesMenu = Menu(entries.get(), entryIdx.get());
 
+    // Deliberately does not load the selected file — only sets the path
+    // field and closes. The picker may also be used to choose a save
+    // location by picking an arbitrary existing file as a landing spot and
+    // then hand-editing the filename, and the picked file might not even
+    // be a valid topology file; Load stays an explicit, separate step the
+    // wizard's own Load button already provides.
     auto bOpen = ActionButton("Open", [entries, entryIsDir, entryFullPath, entryIdx,
-                                       currentDir, rebuild, showPicker, &targetPath,
-                                       onFileSelected, &screen] {
+                                       currentDir, rebuild, showPicker, &targetPath, &screen] {
         int i = *entryIdx;
         if (i < 0 || i >= static_cast<int>(entries->size())) return;
         if ((*entryIsDir)[i]) {
@@ -93,7 +97,6 @@ inline PathPicker makePathPicker(ScreenInteractive& screen,
         }
         targetPath = (*entryFullPath)[i];
         *showPicker = false;
-        onFileSelected();
         screen.PostEvent(Event::Custom);
     });
     auto bCancel = ActionButton("Cancel", [showPicker, &screen] {
