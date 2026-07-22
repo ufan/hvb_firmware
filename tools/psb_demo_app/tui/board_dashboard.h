@@ -120,6 +120,17 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
 
     auto doDisconnect = [&board, &busWorker, &screen] {
         board.abortConnect = true;
+        // While connecting, the detached thread in doConnect owns the port
+        // right now (calling client->rebind()/verifyProtocol() outside the
+        // bus worker's queue — see doConnect's own comment). Enqueuing an
+        // active disconnect here would run client->disconnect() on the
+        // worker thread concurrently with that in-flight call on the same
+        // non-thread-safe ModbusClientPort — the same crash class
+        // doConnect's board.connected guard fixes for Connect All, but
+        // symmetric on Disconnect All. Just flag the abort and let the
+        // connect thread unwind itself and post its own refresh, matching
+        // the toggle button's own "Abort" behavior below.
+        if (board.connecting.load()) return;
         board.connected = false; board.data.valid = false;
         // Enqueue disconnect on this board's bus worker to serialise with
         // in-flight Modbus I/O — avoids use-after-free on the bus's port.

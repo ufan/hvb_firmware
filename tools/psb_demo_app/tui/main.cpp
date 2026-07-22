@@ -617,12 +617,15 @@ int main(int argc, char** argv) {
                                                         g_connectTimeoutMs, g_pollInterval);
     auto bGlobalPreferences = psb::tui::ActionButton("Preferences", prefsDialog.open);
 
-    // Each unconditionally acts on every board regardless of its current
-    // state (Connect All also re-triggers already-connected boards — a
-    // redundant no-op there, not gated on board.connected) — calling the
-    // same board.connect/board.disconnect closures makeBoardDashboard sets
-    // on every BoardSession, never a second implementation of the
-    // connect/disconnect logic itself.
+    // Each is unconditionally clickable regardless of aggregate board
+    // state — not gated on whether every board is already connected/
+    // disconnected — calling the same board.connect/board.disconnect
+    // closures makeBoardDashboard sets on every BoardSession, never a
+    // second implementation of the connect/disconnect logic itself.
+    // Re-triggering an already-connected/disconnected board is a safe
+    // no-op: doConnect and doDisconnect (board_dashboard.h) each guard
+    // against redundant/overlapping invocations themselves, precisely so
+    // this call site doesn't have to duplicate that state checking.
     auto bGlobalConnectAll = psb::tui::ActionButton("Connect All", [&rt] {
         std::lock_guard<std::mutex> lk(rt.boardsMutex);
         for (auto& b : rt.boards) if (b->connect) b->connect();
