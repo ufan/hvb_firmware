@@ -453,15 +453,18 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
             { std::lock_guard<std::mutex> lk(bwPtr->workMutex);
               bwPtr->workQueue.push([bPtr, &screen, &running] {
                   bool ok = bPtr->client->verifyProtocol();
-                  bPtr->connected = ok;
-                  { std::lock_guard<std::mutex> lk2(bPtr->statusMutex);
-                    bPtr->statusMsg = ok ? "" : "Error: " + bPtr->client->lastError(); }
+                  if (bPtr->abortConnect) ok = false;
                   if (ok) {
-                      psb::tui::doFullScan(*bPtr->client, bPtr->connected, bPtr->data, screen, running);
-                      bPtr->data.valid = bPtr->connected.load();
+                      psb::tui::doFullScan(*bPtr->client, bPtr->abortConnect, bPtr->data, screen, running);
+                      ok = bPtr->data.allChannelsLoaded() && !bPtr->abortConnect;
                       bPtr->pendingChannelCount.store(bPtr->data.numChannels(), std::memory_order_release);
                       bPtr->pendingSync.store(true, std::memory_order_release);
                   }
+                  bPtr->connected = ok;
+                  bPtr->data.valid = bPtr->connected.load();
+                  { std::lock_guard<std::mutex> lk2(bPtr->statusMutex);
+                    bPtr->statusMsg = bPtr->abortConnect ? "Connection aborted"
+                                     : ok ? "" : "Error: " + bPtr->client->lastError(); }
                   screen.PostEvent(Event::Custom);
               });
               targetBw->boards.push_back(bPtr);
