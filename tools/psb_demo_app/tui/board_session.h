@@ -73,6 +73,15 @@ struct BoardSession {
     // built, which always happens before these could be reached.
     std::function<void()> connect;
     std::function<void()> disconnect;
+
+    // Set by makeBoardDashboard() (Task 7) to a closure bound to this
+    // board's own nickname, wrapping a single save-to-topology closure
+    // main() constructs once (it has the live TopologyConfig/path this
+    // board's alias edits need to land in) — lets the Monitor/Channel tabs'
+    // alias Input widgets (Task 5/6) commit an edit without needing to know
+    // anything about topology files themselves. Empty until the dashboard
+    // is built, same as connect/disconnect above.
+    std::function<void(int ch, const std::string& alias)> saveChannelAlias;
 };
 
 // One physical bus — owns exactly one worker thread, shared by every board
@@ -294,10 +303,11 @@ inline void doPollScan(PsbBoardSession& client, ScannedData& data, ftxui::Screen
     if (running) screen.PostEvent(ftxui::Event::Custom);
 }
 
-inline void rebuildChannelTitles(std::vector<std::string>& titles, int numChannels) {
+inline void rebuildChannelTitles(std::vector<std::string>& titles, int numChannels,
+                                 const std::string* chAlias) {
     titles.resize(1);
     for (int ch = 0; ch < numChannels; ++ch)
-        titles.push_back("CH" + std::to_string(ch));
+        titles.push_back(!chAlias[ch].empty() ? chAlias[ch] : "CH" + std::to_string(ch));
 }
 
 } // namespace psb::tui
