@@ -11,6 +11,13 @@ namespace psb::tui {
 
 static constexpr int MAX_CHANNELS = static_cast<int>(psb::reg::MAX_CHANNELS);
 
+// How long since the last successful system-status poll before a board is
+// treated as "connected but not actually responding" rather than genuinely
+// live — shared by the per-board dashboard's own status dot
+// (board_dashboard.h) and the sidebar's connection indicator
+// (board_switcher.h), so both agree on what "stale" means.
+inline constexpr auto kSysStaleThreshold = std::chrono::seconds(10);
+
 struct ScannedData {
     psb::SystemInfo       sysInfo{};
     psb::ChannelInfo      chInfo[MAX_CHANNELS]{};
