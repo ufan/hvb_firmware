@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -57,8 +58,50 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     auto mainSelected = std::make_shared<int>(boards.size() > 1 ? 1 : 2);
 
     MenuOption switcherOpt = MenuOption::Vertical();
-    switcherOpt.entries_option.transform = [](const EntryState& e) -> Element {
-        auto t = text("  " + e.label + "  ");
+    // Looks up e.label (the nickname) in `boards` to read that board's live
+    // connection state — Menu only ever hands the transform a label/active/
+    // focused triple, never an index or the BoardSession itself, so a
+    // by-nickname scan is the only way in. Boards are few in practice
+    // (single digits), and this mirrors detachBoard's own by-nickname
+    // lookup below. `boards` is `rt.boards` from main.cpp, captured by
+    // reference the same way main.cpp's own Connect All/Disconnect All
+    // buttons already capture it — safe without an extra lock: mutations to
+    // the vector itself (add/remove) are, like this transform's reads, only
+    // ever issued from the single UI thread, so they can't interleave with
+    // this scan.
+    //
+    // Five states, reusing the exact fields/thresholds the per-board
+    // dashboard's own status dot (board_dashboard.h) already computes, so
+    // the two never disagree about what "connected" or "stale" means:
+    //   green  ● : connected, polling normal
+    //   red    ■ : connected, but data gone stale (polling failed)
+    //   yellow ◐ : connecting (static glyph — no redraw ticker exists
+    //              during an in-flight connect attempt for this to animate)
+    //   red    ■ : not connected/connecting, last status was an error
+    //              (connection failed)
+    //   gray   ○ : not connected/connecting, no error (idle / never
+    //              connected) — the loop's starting value below
+    switcherOpt.entries_option.transform = [&boards](const EntryState& e) -> Element {
+        Element dot = text("\xe2\x97\x8b ") | color(Color::GrayDark);  // ○
+        for (auto& b : boards) {
+            if (b->nickname != e.label) continue;
+            bool connected = b->connected.load();
+            bool connecting = b->connecting.load();
+            bool stale = connected && b->data.sysStale(kSysStaleThreshold);
+            if (connected && !stale) {
+                dot = text("\xe2\x97\x8f ") | color(Color::Green);   // ●
+            } else if (connected && stale) {
+                dot = text("\xe2\x96\xa0 ") | color(Color::Red);     // ■
+            } else if (connecting) {
+                dot = text("\xe2\x97\x90 ") | color(Color::Yellow);  // ◐
+            } else {
+                std::lock_guard<std::mutex> lk(b->statusMutex);
+                if (b->statusMsg.find("Error") != std::string::npos)
+                    dot = text("\xe2\x96\xa0 ") | color(Color::Red); // ■
+            }
+            break;
+        }
+        auto t = hbox({ text("  "), dot, text(e.label + "  ") });
         if (e.active)                t = t | bold | color(Color::Cyan);
         if (e.focused && !e.active)  t = t | inverted;
         if (!e.active && !e.focused) t = t | dim;
