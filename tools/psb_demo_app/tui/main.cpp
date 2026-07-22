@@ -637,7 +637,45 @@ int main(int argc, char** argv) {
         *showSetup = false;
         screen.PostEvent(Event::Custom);
     };
-    auto midSessionWizardRoot = psb::tui::makeWizardScreen(*midSessionWiz, screen, onMidSessionFinish, /*allowScan=*/false);
+    // Finds the BusWorker already driving `port` (same matching technique
+    // applyNewBoardsLive uses to find an existing bus by port) and enqueues
+    // the scan as a work item on that worker's own queue, reusing its
+    // already-open PsbSerialBus — no second connection opened on a port a
+    // thread may already be driving. Returns false (caller falls back to
+    // direct-connect scan) when no live worker owns this port yet, e.g. a
+    // bus just added in this wizard session but not yet Applied.
+    auto scanViaLiveBus = [&rt](const std::string& port, int start, int end,
+                               std::function<void(std::vector<psb::tui::DiscoveredBoard>, std::string)> onDone) -> bool {
+        for (auto& bwPtr : rt.busWorkers) {
+            psb::tui::BusWorker& bw = *bwPtr;
+            bool matches = false;
+            { std::lock_guard<std::mutex> lk(bw.workMutex);
+              matches = !bw.boards.empty() && bw.boards.front()->portVal == port; }
+            if (!matches) continue;
+
+            { std::lock_guard<std::mutex> lk(bw.workMutex);
+              bw.workQueue.push([worker = &bw, start, end, onDone] {
+                  // Runs on worker's own thread, inside its queue-drain step
+                  // (see runBusWorkerLoop) — normal polling of this bus's
+                  // already-connected boards is paused for the duration,
+                  // exactly as any other queued work item already pauses
+                  // it. scanBus() never opens/closes the port itself
+                  // (wizard_scan.h), so worker->bus's existing connection
+                  // is reused as-is.
+                  auto results = psb::tui::scanBus(worker->bus, start, end, [](int) {});
+                  std::string status = results.empty()
+                      ? "No boards found in range."
+                      : std::to_string(results.size()) + " board(s) found.";
+                  onDone(std::move(results), std::move(status));
+              }); }
+            bw.workCv.notify_one();
+            return true;
+        }
+        return false;
+    };
+
+    auto midSessionWizardRoot = psb::tui::makeWizardScreen(*midSessionWiz, screen, onMidSessionFinish,
+                                                            /*allowScan=*/true, scanViaLiveBus);
 
     auto rootWithSetup = Renderer(rt.switcher.root, [&rt, &topo, &screen, &running] {
         drainPendingRemovals(rt, topo, screen, running);
