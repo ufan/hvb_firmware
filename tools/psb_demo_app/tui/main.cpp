@@ -276,7 +276,7 @@ void drainPendingRemovals(Runtime& rt, psb::TopologyConfig& topo,
 void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractive& screen,
                   std::atomic<bool>& running, int timeoutMs, bool autoConnectAll,
                   std::function<void()> openSetup, Component globalQuit, Component globalSetup,
-                  Component globalPreferences) {
+                  Component globalPreferences, Component globalConnectAll, Component globalDisconnectAll) {
     for (const auto& busCfg : topo.buses) {
         auto bw = std::make_unique<psb::tui::BusWorker>();
         bw->bus = std::make_shared<psb::PsbSerialBus>();
@@ -356,7 +356,8 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
         }
     });
 
-    rt.switcher = psb::tui::makeBoardSwitcher(rt.boards, globalQuit, globalSetup, globalPreferences);
+    rt.switcher = psb::tui::makeBoardSwitcher(rt.boards, globalQuit, globalSetup, globalPreferences,
+                                              globalConnectAll, globalDisconnectAll);
 }
 
 void joinRuntime(Runtime& rt, std::atomic<bool>& running) {
@@ -526,44 +527,47 @@ int main(int argc, char** argv) {
     //      its status line, so there's no separate eager load-and-exit-on-
     //      error path here anymore. ----
     psb::TopologyConfig topo;
-    bool haveTopo = false;
 
-    auto choice = psb::tui::showModeChoicePopup(screen);
-    if (choice == psb::tui::ModeChoice::Cancelled) return 0;
-    if (choice == psb::tui::ModeChoice::Single) {
-        auto quick = psb::tui::showQuickConnectForm(screen);
-        if (!quick.has_value()) return 0;
-        topo = *quick;
-        haveTopo = true;
-    }
-    // else Multi: leave haveTopo false — runWizard below launches the
-    // standalone wizard, empty except for the Path field defaulting to
-    // topologyPath, ready for [Load] to pull in an existing file.
+    // Loops instead of the old popup-once-then-maybe-wizard sequence so
+    // Back (from either the quick-connect form or the standalone wizard)
+    // can cleanly return to mode selection instead of only ever exiting or
+    // succeeding. The old "Cancelled but a topology already existed, fall
+    // through unchanged" branch is dropped as genuinely dead code: it
+    // could only be reached when a topology already existed before the
+    // wizard ran, which never happened — single-board quick-connect (the
+    // only path that ever produced one before this point) never fell
+    // through to the wizard at all.
+    for (;;) {
+        auto choice = psb::tui::showModeChoicePopup(screen);
+        if (choice == psb::tui::ModeChoice::Exit) return 0;
+        if (choice == psb::tui::ModeChoice::Single) {
+            auto quick = psb::tui::showQuickConnectForm(screen);
+            if (quick.outcome == psb::tui::QuickConnectOutcome::Exit) return 0;
+            if (quick.outcome == psb::tui::QuickConnectOutcome::Back) continue;
+            topo = quick.topo;
+            break;
+        }
 
-    bool runWizard = !haveTopo;
-    if (runWizard) {
+        // Multi: run the wizard right here (not deferred to a separate
+        // block) so Back can loop cleanly back to mode selection.
         psb::tui::WizardState wiz;
         wiz.topologyPath = topologyPath;
-        if (haveTopo) wiz.topo = topo;
 
         psb::tui::WizardOutcome outcome = psb::tui::WizardOutcome::Cancelled;
         auto wizardRoot = psb::tui::makeWizardScreen(wiz, screen, [&](psb::tui::WizardOutcome o) {
             outcome = o;
             screen.ExitLoopClosure()();
-        });
+        }, /*allowScan=*/true, /*scanViaLiveBus=*/{}, /*isLaunchFlow=*/true);
         screen.Loop(wizardRoot);
 
-        if (outcome == psb::tui::WizardOutcome::Cancelled) {
-            if (!haveTopo) return 0;  // first run, cancelled — nothing to connect to
-            // else: fall through using the pre-existing topo unchanged.
-        } else {
-            topo = wiz.topo;
-            haveTopo = true;
-        }
+        if (outcome == psb::tui::WizardOutcome::Back) continue;
+        if (outcome == psb::tui::WizardOutcome::Cancelled) return 0;  // first run, exited — nothing to connect to
+        topo = wiz.topo;
         if (topo.totalBoardCount() == 0) {
             std::cerr << "Topology has no boards configured — exiting.\n";
             return 0;
         }
+        break;
     }
 
     // Always true by this point — every surviving path here represents a
@@ -613,8 +617,23 @@ int main(int argc, char** argv) {
                                                         g_connectTimeoutMs, g_pollInterval);
     auto bGlobalPreferences = psb::tui::ActionButton("Preferences", prefsDialog.open);
 
+    // Each unconditionally acts on every board regardless of its current
+    // state (Connect All also re-triggers already-connected boards — a
+    // redundant no-op there, not gated on board.connected) — calling the
+    // same board.connect/board.disconnect closures makeBoardDashboard sets
+    // on every BoardSession, never a second implementation of the
+    // connect/disconnect logic itself.
+    auto bGlobalConnectAll = psb::tui::ActionButton("Connect All", [&rt] {
+        std::lock_guard<std::mutex> lk(rt.boardsMutex);
+        for (auto& b : rt.boards) if (b->connect) b->connect();
+    });
+    auto bGlobalDisconnectAll = psb::tui::ActionButton("Disconnect All", [&rt] {
+        std::lock_guard<std::mutex> lk(rt.boardsMutex);
+        for (auto& b : rt.boards) if (b->disconnect) b->disconnect();
+    });
+
     buildRuntime(rt, topo, screen, running, g_connectTimeoutMs, autoConnectAll, openSetup,
-                bGlobalQuit, bGlobalSetup, bGlobalPreferences);
+                bGlobalQuit, bGlobalSetup, bGlobalPreferences, bGlobalConnectAll, bGlobalDisconnectAll);
 
     auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &screen, &running, openSetup,
                                bGlobalQuit, bGlobalSetup, bGlobalPreferences]
@@ -675,7 +694,7 @@ int main(int argc, char** argv) {
     };
 
     auto midSessionWizardRoot = psb::tui::makeWizardScreen(*midSessionWiz, screen, onMidSessionFinish,
-                                                            /*allowScan=*/true, scanViaLiveBus);
+                                                            /*allowScan=*/true, scanViaLiveBus, /*isLaunchFlow=*/false);
 
     auto rootWithSetup = Renderer(rt.switcher.root, [&rt, &topo, &screen, &running] {
         drainPendingRemovals(rt, topo, screen, running);
