@@ -278,7 +278,7 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
                   std::atomic<bool>& running, int timeoutMs, bool autoConnectAll,
                   std::function<void()> openSetup, Component globalQuit, Component globalSetup,
                   Component globalPreferences, Component globalConnectAll, Component globalDisconnectAll,
-                  std::function<void(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
+                  std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
     for (const auto& busCfg : topo.buses) {
         auto bw = std::make_unique<psb::tui::BusWorker>();
         bw->bus = std::make_shared<psb::PsbSerialBus>();
@@ -406,7 +406,7 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                         ScreenInteractive& screen, std::atomic<bool>& running,
                         int timeoutMs, std::function<void()> openSetup,
                         Component globalQuit, Component globalSetup, Component globalPreferences,
-                        std::function<void(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
+                        std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
     for (const auto& busCfg : newTopo.buses) {
         psb::tui::BusWorker* existingBw = nullptr;
         for (auto& bw : rt.busWorkers)
@@ -639,8 +639,17 @@ int main(int argc, char** argv) {
     auto midSessionWiz = std::make_shared<psb::tui::WizardState>();
     midSessionWiz->topologyPath = topologyPath;
 
-    std::function<void()> openSetup = [showSetup, midSessionWiz, &topo, &screen] {
+    std::function<void()> openSetup = [showSetup, midSessionWiz, &topo, &currentTopologyPath, &screen] {
         midSessionWiz->topo = topo;  // seed with the currently-running topology
+        // Also reseed the path, not just the topology content — without
+        // this, midSessionWiz->topologyPath stays stuck at whatever it was
+        // last set to (the launch-time default, the first time Setup is
+        // ever opened) even when currentTopologyPath has since moved on
+        // (e.g. launch loaded a non-default file). Clicking Apply without
+        // personally re-Browsing inside the wizard would otherwise save
+        // back into that stale path — the same wrong-file risk
+        // currentTopologyPath exists to prevent.
+        midSessionWiz->topologyPath = currentTopologyPath;
         midSessionWiz->selectedBus = -1;
         midSessionWiz->selectedBoard = -1;
         midSessionWiz->statusMsg.clear();
@@ -700,18 +709,22 @@ int main(int argc, char** argv) {
     // saving to the wrong one would silently corrupt a topology file the
     // user isn't even using. currentTopologyPath tracks the real answer
     // and is updated at every point topo itself is replaced.
+    // Returns whether the save actually succeeded — callers (board_dashboard.h)
+    // surface a failure via the board's own status message, matching every
+    // other save-failure path in this codebase, rather than dropping it
+    // silently.
     auto saveChannelAliasToTopology = [&topo, &currentTopologyPath]
-                                      (const std::string& nickname, int ch, const std::string& alias) {
+                                      (const std::string& nickname, int ch, const std::string& alias) -> bool {
         for (auto& bus : topo.buses) {
             for (auto& brd : bus.boards) {
                 if (brd.nickname != nickname) continue;
                 if (static_cast<int>(brd.channelAliases.size()) <= ch)
                     brd.channelAliases.resize(ch + 1);
                 brd.channelAliases[ch] = alias;
-                topo.save(currentTopologyPath);
-                return;
+                return topo.save(currentTopologyPath);
             }
         }
+        return false;
     };
 
     buildRuntime(rt, topo, screen, running, g_connectTimeoutMs, autoConnectAll, openSetup,
