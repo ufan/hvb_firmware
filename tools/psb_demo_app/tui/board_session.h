@@ -64,6 +64,15 @@ struct BoardSession {
     std::atomic<bool> pendingSync{false};
 
     ftxui::Component dashboard;  // built once by makeBoardDashboard()
+
+    // Set by makeBoardDashboard() to the same doConnect/doDisconnect
+    // closures its own Connect/Disconnect toggle button already uses — lets
+    // an external caller (main.cpp's Connect All/Disconnect All) trigger
+    // identical per-board connection logic without duplicating it or
+    // restructuring ownership. Empty (never called) until the dashboard is
+    // built, which always happens before these could be reached.
+    std::function<void()> connect;
+    std::function<void()> disconnect;
 };
 
 // One physical bus — owns exactly one worker thread, shared by every board
