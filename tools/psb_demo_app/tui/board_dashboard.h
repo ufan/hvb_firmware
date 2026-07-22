@@ -60,7 +60,17 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto bScan = Button("Rescan", [doScanPorts] { doScanPorts(); });
 
     auto doConnect = [&board, &busWorker, &screen, &running, timeoutMs] {
-        if (board.portVal.empty() || board.connecting) return;
+        // board.connected must guard here, not just at each call site: the
+        // toggle button below only ever reaches doConnect() while neither
+        // is true (it calls doDisconnect() instead when connected), but
+        // Connect All (main.cpp) calls board.connect() unconditionally on
+        // every board. Without this, re-invoking doConnect() on an already-
+        // connected board spawns a second thread that calls
+        // client->verifyProtocol() concurrently with the bus worker's own
+        // in-flight polling of the same ModbusClientPort — a real data race
+        // that crashed the app (segfault in ModbusObject::objectName()),
+        // not a harmless redundant no-op.
+        if (board.portVal.empty() || board.connecting || board.connected) return;
         board.abortConnect = false;
         board.connecting = true;
         board.connectStart = std::chrono::steady_clock::now();
