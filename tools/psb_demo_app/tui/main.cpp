@@ -6,6 +6,8 @@
 #include "board_switcher.h"
 #include "wizard_state.h"
 #include "wizard_screen.h"
+#include "group_wizard_state.h"
+#include "group_wizard_screen.h"
 #include "mode_select.h"
 #include "preferences_dialog.h"
 #include "app_preferences.h"
@@ -277,7 +279,8 @@ void drainPendingRemovals(Runtime& rt, psb::TopologyConfig& topo,
 void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractive& screen,
                   std::atomic<bool>& running, int timeoutMs, bool autoConnectAll,
                   std::function<void()> openSetup, Component globalQuit, Component globalSetup,
-                  Component globalPreferences, Component globalConnectAll, Component globalDisconnectAll,
+                  Component globalGroup, Component globalPreferences,
+                  Component globalConnectAll, Component globalDisconnectAll,
                   std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
     for (const auto& busCfg : topo.buses) {
         auto bw = std::make_unique<psb::tui::BusWorker>();
@@ -303,7 +306,7 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
                 bw->workQueue, bw->workMutex, bw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
-                globalQuit, globalSetup, globalPreferences, [&rt] { return rt.boards.size(); },
+                globalQuit, globalSetup, globalGroup, globalPreferences, [&rt] { return rt.boards.size(); },
                 saveChannelAliasToTopology);
             // Same "lock even though provably safe here" reasoning as the
             // rt.boards push right below — this bw's worker thread hasn't
@@ -382,7 +385,7 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
         }
     });
 
-    rt.switcher = psb::tui::makeBoardSwitcher(rt.boards, globalQuit, globalSetup, globalPreferences,
+    rt.switcher = psb::tui::makeBoardSwitcher(rt.boards, globalQuit, globalSetup, globalGroup, globalPreferences,
                                               globalConnectAll, globalDisconnectAll);
 }
 
@@ -405,7 +408,8 @@ void joinRuntime(Runtime& rt, std::atomic<bool>& running) {
 void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                         ScreenInteractive& screen, std::atomic<bool>& running,
                         int timeoutMs, std::function<void()> openSetup,
-                        Component globalQuit, Component globalSetup, Component globalPreferences,
+                        Component globalQuit, Component globalSetup, Component globalGroup,
+                        Component globalPreferences,
                         std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
     for (const auto& busCfg : newTopo.buses) {
         psb::tui::BusWorker* existingBw = nullptr;
@@ -453,7 +457,7 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                 targetBw->workQueue, targetBw->workMutex, targetBw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *targetBw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
-                globalQuit, globalSetup, globalPreferences, [&rt] { return rt.boards.size(); },
+                globalQuit, globalSetup, globalGroup, globalPreferences, [&rt] { return rt.boards.size(); },
                 saveChannelAliasToTopology);
 
             // Connect + full-scan this one board right away, on its bus's
@@ -657,6 +661,25 @@ int main(int argc, char** argv) {
         screen.PostEvent(Event::Custom);
     };
 
+    auto showGroupSetup = std::make_shared<bool>(false);
+    auto groupWiz = std::make_shared<psb::tui::GroupWizardState>();
+
+    // Mirrors openSetup exactly, including reseeding topologyPath on every
+    // open (not just at construction) — the exact Critical bug Phase 1
+    // shipped without, then had to fix after the fact. groupWiz->topo is
+    // seeded from the *full* live topo (not a groups-only copy) so Save
+    // (group_wizard_screen.h's bSave) never truncates the file's
+    // buses/boards.
+    std::function<void()> openGroupSetup = [showGroupSetup, groupWiz, &topo, &currentTopologyPath, &screen] {
+        groupWiz->topo = topo;
+        groupWiz->topologyPath = currentTopologyPath;
+        groupWiz->selectedGroup = -1;
+        groupWiz->selectedChannel = -1;
+        groupWiz->statusMsg.clear();
+        *showGroupSetup = true;
+        screen.PostEvent(Event::Custom);
+    };
+
     Runtime rt;
 
     // Constructed once, not once per board — Quit notifies every bus's
@@ -670,6 +693,7 @@ int main(int argc, char** argv) {
         screen.ExitLoopClosure()();
     });
     auto bGlobalSetup = psb::tui::ActionButton("Topology", [openSetup] { openSetup(); });
+    auto bGlobalGroup = psb::tui::ActionButton("Group", [openGroupSetup] { openGroupSetup(); });
 
     auto showPreferences = std::make_shared<bool>(false);
     auto prefsDialog = psb::tui::makePreferencesDialog(screen, showPreferences,
@@ -728,11 +752,12 @@ int main(int argc, char** argv) {
     };
 
     buildRuntime(rt, topo, screen, running, g_connectTimeoutMs, autoConnectAll, openSetup,
-                bGlobalQuit, bGlobalSetup, bGlobalPreferences, bGlobalConnectAll, bGlobalDisconnectAll,
+                bGlobalQuit, bGlobalSetup, bGlobalGroup, bGlobalPreferences, bGlobalConnectAll, bGlobalDisconnectAll,
                 saveChannelAliasToTopology);
 
     auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &currentTopologyPath, &screen, &running,
-                               openSetup, bGlobalQuit, bGlobalSetup, bGlobalPreferences, saveChannelAliasToTopology]
+                               openSetup, bGlobalQuit, bGlobalSetup, bGlobalGroup, bGlobalPreferences,
+                               saveChannelAliasToTopology]
                               (psb::tui::WizardOutcome outcome) {
         if (outcome == psb::tui::WizardOutcome::ConnectNow) {
             // Tear down what's gone before attaching what's new — the two
@@ -746,7 +771,7 @@ int main(int argc, char** argv) {
             // is already correct by the time either one completes.
             removeGoneBoardsLive(rt, midSessionWiz->topo, screen, running);
             applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, g_connectTimeoutMs, openSetup,
-                               bGlobalQuit, bGlobalSetup, bGlobalPreferences, saveChannelAliasToTopology);
+                               bGlobalQuit, bGlobalSetup, bGlobalGroup, bGlobalPreferences, saveChannelAliasToTopology);
             topo = midSessionWiz->topo;
             currentTopologyPath = midSessionWiz->topologyPath;
         }
@@ -793,10 +818,49 @@ int main(int argc, char** argv) {
     auto midSessionWizardRoot = psb::tui::makeWizardScreen(*midSessionWiz, screen, onMidSessionFinish,
                                                             /*allowScan=*/true, scanViaLiveBus, /*isLaunchFlow=*/false);
 
+    // Snapshot of currently-connected boards for the group wizard's Add
+    // Channel picker — the picker scope is deliberately restricted to
+    // currently-connected boards, never every board ever defined in the
+    // topology, connected or not. Called fresh every time the picker opens
+    // (group_wizard_screen.h's bAddChannel), never cached, so a board that
+    // connects/disconnects while the modal sits open is picked up on the
+    // next open.
+    auto getLiveGroupBoards = [&rt]() -> psb::tui::LiveBoards {
+        psb::tui::LiveBoards result;
+        std::lock_guard<std::mutex> lk(rt.boardsMutex);
+        for (auto& b : rt.boards) {
+            if (!b->connected.load()) continue;
+            psb::tui::LiveBoardInfo info;
+            info.nickname = b->nickname;
+            info.numChannels = b->data.numChannels();
+            for (int ch = 0; ch < info.numChannels; ++ch)
+                info.aliases.push_back(b->inputs.chAlias[ch]);
+            result.push_back(std::move(info));
+        }
+        return result;
+    };
+
+    // Syncs main()'s live topo (and the path it's tracked against) from
+    // whatever the group wizard ended up with — same "sync back on finish"
+    // pattern as onMidSessionFinish's topo = midSessionWiz->topo; without
+    // this, a later alias edit's saveChannelAliasToTopology (which also
+    // calls topo.save()) would overwrite the group wizard's own already-
+    // saved-to-disk groups with an in-memory topo that never learned about
+    // them.
+    auto onGroupSetupFinish = [showGroupSetup, groupWiz, &topo, &currentTopologyPath, &screen] {
+        topo = groupWiz->topo;
+        currentTopologyPath = groupWiz->topologyPath;
+        *showGroupSetup = false;
+        screen.PostEvent(Event::Custom);
+    };
+
+    auto groupWizardRoot = psb::tui::makeGroupWizardScreen(*groupWiz, screen, onGroupSetupFinish, getLiveGroupBoards);
+
     auto rootWithSetup = Renderer(rt.switcher.root, [&rt, &topo, &screen, &running] {
         drainPendingRemovals(rt, topo, screen, running);
         return rt.switcher.root->Render();
     }) | Modal(midSessionWizardRoot, showSetup.get())
+       | Modal(groupWizardRoot, showGroupSetup.get())
        | Modal(prefsDialog.root, showPreferences.get());
 
     screen.Loop(rootWithSetup);
