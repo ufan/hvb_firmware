@@ -21,7 +21,7 @@ namespace psb::tui {
 
 using namespace ftxui;
 
-enum class WizardOutcome { Cancelled, SavedOnly, ConnectNow };
+enum class WizardOutcome { Cancelled, ConnectNow, Back };
 
 // Hand-off payload for the scan thread → UI thread transition. The scan
 // thread never writes scanResults/scanResultLabels/scanStatus directly —
@@ -60,10 +60,18 @@ struct ScanUpdate {
 using ScanViaLiveBus = std::function<bool(const std::string& port, int start, int end,
                                           std::function<void(std::vector<DiscoveredBoard>, std::string)> onDone)>;
 
+// isLaunchFlow: independent of allowScan (which now only means "safe to
+// scan" — mid-session also allows scan, see scanViaLiveBus above). true
+// only for main()'s pre-dashboard entry point, reached before any board is
+// running; false for the mid-session Setup reopen. Drives bConnectNow's
+// label ("Connect Now" vs "Apply"), bCancel's label ("Exit" vs "Cancel"),
+// and whether bBack (returns to the mode-selection popup) is shown at all
+// — mid-session has no mode selection to go back to.
 inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
                                   std::function<void(WizardOutcome)> onFinish,
                                   bool allowScan = true,
-                                  ScanViaLiveBus scanViaLiveBus = {}) {
+                                  ScanViaLiveBus scanViaLiveBus = {},
+                                  bool isLaunchFlow = true) {
     // ---- Bus/board list (left pane) ----
     auto busNames = std::make_shared<std::vector<std::string>>();
     auto rebuildBusNames = [&s, busNames] {
@@ -433,9 +441,6 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
 
     // ---- Save / Save As / Load / Browse / Connect / Cancel ----
     auto topologyPathInp = Input(&s.topologyPath, "topology file path");
-    // Extracted so the path picker's own "Open" (on a selected file) runs
-    // the identical load — Load's own button and a picked file both funnel
-    // through this one place, never two copies of the same logic.
     auto doLoadTopology = [&s, rebuildBusNames, rebuildBoardNames, &screen] {
         auto loaded = psb::TopologyConfig::load(s.topologyPath);
         if (loaded.has_value()) {
@@ -453,7 +458,7 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     };
     auto bLoadTopology = ActionButton("Load", doLoadTopology);
     auto showPathPicker = std::make_shared<bool>(false);
-    auto pathPicker = makePathPicker(screen, showPathPicker, s.topologyPath, doLoadTopology);
+    auto pathPicker = makePathPicker(screen, showPathPicker, s.topologyPath);
     auto bBrowsePath = ActionButton("Browse...", pathPicker.open);
     auto bSave = ActionButton("Save", [&s, onFinish, &screen] {
         if (s.topo.save(s.topologyPath)) {
@@ -464,41 +469,41 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
         }
         screen.PostEvent(Event::Custom);
     });
-    // Mid-session (allowScan=false), ConnectNow applies additive changes to
-    // the already-running session rather than starting one, and Save &
-    // Exit only closes this modal — the dashboard underneath keeps running,
-    // nothing actually "exits". Reusing allowScan as the mid-session signal
-    // (the same construction-time parameter that already distinguishes the
-    // two call sites) to pick the labels that describe what each button
-    // does in context, rather than always showing the pre-dashboard wording.
-    auto bConnectNow = ActionButton(allowScan ? "Connect Now" : "Apply", [&s, onFinish] {
+    // isLaunchFlow (not allowScan — see its own comment above) is what
+    // distinguishes the two contexts this label describes: mid-session,
+    // ConnectNow applies additive changes to the already-running session
+    // rather than starting one. Using allowScan here was the bug — mid-
+    // session gained allowScan=true when scan routing was added, which
+    // silently mislabeled this button "Connect Now" instead of "Apply".
+    auto bConnectNow = ActionButton(isLaunchFlow ? "Connect Now" : "Apply", [&s, onFinish] {
         onFinish(WizardOutcome::ConnectNow);
     });
-    auto bDone = ActionButton(allowScan ? "Save & Exit" : "Save & Close", [&s, onFinish, &screen] {
-        if (s.topo.save(s.topologyPath)) {
-            s.dirty = false;
-            onFinish(WizardOutcome::SavedOnly);
-        } else {
-            // Stay in the wizard on failure — exiting via onFinish(Cancelled)
-            // here would be indistinguishable from the user clicking plain
-            // Cancel, silently discarding their edits with no diagnostic.
-            s.statusMsg = "Error: could not save to " + s.topologyPath;
-            screen.PostEvent(Event::Custom);
-        }
-    });
-    auto bCancel = ActionButton("Cancel", [onFinish] { onFinish(WizardOutcome::Cancelled); });
+    // "Exit" only during the launch flow (leaving here with no topology
+    // exits the whole app — see main.cpp's topology-resolution loop);
+    // "Cancel" mid-session, where backing out just closes this modal and
+    // the dashboard keeps running underneath.
+    auto bCancel = ActionButton(isLaunchFlow ? "Exit" : "Cancel", [onFinish] { onFinish(WizardOutcome::Cancelled); });
+    // Only shown during the launch flow — returns to main()'s mode-
+    // selection popup. Mid-session has no mode selection to go back to, so
+    // this is never added to mainContainer or rendered there (the exact
+    // technique allowScan already uses above to gate the scan-related
+    // Components: excluded at container construction, not just hidden in
+    // the Renderer).
+    auto bBack = ActionButton("Back", [onFinish] { onFinish(WizardOutcome::Back); });
 
-    auto mainContainer = Container::Vertical({
+    Components mainChildren = {
         busMenu, bAddBus, busSelectable,
         boardMenu, addBoardEnabled, boardSelectable,
         topologyPathInp, bBrowsePath, bLoadTopology,
-        bSave, bConnectNow, bDone, bCancel,
-    });
+        bSave, bConnectNow, bCancel,
+    };
+    if (isLaunchFlow) mainChildren.push_back(bBack);
+    auto mainContainer = Container::Vertical(mainChildren);
 
     auto root = Renderer(mainContainer, [&s, busMenu, bAddBus, busSelectable,
                                          boardMenu, addBoardEnabled, boardSelectable,
                                          topologyPathInp, bBrowsePath, bLoadTopology,
-                                         bSave, bConnectNow, bDone, bCancel,
+                                         bSave, bConnectNow, bCancel, bBack, isLaunchFlow,
                                          rebuildBusNames, rebuildBoardNames] {
         // Re-derive busNames/boardNames from s.topo on every render rather
         // than relying solely on the wizard's own Add/Remove/Load handlers
@@ -529,8 +534,11 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
                    text(" "), bLoadTopology->Render() }),
             text(" " + s.statusMsg + " ") | (s.statusMsg.rfind("Error", 0) == 0 ? color(Color::Red) : color(Color::Green)),
             separator(),
-            hbox({ bSave->Render(), text("  "), bConnectNow->Render(), text("  "),
-                   bDone->Render(), text("  "), bCancel->Render() }) | center,
+            (isLaunchFlow
+                ? hbox({ bSave->Render(), text("  "), bConnectNow->Render(), text("  "),
+                         bBack->Render(), text("  "), bCancel->Render() })
+                : hbox({ bSave->Render(), text("  "), bConnectNow->Render(), text("  "),
+                         bCancel->Render() })) | center,
         }) | border | size(WIDTH, GREATER_THAN, 100) | size(HEIGHT, GREATER_THAN, 30);
     }) | Modal(addBusPopup, showAddBusPtr.get())
        | Modal(addBoardPopup, showAddBoardPtr.get())
