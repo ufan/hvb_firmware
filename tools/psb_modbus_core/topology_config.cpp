@@ -55,6 +55,27 @@ std::optional<TopologyConfig> TopologyConfig::load(const std::string& path) {
             }
             cfg.buses.push_back(std::move(bus));
         }
+        auto groupArr = tbl["group"].as_array();
+        if (groupArr) {
+            for (auto&& groupNode : *groupArr) {
+                auto groupTbl = groupNode.as_table();
+                if (!groupTbl) continue;
+                GroupConfig group;
+                group.name = (*groupTbl)["name"].value_or(std::string(""));
+                auto chArr = (*groupTbl)["channel"].as_array();
+                if (chArr) {
+                    for (auto&& chNode : *chArr) {
+                        auto chTbl = chNode.as_table();
+                        if (!chTbl) continue;
+                        GroupChannelRef ref;
+                        ref.boardNickname = (*chTbl)["board"].value_or(std::string(""));
+                        ref.channelIndex = static_cast<int>((*chTbl)["channel"].value_or(0));
+                        group.channels.push_back(std::move(ref));
+                    }
+                }
+                cfg.groups.push_back(std::move(group));
+            }
+        }
         return cfg;
     } catch (const std::exception& e) {
         std::cerr << "Topology config parse error (" << path << "): " << e.what() << "\n";
@@ -88,6 +109,24 @@ bool TopologyConfig::save(const std::string& path) const {
             busArr.push_back(std::move(busTbl));
         }
         root.insert_or_assign("bus", std::move(busArr));
+
+        if (!groups.empty()) {
+            toml::array groupArr;
+            for (const auto& group : groups) {
+                toml::table groupTbl;
+                groupTbl.insert_or_assign("name", group.name);
+                toml::array chArr;
+                for (const auto& ch : group.channels) {
+                    toml::table chTbl;
+                    chTbl.insert_or_assign("board", ch.boardNickname);
+                    chTbl.insert_or_assign("channel", ch.channelIndex);
+                    chArr.push_back(std::move(chTbl));
+                }
+                groupTbl.insert_or_assign("channel", std::move(chArr));
+                groupArr.push_back(std::move(groupTbl));
+            }
+            root.insert_or_assign("group", std::move(groupArr));
+        }
 
         std::filesystem::path fsPath(path);
         if (fsPath.has_parent_path())

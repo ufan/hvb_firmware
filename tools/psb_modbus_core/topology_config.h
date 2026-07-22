@@ -22,10 +22,25 @@ struct BusConfig {
     std::vector<BoardConfig> boards;
 };
 
+// References a channel by the board's nickname + channel index rather than
+// bus/port — nicknames are already the codebase's de facto unique board
+// identifier (used the same way by detachBoard in board_switcher.h), so a
+// group's membership survives a board moving to a different port.
+struct GroupChannelRef {
+    std::string boardNickname;
+    int channelIndex = 0;
+};
+
+struct GroupConfig {
+    std::string name;
+    std::vector<GroupChannelRef> channels;
+};
+
 // Supersedes ConfigManager (~/.psb_demo_app.toml, single board/bus only).
 // See docs/superpowers/specs/2026-07-20-multi-board-topology-design.md.
 struct TopologyConfig {
     std::vector<BusConfig> buses;
+    std::vector<GroupConfig> groups;  // user-defined channel groups, sibling to buses
 
     // Returns std::nullopt if the file doesn't exist, or fails to parse
     // (malformed TOML) — use exists() first if the caller needs to tell

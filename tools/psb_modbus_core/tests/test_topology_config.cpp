@@ -92,6 +92,79 @@ TEST_CASE("TopologyConfig — a board with no aliases round-trips with an empty 
     std::remove(path.c_str());
 }
 
+TEST_CASE("TopologyConfig — round trip preserves groups and their member channels", "[topology_config]") {
+    psb::TopologyConfig cfg;
+    psb::BusConfig bus;
+    bus.name = "bus1";
+    bus.port = "/dev/ttyUSB0";
+    bus.baudRate = 115200;
+    bus.boards.push_back({"hvb-bench", 1});
+    bus.boards.push_back({"hvb-bench-2", 2});
+    cfg.buses.push_back(bus);
+
+    psb::GroupConfig group;
+    group.name = "Battery Bank";
+    group.channels.push_back({"hvb-bench", 0});
+    group.channels.push_back({"hvb-bench-2", 3});
+    cfg.groups.push_back(group);
+
+    psb::GroupConfig group2;
+    group2.name = "Empty Group";
+    cfg.groups.push_back(group2);
+
+    const std::string path = "/tmp/psb_topology_test_groups.toml";
+    std::remove(path.c_str());
+    REQUIRE(cfg.save(path));
+
+    auto loaded = psb::TopologyConfig::load(path);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->groups.size() == 2);
+
+    CHECK(loaded->groups[0].name == "Battery Bank");
+    REQUIRE(loaded->groups[0].channels.size() == 2);
+    CHECK(loaded->groups[0].channels[0].boardNickname == "hvb-bench");
+    CHECK(loaded->groups[0].channels[0].channelIndex == 0);
+    CHECK(loaded->groups[0].channels[1].boardNickname == "hvb-bench-2");
+    CHECK(loaded->groups[0].channels[1].channelIndex == 3);
+
+    CHECK(loaded->groups[1].name == "Empty Group");
+    CHECK(loaded->groups[1].channels.empty());
+
+    // Buses/boards from the same file must still round-trip untouched.
+    REQUIRE(loaded->buses.size() == 1);
+    CHECK(loaded->buses[0].boards.size() == 2);
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("TopologyConfig — a topology with no groups round-trips with an empty groups vector", "[topology_config]") {
+    auto cfg = psb::TopologyConfig::singleBoard("/dev/ttyUSB0", 115200, 1, "board1");
+    const std::string path = "/tmp/psb_topology_test_no_groups.toml";
+    std::remove(path.c_str());
+    REQUIRE(cfg.save(path));
+
+    auto loaded = psb::TopologyConfig::load(path);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->groups.empty());
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("TopologyConfig — a pre-Phase-2 topology file with no [[group]] key at all still loads", "[topology_config]") {
+    const std::string path = "/tmp/psb_topology_test_legacy_no_group_key.toml";
+    {
+        std::ofstream ofs(path);
+        ofs << "[[bus]]\nname = 'bus1'\nport = '/dev/ttyUSB0'\nbaud_rate = 115200\n"
+               "  [[bus.board]]\n  nickname = 'board1'\n  slave_id = 1\n";
+    }
+    auto loaded = psb::TopologyConfig::load(path);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->groups.empty());
+    REQUIRE(loaded->buses.size() == 1);
+
+    std::remove(path.c_str());
+}
+
 TEST_CASE("TopologyConfig — load returns nullopt for missing file", "[topology_config]") {
     auto loaded = psb::TopologyConfig::load("/tmp/psb_topology_test_does_not_exist.toml");
     CHECK_FALSE(loaded.has_value());
