@@ -129,6 +129,12 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         screen.PostEvent(Event::Custom);
     };
 
+    // Exposes the same connect/disconnect logic the toggle button below
+    // uses, for main.cpp's Connect All/Disconnect All to call directly —
+    // see BoardSession::connect/disconnect's own comment.
+    board.connect = doConnect;
+    board.disconnect = doDisconnect;
+
     // ---- Connect/Disconnect/Abort toggle button ----
     ButtonOption connBtnOpt{};
     connBtnOpt.transform = [&board](const EntryState& es) -> Element {
