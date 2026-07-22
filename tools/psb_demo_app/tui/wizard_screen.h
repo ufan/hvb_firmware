@@ -48,9 +48,21 @@ struct ScanUpdate {
 // 6) and a Modal overlay atop a live dashboard (Task 7's mid-session entry)
 // — this function has no opinion on which; `onFinish` is how the caller
 // finds out what happened.
+//
+// scanViaLiveBus: if non-empty and it returns true for a given port, a live
+// BusWorker took the scan (routed through its own already-open connection —
+// see main.cpp's implementation) and reports back asynchronously via the
+// callback passed to it. Start Scan's handler falls back to today's direct-
+// connect scan when this is empty or returns false for that port. The
+// standalone pre-dashboard entry point passes nothing (no Runtime exists
+// yet to route through).
+using ScanViaLiveBus = std::function<bool(const std::string& port, int start, int end,
+                                          std::function<void(std::vector<DiscoveredBoard>, std::string)> onDone)>;
+
 inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
                                   std::function<void(WizardOutcome)> onFinish,
-                                  bool allowScan = true) {
+                                  bool allowScan = true,
+                                  ScanViaLiveBus scanViaLiveBus = {}) {
     // ---- Bus/board list (left pane) ----
     auto busNames = std::make_shared<std::vector<std::string>>();
     auto rebuildBusNames = [&s, busNames] {
@@ -213,7 +225,7 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
 
     auto bStartScan = ActionButton("Start Scan", [&s, scanStart, scanEnd, scanning,
                                                    scanProgress, scanMutex, scanStaged,
-                                                   scanUpdateReady, &screen] {
+                                                   scanUpdateReady, &screen, scanViaLiveBus] {
         if (scanning->load() || s.selectedBus < 0) return;
         int start = 1, end = 32;
         try { start = std::stoi(*scanStart); } catch (...) {}
@@ -238,32 +250,17 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
         scanUpdateReady->store(true);
         screen.PostEvent(Event::Custom);
 
-        std::thread([&screen, scanning, scanProgress, scanMutex, scanStaged,
-                     scanUpdateReady, port, baud, start, end] {
-            auto scanBusHandle = std::make_shared<PsbSerialBus>();
-            if (!scanBusHandle->connect(port, baud, 500)) {
-                {
-                    std::lock_guard<std::mutex> lk(*scanMutex);
-                    scanStaged->results.clear();
-                    scanStaged->labels.clear();
-                    scanStaged->status = "Error: " + scanBusHandle->lastError();
-                }
-                scanUpdateReady->store(true);
-                scanning->store(false);
-                screen.PostEvent(Event::Custom);
-                return;
-            }
-            auto results = scanBus(scanBusHandle, start, end, [&](int id) {
-                scanProgress->store(id);
-                screen.PostEvent(Event::Custom);
-            });
-            scanBusHandle->disconnect();
+        // Stages a completed (or errored) scan result through the same
+        // hand-off regardless of which path produced it — shared so a
+        // live-bus scan (running on a BusWorker's own thread, reached via
+        // scanViaLiveBus) and a direct-connect scan (its own std::thread,
+        // below) report back identically; the UI-side drain in
+        // addBoardPopup's Renderer doesn't need to know which one ran.
+        auto stageResult = [scanning, scanMutex, scanStaged, scanUpdateReady, &screen]
+                           (std::vector<DiscoveredBoard> results, std::string status) {
             std::vector<std::string> labels;
             for (const auto& r : results)
                 labels.push_back(r.variantName + "  #" + std::to_string(r.slaveId));
-            std::string status = results.empty()
-                ? "No boards found in range."
-                : std::to_string(results.size()) + " board(s) found.";
             {
                 std::lock_guard<std::mutex> lk(*scanMutex);
                 scanStaged->results = std::move(results);
@@ -273,6 +270,34 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
             scanUpdateReady->store(true);
             scanning->store(false);
             screen.PostEvent(Event::Custom);
+        };
+
+        // Route through an already-open connection when this bus is part
+        // of the currently-running session — no second PsbSerialBus opened
+        // on a port a BusWorker thread may already be driving. Falls back
+        // to the direct-connect path below when no live worker owns this
+        // port (a bus just added in this wizard session but not yet
+        // Applied, or the standalone pre-dashboard entry point, which
+        // never has a scanViaLiveBus at all).
+        if (scanViaLiveBus && scanViaLiveBus(port, start, end, stageResult)) {
+            return;
+        }
+
+        std::thread([&screen, scanProgress, port, baud, start, end, stageResult] {
+            auto scanBusHandle = std::make_shared<PsbSerialBus>();
+            if (!scanBusHandle->connect(port, baud, 500)) {
+                stageResult({}, "Error: " + scanBusHandle->lastError());
+                return;
+            }
+            auto results = scanBus(scanBusHandle, start, end, [&](int id) {
+                scanProgress->store(id);
+                screen.PostEvent(Event::Custom);
+            });
+            scanBusHandle->disconnect();
+            std::string status = results.empty()
+                ? "No boards found in range."
+                : std::to_string(results.size()) + " board(s) found.";
+            stageResult(std::move(results), std::move(status));
         }).detach();
     });
 
