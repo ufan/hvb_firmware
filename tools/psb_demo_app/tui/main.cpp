@@ -16,6 +16,7 @@
 
 #include <CLI/CLI.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <iostream>
@@ -289,8 +290,14 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
             b->portVal = busCfg.port;
             b->baudVal = std::to_string(busCfg.baudRate);
             b->slaveVal = std::to_string(boardCfg.slaveId);
-            for (int ch = 0; ch < static_cast<int>(boardCfg.channelAliases.size()); ++ch)
-                b->inputs.chAlias[ch] = boardCfg.channelAliases[ch];
+            // Clamped to MAX_CHANNELS — chAlias is a fixed-size array, and a
+            // hand-edited topology file could otherwise supply more aliases
+            // than that and overflow it.
+            {
+                int n = std::min(static_cast<int>(boardCfg.channelAliases.size()), psb::tui::MAX_CHANNELS);
+                for (int ch = 0; ch < n; ++ch)
+                    b->inputs.chAlias[ch] = boardCfg.channelAliases[ch];
+            }
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 bw->workQueue, bw->workMutex, bw->workCv, screen});
@@ -434,8 +441,13 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
             b->portVal = busCfg.port;
             b->baudVal = std::to_string(busCfg.baudRate);
             b->slaveVal = std::to_string(boardCfg.slaveId);
-            for (int ch = 0; ch < static_cast<int>(boardCfg.channelAliases.size()); ++ch)
-                b->inputs.chAlias[ch] = boardCfg.channelAliases[ch];
+            // Clamped to MAX_CHANNELS — see the identical guard in
+            // buildRuntime's own board-construction loop above.
+            {
+                int n = std::min(static_cast<int>(boardCfg.channelAliases.size()), psb::tui::MAX_CHANNELS);
+                for (int ch = 0; ch < n; ++ch)
+                    b->inputs.chAlias[ch] = boardCfg.channelAliases[ch];
+            }
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 targetBw->workQueue, targetBw->workMutex, targetBw->workCv, screen});
