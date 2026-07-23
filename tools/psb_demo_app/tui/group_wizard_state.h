@@ -29,6 +29,29 @@ inline bool groupNameInUse(const psb::TopologyConfig& topo, const std::string& n
     return false;
 }
 
+inline std::string boardChannelId(const std::string& boardNickname, int channelIndex) {
+    return boardNickname + "/" + psb::defaultChannelAlias(channelIndex);
+}
+
+inline int findGroupForBoardChannel(const psb::TopologyConfig& topo,
+                                    const std::string& boardNickname,
+                                    int channelIndex) {
+    for (int gi = 0; gi < static_cast<int>(topo.groups.size()); ++gi) {
+        for (const auto& c : topo.groups[gi].channels)
+            if (c.boardNickname == boardNickname && c.channelIndex == channelIndex)
+                return gi;
+    }
+    return -1;
+}
+
+inline bool groupAliasInUse(const psb::GroupConfig& group,
+                            const std::string& alias,
+                            int exceptChannelIdx = -1) {
+    for (int i = 0; i < static_cast<int>(group.channels.size()); ++i)
+        if (i != exceptChannelIdx && group.channels[i].alias == alias) return true;
+    return false;
+}
+
 // Every mutator below: returns "" on success, a user-facing error message on
 // failure; never throws; never touches hardware.
 
@@ -58,19 +81,44 @@ inline std::string removeGroup(GroupWizardState& s, int idx) {
 }
 
 inline std::string addChannelToGroup(GroupWizardState& s, int groupIdx,
-                                     const std::string& boardNickname, int channelIndex) {
+                                     const std::string& boardNickname,
+                                     int channelIndex,
+                                     const std::string& alias) {
     if (groupIdx < 0 || groupIdx >= static_cast<int>(s.topo.groups.size()))
         return "invalid group index";
     if (boardNickname.empty()) return "board required";
     if (channelIndex < 0) return "invalid channel index";
-    auto& channels = s.topo.groups[groupIdx].channels;
-    for (const auto& c : channels)
-        if (c.boardNickname == boardNickname && c.channelIndex == channelIndex)
-            return "channel already in group";
+    std::string finalAlias = alias.empty() ? psb::defaultChannelAlias(channelIndex) : alias;
+    int assignedGroup = findGroupForBoardChannel(s.topo, boardNickname, channelIndex);
+    if (assignedGroup >= 0)
+        return boardChannelId(boardNickname, channelIndex) + " already assigned to group " +
+               s.topo.groups[assignedGroup].name;
+    auto& group = s.topo.groups[groupIdx];
+    if (groupAliasInUse(group, finalAlias))
+        return "alias \"" + finalAlias + "\" already in use in group " + group.name;
+
     psb::GroupChannelRef ref;
     ref.boardNickname = boardNickname;
     ref.channelIndex = channelIndex;
-    channels.push_back(std::move(ref));
+    ref.alias = finalAlias;
+    group.channels.push_back(std::move(ref));
+    s.dirty = true;
+    return "";
+}
+
+inline std::string renameGroupChannelAlias(GroupWizardState& s, int groupIdx,
+                                           int channelIdx,
+                                           const std::string& alias) {
+    if (groupIdx < 0 || groupIdx >= static_cast<int>(s.topo.groups.size()))
+        return "invalid group index";
+    auto& group = s.topo.groups[groupIdx];
+    if (channelIdx < 0 || channelIdx >= static_cast<int>(group.channels.size()))
+        return "invalid channel index";
+    const auto& ref = group.channels[channelIdx];
+    std::string finalAlias = alias.empty() ? psb::defaultChannelAlias(ref.channelIndex) : alias;
+    if (groupAliasInUse(group, finalAlias, channelIdx))
+        return "alias \"" + finalAlias + "\" already in use in group " + group.name;
+    group.channels[channelIdx].alias = finalAlias;
     s.dirty = true;
     return "";
 }

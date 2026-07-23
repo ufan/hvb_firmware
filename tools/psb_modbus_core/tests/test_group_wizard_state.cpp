@@ -39,29 +39,61 @@ TEST_CASE("GroupWizardState — removeGroup drops the group and clears selection
 
 TEST_CASE("GroupWizardState — addChannelToGroup rejects an invalid group index", "[group_wizard_state]") {
     GroupWizardState s;
-    CHECK(addChannelToGroup(s, 0, "hvb-bench", 0) == "invalid group index");
+    CHECK(addChannelToGroup(s, 0, "hvb-bench", 0, "CH0") == "invalid group index");
 }
 
 TEST_CASE("GroupWizardState — addChannelToGroup rejects an empty board nickname", "[group_wizard_state]") {
     GroupWizardState s;
     addGroup(s, "Battery Bank");
-    CHECK(addChannelToGroup(s, 0, "", 0) == "board required");
+    CHECK(addChannelToGroup(s, 0, "", 0, "CH0") == "board required");
 }
 
 TEST_CASE("GroupWizardState — addChannelToGroup rejects a channel already in the group", "[group_wizard_state]") {
     GroupWizardState s;
     addGroup(s, "Battery Bank");
-    REQUIRE(addChannelToGroup(s, 0, "hvb-bench", 0).empty());
-    CHECK(addChannelToGroup(s, 0, "hvb-bench", 0) == "channel already in group");
+    REQUIRE(addChannelToGroup(s, 0, "hvb-bench", 0, "CH0").empty());
+    CHECK(addChannelToGroup(s, 0, "hvb-bench", 0, "CH0") ==
+          "hvb-bench/CH0 already assigned to group Battery Bank");
     CHECK(s.topo.groups[0].channels.size() == 1);
 }
 
 TEST_CASE("GroupWizardState — addChannelToGroup allows the same channel index on different boards", "[group_wizard_state]") {
     GroupWizardState s;
     addGroup(s, "Battery Bank");
-    REQUIRE(addChannelToGroup(s, 0, "hvb-bench", 0).empty());
-    CHECK(addChannelToGroup(s, 0, "hvb-bench-2", 0).empty());
+    REQUIRE(addChannelToGroup(s, 0, "hvb-bench", 0, "CH0").empty());
+    CHECK(addChannelToGroup(s, 0, "hvb-bench-2", 0, "CH1").empty());
     CHECK(s.topo.groups[0].channels.size() == 2);
+}
+
+TEST_CASE("GroupWizardState - aliases are unique only inside one group", "[group_wizard_state]") {
+    GroupWizardState s;
+    REQUIRE(addGroup(s, "detector").empty());
+    REQUIRE(addGroup(s, "supply").empty());
+
+    CHECK(addChannelToGroup(s, 0, "hvb-left", 0, "bias").empty());
+    CHECK(addChannelToGroup(s, 0, "hvb-left", 1, "bias") ==
+          "alias \"bias\" already in use in group detector");
+    CHECK(addChannelToGroup(s, 1, "hvb-right", 0, "bias").empty());
+}
+
+TEST_CASE("GroupWizardState - board channel can be assigned to only one group", "[group_wizard_state]") {
+    GroupWizardState s;
+    REQUIRE(addGroup(s, "detector").empty());
+    REQUIRE(addGroup(s, "supply").empty());
+
+    CHECK(addChannelToGroup(s, 0, "hvb-left", 0, "bias").empty());
+    CHECK(addChannelToGroup(s, 1, "hvb-left", 0, "bias") ==
+          "hvb-left/CH0 already assigned to group detector");
+}
+
+TEST_CASE("GroupWizardState - group channel alias can be renamed", "[group_wizard_state]") {
+    GroupWizardState s;
+    REQUIRE(addGroup(s, "detector").empty());
+    REQUIRE(addChannelToGroup(s, 0, "hvb-left", 0, "CH0").empty());
+
+    CHECK(renameGroupChannelAlias(s, 0, 0, "bias").empty());
+    CHECK(s.topo.groups[0].channels[0].alias == "bias");
+    CHECK(s.dirty);
 }
 
 TEST_CASE("GroupWizardState — removeChannelFromGroup rejects an out-of-range channel index", "[group_wizard_state]") {
@@ -73,7 +105,7 @@ TEST_CASE("GroupWizardState — removeChannelFromGroup rejects an out-of-range c
 TEST_CASE("GroupWizardState — removeChannelFromGroup drops the member channel", "[group_wizard_state]") {
     GroupWizardState s;
     addGroup(s, "Battery Bank");
-    addChannelToGroup(s, 0, "hvb-bench", 0);
+    addChannelToGroup(s, 0, "hvb-bench", 0, "CH0");
     REQUIRE(removeChannelFromGroup(s, 0, 0).empty());
     CHECK(s.topo.groups[0].channels.empty());
 }
