@@ -248,8 +248,9 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
     });
 
     auto container = Container::Vertical({
+        visibleOutputControls,
         visibleGroupControls,
-        visibleOutputControls, visibleTgtInp,
+        visibleTgtInp,
         visibleRuStepInp, visibleRdStepInp, visibleOutputEnabledCyc,
         visibleProtectionControls,
         recovC, delayInp, maxInp, winInp, derInp, iBandInp,
@@ -328,6 +329,13 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
             case ChannelLiveSection::Telemetry:
                 livePanelParts.push_back(liveBar);
                 break;
+            case ChannelLiveSection::ControlActions:
+                if (hasOutput()) {
+                    livePanelParts.push_back(separator());
+                    livePanelParts.push_back(text(channelLiveControlLabel()) | bold | color(Color::Cyan));
+                    livePanelParts.push_back(visibleOutputControls->Render());
+                }
+                break;
             case ChannelLiveSection::Spacer:
                 livePanelParts.push_back(filler());
                 break;
@@ -344,11 +352,6 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
         // Control panel
         Elements controlRows;
         controlRows.push_back(emptyElement());
-        controlRows.push_back(
-            hasOutput()
-                ? hbox({ bEnable->Render(), text(" "), bDisGra->Render(),
-                         text(" "), bKill->Render() })
-                : text(" output control not supported ") | dim);
         if (hasDrive()) {
             controlRows.push_back(hbox({ text("Vset    : "), tgtInp->Render() | flex, text(" V") }));
             controlRows.push_back(hbox({ text("Ramp up : "), ruStepInp->Render() | flex, text(" V/s") }));
@@ -360,7 +363,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
             controlRows.push_back(text(" fixed output, always on — no configurable setpoint ") | dim);
         }
         controlRows.push_back(filler());
-        auto controlPanel = window(text(" Control "), vbox(std::move(controlRows)));
+        auto controlPanel = window(text(channelStartupPolicyPaneTitle()), vbox(std::move(controlRows)));
 
         // Protection panel
         Element protPanel = emptyElement();
