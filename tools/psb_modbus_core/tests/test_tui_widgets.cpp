@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include "../../psb_demo_app/tui/channel_live_layout.h"
 #include "../../psb_demo_app/tui/group_view_selection.h"
 #include "../../psb_demo_app/tui/widgets.h"
 
@@ -44,4 +45,13 @@ TEST_CASE("Group dashboard replacement falls back to boards when groups disappea
     CHECK_FALSE(showingGroup);
     CHECK(mainSelected == 3);
     CHECK(visibleContentIdx == 0);
+}
+
+TEST_CASE("Channel live row puts group alias controls at the end", "[tui_widgets]") {
+    auto sections = channelLiveSections(true);
+
+    REQUIRE(sections.size() == 3);
+    CHECK(sections[0] == ChannelLiveSection::Title);
+    CHECK(sections[1] == ChannelLiveSection::Telemetry);
+    CHECK(sections[2] == ChannelLiveSection::GroupAliasControls);
 }

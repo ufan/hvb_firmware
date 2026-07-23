@@ -1,4 +1,5 @@
 #pragma once
+#include "channel_live_layout.h"
 #include "group_alias_status.h"
 #include "tui_policy.h"
 #include "widgets.h"
@@ -318,16 +319,24 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
             liveBar = hbox(std::move(liveParts));
         }
         Elements livePanelParts;
-        if (membership.grouped) {
-            livePanelParts.push_back(text(" Alias: ") | bold | color(Color::Cyan));
-            livePanelParts.push_back(aliasInp->Render() | size(WIDTH, EQUAL, 14));
-            livePanelParts.push_back(text(" "));
-            livePanelParts.push_back(groupLinkBtn->Render());
-            livePanelParts.push_back(separator());
+        for (ChannelLiveSection section : channelLiveSections(membership.grouped)) {
+            switch (section) {
+            case ChannelLiveSection::Title:
+                livePanelParts.push_back(text(" Live ") | bold | color(Color::Cyan));
+                livePanelParts.push_back(separator());
+                break;
+            case ChannelLiveSection::Telemetry:
+                livePanelParts.push_back(liveBar);
+                break;
+            case ChannelLiveSection::GroupAliasControls:
+                livePanelParts.push_back(separator());
+                livePanelParts.push_back(text(" Alias: ") | bold | color(Color::Cyan));
+                livePanelParts.push_back(aliasInp->Render() | size(WIDTH, EQUAL, 14));
+                livePanelParts.push_back(text(" "));
+                livePanelParts.push_back(groupLinkBtn->Render());
+                break;
+            }
         }
-        livePanelParts.push_back(text(" Live ") | bold | color(Color::Cyan));
-        livePanelParts.push_back(separator());
-        livePanelParts.push_back(liveBar);
         auto livePanel = hbox(std::move(livePanelParts));
 
         // Control panel
