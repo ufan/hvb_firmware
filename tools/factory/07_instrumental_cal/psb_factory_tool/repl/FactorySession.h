@@ -1,7 +1,6 @@
 #pragma once
 
 #include "psb_modbus_client.h"
-#include "config_manager.h"
 #include "types.h"
 #include <atomic>
 #include <functional>
@@ -37,7 +36,6 @@ public:
 
 private:
     PsbModbusClient m_client;
-    ConfigManager m_config;
     std::atomic<int> m_activeChannel{-1};
     std::mutex m_clientMutex;
 };
