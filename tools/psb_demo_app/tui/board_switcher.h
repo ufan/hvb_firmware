@@ -242,11 +242,11 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
             filler(),
             globalConnectAll->Render(), text(" "), globalDisconnectAll->Render(), text(" "),
             globalQuit->Render(),
-        });
+        }) | bold | inverted;
         if (!showSwitcherSection) {
             return vbox({
                 globalMenuBarEl,
-                separator(),
+                separatorDouble(),
                 activeStack->Render() | flex,
             });
         }
@@ -276,15 +276,19 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
             separator(),
             switcherBar->Render() | frame | flex,
         }) | flex);
-        return vbox({
-            globalMenuBarEl,
+        return hbox({
+            vbox({
+                text(""),
+                separatorDouble(),
+                vbox(std::move(sideParts)) | flex,
+            }),
             separator(),
-            hbox({
-                vbox(std::move(sideParts)),
-                separator(),
+            vbox({
+                globalMenuBarEl,
+                separatorDouble(),
                 activeStack->Render() | flex,
             }) | flex,
-        });
+        }) | flex;
     });
 
     auto attachBoard = [boardNames, boardDashboardStack](const std::string& nickname, Component dashboard) {
