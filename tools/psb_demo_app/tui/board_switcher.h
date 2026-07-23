@@ -52,15 +52,22 @@ struct BoardSwitcher {
 // into its own section's range even while the other section is genuinely
 // showing — corrupting the "one shared active selection" behavior the
 // design actually calls for. Instead: two independent Container::Tabs
-// (groups, boards), each with its own local Menu selector, plus one
-// showingGroup flag deciding which stack's Render() the outer view actually
-// shows. Each Menu's on_change (confirmed in the vendored source to fire
-// only from OnEvent() — user-driven arrow/click — never from
-// Render()/Clamp(), so this is safe) updates showingGroup when the user
-// picks an entry in that section. This still delivers the spec's functional
-// requirement — one shared active selection, whichever was clicked last
-// wins — with substantially less risk than fighting Menu's per-widget
-// clamping.
+// (groups, boards), each with its own local Menu selector.
+//
+// Design note — why "which section is showing" is derived from mainSelected,
+// not from Menu's own on_change: verified live (real hardware, a single
+// group) that MenuBase::OnMouseEvent only calls OnChange() when the click
+// changes *this Menu's own* selected index (`if (selected() != i)`) — with
+// exactly one entry, its index is already 0 by default, so the very first
+// click on it never fires on_change at all, and the group section silently
+// never appeared. What *does* fire unconditionally on every click, mouse or
+// keyboard, is ComponentBase::TakeFocus() (confirmed in the vendored
+// source, component.cpp) walking every ancestor and calling
+// SetActiveChild() — which is exactly what updates mainContainer's own
+// mainSelected to the slot that was just interacted with. Deriving
+// showingGroup from mainSelected at the top of the Renderer, every frame,
+// means it's always correct regardless of whether a click happened to also
+// change a Menu's own local index.
 inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>>& boards,
                                        ScreenInteractive& screen,
                                        Component globalQuit, Component globalSetup, Component globalGroup,
@@ -75,12 +82,11 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     auto groupNames = std::make_shared<std::vector<std::string>>();
     auto groupLocalIdx = std::make_shared<int>(0);
 
-    // Which section currently owns the shared active selection — see this
-    // file's own design note above for why this replaces a literal shared
-    // index. Starts on boards (false) since groups are always attached after
-    // this constructor returns (main.cpp's refreshGroupDashboards, called
-    // right after makeBoardSwitcher) — a user who already has groups defined
-    // can still reach them with one Tab/Shift-Tab press.
+    // Which section currently owns the shared active selection — updated at
+    // the top of root's Renderer every frame, derived from mainSelected (see
+    // this file's own design note above). Starts on boards (false) since
+    // groups are always attached after this constructor returns (main.cpp's
+    // refreshGroupDashboards, called right after makeBoardSwitcher).
     auto showingGroup = std::make_shared<bool>(false);
 
     MenuOption switcherOpt = MenuOption::Vertical();
@@ -139,7 +145,6 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         if (!active && !e.focused)   t = t | dim;
         return t;
     };
-    switcherOpt.on_change = [showingGroup] { *showingGroup = false; };
     auto switcherBar = Menu(boardNames.get(), boardLocalIdx.get(), switcherOpt);
 
     MenuOption groupOpt = MenuOption::Vertical();
@@ -151,7 +156,6 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         if (!active && !e.focused)   t = t | dim;
         return t;
     };
-    groupOpt.on_change = [showingGroup] { *showingGroup = true; };
     auto groupMenu = Menu(groupNames.get(), groupLocalIdx.get(), groupOpt);
 
     auto boardDashboardStack = Container::Tab({}, boardLocalIdx.get());
@@ -167,23 +171,26 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     auto globalMenuBar = Container::Horizontal(
         {globalSetup, globalGroup, globalPreferences, globalConnectAll, globalDisconnectAll, globalQuit});
 
-    // 4-slot scheme: 0=globalMenuBar, 1=groupMenu, 2=switcherBar,
-    // 3=dashboardStack (whichever of boardDashboardStack/groupDashboardStack
-    // is currently showing, decided by showingGroup — see the Renderer
-    // below). Groups are always attached after this constructor returns
-    // (main.cpp's refreshGroupDashboards, called right after this function)
-    // — groupNames is provably empty here, so defaulting focus on it would
-    // always be dead code. Default mirrors Phase 2's own reasoning instead
-    // (a Menu with very few/zero entries unconditionally swallows
-    // Event::Return and doesn't meaningfully handle Up/Down — see
-    // MenuBase::OnEvent in the vendored FTXUI source): the boards Menu if
-    // there's more than one board, else straight to the dashboard so keys
-    // reach it immediately. A user who already has groups defined can
-    // still reach them with one Tab/Shift-Tab press.
+    // 5-slot scheme: 0=globalMenuBar, 1=groupMenu, 2=switcherBar,
+    // 3=boardDashboardStack, 4=groupDashboardStack. Both dashboard stacks
+    // are real mainContainer children (not just something the Renderer
+    // happens to call Render() on) — a Component that's rendered but never
+    // added as a Container child never receives any event, keyboard or
+    // mouse, since FTXUI's event routing only ever walks a Container's own
+    // registered children. Groups are always attached after this
+    // constructor returns (main.cpp's refreshGroupDashboards, called right
+    // after this function) — groupNames is provably empty here, so
+    // defaulting focus on it would always be dead code. Default mirrors
+    // Phase 2's own reasoning instead (a Menu with very few/zero entries
+    // unconditionally swallows Event::Return and doesn't meaningfully
+    // handle Up/Down — see MenuBase::OnEvent in the vendored FTXUI source):
+    // the boards Menu if there's more than one board, else straight to the
+    // board dashboard so keys reach it immediately. A user who already has
+    // groups defined can still reach them with one Tab/Shift-Tab press.
     auto mainSelected = std::make_shared<int>(boardNames->size() > 1 ? 2 : 3);
 
     auto mainContainer = Container::Vertical(
-        {globalMenuBar, groupMenu, switcherBar, boardDashboardStack}, mainSelected.get());
+        {globalMenuBar, groupMenu, switcherBar, boardDashboardStack, groupDashboardStack}, mainSelected.get());
     // Capture boardNames/groupNames/boardLocalIdx/groupLocalIdx, not just
     // switcherBar/groupMenu/*DashboardStack — Menu()/Container::Tab() only
     // hold raw pointers into them (FTXUI's non-owning-pointer widget
@@ -209,6 +216,15 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
                                          globalSetup, globalGroup, globalPreferences,
                                          globalConnectAll, globalDisconnectAll, globalQuit,
                                          boardNames, groupNames, showingGroup, mainSelected] {
+        // Derive showingGroup from mainSelected every frame — see this
+        // file's own design note near the top for why this, not Menu's own
+        // on_change, is the source of truth. mainSelected == 0 (the global
+        // menu bar) intentionally leaves showingGroup untouched: clicking
+        // Topology/Group/Preferences/Quit says nothing about which section
+        // should be displayed underneath.
+        if (*mainSelected == 1 || *mainSelected == 4) *showingGroup = true;
+        else if (*mainSelected == 2 || *mainSelected == 3) *showingGroup = false;
+
         bool showSwitcherSection = !groupNames->empty() || boardNames->size() > 1;
         Component activeStack = *showingGroup ? groupDashboardStack : boardDashboardStack;
         if (!showSwitcherSection) {
@@ -272,13 +288,15 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     };
 
     // Same index-shift reasoning as detachBoard, retargeted at the groups
-    // section. Falls back to the boards section (showingGroup = false) if
-    // the group being removed was the one currently showing, or if this
-    // was the last group — mirrors detachBoard's own "force a sane visible
-    // section" adjustment (Phase 2's mainSelected-forcing precedent) rather
+    // section. Falls back to the boards section (mainSelected = 2) if the
+    // group being removed was the one currently showing, or if this was the
+    // last group — mirrors detachBoard's own "force a sane visible section"
+    // precedent (Phase 2's mainSelected-forcing for the boards side) rather
     // than leaving the view pointed at a section that's about to render
-    // empty.
-    auto detachGroup = [groupNames, groupDashboardStack, groupLocalIdx, showingGroup]
+    // empty. Setting mainSelected (not showingGroup directly) keeps
+    // mainSelected as the single source of truth the Renderer's own
+    // derivation reads from.
+    auto detachGroup = [groupNames, groupDashboardStack, groupLocalIdx, showingGroup, mainSelected]
                        (const std::string& name) {
         for (size_t i = 0; i < groupNames->size(); ++i) {
             if ((*groupNames)[i] != name) continue;
@@ -289,26 +307,41 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
             if (*groupLocalIdx > removedIdx) --*groupLocalIdx;
             if (*groupLocalIdx >= static_cast<int>(groupNames->size()))
                 *groupLocalIdx = std::max(0, static_cast<int>(groupNames->size()) - 1);
-            if (wasShowingThis || groupNames->empty()) *showingGroup = false;
+            if (wasShowingThis || groupNames->empty()) *mainSelected = 2;
             return;
         }
     };
 
-    auto jumpToBoard = [&boards, boardNames, boardLocalIdx, showingGroup, mainSelected, &screen]
+    auto jumpToBoard = [&boards, boardNames, boardLocalIdx, mainSelected, &screen]
                        (const std::string& nickname, int channelIndex) {
         for (size_t i = 0; i < boardNames->size(); ++i) {
             if ((*boardNames)[i] != nickname) continue;
             *boardLocalIdx = static_cast<int>(i);
-            *showingGroup = false;
             break;
         }
         for (auto& b : boards) {
             if (b->nickname != nickname) continue;
-            int maxTab = static_cast<int>(b->tabTitles.size()) - 1;
-            b->activeTab = std::min(1 + channelIndex, std::max(0, maxTab));
+            // Deliberately NOT clamped against b->tabTitles.size() here — a
+            // board's own tabTitles only gets rebuilt to its real,
+            // fully-scanned size inside makeBoardDashboard's own Renderer
+            // (consuming pendingSync), which only runs while that specific
+            // board's dashboard is the one actually being displayed. A
+            // board that finished connecting while the user was viewing a
+            // *different* board or a group table the whole time still has
+            // tabTitles stuck at its initial {"Monitor"} (size 1) even
+            // though its ScannedData is already fully populated by
+            // background polling — clamping against that stale size here
+            // would silently force this jump back to Monitor instead of the
+            // requested channel. Bounding against MAX_CHANNELS instead is a
+            // static, always-correct safety bound; the target board's own
+            // Renderer rebuilds tabTitles to match this activeTab (or clamps
+            // it down only if it's genuinely out of range) the moment it
+            // next runs — which happens on the very next frame, since this
+            // jump is about to make that board the active one.
+            b->activeTab = std::max(0, std::min(1 + channelIndex, MAX_CHANNELS));
             break;
         }
-        *mainSelected = 3;  // land keyboard focus on the dashboard itself
+        *mainSelected = 3;  // land keyboard focus on the board dashboard itself
         screen.PostEvent(Event::Custom);
     };
 
