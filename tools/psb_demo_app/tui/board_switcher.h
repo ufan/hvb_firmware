@@ -2,6 +2,7 @@
 
 #include "board_session.h"
 #include "tool_version.h"
+#include "tui_style.h"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -244,7 +245,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         bool showSwitcherSection = !groupNames->empty() || boardNames->size() > 1;
         bool showAggregateConnectionActions = boardNames->size() > 1;
         *visibleContentIdx = *showingGroup ? 1 : 0;
-        auto appTitleEl = text(std::string(" PSB Demo TUI (") + TOOL_VERSION_STRING + ") ") | bold | inverted | center;
+        auto appTitleEl = appTitleChrome(text(std::string(" PSB Demo TUI (") + TOOL_VERSION_STRING + ") ")) | center;
         Elements globalMenuButtons = {
             globalSetup->Render(), text(" "), globalGroup->Render(), text(" "), globalPreferences->Render(),
             filler(),
@@ -256,7 +257,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
             globalMenuButtons.push_back(text(" "));
         }
         globalMenuButtons.push_back(globalQuit->Render());
-        auto globalMenuButtonsEl = hbox(std::move(globalMenuButtons));
+        auto globalMenuButtonsEl = appMenuChrome(hbox(std::move(globalMenuButtons)));
         auto globalMenuBarEl = dbox({globalMenuButtonsEl, appTitleEl});
         if (!showSwitcherSection) {
             return vbox({
@@ -280,23 +281,23 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         Elements sideParts;
         if (!groupNames->empty()) {
             sideParts.push_back(vbox({
-                text(" Groups ") | bold,
+                sidebarTitleChrome(text(" Groups ")),
                 separator(),
                 groupMenu->Render() | frame | flex,
             }) | flex);
             sideParts.push_back(separator());
         }
         sideParts.push_back(vbox({
-            text(" Boards ") | bold,
+            sidebarTitleChrome(text(" Boards ")),
             separator(),
             switcherBar->Render() | frame | flex,
         }) | flex);
         return hbox({
-            vbox({
+            sidebarChrome(vbox({
                 text(""),
                 separatorDouble(),
                 vbox(std::move(sideParts)) | flex,
-            }),
+            })),
             separator(),
             vbox({
                 globalMenuBarEl,

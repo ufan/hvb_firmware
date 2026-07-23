@@ -4,6 +4,7 @@
 #include "tab_monitor.h"
 #include "tab_channel.h"
 #include "tui_policy.h"
+#include "tui_style.h"
 #include "modbus_settings.h"
 #include "register_map.h"
 #include "board_catalog.h"
@@ -481,7 +482,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             text(" "),
             removeElement,
         };
-        auto menuBarEl = hbox(std::move(menuBarParts));
+        auto menuBarEl = boardMenuChrome(hbox(std::move(menuBarParts)));
 
         // --- Status bar (static colour — no breathing) ---
         auto connColor = board.connected.load() ? Color::Green
