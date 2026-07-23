@@ -18,27 +18,17 @@ using namespace ftxui;
 // A currently-connected board, as the group wizard's "Add Channel" picker
 // needs to see it — never sourced from topo.buses (which lists every board
 // ever defined, connected or not); see makeGroupWizardScreen's GetLiveBoards
-// parameter. aliases[ch] is "" when that channel has no alias set.
+// parameter.
 struct LiveBoardInfo {
     std::string nickname;
     int numChannels = 0;
-    std::vector<std::string> aliases;
 };
 using LiveBoards = std::vector<LiveBoardInfo>;
 using GetLiveBoards = std::function<LiveBoards()>;
 
-// Falls back to "CHn" when no alias is set or the alias lookup can't find
-// this channel (offline board) — the same display-fallback rule the Monitor/
-// Channel tabs already use for tab titles (rebuildChannelTitles).
-inline std::string groupChannelDisplayName(const GroupChannelRef& ref, const LiveBoards& live) {
-    for (const auto& lb : live) {
-        if (lb.nickname != ref.boardNickname) continue;
-        if (ref.channelIndex >= 0 && ref.channelIndex < static_cast<int>(lb.aliases.size())
-            && !lb.aliases[ref.channelIndex].empty())
-            return lb.aliases[ref.channelIndex];
-        break;
-    }
-    return "CH" + std::to_string(ref.channelIndex);
+inline std::string groupChannelDisplayName(const GroupChannelRef& ref) {
+    std::string alias = ref.alias.empty() ? psb::defaultChannelAlias(ref.channelIndex) : ref.alias;
+    return alias + " -> " + boardChannelId(ref.boardNickname, ref.channelIndex);
 }
 
 // Builds the Group wizard's Component — a group name list plus Add/Remove
@@ -77,7 +67,7 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
         for (const auto& ref : s.topo.groups[s.selectedGroup].channels) {
             bool online = false;
             for (const auto& lb : live) if (lb.nickname == ref.boardNickname) { online = true; break; }
-            std::string label = ref.boardNickname + " " + groupChannelDisplayName(ref, live);
+            std::string label = groupChannelDisplayName(ref);
             if (!online) label += " (offline)";
             channelLabels->push_back(label);
         }
@@ -115,45 +105,98 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
     // ---- Add Channel modal (picker scoped to currently-connected boards,
     //      excluding channels already in the selected group — Global
     //      Constraints) ----
+    auto boardPickerLabels = std::make_shared<std::vector<std::string>>();
     auto channelPickerLabels = std::make_shared<std::vector<std::string>>();
     auto channelPickerRefs = std::make_shared<std::vector<GroupChannelRef>>();
+    auto boardPickerIdx = std::make_shared<int>(-1);
     auto channelPickerIdx = std::make_shared<int>(-1);
-    auto rebuildChannelPicker = [&s, channelPickerLabels, channelPickerRefs, channelPickerIdx, getLiveBoards] {
+    auto newChannelAlias = std::make_shared<std::string>();
+    auto lastAliasRefKey = std::make_shared<std::string>();
+    auto rebuildChannelPicker = [&s, boardPickerLabels, channelPickerLabels, channelPickerRefs,
+                                 boardPickerIdx, channelPickerIdx, newChannelAlias,
+                                 lastAliasRefKey, getLiveBoards] {
+        int previousBoardIdx = *boardPickerIdx;
+        std::string previousBoard;
+        if (previousBoardIdx >= 0 && previousBoardIdx < static_cast<int>(boardPickerLabels->size()))
+            previousBoard = boardPickerLabels->at(previousBoardIdx);
+        int previousChannelIdx = *channelPickerIdx;
+
+        boardPickerLabels->clear();
         channelPickerLabels->clear();
         channelPickerRefs->clear();
         if (s.selectedGroup < 0 || s.selectedGroup >= static_cast<int>(s.topo.groups.size())) return;
-        const auto& existing = s.topo.groups[s.selectedGroup].channels;
         LiveBoards live = getLiveBoards();
         for (const auto& lb : live) {
+            bool hasAvailable = false;
             for (int ch = 0; ch < lb.numChannels; ++ch) {
-                bool already = false;
-                for (const auto& ref : existing)
-                    if (ref.boardNickname == lb.nickname && ref.channelIndex == ch) { already = true; break; }
-                if (already) continue;
-                std::string label = lb.nickname + " CH" + std::to_string(ch);
-                if (ch < static_cast<int>(lb.aliases.size()) && !lb.aliases[ch].empty())
-                    label += " (" + lb.aliases[ch] + ")";
-                channelPickerLabels->push_back(label);
-                GroupChannelRef ref;
-                ref.boardNickname = lb.nickname;
-                ref.channelIndex = ch;
-                channelPickerRefs->push_back(ref);
+                if (findGroupForBoardChannel(s.topo, lb.nickname, ch) < 0) {
+                    hasAvailable = true;
+                    break;
+                }
             }
+            if (hasAvailable) boardPickerLabels->push_back(lb.nickname);
+        }
+
+        if (boardPickerLabels->empty()) {
+            *boardPickerIdx = -1;
+            *channelPickerIdx = -1;
+            newChannelAlias->clear();
+            lastAliasRefKey->clear();
+            return;
+        }
+
+        *boardPickerIdx = 0;
+        for (int i = 0; i < static_cast<int>(boardPickerLabels->size()); ++i) {
+            if (boardPickerLabels->at(i) == previousBoard) {
+                *boardPickerIdx = i;
+                break;
+            }
+        }
+
+        const std::string& selectedBoard = boardPickerLabels->at(*boardPickerIdx);
+        for (const auto& lb : live) {
+            if (lb.nickname != selectedBoard) continue;
+            for (int ch = 0; ch < lb.numChannels; ++ch) {
+                if (findGroupForBoardChannel(s.topo, lb.nickname, ch) >= 0) continue;
+                std::string alias = psb::defaultChannelAlias(ch);
+                channelPickerLabels->push_back(alias);
+                channelPickerRefs->push_back({lb.nickname, ch, alias});
+            }
+            break;
         }
         if (*channelPickerIdx >= static_cast<int>(channelPickerLabels->size()))
             *channelPickerIdx = channelPickerLabels->empty() ? -1 : 0;
+        if (*channelPickerIdx < 0 && !channelPickerLabels->empty())
+            *channelPickerIdx = 0;
+        if (previousChannelIdx >= 0 && previousChannelIdx < static_cast<int>(channelPickerLabels->size()))
+            *channelPickerIdx = previousChannelIdx;
+        if (*channelPickerIdx >= 0 && *channelPickerIdx < static_cast<int>(channelPickerRefs->size())) {
+            const auto& selectedRef = channelPickerRefs->at(*channelPickerIdx);
+            std::string selectedKey = boardChannelId(selectedRef.boardNickname, selectedRef.channelIndex);
+            if (*lastAliasRefKey != selectedKey) {
+                *newChannelAlias = selectedRef.alias;
+                *lastAliasRefKey = selectedKey;
+            } else if (newChannelAlias->empty()) {
+                *newChannelAlias = selectedRef.alias;
+            }
+        }
     };
+    auto boardPickerMenu = Menu(boardPickerLabels.get(), boardPickerIdx.get());
     auto channelPickerMenu = Menu(channelPickerLabels.get(), channelPickerIdx.get());
+    auto aliasInp = Input(newChannelAlias.get(), "alias");
     auto showAddChannelPtr = std::make_shared<bool>(false);
 
     auto bAddChannelConfirm = ActionButton("Add", [&s, channelPickerRefs, channelPickerIdx,
-                                                    rebuildChannelPicker, rebuildChannelLabels, &screen] {
+                                                    newChannelAlias, rebuildChannelPicker,
+                                                    rebuildChannelLabels, &screen] {
         int i = *channelPickerIdx;
         if (i < 0 || i >= static_cast<int>(channelPickerRefs->size())) return;
         const auto& ref = (*channelPickerRefs)[i];
-        std::string err = addChannelToGroup(s, s.selectedGroup, ref.boardNickname, ref.channelIndex);
+        std::string err = addChannelToGroup(s, s.selectedGroup, ref.boardNickname, ref.channelIndex,
+                                            *newChannelAlias);
         s.statusMsg = err.empty() ? "" : "Error: " + err;
         if (err.empty()) {
+            newChannelAlias->clear();
             rebuildChannelPicker();
             rebuildChannelLabels();
         }
@@ -162,18 +205,29 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
     auto bAddChannelCancel = ActionButton("Cancel", [showAddChannelPtr, &screen] {
         *showAddChannelPtr = false; screen.PostEvent(Event::Custom);
     });
-    auto addChannelForm = Container::Vertical({channelPickerMenu, bAddChannelConfirm, bAddChannelCancel});
-    auto addChannelPopup = Renderer(addChannelForm, [channelPickerMenu, channelPickerLabels,
+    auto addChannelForm = Container::Vertical({boardPickerMenu, channelPickerMenu, aliasInp,
+                                               bAddChannelConfirm, bAddChannelCancel});
+    auto addChannelPopup = Renderer(addChannelForm, [boardPickerMenu, boardPickerLabels,
+                                                      channelPickerMenu, channelPickerLabels,
+                                                      aliasInp, rebuildChannelPicker,
                                                       bAddChannelConfirm, bAddChannelCancel] {
+        rebuildChannelPicker();
+        Element boardList = boardPickerLabels->empty()
+            ? text("(no channels available - connect a board)") | dim
+            : boardPickerMenu->Render() | frame | size(HEIGHT, LESS_THAN, 8);
         Element list = channelPickerLabels->empty()
-            ? text("(no channels available — connect a board)") | dim
+            ? text("(no channels available)") | dim
             : channelPickerMenu->Render() | frame | size(HEIGHT, LESS_THAN, 10);
         return vbox({
             text(" Add Channel ") | bold | center, separator(),
-            list,
+            hbox({
+                vbox({ text("Boards") | bold, boardList }) | flex,
+                vbox({ text("Channels") | bold, list }) | flex,
+            }),
+            hbox({ text("Alias : "), aliasInp->Render() | flex }),
             separator(),
             hbox({ bAddChannelConfirm->Render(), text("  "), bAddChannelCancel->Render() }) | center,
-        }) | border | size(WIDTH, EQUAL, 46);
+        }) | border | size(WIDTH, EQUAL, 64);
     });
 
     // ---- List actions ----

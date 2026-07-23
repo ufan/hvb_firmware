@@ -884,8 +884,6 @@ int main(int argc, char** argv) {
             psb::tui::LiveBoardInfo info;
             info.nickname = b->nickname;
             info.numChannels = b->data.numChannels();
-            for (int ch = 0; ch < info.numChannels; ++ch)
-                info.aliases.push_back(b->inputs.chAlias[ch]);
             result.push_back(std::move(info));
         }
         return result;
