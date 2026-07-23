@@ -1,6 +1,7 @@
 #pragma once
 
 #include "board_session.h"
+#include "tool_version.h"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -237,7 +238,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
 
         bool showSwitcherSection = !groupNames->empty() || boardNames->size() > 1;
         Component activeStack = *showingGroup ? groupDashboardStack : boardDashboardStack;
-        auto appTitleEl = text(" PSB Demo TUI ") | bold | inverted | center;
+        auto appTitleEl = text(std::string(" PSB Demo TUI (") + TOOL_VERSION_STRING + ") ") | bold | inverted | center;
         auto globalMenuButtonsEl = hbox({
             globalSetup->Render(), text(" "), globalGroup->Render(), text(" "), globalPreferences->Render(),
             filler(),

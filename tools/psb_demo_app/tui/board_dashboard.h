@@ -7,7 +7,6 @@
 #include "modbus_settings.h"
 #include "register_map.h"
 #include "board_catalog.h"
-#include "tool_version.h"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -502,8 +501,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             text(" " + msg + " ") | (isErr ? color(Color::Red) : color(Color::Green))
                                   | size(WIDTH, GREATER_THAN, 30),
             filler(),
-            text((isOnline ? " FW:" + fwTxt + "  Proto:" + protoTxt + "  " : " ")
-                 + "TUI:" TOOL_VERSION_STRING " "),
+            text(isOnline ? " FW:" + fwTxt + "  Proto:" + protoTxt + "  " : " "),
             filler(),
             connTextEl,
             text(" "),

@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -148,6 +149,42 @@ inline Component makeGroupDashboard(const std::string& groupName,
             grid.push_back(std::move(cells));
         }
 
+        int onlineCount = 0;
+        std::string statusMsg;
+        for (const auto& mr : *memberRows) {
+            bool online = mr.board && mr.board->connected.load() && mr.board->data.valid
+                        && mr.ref.channelIndex < mr.board->data.numChannels();
+            if (online) ++onlineCount;
+
+            if (!mr.board) {
+                if (statusMsg.empty()) statusMsg = "Error: board " + mr.ref.boardNickname + " not attached";
+                continue;
+            }
+
+            std::string boardMsg;
+            {
+                std::lock_guard<std::mutex> lk(mr.board->statusMutex);
+                boardMsg = mr.board->statusMsg;
+            }
+            if (boardMsg.rfind("Error", 0) == 0) {
+                statusMsg = mr.ref.boardNickname + ": " + boardMsg;
+                break;
+            }
+            if (statusMsg.empty() && !boardMsg.empty())
+                statusMsg = mr.ref.boardNickname + ": " + boardMsg;
+        }
+        if (statusMsg.empty())
+            statusMsg = members.empty() ? "No channels in this group" : "Group ready";
+
+        bool isErr = statusMsg.rfind("Error", 0) == 0
+                  || statusMsg.find(": Error") != std::string::npos;
+        auto statusBarEl = hbox({
+            text(" " + statusMsg + " ") | (isErr ? color(Color::Red) : color(Color::Green))
+                                       | size(WIDTH, GREATER_THAN, 30),
+            filler(),
+            text(" Members:" + std::to_string(onlineCount) + "/" + std::to_string(members.size()) + " online "),
+        });
+
         auto table = Table(std::move(grid));
         table.SelectAll().Separator(LIGHT);
         table.SelectRow(0).Decorate(bold);
@@ -160,6 +197,8 @@ inline Component makeGroupDashboard(const std::string& groupName,
             text(" " + groupName + " ") | bold | center,
             table.Render(),
             filler(),
+            separator(),
+            statusBarEl,
         });
     });
 }
