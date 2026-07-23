@@ -29,6 +29,7 @@ inline std::vector<ChannelLiveSection> channelLiveSections(bool grouped) {
     std::vector<ChannelLiveSection> sections{
         ChannelLiveSection::Title,
         ChannelLiveSection::Telemetry,
+        ChannelLiveSection::Spacer,
         ChannelLiveSection::ControlActions,
     };
     if (grouped)
