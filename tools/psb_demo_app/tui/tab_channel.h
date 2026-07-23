@@ -351,7 +351,6 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
 
         // Control panel
         Elements controlRows;
-        controlRows.push_back(emptyElement());
         if (hasDrive()) {
             controlRows.push_back(hbox({ text("Vset    : "), tgtInp->Render() | flex, text(" V") }));
             controlRows.push_back(hbox({ text("Ramp up : "), ruStepInp->Render() | flex, text(" V/s") }));
@@ -362,7 +361,6 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
         } else {
             controlRows.push_back(text(" fixed output, always on — no configurable setpoint ") | dim);
         }
-        controlRows.push_back(filler());
         auto controlPanel = window(text(channelStartupPolicyPaneTitle()), vbox(std::move(controlRows)));
 
         // Protection panel
@@ -370,48 +368,42 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
         if (hasProtection()) {
             CurrentUnit iu = currentUnitFor(s.data.sysInfo.currentUnitExp);
             protPanel = window(text(" Protection Policy "), vbox({
-                emptyElement(),
                 hbox({ text("Limit  : "), iThrInp->Render() | flex, text(std::string(" ") + iu.label) }),
                 hbox({ text("Mode   : "), iModeC->Render() | flex }),
                 hbox({ text("Action : "), iActC->Render() | flex }),
                 hbox({ bClrAct->Render(), text("  "), bClrHist->Render() }),
-                filler(),
             }));
         }
 
         // Recovery panel
         auto recovPanel = window(text(" Recovery Policy "), vbox({
-            emptyElement(),
             hbox({ text("Policy : "), recovC->Render() | flex }),
             hbox({ text("Max    : "), maxInp->Render() | flex,
                    text("  Win: "), winInp->Render() | flex, text(" s") }),
             hbox({ text("Delay  : "), delayInp->Render() | flex, text(" s") }),
             hbox({ text("Derate : "), derInp->Render() | flex, text(" LSB") }),
             hbox({ text("Band   : "), iBandInp->Render() | flex, text(" %") }),
-            filler(),
         }));
 
         // Persistence / Setting panel
         auto persistPanel = window(text(" Setting "), vbox({
-            emptyElement(),
             hbox({ bSave->Render(), text("  "), bLoad->Render(), text("  "), bFactory->Render() }),
-            filler(),
         }));
 
         auto leftColumn = vbox({
-            controlPanel | flex,
-            persistPanel,
+            controlPanel,
+            protPanel,
         });
         auto rightColumn = vbox({
-            protPanel,
-            recovPanel | flex,
+            recovPanel,
+            persistPanel,
         });
 
         return vbox({
             emptyElement() | size(HEIGHT, EQUAL, 1),
             livePanel,
             emptyElement() | size(HEIGHT, EQUAL, 1),
-            hbox({ leftColumn | flex, rightColumn | flex }) | flex,
+            hbox({ leftColumn | flex, rightColumn | flex }),
             filler(),
         });
     });

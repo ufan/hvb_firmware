@@ -67,3 +67,15 @@ TEST_CASE("Channel live control and startup policy labels", "[tui_widgets]") {
     CHECK(channelLiveControlLabel() == " Control ");
     CHECK(channelStartupPolicyPaneTitle() == " Startup Policy ");
 }
+
+TEST_CASE("Channel policy boxes are arranged by requested columns", "[tui_widgets]") {
+    auto layout = channelPolicyBoxLayout();
+
+    REQUIRE(layout.size() == 2);
+    REQUIRE(layout[0].size() == 2);
+    REQUIRE(layout[1].size() == 2);
+    CHECK(layout[0][0] == ChannelPolicyBox::StartupPolicy);
+    CHECK(layout[0][1] == ChannelPolicyBox::ProtectionPolicy);
+    CHECK(layout[1][0] == ChannelPolicyBox::RecoveryPolicy);
+    CHECK(layout[1][1] == ChannelPolicyBox::Setting);
+}

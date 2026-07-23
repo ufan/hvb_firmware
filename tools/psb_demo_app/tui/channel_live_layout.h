@@ -13,6 +13,13 @@ enum class ChannelLiveSection {
     GroupNameControls,
 };
 
+enum class ChannelPolicyBox {
+    StartupPolicy,
+    ProtectionPolicy,
+    RecoveryPolicy,
+    Setting,
+};
+
 inline std::string channelGroupAliasLabel() {
     return " Name: ";
 }
@@ -37,6 +44,13 @@ inline std::vector<ChannelLiveSection> channelLiveSections(bool grouped) {
     if (grouped)
         sections.push_back(ChannelLiveSection::GroupNameControls);
     return sections;
+}
+
+inline std::vector<std::vector<ChannelPolicyBox>> channelPolicyBoxLayout() {
+    return {
+        {ChannelPolicyBox::StartupPolicy, ChannelPolicyBox::ProtectionPolicy},
+        {ChannelPolicyBox::RecoveryPolicy, ChannelPolicyBox::Setting},
+    };
 }
 
 } // namespace psb::tui
