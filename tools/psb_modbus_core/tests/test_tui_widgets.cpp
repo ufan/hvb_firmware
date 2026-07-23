@@ -79,3 +79,12 @@ TEST_CASE("Channel policy boxes are arranged by requested columns", "[tui_widget
     CHECK(layout[1][0] == ChannelPolicyBox::RecoveryPolicy);
     CHECK(layout[1][1] == ChannelPolicyBox::Setting);
 }
+
+TEST_CASE("Channel policy box content heights align protection and setting bottoms", "[tui_widgets]") {
+    CHECK(channelPolicyBoxContentRows(ChannelPolicyBox::StartupPolicy) +
+          channelPolicyBoxContentRows(ChannelPolicyBox::ProtectionPolicy) ==
+          channelPolicyBoxContentRows(ChannelPolicyBox::RecoveryPolicy) +
+          channelPolicyBoxContentRows(ChannelPolicyBox::Setting));
+    CHECK(channelProtectionLeftColumnRows() == 3);
+    CHECK(channelProtectionButtonColumnRows() == 2);
+}

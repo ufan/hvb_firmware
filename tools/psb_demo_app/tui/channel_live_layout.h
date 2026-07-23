@@ -53,4 +53,26 @@ inline std::vector<std::vector<ChannelPolicyBox>> channelPolicyBoxLayout() {
     };
 }
 
+inline int channelProtectionLeftColumnRows() {
+    return 3;
+}
+
+inline int channelProtectionButtonColumnRows() {
+    return 2;
+}
+
+inline int channelPolicyBoxContentRows(ChannelPolicyBox box) {
+    switch (box) {
+    case ChannelPolicyBox::StartupPolicy:
+        return 3;
+    case ChannelPolicyBox::ProtectionPolicy:
+        return channelProtectionLeftColumnRows();
+    case ChannelPolicyBox::RecoveryPolicy:
+        return 5;
+    case ChannelPolicyBox::Setting:
+        return 1;
+    }
+    return 0;
+}
+
 } // namespace psb::tui

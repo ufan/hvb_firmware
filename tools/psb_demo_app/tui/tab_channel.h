@@ -367,11 +367,19 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
         Element protPanel = emptyElement();
         if (hasProtection()) {
             CurrentUnit iu = currentUnitFor(s.data.sysInfo.currentUnitExp);
-            protPanel = window(text(" Protection Policy "), vbox({
+            auto protectionSettings = vbox({
                 hbox({ text("Limit  : "), iThrInp->Render() | flex, text(std::string(" ") + iu.label) }),
                 hbox({ text("Mode   : "), iModeC->Render() | flex }),
                 hbox({ text("Action : "), iActC->Render() | flex }),
-                hbox({ bClrAct->Render(), text("  "), bClrHist->Render() }),
+            }) | flex;
+            auto protectionActions = vbox({
+                bClrAct->Render(),
+                bClrHist->Render(),
+            });
+            protPanel = window(text(" Protection Policy "), hbox({
+                protectionSettings,
+                separator(),
+                protectionActions,
             }));
         }
 
