@@ -145,7 +145,23 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         if (!active && !e.focused)   t = t | dim;
         return t;
     };
-    auto switcherBar = Menu(boardNames.get(), boardLocalIdx.get(), switcherOpt);
+    // Dropping bare hover motion (Mouse::None) before it ever reaches the
+    // Menu — MenuBase::OnMouseEvent (vendored source, menu.cpp) calls
+    // TakeFocus() unconditionally for ANY mouse event landing on a row's
+    // box, including a hover motion with no button held. Left un-filtered,
+    // that TakeFocus() call propagates up to mainContainer's own
+    // mainSelected (see this file's design note above), which the outer
+    // Renderer's showingGroup derivation reads — so merely moving the
+    // mouse over this list, with no click at all, silently switched which
+    // section's dashboard was displayed. This app is mouse-driven, not
+    // keyboard-driven (per user direction), so that switch must only ever
+    // happen on an explicit click. A real click's Press/Released events
+    // both carry button == Left, never None, so clicks pass through
+    // untouched; only genuine no-button motion is dropped here.
+    auto dropHoverMotion = [](Event e) {
+        return e.is_mouse() && e.mouse().button == Mouse::None;
+    };
+    auto switcherBar = CatchEvent(Menu(boardNames.get(), boardLocalIdx.get(), switcherOpt), dropHoverMotion);
 
     MenuOption groupOpt = MenuOption::Vertical();
     groupOpt.entries_option.transform = [showingGroup](const EntryState& e) -> Element {
@@ -156,7 +172,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         if (!active && !e.focused)   t = t | dim;
         return t;
     };
-    auto groupMenu = Menu(groupNames.get(), groupLocalIdx.get(), groupOpt);
+    auto groupMenu = CatchEvent(Menu(groupNames.get(), groupLocalIdx.get(), groupOpt), dropHoverMotion);
 
     auto boardDashboardStack = Container::Tab({}, boardLocalIdx.get());
     for (auto& b : boards) boardDashboardStack->Add(b->dashboard);
@@ -230,14 +246,32 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         if (!showSwitcherSection) {
             return vbox({ activeStack->Render() | flex });
         }
+        // Title bold (not dim — a section title should stand out, the
+        // opposite of Menu's own dim-when-unselected row styling) plus a
+        // separator() between title and list, both spatially and visually
+        // distinguishing the title from its items without introducing a
+        // decorative convention (surrounding symbols, etc.) not used
+        // anywhere else in this codebase — mirrors the existing "Buses"/
+        // "Boards" pane-title convention in wizard_screen.h. Each section's
+        // own list is wrapped in `frame` (scrollable once it overflows its
+        // box, the same idiom wizard_screen.h's own Buses/Boards panes
+        // already use) and the section's whole vbox is marked `flex` so the
+        // two sections share the sidebar's available height equally, each
+        // scrolling independently rather than one crowding out the other.
         Elements sideParts;
         if (!groupNames->empty()) {
-            sideParts.push_back(text(" Groups ") | dim);
-            sideParts.push_back(groupMenu->Render());
+            sideParts.push_back(vbox({
+                text(" Groups ") | bold,
+                separator(),
+                groupMenu->Render() | frame | flex,
+            }) | flex);
             sideParts.push_back(separator());
         }
-        sideParts.push_back(text(" Boards ") | dim);
-        sideParts.push_back(switcherBar->Render());
+        sideParts.push_back(vbox({
+            text(" Boards ") | bold,
+            separator(),
+            switcherBar->Render() | frame | flex,
+        }) | flex);
         return vbox({
             hbox({
                 globalSetup->Render(), text(" "), globalGroup->Render(), text(" "), globalPreferences->Render(),
