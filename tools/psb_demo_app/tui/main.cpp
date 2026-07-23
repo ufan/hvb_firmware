@@ -276,7 +276,22 @@ void drainPendingRemovals(Runtime& rt, psb::TopologyConfig& topo,
         bool busEmpty = false;
         { std::lock_guard<std::mutex> lk(pr.bw->workMutex);
           busEmpty = pr.bw->boards.empty(); }
+        bool busHasOtherPendingRemoval = false;
         if (busEmpty) {
+            // A topology swap can remove several boards from the same bus at
+            // once. All their queued worker removals may finish before the UI
+            // drains the first PendingRemoval, making the bus empty while
+            // later PendingRemoval entries still hold this same BusWorker*.
+            // Tear the bus down only when draining the last such entry.
+            for (size_t j = 0; j < rt.pendingRemovals.size(); ++j) {
+                if (j == i) continue;
+                if (rt.pendingRemovals[j].bw == pr.bw) {
+                    busHasOtherPendingRemoval = true;
+                    break;
+                }
+            }
+        }
+        if (busEmpty && !busHasOtherPendingRemoval) {
             pr.bw->stopRequested = true;
             pr.bw->workCv.notify_all();
             if (pr.bw->thread.joinable()) pr.bw->thread.join();
