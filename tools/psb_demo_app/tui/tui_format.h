@@ -139,6 +139,25 @@ inline std::string fmtInterval(uint16_t raw) {
     return buf;
 }
 
+inline std::string fmtUptime(uint32_t seconds) {
+    char buf[24];
+    uint32_t days = seconds / 86400u;
+    uint32_t hours = (seconds % 86400u) / 3600u;
+    uint32_t minutes = (seconds % 3600u) / 60u;
+    uint32_t secs = seconds % 60u;
+
+    if (days > 0) {
+        snprintf(buf, sizeof(buf), "%ud %02uh", days, hours);
+    } else if (hours > 0) {
+        snprintf(buf, sizeof(buf), "%uh %02um", hours, minutes);
+    } else if (minutes > 0) {
+        snprintf(buf, sizeof(buf), "%um %02us", minutes, secs);
+    } else {
+        snprintf(buf, sizeof(buf), "%us", secs);
+    }
+    return buf;
+}
+
 inline std::string faultStr(uint16_t fault) {
     if (!fault) return "--";
     std::string s;

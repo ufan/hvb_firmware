@@ -45,3 +45,14 @@ TEST_CASE("fmtInterval") {
     CHECK(fmtInterval(10)  == "1.0 s");
     CHECK(fmtInterval(100) == "10.0 s");
 }
+
+TEST_CASE("fmtUptime is compact and human-readable") {
+    CHECK(fmtUptime(0) == "0s");
+    CHECK(fmtUptime(59) == "59s");
+    CHECK(fmtUptime(60) == "1m 00s");
+    CHECK(fmtUptime(65) == "1m 05s");
+    CHECK(fmtUptime(3600) == "1h 00m");
+    CHECK(fmtUptime(7380) == "2h 03m");
+    CHECK(fmtUptime(86400) == "1d 00h");
+    CHECK(fmtUptime(273600) == "3d 04h");
+}

@@ -414,7 +414,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             fwTxt    = reg::formatFwVersion(si.fwVersion);
             protoTxt = std::to_string(si.protoMajor) + "." + std::to_string(si.protoMinor);
             variantTxt = catalog::variantName(si.variantId);
-            uptimeTxt = std::to_string(si.uptimeSec) + "s";
+            uptimeTxt = fmtUptime(si.uptimeSec);
             hasEnvSensor = (si.sysCapFlags & SysCap::ENV_SENSOR) != 0;
             if (hasEnvSensor) {
                 snprintf(tmpS, sizeof(tmpS), "%.1fC",  si.boardTempRaw    * 0.1);
