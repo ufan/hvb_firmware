@@ -237,14 +237,21 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         else if (*mainSelected == 2 || *mainSelected == 3) *showingGroup = false;
 
         bool showSwitcherSection = !groupNames->empty() || boardNames->size() > 1;
+        bool showAggregateConnectionActions = boardNames->size() > 1;
         Component activeStack = *showingGroup ? groupDashboardStack : boardDashboardStack;
         auto appTitleEl = text(std::string(" PSB Demo TUI (") + TOOL_VERSION_STRING + ") ") | bold | inverted | center;
-        auto globalMenuButtonsEl = hbox({
+        Elements globalMenuButtons = {
             globalSetup->Render(), text(" "), globalGroup->Render(), text(" "), globalPreferences->Render(),
             filler(),
-            globalConnectAll->Render(), text(" "), globalDisconnectAll->Render(), text(" "),
-            globalQuit->Render(),
-        });
+        };
+        if (showAggregateConnectionActions) {
+            globalMenuButtons.push_back(globalConnectAll->Render());
+            globalMenuButtons.push_back(text(" "));
+            globalMenuButtons.push_back(globalDisconnectAll->Render());
+            globalMenuButtons.push_back(text(" "));
+        }
+        globalMenuButtons.push_back(globalQuit->Render());
+        auto globalMenuButtonsEl = hbox(std::move(globalMenuButtons));
         auto globalMenuBarEl = dbox({globalMenuButtonsEl, appTitleEl});
         if (!showSwitcherSection) {
             return vbox({
