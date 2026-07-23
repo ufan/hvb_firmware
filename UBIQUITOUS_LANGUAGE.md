@@ -88,6 +88,16 @@
 - Register Views keep static **Register Handles**. Generic Semantic Register ID lookup is reserved for diagnostics and infrequent dynamic access.
 - A **Runtime Config Snapshot** is published as a complete versioned intent, not as partial field updates.
 
+## Host topology and grouping
+
+| Term | Definition | Aliases to avoid |
+| --- | --- | --- |
+| **Board Nickname** | A user-defined topology name for one board. It is unique within a topology and remains the stable board identity when a board moves to another bus or slave ID. | Board alias when the value identifies a physical board in the topology |
+| **Board Channel ID** | The canonical hardware-facing identity of a board channel, written as `board_nickname/CHn`, where `CHn` is the channel index reported by firmware. | Channel alias when the UI is in board/topology context |
+| **Group Name** | A user-defined operator-facing channel group name. It is unique within a topology. | Board group when the grouping is end-user workflow, not hardware topology |
+| **Group Channel Alias** | A user-defined operator-facing channel name that is unique within its group and stored on the group channel membership. | Board channel alias |
+| **Group Channel ID** | The canonical operator-facing identity of a grouped channel, written as `group_name/alias`. | Global alias when the group name is needed for uniqueness |
+
 ## Example dialogue
 
 > **Dev:** "If the host writes **Configured Target Voltage** to 0, is that the same as **Disable Graceful**?"
@@ -136,3 +146,4 @@
 - "Channel service" was overloaded between product policy and board hardware abstraction; use **Domain Runtime Library** for policy and **Virtual Voltage Channel** or **Virtual Channel Provider** for the board-implemented channel boundary.
 - "Snapshot" was ambiguous; use **Measurement Snapshot** for raw channel evidence and **Presentation Snapshot** only for an on-demand aggregate.
 - "Frontend" should refer to user/host interaction surfaces; use **Frontend Adapter** for Modbus, shell, future CAN/TCP/IP, or local display/buttons.
+- "Alias" is ambiguous in host tools. In topology and board dashboards, use **Board Channel ID**. In group dashboards, use **Group Channel Alias** or **Group Channel ID**.
