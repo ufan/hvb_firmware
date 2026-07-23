@@ -7,6 +7,11 @@
 
 namespace psb {
 
+struct LiveBoardInfo {
+    std::string nickname;
+    int numChannels = 0;
+};
+
 bool boardNicknameInUse(const TopologyConfig& topo, const std::string& nickname);
 bool slaveIdInUse(const BusConfig& bus, int slaveId);
 bool groupNameInUse(const TopologyConfig& topo, const std::string& name);
@@ -44,5 +49,7 @@ std::string renameGroupChannelAliasForBoardChannel(TopologyConfig& topo,
                                                    int channelIndex,
                                                    const std::string& alias);
 std::string removeChannelFromGroup(TopologyConfig& topo, int groupIdx, int channelIdx);
+std::vector<GroupChannelRef> availableGroupChannels(const TopologyConfig& topo,
+                                                    const std::vector<LiveBoardInfo>& liveBoards);
 
 } // namespace psb

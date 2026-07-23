@@ -35,3 +35,22 @@ TEST_CASE("TopologyRules - naming queries inspect topology identities", "[topolo
     CHECK(psb::groupAliasInUse(topo.groups[0], "bias"));
     CHECK_FALSE(psb::groupAliasInUse(topo.groups[0], "guard"));
 }
+
+TEST_CASE("TopologyRules - availableGroupChannels omits assigned channels", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    psb::GroupConfig group;
+    group.name = "detector";
+    group.channels.push_back({"hvb-left", 0, "bias"});
+    topo.groups.push_back(group);
+
+    std::vector<psb::LiveBoardInfo> live{{"hvb-left", 2}, {"hvb-right", 1}};
+    auto available = psb::availableGroupChannels(topo, live);
+
+    REQUIRE(available.size() == 2);
+    CHECK(available[0].boardNickname == "hvb-left");
+    CHECK(available[0].channelIndex == 1);
+    CHECK(available[0].alias == "CH1");
+    CHECK(available[1].boardNickname == "hvb-right");
+    CHECK(available[1].channelIndex == 0);
+    CHECK(available[1].alias == "CH0");
+}

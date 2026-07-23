@@ -193,4 +193,17 @@ std::string removeChannelFromGroup(TopologyConfig& topo, int groupIdx, int chann
     return "";
 }
 
+std::vector<GroupChannelRef> availableGroupChannels(const TopologyConfig& topo,
+                                                    const std::vector<LiveBoardInfo>& liveBoards) {
+    std::vector<GroupChannelRef> available;
+    for (const auto& board : liveBoards) {
+        for (int channelIndex = 0; channelIndex < board.numChannels; ++channelIndex) {
+            if (findGroupForBoardChannel(topo, board.nickname, channelIndex) >= 0)
+                continue;
+            available.push_back({board.nickname, channelIndex, defaultChannelAlias(channelIndex)});
+        }
+    }
+    return available;
+}
+
 } // namespace psb

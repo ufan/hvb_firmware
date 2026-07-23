@@ -16,15 +16,9 @@ namespace psb::tui {
 
 using namespace ftxui;
 
-// A currently-connected board, as the group wizard's "Add Channel" picker
-// needs to see it — never sourced from topo.buses (which lists every board
-// ever defined, connected or not); see makeGroupWizardScreen's GetLiveBoards
-// parameter.
-struct LiveBoardInfo {
-    std::string nickname;
-    int numChannels = 0;
-};
-using LiveBoards = std::vector<LiveBoardInfo>;
+// Currently-connected boards for the Add Channel picker; never sourced from
+// topo.buses, which lists every board ever defined, connected or not.
+using LiveBoards = std::vector<psb::LiveBoardInfo>;
 using GetLiveBoards = std::function<LiveBoards()>;
 
 inline std::string groupChannelDisplayName(const GroupChannelRef& ref) {
@@ -127,16 +121,16 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
         channelPickerLabels->clear();
         channelPickerRefs->clear();
         if (s.selectedGroup < 0 || s.selectedGroup >= static_cast<int>(s.topo.groups.size())) return;
-        LiveBoards live = getLiveBoards();
-        for (const auto& lb : live) {
-            bool hasAvailable = false;
-            for (int ch = 0; ch < lb.numChannels; ++ch) {
-                if (psb::findGroupForBoardChannel(s.topo, lb.nickname, ch) < 0) {
-                    hasAvailable = true;
+        auto availableChannels = psb::availableGroupChannels(s.topo, getLiveBoards());
+        for (const auto& ref : availableChannels) {
+            bool alreadyListed = false;
+            for (const auto& board : *boardPickerLabels) {
+                if (board == ref.boardNickname) {
+                    alreadyListed = true;
                     break;
                 }
             }
-            if (hasAvailable) boardPickerLabels->push_back(lb.nickname);
+            if (!alreadyListed) boardPickerLabels->push_back(ref.boardNickname);
         }
 
         if (boardPickerLabels->empty()) {
@@ -156,15 +150,10 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
         }
 
         const std::string& selectedBoard = boardPickerLabels->at(*boardPickerIdx);
-        for (const auto& lb : live) {
-            if (lb.nickname != selectedBoard) continue;
-            for (int ch = 0; ch < lb.numChannels; ++ch) {
-                if (psb::findGroupForBoardChannel(s.topo, lb.nickname, ch) >= 0) continue;
-                std::string alias = psb::defaultChannelAlias(ch);
-                channelPickerLabels->push_back(alias);
-                channelPickerRefs->push_back({lb.nickname, ch, alias});
-            }
-            break;
+        for (const auto& ref : availableChannels) {
+            if (ref.boardNickname != selectedBoard) continue;
+            channelPickerLabels->push_back(ref.alias);
+            channelPickerRefs->push_back(ref);
         }
         if (*channelPickerIdx >= static_cast<int>(channelPickerLabels->size()))
             *channelPickerIdx = channelPickerLabels->empty() ? -1 : 0;

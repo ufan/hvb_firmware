@@ -870,7 +870,7 @@ int main(int argc, char** argv) {
         std::lock_guard<std::mutex> lk(rt.boardsMutex);
         for (auto& b : rt.boards) {
             if (!b->connected.load()) continue;
-            psb::tui::LiveBoardInfo info;
+            psb::LiveBoardInfo info;
             info.nickname = b->nickname;
             info.numChannels = b->data.numChannels();
             result.push_back(std::move(info));
