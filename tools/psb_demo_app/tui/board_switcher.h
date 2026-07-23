@@ -237,12 +237,14 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
 
         bool showSwitcherSection = !groupNames->empty() || boardNames->size() > 1;
         Component activeStack = *showingGroup ? groupDashboardStack : boardDashboardStack;
-        auto globalMenuBarEl = hbox({
+        auto appTitleEl = text(" PSB Demo TUI ") | bold | inverted | center;
+        auto globalMenuButtonsEl = hbox({
             globalSetup->Render(), text(" "), globalGroup->Render(), text(" "), globalPreferences->Render(),
             filler(),
             globalConnectAll->Render(), text(" "), globalDisconnectAll->Render(), text(" "),
             globalQuit->Render(),
-        }) | bold | inverted;
+        });
+        auto globalMenuBarEl = dbox({globalMenuButtonsEl, appTitleEl});
         if (!showSwitcherSection) {
             return vbox({
                 globalMenuBarEl,
