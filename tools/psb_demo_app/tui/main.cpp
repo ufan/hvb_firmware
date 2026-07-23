@@ -773,7 +773,7 @@ int main(int argc, char** argv) {
         return {};
     };
 
-    auto saveGroupChannelAliasToTopology = [&topo, &currentTopologyPath, &screen]
+    auto saveGroupChannelAliasToTopology = [&rt, &topo, &currentTopologyPath, &screen]
                                            (const std::string& boardNickname, int ch,
                                             const std::string& alias) -> bool {
         for (auto& group : topo.groups) {
@@ -785,7 +785,10 @@ int main(int argc, char** argv) {
                     return false;
                 ref.alias = finalAlias;
                 bool ok = topo.save(currentTopologyPath);
-                screen.PostEvent(Event::Custom);
+                if (ok)
+                    refreshGroupDashboards(rt, topo, screen);
+                else
+                    screen.PostEvent(Event::Custom);
                 return ok;
             }
         }
