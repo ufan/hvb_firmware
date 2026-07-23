@@ -15,12 +15,22 @@ struct MonitorRow {
     Component aliasInp;
 };
 
+enum class MonitorIdentityMode {
+    BoardChannel,
+    GroupAlias,
+};
+
+struct MonitorRenderOptions {
+    MonitorIdentityMode identityMode = MonitorIdentityMode::BoardChannel;
+    std::string identityHeader;
+};
+
 // Column labels for the Monitor table's header row. The drive/enable
 // column label and the current-unit-labeled columns depend on which
 // capabilities are actually present among the currently-loaded channels, so
-// this is computed from live ScannedData rather than being static — reused
-// unmodified by group_monitor.h's aggregating table.
-inline std::vector<std::string> monitorHeaderLabels(const ScannedData& data) {
+// this is computed from live ScannedData rather than being static.
+inline std::vector<std::string> monitorHeaderLabels(const ScannedData& data,
+                                                    MonitorRenderOptions opts = {}) {
     int n = data.numChannels();
     const char* vsetEnHeader = "Vset/En";
     {
@@ -35,7 +45,7 @@ inline std::vector<std::string> monitorHeaderLabels(const ScannedData& data) {
     }
     CurrentUnit iu = currentUnitFor(data.sysInfo.currentUnitExp);
     return {
-        "", "Name", vsetEnHeader, "Status", "Vop", "V (V)",
+        opts.identityHeader, vsetEnHeader, "Status", "Vop", "V (V)",
         std::string("I (") + iu.label + ")",
         "Ru", "Rd", std::string("Limit (") + iu.label + ")",
         "Fault", "Clear", "Save",
@@ -44,20 +54,14 @@ inline std::vector<std::string> monitorHeaderLabels(const ScannedData& data) {
 
 // A single "channel unreachable" row — the same shape used both when an
 // individual channel within a connected board goes offline (Monitor's own
-// use, aliasInp always non-null there) and when a group's member channel's
-// owning board is disconnected or missing entirely (group_monitor.h's use,
-// where aliasInp is null whenever the owning board doesn't exist at all —
-// there is no live widget to show, so the alias column falls back to plain
-// text instead).
-inline std::vector<Element> monitorOfflineRowCells(const std::string& chLabel,
-                                                    Component aliasInp,
-                                                    const std::string& aliasFallback,
+// use) and when a group's member channel's owning board is disconnected or
+// missing entirely (group_monitor.h's use).
+inline std::vector<Element> monitorOfflineRowCells(Element identityCell,
                                                     size_t numCols) {
     std::vector<Element> cells;
-    cells.push_back(text(chLabel) | center);
-    cells.push_back((aliasInp ? aliasInp->Render() : text(aliasFallback)) | center);
+    cells.push_back(identityCell | center);
     cells.push_back(text("OFFLINE") | color(Color::Red) | bold | center);
-    for (size_t c = 3; c < numCols; ++c)
+    for (size_t c = 2; c < numCols; ++c)
         cells.push_back(text("--") | color(Color::Red) | dim | center);
     return cells;
 }
@@ -67,7 +71,7 @@ inline std::vector<Element> monitorOfflineRowCells(const std::string& chLabel,
 // Monitor table and a group's aggregating table (group_monitor.h), so a
 // group mixing channels from different board models "just works" through
 // this same per-channel logic, no new heterogeneity handling needed.
-inline std::vector<Element> monitorRowCells(const std::string& chLabel, const ScannedData& data,
+inline std::vector<Element> monitorRowCells(Element identityCell, const ScannedData& data,
                                             int ch, const MonitorRow& row) {
     const auto& ci = data.chInfo[ch];
     const uint16_t caps = ci.chCapFlags;
@@ -77,8 +81,7 @@ inline std::vector<Element> monitorRowCells(const std::string& chLabel, const Sc
     bool hasCurr  = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
 
     std::vector<Element> cells;
-    cells.push_back(text(chLabel) | center);
-    cells.push_back(row.aliasInp->Render() | center);
+    cells.push_back(identityCell | center);
     if (hasDrive)
         cells.push_back(row.vsetInp->Render() | center);
     else if (hasOut)
@@ -337,7 +340,8 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs,
                         "/" + std::to_string(n) + " ") | dim | center;
         }
 
-        auto headerLabels = monitorHeaderLabels(s.data);
+        MonitorRenderOptions renderOpts{MonitorIdentityMode::BoardChannel, "CH"};
+        auto headerLabels = monitorHeaderLabels(s.data, renderOpts);
 
         std::vector<std::vector<Element>> grid;
 
@@ -359,12 +363,11 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs,
             // genuinely unresponsive — show it as an error, not silently
             // continuing to display its last-known (now stale) values.
             if (s.data.chOffline[ch]) {
-                grid.push_back(monitorOfflineRowCells(chLabel, rows->at(ch).aliasInp,
-                                                      "CH" + std::to_string(ch), headerLabels.size()));
+                grid.push_back(monitorOfflineRowCells(text(chLabel), headerLabels.size()));
                 continue;
             }
 
-            grid.push_back(monitorRowCells(chLabel, s.data, ch, rows->at(ch)));
+            grid.push_back(monitorRowCells(text(chLabel), s.data, ch, rows->at(ch)));
         }
 
         auto table = Table(std::move(grid));

@@ -55,11 +55,14 @@ using namespace ftxui;
 inline Component makeGroupDashboard(const std::string& groupName,
                                     const std::vector<psb::GroupChannelRef>& members,
                                     std::vector<std::unique_ptr<BoardSession>>& boards,
-                                    std::function<void(const std::string&, int)> jumpToBoard) {
+                                    std::function<void(const std::string&, int)> jumpToBoard,
+                                    std::function<bool(const std::string&, int, const std::string&)> saveGroupAlias = {}) {
     struct MemberRow {
         psb::GroupChannelRef ref;
         BoardSession* board = nullptr;  // nullptr if the board doesn't exist at all
         MonitorRow row;                 // only meaningful when board != nullptr
+        std::shared_ptr<std::string> alias;
+        Component aliasInp;
         Component jumpBtn;              // only meaningful when board != nullptr
     };
     auto memberRows = std::make_shared<std::vector<MemberRow>>();
@@ -77,16 +80,20 @@ inline Component makeGroupDashboard(const std::string& groupName,
         MemberRow mr;
         mr.ref = ref;
         mr.board = owner;
+        mr.alias = std::make_shared<std::string>(
+            ref.alias.empty() ? psb::defaultChannelAlias(ref.channelIndex) : ref.alias);
+        mr.aliasInp = CommitInput(mr.alias.get(), psb::defaultChannelAlias(ref.channelIndex),
+                                  [saveGroupAlias, alias = mr.alias,
+                                   nickname = ref.boardNickname, ch = ref.channelIndex] {
+                                      if (saveGroupAlias)
+                                          saveGroupAlias(nickname, ch, *alias);
+                                  });
+        rowComps.push_back(mr.aliasInp);
         if (owner) {
             mr.row = makeMonitorRow(*owner->appState, owner->inputs, ref.channelIndex, owner->saveChannelAlias);
             ButtonOption bopt{};
-            bopt.transform = [owner, ch = ref.channelIndex](const EntryState& es) -> Element {
-                // Re-read the alias fresh every render (not baked in at
-                // construction) — it can change via this same row's own
-                // aliasInp, or the board's own Monitor/Channel tab, at any
-                // time after this button is built.
-                std::string label = owner->inputs.chAlias[ch].empty()
-                    ? "CH" + std::to_string(ch) : owner->inputs.chAlias[ch];
+            bopt.transform = [nickname = ref.boardNickname, ch = ref.channelIndex](const EntryState& es) -> Element {
+                std::string label = nickname + "/" + psb::defaultChannelAlias(ch);
                 auto e = text("[ " + label + " ]");
                 if (es.focused) e = e | inverted;
                 return e;
@@ -122,7 +129,8 @@ inline Component makeGroupDashboard(const std::string& groupName,
                 break;
             }
         }
-        auto headerLabels = monitorHeaderLabels(*headerSource);
+        MonitorRenderOptions groupOpts{MonitorIdentityMode::GroupAlias, "Name"};
+        auto headerLabels = monitorHeaderLabels(*headerSource, groupOpts);
         headerLabels.push_back("Go");
 
         std::vector<std::vector<Element>> grid;
@@ -134,17 +142,16 @@ inline Component makeGroupDashboard(const std::string& groupName,
         }
 
         for (const auto& mr : *memberRows) {
-            std::string chLabel = mr.ref.boardNickname + " CH" + std::to_string(mr.ref.channelIndex);
             bool online = mr.board && mr.board->connected.load() && mr.board->data.valid
                         && mr.ref.channelIndex < mr.board->data.numChannels();
+            Element identity = mr.aliasInp->Render();
             if (!online) {
-                auto cells = monitorOfflineRowCells(
-                    chLabel, mr.board ? mr.row.aliasInp : Component{}, chLabel, headerLabels.size() - 1);
+                auto cells = monitorOfflineRowCells(identity, headerLabels.size() - 1);
                 cells.push_back(text("--") | color(Color::Red) | dim | center);
                 grid.push_back(std::move(cells));
                 continue;
             }
-            auto cells = monitorRowCells(chLabel, mr.board->data, mr.ref.channelIndex, mr.row);
+            auto cells = monitorRowCells(identity, mr.board->data, mr.ref.channelIndex, mr.row);
             cells.push_back(mr.jumpBtn->Render() | center);
             grid.push_back(std::move(cells));
         }
