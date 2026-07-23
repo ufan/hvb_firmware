@@ -36,8 +36,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                     ScreenInteractive& screen, std::atomic<bool>& running,
                                     int timeoutMs, std::function<void()> openSetup,
                                     std::function<void()> requestRemove,
-                                    Component globalQuit, Component globalSetup, Component globalGroup,
-                                    Component globalPreferences,
+                                    Component /*globalQuit*/, Component /*globalSetup*/, Component /*globalGroup*/,
+                                    Component /*globalPreferences*/,
                                     std::function<size_t()> liveBoardCount,
                                     std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
     // ---- Connection inputs (live in the connection modal) ----
@@ -384,8 +384,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
     auto root = Renderer(mainContainer, [&board, &screen, menuModeC, connectedMenuSave, bConnToggle, bRemove,
-                                         tabBar, tabContent, bSysCfg, globalQuit, globalSetup, globalGroup,
-                                         globalPreferences, liveBoardCount] {
+                                         tabBar, tabContent, bSysCfg, liveBoardCount] {
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
                 int nc = board.pendingChannelCount.load(std::memory_order_acquire);
@@ -463,11 +462,9 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             ? connectedMenuSave->Render()
             : text("[ Save ]") | dim;
         // Remove only makes sense with a sibling to remove down to — see
-        // Global Constraints. In single-board mode, this row also folds in
-        // globalQuit/globalSetup's own rendered output (visual-only merge
-        // — see Task 3's comment in board_switcher.h): with 2+ boards,
-        // those same Components render as their own separate row one level
-        // up instead, so they're omitted here to avoid rendering twice.
+        // Global Constraints. App-level actions are intentionally rendered
+        // only by board_switcher.h's dedicated top-level menu bar; this row
+        // contains board-level controls only.
         size_t boardCount = liveBoardCount();
         Element removeElement = boardCount > 1 ? bRemove->Render() : text("");
         Elements menuBarParts = {
@@ -485,22 +482,6 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             text(" "),
             removeElement,
         };
-        if (boardCount <= 1) {
-            // Quit last — the same right-corner placement board_switcher.h's
-            // multi-board row uses, keeping this one destructive action set
-            // apart from Setup/Group/Preferences even without a dedicated
-            // filler here (the row's existing pair of fillers around
-            // centerGroup already pushes this whole tail block flush to the
-            // right edge; adding a third filler would unbalance that split).
-            menuBarParts.push_back(text(" "));
-            menuBarParts.push_back(globalSetup->Render());
-            menuBarParts.push_back(text(" "));
-            menuBarParts.push_back(globalGroup->Render());
-            menuBarParts.push_back(text(" "));
-            menuBarParts.push_back(globalPreferences->Render());
-            menuBarParts.push_back(text(" "));
-            menuBarParts.push_back(globalQuit->Render());
-        }
         auto menuBarEl = hbox(std::move(menuBarParts));
 
         // --- Status bar (static colour — no breathing) ---

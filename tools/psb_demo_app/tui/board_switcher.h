@@ -23,10 +23,9 @@ using namespace ftxui;
 // construction without rebuilding or swapping the root: Container::Tab and
 // Menu both already support dynamic children (ComponentBase::Add; Menu
 // re-reads its backing vector's live size every render), so appending is
-// enough. Pixel-identical single-board rendering (Phase 2's Global
-// Constraint) is preserved by omitting the switcher bar *element* — not the
-// underlying component — whenever fewer than two boards exist and no groups
-// are defined.
+// enough. The top-level menu bar is always rendered here, even for a single
+// board, so app-level actions never get visually folded into a board's own
+// toolbar.
 struct BoardSwitcher {
     Component root;
     std::function<void(const std::string& nickname, Component dashboard)> attachBoard;
@@ -219,15 +218,10 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
     // accomplishes. mainSelected is captured for the identical reason:
     // Container::Vertical's selector overload holds a raw int* into it.
     //
-    // globalMenuBar renders here as its own row only when the switcher
-    // section is shown at all (2+ boards, or any groups) — with exactly one
-    // board and no groups, board_dashboard.h's own Renderer instead calls
-    // Render() on these same globalQuit/globalSetup Components, folding
-    // their output into its own menu row (a second render call site for the
-    // same Components — safe, since rendering is stateless per call; only
-    // *parenting*, unchanged here, is singular). This is the visual-only
-    // single-row merge described in
-    // docs/superpowers/specs/2026-07-21-mode-architecture-design.md.
+    // globalMenuBar is the only render site for app-level actions. Keep it
+    // outside the board dashboard in every mode so Topology/Group/
+    // Preferences/Connect All/Disconnect All/Quit never appear as board
+    // controls and never duplicate when a single board also has groups.
     auto root = Renderer(mainContainer, [switcherBar, groupMenu, boardDashboardStack, groupDashboardStack,
                                          globalSetup, globalGroup, globalPreferences,
                                          globalConnectAll, globalDisconnectAll, globalQuit,
@@ -243,8 +237,18 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
 
         bool showSwitcherSection = !groupNames->empty() || boardNames->size() > 1;
         Component activeStack = *showingGroup ? groupDashboardStack : boardDashboardStack;
+        auto globalMenuBarEl = hbox({
+            globalSetup->Render(), text(" "), globalGroup->Render(), text(" "), globalPreferences->Render(),
+            filler(),
+            globalConnectAll->Render(), text(" "), globalDisconnectAll->Render(), text(" "),
+            globalQuit->Render(),
+        });
         if (!showSwitcherSection) {
-            return vbox({ activeStack->Render() | flex });
+            return vbox({
+                globalMenuBarEl,
+                separator(),
+                activeStack->Render() | flex,
+            });
         }
         // Title bold (not dim — a section title should stand out, the
         // opposite of Menu's own dim-when-unselected row styling) plus a
@@ -273,12 +277,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
             switcherBar->Render() | frame | flex,
         }) | flex);
         return vbox({
-            hbox({
-                globalSetup->Render(), text(" "), globalGroup->Render(), text(" "), globalPreferences->Render(),
-                filler(),
-                globalConnectAll->Render(), text(" "), globalDisconnectAll->Render(), text(" "),
-                globalQuit->Render(),
-            }),
+            globalMenuBarEl,
             separator(),
             hbox({
                 vbox(std::move(sideParts)),
