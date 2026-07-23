@@ -69,7 +69,7 @@ struct Runtime {
     // purely so refreshGroupDashboards() (below) knows what to detach
     // before reattaching fresh copies — see that function's own comment.
     std::vector<std::string> attachedGroupNames;
-    std::function<bool(const std::string&, int, const std::string&)> saveGroupAlias;
+    std::function<std::string(const std::string&, int, const std::string&)> saveGroupAlias;
 };
 
 // The single reconciliation point for group dashboards — called any time
@@ -775,24 +775,18 @@ int main(int argc, char** argv) {
 
     auto saveGroupChannelAliasToTopology = [&rt, &topo, &currentTopologyPath, &screen]
                                            (const std::string& boardNickname, int ch,
-                                            const std::string& alias) -> bool {
-        for (auto& group : topo.groups) {
-            for (int mi = 0; mi < static_cast<int>(group.channels.size()); ++mi) {
-                auto& ref = group.channels[mi];
-                if (ref.boardNickname != boardNickname || ref.channelIndex != ch) continue;
-                std::string finalAlias = alias.empty() ? psb::defaultChannelAlias(ch) : alias;
-                if (psb::tui::groupAliasInUse(group, finalAlias, mi))
-                    return false;
-                ref.alias = finalAlias;
-                bool ok = topo.save(currentTopologyPath);
-                if (ok)
-                    refreshGroupDashboards(rt, topo, screen);
-                else
-                    screen.PostEvent(Event::Custom);
-                return ok;
-            }
+                                            const std::string& alias) -> std::string {
+        std::string err = psb::tui::renameGroupChannelAliasForBoardChannel(topo, boardNickname, ch, alias);
+        if (!err.empty()) {
+            screen.PostEvent(Event::Custom);
+            return err;
         }
-        return false;
+        if (!topo.save(currentTopologyPath)) {
+            screen.PostEvent(Event::Custom);
+            return "could not save group alias";
+        }
+        refreshGroupDashboards(rt, topo, screen);
+        return "";
     };
     rt.saveGroupAlias = saveGroupChannelAliasToTopology;
 

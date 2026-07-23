@@ -96,6 +96,28 @@ TEST_CASE("GroupWizardState - group channel alias can be renamed", "[group_wizar
     CHECK(s.dirty);
 }
 
+TEST_CASE("GroupWizardState - group channel alias rename rejects duplicate in the same group", "[group_wizard_state]") {
+    GroupWizardState s;
+    REQUIRE(addGroup(s, "detector").empty());
+    REQUIRE(addChannelToGroup(s, 0, "hvb-left", 0, "bias").empty());
+    REQUIRE(addChannelToGroup(s, 0, "hvb-left", 1, "guard").empty());
+
+    CHECK(renameGroupChannelAlias(s, 0, 1, "bias") ==
+          "alias \"bias\" already in use in group detector");
+    CHECK(s.topo.groups[0].channels[1].alias == "guard");
+}
+
+TEST_CASE("GroupWizardState - board channel alias rename reports duplicate and leaves alias unchanged", "[group_wizard_state]") {
+    GroupWizardState s;
+    REQUIRE(addGroup(s, "detector").empty());
+    REQUIRE(addChannelToGroup(s, 0, "hvb-left", 0, "bias").empty());
+    REQUIRE(addChannelToGroup(s, 0, "hvb-left", 1, "guard").empty());
+
+    CHECK(renameGroupChannelAliasForBoardChannel(s.topo, "hvb-left", 1, "bias") ==
+          "alias \"bias\" already in use in group detector");
+    CHECK(s.topo.groups[0].channels[1].alias == "guard");
+}
+
 TEST_CASE("GroupWizardState — removeChannelFromGroup rejects an out-of-range channel index", "[group_wizard_state]") {
     GroupWizardState s;
     addGroup(s, "Battery Bank");

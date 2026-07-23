@@ -16,7 +16,7 @@ struct GroupMembership {
 };
 
 using GetGroupMembership = std::function<GroupMembership(const std::string&, int)>;
-using SaveGroupAlias = std::function<bool(const std::string&, int, const std::string&)>;
+using SaveGroupAlias = std::function<std::string(const std::string&, int, const std::string&)>;
 using JumpToGroup = std::function<void(const std::string&, int)>;
 
 inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::string& boardNickname,
@@ -99,11 +99,13 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
     auto groupAlias = std::make_shared<std::string>();
     auto lastMembershipKey = std::make_shared<std::string>();
     auto aliasInp = CommitInput(groupAlias.get(), "CH" + std::to_string(ch),
-                                [&s, boardNickname, ch, groupAlias, saveGroupAlias] {
+                                [&s, boardNickname, ch, groupAlias, currentMembership, saveGroupAlias] {
                                     if (!saveGroupAlias) return;
-                                    if (!saveGroupAlias(boardNickname, ch, *groupAlias)) {
+                                    std::string err = saveGroupAlias(boardNickname, ch, *groupAlias);
+                                    if (!err.empty()) {
+                                        *groupAlias = currentMembership->alias;
                                         std::lock_guard<std::mutex> lk(s.statusMutex);
-                                        s.statusMsg = "Error: could not save group alias";
+                                        s.statusMsg = "Error: " + err;
                                     }
                                 });
     auto tgtInp    = CommitInput(&inputs.targetV[ch],   "+0.0", onTarget);

@@ -123,6 +123,27 @@ inline std::string renameGroupChannelAlias(GroupWizardState& s, int groupIdx,
     return "";
 }
 
+inline std::string renameGroupChannelAliasForBoardChannel(psb::TopologyConfig& topo,
+                                                          const std::string& boardNickname,
+                                                          int channelIndex,
+                                                          const std::string& alias) {
+    int groupIdx = findGroupForBoardChannel(topo, boardNickname, channelIndex);
+    if (groupIdx < 0)
+        return boardChannelId(boardNickname, channelIndex) + " is not assigned to a group";
+    auto& group = topo.groups[groupIdx];
+    for (int channelIdx = 0; channelIdx < static_cast<int>(group.channels.size()); ++channelIdx) {
+        const auto& ref = group.channels[channelIdx];
+        if (ref.boardNickname == boardNickname && ref.channelIndex == channelIndex) {
+            std::string finalAlias = alias.empty() ? psb::defaultChannelAlias(channelIndex) : alias;
+            if (groupAliasInUse(group, finalAlias, channelIdx))
+                return "alias \"" + finalAlias + "\" already in use in group " + group.name;
+            group.channels[channelIdx].alias = finalAlias;
+            return "";
+        }
+    }
+    return boardChannelId(boardNickname, channelIndex) + " is not assigned to a group";
+}
+
 // Same known limitation as removeGroup above regarding selectedChannel shift.
 inline std::string removeChannelFromGroup(GroupWizardState& s, int groupIdx, int channelIdx) {
     if (groupIdx < 0 || groupIdx >= static_cast<int>(s.topo.groups.size()))

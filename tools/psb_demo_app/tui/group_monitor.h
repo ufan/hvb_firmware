@@ -56,7 +56,7 @@ inline Component makeGroupDashboard(const std::string& groupName,
                                     const std::vector<psb::GroupChannelRef>& members,
                                     std::vector<std::unique_ptr<BoardSession>>& boards,
                                     std::function<void(const std::string&, int)> jumpToBoard,
-                                    std::function<bool(const std::string&, int, const std::string&)> saveGroupAlias = {}) {
+                                    std::function<std::string(const std::string&, int, const std::string&)> saveGroupAlias = {}) {
     struct MemberRow {
         psb::GroupChannelRef ref;
         BoardSession* board = nullptr;  // nullptr if the board doesn't exist at all
@@ -66,6 +66,7 @@ inline Component makeGroupDashboard(const std::string& groupName,
         Component jumpBtn;              // only meaningful when board != nullptr
     };
     auto memberRows = std::make_shared<std::vector<MemberRow>>();
+    auto localStatusMsg = std::make_shared<std::string>();
     Components rowComps;
 
     // Safe without a lock on rt.boardsMutex — this scan, like board_switcher.h's
@@ -83,10 +84,14 @@ inline Component makeGroupDashboard(const std::string& groupName,
         mr.alias = std::make_shared<std::string>(
             ref.alias.empty() ? psb::defaultChannelAlias(ref.channelIndex) : ref.alias);
         mr.aliasInp = CommitInput(mr.alias.get(), psb::defaultChannelAlias(ref.channelIndex),
-                                  [saveGroupAlias, alias = mr.alias,
-                                   nickname = ref.boardNickname, ch = ref.channelIndex] {
-                                      if (saveGroupAlias)
-                                          saveGroupAlias(nickname, ch, *alias);
+                                  [saveGroupAlias, alias = mr.alias, localStatusMsg,
+                                   nickname = ref.boardNickname, ch = ref.channelIndex,
+                                   previousAlias = *mr.alias] {
+                                      if (!saveGroupAlias) return;
+                                      std::string err = saveGroupAlias(nickname, ch, *alias);
+                                      if (!err.empty())
+                                          *alias = previousAlias;
+                                      *localStatusMsg = err.empty() ? "" : "Error: " + err;
                                   });
         rowComps.push_back(mr.aliasInp);
         if (owner) {
@@ -180,6 +185,8 @@ inline Component makeGroupDashboard(const std::string& groupName,
             if (statusMsg.empty() && !boardMsg.empty())
                 statusMsg = mr.ref.boardNickname + ": " + boardMsg;
         }
+        if (!localStatusMsg->empty())
+            statusMsg = *localStatusMsg;
         if (statusMsg.empty())
             statusMsg = members.empty() ? "No channels in this group" : "Group ready";
 
