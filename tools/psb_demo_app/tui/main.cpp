@@ -65,10 +65,6 @@ struct Runtime {
     psb::tui::BoardSwitcher switcher;
     std::thread animThread;
     std::vector<PendingRemoval> pendingRemovals;
-    // Tracks which group dashboards are currently attached to `switcher`,
-    // purely so refreshGroupDashboards() (below) knows what to detach
-    // before reattaching fresh copies — see that function's own comment.
-    std::vector<std::string> attachedGroupNames;
     std::function<std::string(const std::string&, int, const std::string&)> saveGroupAlias;
 };
 
@@ -86,16 +82,13 @@ struct Runtime {
 // invalidating a member's row, a group added/removed/edited via the
 // wizard) with one code path instead of several hand-diffed ones.
 void refreshGroupDashboards(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractive& screen) {
-    for (const auto& name : rt.attachedGroupNames)
-        rt.switcher.detachGroup(name);
-    rt.attachedGroupNames.clear();
-
+    std::vector<std::pair<std::string, Component>> groupDashboards;
     for (const auto& g : topo.groups) {
         auto dash = psb::tui::makeGroupDashboard(g.name, g.channels, rt.boards, rt.switcher.jumpToBoard,
                                                  rt.saveGroupAlias);
-        rt.switcher.attachGroup(g.name, dash);
-        rt.attachedGroupNames.push_back(g.name);
+        groupDashboards.emplace_back(g.name, std::move(dash));
     }
+    rt.switcher.replaceGroups(std::move(groupDashboards));
     screen.PostEvent(Event::Custom);
 }
 

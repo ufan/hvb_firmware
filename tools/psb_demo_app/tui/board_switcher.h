@@ -1,6 +1,7 @@
 #pragma once
 
 #include "board_session.h"
+#include "group_view_selection.h"
 #include "tool_version.h"
 #include "tui_style.h"
 
@@ -11,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -34,6 +36,7 @@ struct BoardSwitcher {
     std::function<void(const std::string& nickname)> detachBoard;
     std::function<void(const std::string& name, Component dashboard)> attachGroup;
     std::function<void(const std::string& name)> detachGroup;
+    std::function<void(std::vector<std::pair<std::string, Component>> groups)> replaceGroups;
     // Switches the shared selection to `nickname`'s board and sets that
     // board's own activeTab to channelIndex's Channel tab (1 + channelIndex,
     // since tabTitles[0] is always "Monitor" — see board_session.h's own
@@ -366,6 +369,30 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         }
     };
 
+    auto replaceGroups = [groupNames, groupDashboardStack, groupLocalIdx, showingGroup,
+                          mainSelected, visibleContentIdx]
+                         (std::vector<std::pair<std::string, Component>> groups) {
+        std::vector<std::string> oldGroups = *groupNames;
+        bool wasShowingGroup = *showingGroup;
+        int oldGroupIdx = *groupLocalIdx;
+
+        while (!groupNames->empty()) {
+            groupDashboardStack->ChildAt(0)->Detach();
+            groupNames->erase(groupNames->begin());
+        }
+
+        std::vector<std::string> newGroups;
+        for (auto& group : groups) {
+            newGroups.push_back(group.first);
+            groupNames->push_back(std::move(group.first));
+            groupDashboardStack->Add(std::move(group.second));
+        }
+
+        reconcileGroupViewAfterReplacement(oldGroups, newGroups, wasShowingGroup, oldGroupIdx,
+                                           *groupLocalIdx, *showingGroup,
+                                           *mainSelected, *visibleContentIdx);
+    };
+
     auto jumpToBoard = [&boards, boardNames, boardLocalIdx, showingGroup, mainSelected, visibleContentIdx, &screen]
                        (const std::string& nickname, int channelIndex) {
         for (size_t i = 0; i < boardNames->size(); ++i) {
@@ -414,7 +441,8 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         screen.PostEvent(Event::Custom);
     };
 
-    return BoardSwitcher{root, attachBoard, detachBoard, attachGroup, detachGroup, jumpToBoard, jumpToGroup};
+    return BoardSwitcher{root, attachBoard, detachBoard, attachGroup, detachGroup, replaceGroups,
+                         jumpToBoard, jumpToGroup};
 }
 
 } // namespace psb::tui
