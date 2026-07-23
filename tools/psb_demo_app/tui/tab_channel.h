@@ -1,13 +1,27 @@
 #pragma once
 #include "tui_policy.h"
 #include "widgets.h"
+#include <functional>
 #include <memory>
 #include <string>
 
 namespace psb::tui {
 
-inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch,
-                                std::function<void(int, const std::string&)> saveAlias) {
+struct GroupMembership {
+    bool grouped = false;
+    std::string groupName;
+    int groupIndex = -1;
+    int memberIndex = -1;
+    std::string alias;
+};
+
+using GetGroupMembership = std::function<GroupMembership(const std::string&, int)>;
+using SaveGroupAlias = std::function<bool(const std::string&, int, const std::string&)>;
+using JumpToGroup = std::function<void(const std::string&, int)>;
+
+inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::string& boardNickname,
+                                int ch, GetGroupMembership getGroupMembership,
+                                SaveGroupAlias saveGroupAlias, JumpToGroup jumpToGroup) {
     static const std::vector<std::string> kProtModes  = {"Disabled","FlagOnly","Apply-Action"};
     static const std::vector<std::string> kIActNames  = {"None","Dis-Graceful","Dis-Immed","ForceZero"};
     static const std::vector<OutputAction> kIActVals  = {
@@ -81,14 +95,17 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch,
         } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
     };
 
-    // Same backing field (inputs.chAlias[ch]) the Monitor table's own alias
-    // Input binds to — a second widget instance pointed at the same
-    // std::string, exactly like tgtInp/ruStepInp/rdStepInp below already
-    // are relative to Monitor's vsetInp/rampUpInp/rampDownInp. Editing here
-    // shows on Monitor's next render and vice versa.
-    auto aliasInp = CommitInput(&inputs.chAlias[ch], "CH" + std::to_string(ch), [&inputs, ch, saveAlias] {
-        saveAlias(ch, inputs.chAlias[ch]);
-    });
+    auto currentMembership = std::make_shared<GroupMembership>();
+    auto groupAlias = std::make_shared<std::string>();
+    auto lastMembershipKey = std::make_shared<std::string>();
+    auto aliasInp = CommitInput(groupAlias.get(), "CH" + std::to_string(ch),
+                                [&s, boardNickname, ch, groupAlias, saveGroupAlias] {
+                                    if (!saveGroupAlias) return;
+                                    if (!saveGroupAlias(boardNickname, ch, *groupAlias)) {
+                                        std::lock_guard<std::mutex> lk(s.statusMutex);
+                                        s.statusMsg = "Error: could not save group alias";
+                                    }
+                                });
     auto tgtInp    = CommitInput(&inputs.targetV[ch],   "+0.0", onTarget);
     auto ruStepInp = CommitInput(&inputs.ruStep[ch],    "0.0",  onRampUp);
     auto rdStepInp = CommitInput(&inputs.rdStep[ch],    "0.0",  onRampDown);
@@ -204,9 +221,28 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch,
         iModeC, iActC, iThrInp, bClrAct, bClrHist,
     });
     auto visibleProtectionControls = Maybe(protectionControls, hasProtection);
+    ButtonOption groupLinkOpt{};
+    groupLinkOpt.transform = [currentMembership](const EntryState& es) -> Element {
+        std::string alias = currentMembership->alias.empty()
+            ? std::string("CH") : currentMembership->alias;
+        std::string label = currentMembership->grouped
+            ? currentMembership->groupName + "/" + alias
+            : std::string("Group");
+        auto e = text("[ " + label + " ]");
+        if (es.focused) e = e | inverted;
+        return e;
+    };
+    auto groupLinkBtn = Button("", [currentMembership, jumpToGroup] {
+        if (currentMembership->grouped && jumpToGroup)
+            jumpToGroup(currentMembership->groupName, currentMembership->memberIndex);
+    }, groupLinkOpt);
+    auto groupControls = Container::Horizontal({aliasInp, groupLinkBtn});
+    auto visibleGroupControls = Maybe(groupControls, [currentMembership] {
+        return currentMembership->grouped;
+    });
 
     auto container = Container::Vertical({
-        aliasInp,
+        visibleGroupControls,
         visibleOutputControls, visibleTgtInp,
         visibleRuStepInp, visibleRdStepInp, visibleOutputEnabledCyc,
         visibleProtectionControls,
@@ -241,6 +277,22 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch,
         const bool hasVolts = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
         const bool hasCurr  = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
 
+        GroupMembership membership = getGroupMembership ? getGroupMembership(boardNickname, ch)
+                                                        : GroupMembership{};
+        *currentMembership = membership;
+        if (membership.grouped) {
+            std::string membershipKey = membership.groupName + "/" + std::to_string(membership.memberIndex);
+            if (*lastMembershipKey != membershipKey) {
+                *groupAlias = membership.alias;
+                *lastMembershipKey = membershipKey;
+            } else if (groupAlias->empty()) {
+                *groupAlias = membership.alias;
+            }
+        } else {
+            lastMembershipKey->clear();
+            groupAlias->clear();
+        }
+
         // LiveStatus panel (single row)
         Element liveBar = text(" Not connected ") | dim;
         if (s.data.valid) {
@@ -265,14 +317,18 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch,
             liveParts.push_back(text(std::to_string(ci.retryCount)));
             liveBar = hbox(std::move(liveParts));
         }
-        auto livePanel = hbox({
-            text(" Name: ") | bold | color(Color::Cyan),
-            aliasInp->Render() | size(WIDTH, EQUAL, 14),
-            separator(),
-            text(" Live ") | bold | color(Color::Cyan),
-            separator(),
-            liveBar,
-        });
+        Elements livePanelParts;
+        if (membership.grouped) {
+            livePanelParts.push_back(text(" Alias: ") | bold | color(Color::Cyan));
+            livePanelParts.push_back(aliasInp->Render() | size(WIDTH, EQUAL, 14));
+            livePanelParts.push_back(text(" "));
+            livePanelParts.push_back(groupLinkBtn->Render());
+            livePanelParts.push_back(separator());
+        }
+        livePanelParts.push_back(text(" Live ") | bold | color(Color::Cyan));
+        livePanelParts.push_back(separator());
+        livePanelParts.push_back(liveBar);
+        auto livePanel = hbox(std::move(livePanelParts));
 
         // Control panel
         Elements controlRows;

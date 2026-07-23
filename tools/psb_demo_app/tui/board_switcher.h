@@ -39,6 +39,7 @@ struct BoardSwitcher {
     // since tabTitles[0] is always "Monitor" — see board_session.h's own
     // activeTab convention). A no-op if nickname isn't currently attached.
     std::function<void(const std::string& nickname, int channelIndex)> jumpToBoard;
+    std::function<void(const std::string& groupName, int memberIndex)> jumpToGroup;
 };
 
 // Design note — why two independent Container::Tabs, not one shared index:
@@ -400,7 +401,20 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         screen.PostEvent(Event::Custom);
     };
 
-    return BoardSwitcher{root, attachBoard, detachBoard, attachGroup, detachGroup, jumpToBoard};
+    auto jumpToGroup = [groupNames, groupLocalIdx, showingGroup, mainSelected, visibleContentIdx, &screen]
+                       (const std::string& groupName, int /*memberIndex*/) {
+        for (size_t i = 0; i < groupNames->size(); ++i) {
+            if ((*groupNames)[i] != groupName) continue;
+            *groupLocalIdx = static_cast<int>(i);
+            break;
+        }
+        *showingGroup = true;
+        *visibleContentIdx = 1;
+        *mainSelected = 3;
+        screen.PostEvent(Event::Custom);
+    };
+
+    return BoardSwitcher{root, attachBoard, detachBoard, attachGroup, detachGroup, jumpToBoard, jumpToGroup};
 }
 
 } // namespace psb::tui

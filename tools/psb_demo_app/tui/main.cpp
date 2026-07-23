@@ -69,6 +69,7 @@ struct Runtime {
     // purely so refreshGroupDashboards() (below) knows what to detach
     // before reattaching fresh copies — see that function's own comment.
     std::vector<std::string> attachedGroupNames;
+    std::function<bool(const std::string&, int, const std::string&)> saveGroupAlias;
 };
 
 // The single reconciliation point for group dashboards — called any time
@@ -90,7 +91,8 @@ void refreshGroupDashboards(Runtime& rt, const psb::TopologyConfig& topo, Screen
     rt.attachedGroupNames.clear();
 
     for (const auto& g : topo.groups) {
-        auto dash = psb::tui::makeGroupDashboard(g.name, g.channels, rt.boards, rt.switcher.jumpToBoard);
+        auto dash = psb::tui::makeGroupDashboard(g.name, g.channels, rt.boards, rt.switcher.jumpToBoard,
+                                                 rt.saveGroupAlias);
         rt.switcher.attachGroup(g.name, dash);
         rt.attachedGroupNames.push_back(g.name);
     }
@@ -330,7 +332,10 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
                   std::function<void()> openSetup, Component globalQuit, Component globalSetup,
                   Component globalGroup, Component globalPreferences,
                   Component globalConnectAll, Component globalDisconnectAll,
-                  std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
+                  std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology,
+                  psb::tui::GetGroupMembership getGroupMembership,
+                  psb::tui::SaveGroupAlias saveGroupAlias,
+                  psb::tui::JumpToGroup jumpToGroup) {
     for (const auto& busCfg : topo.buses) {
         auto bw = std::make_unique<psb::tui::BusWorker>();
         bw->bus = std::make_shared<psb::PsbSerialBus>();
@@ -356,7 +361,7 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
             b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
                 globalQuit, globalSetup, globalGroup, globalPreferences, [&rt] { return rt.boards.size(); },
-                saveChannelAliasToTopology);
+                saveChannelAliasToTopology, getGroupMembership, saveGroupAlias, jumpToGroup);
             // Same "lock even though provably safe here" reasoning as the
             // rt.boards push right below — this bw's worker thread hasn't
             // been spawned yet at this point, but locking anyway means
@@ -460,7 +465,10 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                         int timeoutMs, std::function<void()> openSetup,
                         Component globalQuit, Component globalSetup, Component globalGroup,
                         Component globalPreferences,
-                        std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
+                        std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology,
+                        psb::tui::GetGroupMembership getGroupMembership,
+                        psb::tui::SaveGroupAlias saveGroupAlias,
+                        psb::tui::JumpToGroup jumpToGroup) {
     for (const auto& busCfg : newTopo.buses) {
         psb::tui::BusWorker* existingBw = nullptr;
         for (auto& bw : rt.busWorkers)
@@ -508,7 +516,7 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
             b->dashboard = psb::tui::makeBoardDashboard(*b, *targetBw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
                 globalQuit, globalSetup, globalGroup, globalPreferences, [&rt] { return rt.boards.size(); },
-                saveChannelAliasToTopology);
+                saveChannelAliasToTopology, getGroupMembership, saveGroupAlias, jumpToGroup);
 
             // Connect + full-scan this one board right away, on its bus's
             // own worker queue — never block the UI thread, same discipline
@@ -801,13 +809,53 @@ int main(int argc, char** argv) {
         return false;
     };
 
+    auto getGroupMembership = [&topo](const std::string& boardNickname, int ch) -> psb::tui::GroupMembership {
+        for (int gi = 0; gi < static_cast<int>(topo.groups.size()); ++gi) {
+            const auto& group = topo.groups[gi];
+            for (int mi = 0; mi < static_cast<int>(group.channels.size()); ++mi) {
+                const auto& ref = group.channels[mi];
+                if (ref.boardNickname == boardNickname && ref.channelIndex == ch) {
+                    std::string alias = ref.alias.empty() ? psb::defaultChannelAlias(ch) : ref.alias;
+                    return {true, group.name, gi, mi, alias};
+                }
+            }
+        }
+        return {};
+    };
+
+    auto saveGroupChannelAliasToTopology = [&topo, &currentTopologyPath, &screen]
+                                           (const std::string& boardNickname, int ch,
+                                            const std::string& alias) -> bool {
+        for (auto& group : topo.groups) {
+            for (int mi = 0; mi < static_cast<int>(group.channels.size()); ++mi) {
+                auto& ref = group.channels[mi];
+                if (ref.boardNickname != boardNickname || ref.channelIndex != ch) continue;
+                std::string finalAlias = alias.empty() ? psb::defaultChannelAlias(ch) : alias;
+                if (psb::tui::groupAliasInUse(group, finalAlias, mi))
+                    return false;
+                ref.alias = finalAlias;
+                bool ok = topo.save(currentTopologyPath);
+                screen.PostEvent(Event::Custom);
+                return ok;
+            }
+        }
+        return false;
+    };
+    rt.saveGroupAlias = saveGroupChannelAliasToTopology;
+
+    auto jumpToGroup = [&rt](const std::string& groupName, int memberIndex) {
+        if (rt.switcher.jumpToGroup)
+            rt.switcher.jumpToGroup(groupName, memberIndex);
+    };
+
     buildRuntime(rt, topo, screen, running, g_connectTimeoutMs, autoConnectAll, openSetup,
                 bGlobalQuit, bGlobalSetup, bGlobalGroup, bGlobalPreferences, bGlobalConnectAll, bGlobalDisconnectAll,
-                saveChannelAliasToTopology);
+                saveChannelAliasToTopology, getGroupMembership, saveGroupChannelAliasToTopology, jumpToGroup);
 
     auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &currentTopologyPath, &screen, &running,
                                openSetup, bGlobalQuit, bGlobalSetup, bGlobalGroup, bGlobalPreferences,
-                               saveChannelAliasToTopology]
+                               saveChannelAliasToTopology, getGroupMembership,
+                               saveGroupChannelAliasToTopology, jumpToGroup]
                               (psb::tui::WizardOutcome outcome) {
         if (outcome == psb::tui::WizardOutcome::ConnectNow) {
             // Tear down what's gone before attaching what's new — the two
@@ -821,7 +869,9 @@ int main(int argc, char** argv) {
             // is already correct by the time either one completes.
             removeGoneBoardsLive(rt, midSessionWiz->topo, screen, running);
             applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, g_connectTimeoutMs, openSetup,
-                               bGlobalQuit, bGlobalSetup, bGlobalGroup, bGlobalPreferences, saveChannelAliasToTopology);
+                               bGlobalQuit, bGlobalSetup, bGlobalGroup, bGlobalPreferences,
+                               saveChannelAliasToTopology, getGroupMembership,
+                               saveGroupChannelAliasToTopology, jumpToGroup);
             topo = midSessionWiz->topo;
             currentTopologyPath = midSessionWiz->topologyPath;
             refreshGroupDashboards(rt, topo, screen);

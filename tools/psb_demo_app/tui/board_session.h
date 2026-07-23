@@ -304,10 +304,10 @@ inline void doPollScan(PsbBoardSession& client, ScannedData& data, ftxui::Screen
 }
 
 inline void rebuildChannelTitles(std::vector<std::string>& titles, int numChannels,
-                                 const std::string* chAlias) {
+                                 const std::string* = nullptr) {
     titles.resize(1);
     for (int ch = 0; ch < numChannels; ++ch)
-        titles.push_back(!chAlias[ch].empty() ? chAlias[ch] : "CH" + std::to_string(ch));
+        titles.push_back("CH" + std::to_string(ch));
 }
 
 } // namespace psb::tui

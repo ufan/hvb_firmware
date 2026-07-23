@@ -39,7 +39,10 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                     Component /*globalQuit*/, Component /*globalSetup*/, Component /*globalGroup*/,
                                     Component /*globalPreferences*/,
                                     std::function<size_t()> liveBoardCount,
-                                    std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology) {
+                                    std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology,
+                                    GetGroupMembership getGroupMembership = {},
+                                    SaveGroupAlias saveGroupAlias = {},
+                                    JumpToGroup jumpToGroup = {}) {
     // ---- Connection inputs (live in the connection modal) ----
     auto baudInp  = Input(&board.baudVal,  "baud");
     auto slaveInp = Input(&board.slaveVal, "id");
@@ -376,7 +379,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     // ---- Tab content: Monitor + CH0..CH15 ----
     Components tabComponents = { makeMonitorTab(*board.appState, board.inputs, board.saveChannelAlias) };
     for (int ch = 0; ch < MAX_CHANNELS; ++ch)
-        tabComponents.push_back(makeChannelTab(*board.appState, board.inputs, ch, board.saveChannelAlias));
+        tabComponents.push_back(makeChannelTab(*board.appState, board.inputs, board.nickname, ch,
+                                               getGroupMembership, saveGroupAlias, jumpToGroup));
     auto tabContent = Container::Tab(tabComponents, &board.activeTab);
 
     // ---- Status bar (connection details + SysConfig; Connect lives in the menu) ----
