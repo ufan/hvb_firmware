@@ -97,16 +97,10 @@ inline Component makeGroupDashboard(const std::string& groupName,
         rowComps.push_back(mr.aliasInp);
         if (owner) {
             mr.row = makeMonitorRow(*owner->appState, owner->inputs, ref.channelIndex);
-            ButtonOption bopt{};
-            bopt.transform = [nickname = ref.boardNickname, ch = ref.channelIndex](const EntryState& es) -> Element {
-                std::string label = nickname + "/" + psb::defaultChannelAlias(ch);
-                auto e = text("[ " + label + " ]");
-                if (es.focused) e = e | inverted;
-                return e;
-            };
-            mr.jumpBtn = Button("", [jumpToBoard, nickname = ref.boardNickname, ch = ref.channelIndex] {
+            std::string label = ref.boardNickname + "/" + psb::defaultChannelAlias(ref.channelIndex);
+            mr.jumpBtn = MouseOnlyActionButton(label, [jumpToBoard, nickname = ref.boardNickname, ch = ref.channelIndex] {
                 jumpToBoard(nickname, ch);
-            }, bopt);
+            });
             rowComps.push_back(mr.row.row);
             rowComps.push_back(mr.jumpBtn);
         }

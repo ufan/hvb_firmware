@@ -233,4 +233,10 @@ inline Component ActionButton(const std::string& label, std::function<void()> on
     return Button(label, std::move(onClick), bopt);
 }
 
+inline Component MouseOnlyActionButton(const std::string& label, std::function<void()> onClick) {
+    return CatchEvent(ActionButton(label, std::move(onClick)), [](Event e) {
+        return e == Event::Return;
+    });
+}
+
 } // namespace psb::tui

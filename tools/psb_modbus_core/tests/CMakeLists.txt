@@ -14,6 +14,7 @@ add_executable(psb_tests
     test_tui_policy.cpp
     test_tui_modbus_settings.cpp
     test_calibration.cpp
+    test_tui_widgets.cpp
     test_wizard_state.cpp
     test_group_wizard_state.cpp
     test_wizard_scan.cpp
@@ -28,6 +29,9 @@ target_include_directories(psb_tests PRIVATE
 
 target_link_libraries(psb_tests PRIVATE
     psb_modbus_core
+    ftxui::screen
+    ftxui::dom
+    ftxui::component
     Catch2::Catch2WithMain
 )
 
