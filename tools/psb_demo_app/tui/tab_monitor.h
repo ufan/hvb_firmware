@@ -35,7 +35,7 @@ inline std::vector<std::string> monitorHeaderLabels(const ScannedData& data) {
     }
     CurrentUnit iu = currentUnitFor(data.sysInfo.currentUnitExp);
     return {
-        "", "Alias", vsetEnHeader, "Status", "Vop", "V (V)",
+        "", "Name", vsetEnHeader, "Status", "Vop", "V (V)",
         std::string("I (") + iu.label + ")",
         "Ru", "Rd", std::string("Limit (") + iu.label + ")",
         "Fault", "Clear", "Save",

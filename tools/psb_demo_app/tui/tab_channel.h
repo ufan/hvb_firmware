@@ -266,7 +266,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, int ch,
             liveBar = hbox(std::move(liveParts));
         }
         auto livePanel = hbox({
-            text(" Alias: ") | bold | color(Color::Cyan),
+            text(" Name: ") | bold | color(Color::Cyan),
             aliasInp->Render() | size(WIDTH, EQUAL, 14),
             separator(),
             text(" Live ") | bold | color(Color::Cyan),
