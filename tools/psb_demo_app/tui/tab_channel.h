@@ -1,4 +1,5 @@
 #pragma once
+#include "group_alias_status.h"
 #include "tui_policy.h"
 #include "widgets.h"
 #include <functional>
@@ -102,10 +103,12 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
                                 [&s, boardNickname, ch, groupAlias, currentMembership, saveGroupAlias] {
                                     if (!saveGroupAlias) return;
                                     std::string err = saveGroupAlias(boardNickname, ch, *groupAlias);
+                                    {
+                                        std::lock_guard<std::mutex> lk(s.statusMutex);
+                                        s.statusMsg = groupAliasSaveStatus(err);
+                                    }
                                     if (!err.empty()) {
                                         *groupAlias = currentMembership->alias;
-                                        std::lock_guard<std::mutex> lk(s.statusMutex);
-                                        s.statusMsg = "Error: " + err;
                                     }
                                 });
     auto tgtInp    = CommitInput(&inputs.targetV[ch],   "+0.0", onTarget);

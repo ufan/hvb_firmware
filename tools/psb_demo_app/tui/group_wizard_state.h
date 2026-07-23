@@ -1,5 +1,6 @@
 #pragma once
 
+#include "group_alias_status.h"
 #include "topology_config.h"
 
 #include <string>

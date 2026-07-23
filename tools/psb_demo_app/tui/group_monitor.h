@@ -1,6 +1,7 @@
 #pragma once
 
 #include "board_session.h"
+#include "group_alias_status.h"
 #include "tab_monitor.h"
 #include "topology_config.h"
 
@@ -91,7 +92,7 @@ inline Component makeGroupDashboard(const std::string& groupName,
                                       std::string err = saveGroupAlias(nickname, ch, *alias);
                                       if (!err.empty())
                                           *alias = previousAlias;
-                                      *localStatusMsg = err.empty() ? "" : "Error: " + err;
+                                      *localStatusMsg = groupAliasSaveStatus(err);
                                   });
         rowComps.push_back(mr.aliasInp);
         if (owner) {

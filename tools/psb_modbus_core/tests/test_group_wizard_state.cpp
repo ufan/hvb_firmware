@@ -118,6 +118,12 @@ TEST_CASE("GroupWizardState - board channel alias rename reports duplicate and l
     CHECK(s.topo.groups[0].channels[1].alias == "guard");
 }
 
+TEST_CASE("GroupWizardState - group alias save status reports success and errors", "[group_wizard_state]") {
+    CHECK(groupAliasSaveStatus("") == "OK: group alias saved");
+    CHECK(groupAliasSaveStatus("alias \"bias\" already in use in group detector") ==
+          "Error: alias \"bias\" already in use in group detector");
+}
+
 TEST_CASE("GroupWizardState — removeChannelFromGroup rejects an out-of-range channel index", "[group_wizard_state]") {
     GroupWizardState s;
     addGroup(s, "Battery Bank");
