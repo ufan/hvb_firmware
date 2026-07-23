@@ -8,6 +8,7 @@
 #include "wizard_screen.h"
 #include "group_wizard_state.h"
 #include "group_wizard_screen.h"
+#include "group_monitor.h"
 #include "mode_select.h"
 #include "preferences_dialog.h"
 #include "app_preferences.h"
@@ -64,7 +65,37 @@ struct Runtime {
     psb::tui::BoardSwitcher switcher;
     std::thread animThread;
     std::vector<PendingRemoval> pendingRemovals;
+    // Tracks which group dashboards are currently attached to `switcher`,
+    // purely so refreshGroupDashboards() (below) knows what to detach
+    // before reattaching fresh copies — see that function's own comment.
+    std::vector<std::string> attachedGroupNames;
 };
+
+// The single reconciliation point for group dashboards — called any time
+// `rt.boards` or `topo.groups` can change while the app is running (see
+// every call site below). A group's dashboard (group_monitor.h) binds its
+// row widgets, at construction, to whichever BoardSession currently owns
+// each member's nickname — if that BoardSession is later erased from
+// rt.boards, those bindings dangle. Rather than track that precisely, every
+// group dashboard is torn down and rebuilt fresh here unconditionally: a
+// group dashboard owns no hardware connection or worker thread of its own,
+// so doing this on every board/group change is cheap and side-effect-free,
+// and it uniformly covers every way `boards` or `topo.groups` can change
+// (a board added filling in a previously-missing member, a board removed
+// invalidating a member's row, a group added/removed/edited via the
+// wizard) with one code path instead of several hand-diffed ones.
+void refreshGroupDashboards(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractive& screen) {
+    for (const auto& name : rt.attachedGroupNames)
+        rt.switcher.detachGroup(name);
+    rt.attachedGroupNames.clear();
+
+    for (const auto& g : topo.groups) {
+        auto dash = psb::tui::makeGroupDashboard(g.name, g.channels, rt.boards, rt.switcher.jumpToBoard);
+        rt.switcher.attachGroup(g.name, dash);
+        rt.attachedGroupNames.push_back(g.name);
+    }
+    screen.PostEvent(Event::Custom);
+}
 
 // The per-bus polling loop body: wait for work-or-timeout, drain the work
 // queue, then poll every connected board once. Identical for every bus
@@ -192,9 +223,11 @@ void removeBoardLive(Runtime& rt, ScreenInteractive& screen,
 // happens when a user removes the last board on a given bus).
 void drainPendingRemovals(Runtime& rt, psb::TopologyConfig& topo,
                           ScreenInteractive& screen, std::atomic<bool>& running) {
+    bool anyRemoved = false;
     for (size_t i = 0; i < rt.pendingRemovals.size(); ) {
         auto& pr = rt.pendingRemovals[i];
         if (!pr.done->load()) { ++i; continue; }
+        anyRemoved = true;
 
         rt.switcher.detachBoard(pr.board->nickname);
 
@@ -259,6 +292,7 @@ void drainPendingRemovals(Runtime& rt, psb::TopologyConfig& topo,
         rt.pendingRemovals.erase(rt.pendingRemovals.begin() + i);
         // Do not increment i — the next element (if any) shifted into this slot.
     }
+    if (anyRemoved) refreshGroupDashboards(rt, topo, screen);
 }
 
 // Builds BusWorker/BoardSession for every bus/board in `topo` into `rt`,
@@ -385,8 +419,9 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
         }
     });
 
-    rt.switcher = psb::tui::makeBoardSwitcher(rt.boards, globalQuit, globalSetup, globalGroup, globalPreferences,
-                                              globalConnectAll, globalDisconnectAll);
+    rt.switcher = psb::tui::makeBoardSwitcher(rt.boards, screen, globalQuit, globalSetup, globalGroup,
+                                              globalPreferences, globalConnectAll, globalDisconnectAll);
+    refreshGroupDashboards(rt, topo, screen);
 }
 
 void joinRuntime(Runtime& rt, std::atomic<bool>& running) {
@@ -774,6 +809,7 @@ int main(int argc, char** argv) {
                                bGlobalQuit, bGlobalSetup, bGlobalGroup, bGlobalPreferences, saveChannelAliasToTopology);
             topo = midSessionWiz->topo;
             currentTopologyPath = midSessionWiz->topologyPath;
+            refreshGroupDashboards(rt, topo, screen);
         }
         *showSetup = false;
         screen.PostEvent(Event::Custom);
@@ -847,9 +883,10 @@ int main(int argc, char** argv) {
     // calls topo.save()) would overwrite the group wizard's own already-
     // saved-to-disk groups with an in-memory topo that never learned about
     // them.
-    auto onGroupSetupFinish = [showGroupSetup, groupWiz, &topo, &currentTopologyPath, &screen] {
+    auto onGroupSetupFinish = [showGroupSetup, groupWiz, &rt, &topo, &currentTopologyPath, &screen] {
         topo = groupWiz->topo;
         currentTopologyPath = groupWiz->topologyPath;
+        refreshGroupDashboards(rt, topo, screen);
         *showGroupSetup = false;
         screen.PostEvent(Event::Custom);
     };
