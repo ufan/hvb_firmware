@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "../../psb_demo_app/tui/tui_policy.h"
+#include "tui_policy.h"
 
 using namespace psb::tui;
 

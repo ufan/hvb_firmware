@@ -1,5 +1,6 @@
 #include "psb_modbus_client.h"
 #include "topology_config.h"
+#include "topology_rules.h"
 #include "register_map.h"
 #include "board_catalog.h"
 #include "tool_version.h"
@@ -566,33 +567,16 @@ int main(int argc, char** argv) {
                     std::cerr << "Topology config error: could not parse " << topologyPath << "\n";
                     std::exit(1);
                 }
-                const psb::BoardConfig* board = nullptr;
-                const psb::BusConfig* bus = nullptr;
-                if (!boardNickname.empty()) {
-                    for (const auto& b : topo->buses) {
-                        for (const auto& brd : b.boards) {
-                            if (brd.nickname == boardNickname) { board = &brd; bus = &b; break; }
-                        }
-                        if (board) break;
-                    }
-                    if (!board) {
-                        std::cerr << "Topology config error: no board named '" << boardNickname
-                                  << "' in " << topologyPath << "\n";
-                        std::exit(1);
-                    }
-                } else if (topo->totalBoardCount() == 1) {
-                    bus = &topo->buses.front();
-                    board = &bus->boards.front();
-                } else if (topo->totalBoardCount() > 1) {
-                    std::cerr << "Topology config " << topologyPath << " has " << topo->totalBoardCount()
-                              << " boards — specify one with --board <nickname>\n";
+                psb::BoardEndpoint endpoint;
+                std::string endpointErr = psb::resolveBoardEndpoint(*topo, boardNickname, endpoint);
+                if (!endpointErr.empty()) {
+                    std::cerr << "Topology config error: " << endpointErr
+                              << " in " << topologyPath << "\n";
                     std::exit(1);
                 }
-                if (board && bus) {
-                    port = bus->port;
-                    baud = bus->baudRate;
-                    slaveId = board->slaveId;
-                }
+                port = endpoint.port;
+                baud = endpoint.baudRate;
+                slaveId = endpoint.slaveId;
             } else if (topologyExplicit) {
                 std::cerr << "Topology config error: " << topologyPath << " not found\n";
                 std::exit(1);

@@ -54,3 +54,51 @@ TEST_CASE("TopologyRules - availableGroupChannels omits assigned channels", "[to
     CHECK(available[1].channelIndex == 0);
     CHECK(available[1].alias == "CH0");
 }
+
+TEST_CASE("TopologyRules - resolveBoardEndpoint selects the only board without a nickname", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    psb::BusConfig bus;
+    bus.name = "bus1";
+    bus.port = "/dev/ttyUSB0";
+    bus.baudRate = 9600;
+    psb::BoardConfig board;
+    board.nickname = "hvb-left";
+    board.slaveId = 7;
+    bus.boards.push_back(board);
+    topo.buses.push_back(bus);
+
+    psb::BoardEndpoint endpoint;
+    CHECK(psb::resolveBoardEndpoint(topo, "", endpoint).empty());
+    CHECK(endpoint.port == "/dev/ttyUSB0");
+    CHECK(endpoint.baudRate == 9600);
+    CHECK(endpoint.slaveId == 7);
+    CHECK(endpoint.boardNickname == "hvb-left");
+}
+
+TEST_CASE("TopologyRules - resolveBoardEndpoint requires nickname for multi-board topology", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    psb::BusConfig bus;
+    bus.name = "bus1";
+    bus.port = "/dev/ttyUSB0";
+    bus.boards.push_back({"hvb-left", 1, {}});
+    bus.boards.push_back({"hvb-right", 2, {}});
+    topo.buses.push_back(bus);
+
+    psb::BoardEndpoint endpoint;
+    CHECK(psb::resolveBoardEndpoint(topo, "", endpoint) ==
+          "topology has 2 boards; specify one with --board <nickname>");
+    CHECK(psb::resolveBoardEndpoint(topo, "hvb-right", endpoint).empty());
+    CHECK(endpoint.slaveId == 2);
+}
+
+TEST_CASE("TopologyRules - resolveBoardEndpoint reports missing boards", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    psb::BusConfig bus;
+    bus.name = "bus1";
+    bus.port = "/dev/ttyUSB0";
+    bus.boards.push_back({"hvb-left", 1, {}});
+    topo.buses.push_back(bus);
+
+    psb::BoardEndpoint endpoint;
+    CHECK(psb::resolveBoardEndpoint(topo, "missing", endpoint) == "no board named 'missing'");
+}

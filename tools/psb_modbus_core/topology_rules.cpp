@@ -206,4 +206,45 @@ std::vector<GroupChannelRef> availableGroupChannels(const TopologyConfig& topo,
     return available;
 }
 
+std::string resolveBoardEndpoint(const TopologyConfig& topo,
+                                 const std::string& boardNickname,
+                                 BoardEndpoint& out) {
+    const BoardConfig* foundBoard = nullptr;
+    const BusConfig* foundBus = nullptr;
+
+    if (!boardNickname.empty()) {
+        for (const auto& bus : topo.buses) {
+            for (const auto& board : bus.boards) {
+                if (board.nickname == boardNickname) {
+                    foundBoard = &board;
+                    foundBus = &bus;
+                    break;
+                }
+            }
+            if (foundBoard) break;
+        }
+        if (!foundBoard)
+            return "no board named '" + boardNickname + "'";
+    } else if (topo.totalBoardCount() == 1) {
+        for (const auto& bus : topo.buses) {
+            if (!bus.boards.empty()) {
+                foundBus = &bus;
+                foundBoard = &bus.boards.front();
+                break;
+            }
+        }
+    } else if (topo.totalBoardCount() > 1) {
+        return "topology has " + std::to_string(topo.totalBoardCount()) +
+               " boards; specify one with --board <nickname>";
+    } else {
+        return "topology has no boards configured";
+    }
+
+    out.port = foundBus->port;
+    out.baudRate = foundBus->baudRate;
+    out.slaveId = foundBoard->slaveId;
+    out.boardNickname = foundBoard->nickname;
+    return "";
+}
+
 } // namespace psb

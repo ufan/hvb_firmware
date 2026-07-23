@@ -12,6 +12,13 @@ struct LiveBoardInfo {
     int numChannels = 0;
 };
 
+struct BoardEndpoint {
+    std::string port;
+    int baudRate = 115200;
+    int slaveId = 1;
+    std::string boardNickname;
+};
+
 bool boardNicknameInUse(const TopologyConfig& topo, const std::string& nickname);
 bool slaveIdInUse(const BusConfig& bus, int slaveId);
 bool groupNameInUse(const TopologyConfig& topo, const std::string& name);
@@ -51,5 +58,8 @@ std::string renameGroupChannelAliasForBoardChannel(TopologyConfig& topo,
 std::string removeChannelFromGroup(TopologyConfig& topo, int groupIdx, int channelIdx);
 std::vector<GroupChannelRef> availableGroupChannels(const TopologyConfig& topo,
                                                     const std::vector<LiveBoardInfo>& liveBoards);
+std::string resolveBoardEndpoint(const TopologyConfig& topo,
+                                 const std::string& boardNickname,
+                                 BoardEndpoint& out);
 
 } // namespace psb

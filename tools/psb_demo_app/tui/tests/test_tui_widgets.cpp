@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
-#include "../../psb_demo_app/tui/app_window_layout.h"
-#include "../../psb_demo_app/tui/channel_live_layout.h"
-#include "../../psb_demo_app/tui/group_view_selection.h"
-#include "../../psb_demo_app/tui/widgets.h"
+#include "app_window_layout.h"
+#include "channel_live_layout.h"
+#include "group_view_selection.h"
+#include "widgets.h"
 
 using namespace psb::tui;
 using namespace ftxui;

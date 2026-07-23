@@ -3,7 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../../psb_demo_app/tui/modbus_settings.h"
+#include "modbus_settings.h"
 
 #include <string>
 #include <utility>

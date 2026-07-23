@@ -1,4 +1,4 @@
-#include "../../psb_demo_app/tui/wizard_scan.h"
+#include "wizard_scan.h"
 #include "register_map.h"
 
 #include <catch2/catch_test_macros.hpp>

@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "../../psb_demo_app/tui/tui_format.h"
+#include "tui_format.h"
 
 using namespace psb::tui;
 using namespace psb;

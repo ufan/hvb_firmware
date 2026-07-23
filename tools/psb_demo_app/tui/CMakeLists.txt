@@ -16,3 +16,5 @@ endif()
 set_target_properties(psb_demo_tui PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin"
 )
+
+add_subdirectory(tests)
