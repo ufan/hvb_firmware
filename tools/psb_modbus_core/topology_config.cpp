@@ -70,6 +70,9 @@ std::optional<TopologyConfig> TopologyConfig::load(const std::string& path) {
                         GroupChannelRef ref;
                         ref.boardNickname = (*chTbl)["board"].value_or(std::string(""));
                         ref.channelIndex = static_cast<int>((*chTbl)["channel"].value_or(0));
+                        ref.alias = (*chTbl)["alias"].value_or(std::string(""));
+                        if (ref.alias.empty())
+                            ref.alias = defaultChannelAlias(ref.channelIndex);
                         group.channels.push_back(std::move(ref));
                     }
                 }
@@ -120,6 +123,8 @@ bool TopologyConfig::save(const std::string& path) const {
                     toml::table chTbl;
                     chTbl.insert_or_assign("board", ch.boardNickname);
                     chTbl.insert_or_assign("channel", ch.channelIndex);
+                    chTbl.insert_or_assign("alias",
+                                           ch.alias.empty() ? defaultChannelAlias(ch.channelIndex) : ch.alias);
                     chArr.push_back(std::move(chTbl));
                 }
                 groupTbl.insert_or_assign("channel", std::move(chArr));

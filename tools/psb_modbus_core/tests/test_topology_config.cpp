@@ -104,8 +104,8 @@ TEST_CASE("TopologyConfig — round trip preserves groups and their member chann
 
     psb::GroupConfig group;
     group.name = "Battery Bank";
-    group.channels.push_back({"hvb-bench", 0});
-    group.channels.push_back({"hvb-bench-2", 3});
+    group.channels.push_back({"hvb-bench", 0, "CH0"});
+    group.channels.push_back({"hvb-bench-2", 3, "CH3"});
     cfg.groups.push_back(group);
 
     psb::GroupConfig group2;
@@ -133,6 +133,54 @@ TEST_CASE("TopologyConfig — round trip preserves groups and their member chann
     // Buses/boards from the same file must still round-trip untouched.
     REQUIRE(loaded->buses.size() == 1);
     CHECK(loaded->buses[0].boards.size() == 2);
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("TopologyConfig - round trip preserves group channel aliases", "[topology_config]") {
+    psb::TopologyConfig cfg;
+    psb::BusConfig bus;
+    bus.name = "bus1";
+    bus.port = "/dev/ttyUSB0";
+    bus.baudRate = 115200;
+    bus.boards.push_back({"hvb-left", 1});
+    cfg.buses.push_back(bus);
+
+    psb::GroupConfig group;
+    group.name = "detector";
+    group.channels.push_back({"hvb-left", 0, "bias"});
+    group.channels.push_back({"hvb-left", 1, "guard"});
+    cfg.groups.push_back(group);
+
+    const std::string path = "/tmp/psb_topology_group_alias_roundtrip.toml";
+    std::remove(path.c_str());
+    REQUIRE(cfg.save(path));
+
+    auto loaded = psb::TopologyConfig::load(path);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->groups.size() == 1);
+    REQUIRE(loaded->groups[0].channels.size() == 2);
+    CHECK(loaded->groups[0].channels[0].alias == "bias");
+    CHECK(loaded->groups[0].channels[1].alias == "guard");
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("TopologyConfig - legacy group channel without alias loads as CHn", "[topology_config]") {
+    const std::string path = "/tmp/psb_topology_legacy_group_alias.toml";
+    {
+        std::ofstream ofs(path);
+        ofs << "[[bus]]\nname = 'bus1'\nport = '/dev/ttyUSB0'\nbaud_rate = 115200\n"
+               "  [[bus.board]]\n  nickname = 'hvb-left'\n  slave_id = 1\n"
+               "[[group]]\nname = 'detector'\n"
+               "  [[group.channel]]\n  board = 'hvb-left'\n  channel = 2\n";
+    }
+
+    auto loaded = psb::TopologyConfig::load(path);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->groups.size() == 1);
+    REQUIRE(loaded->groups[0].channels.size() == 1);
+    CHECK(loaded->groups[0].channels[0].alias == "CH2");
 
     std::remove(path.c_str());
 }

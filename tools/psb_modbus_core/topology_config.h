@@ -29,12 +29,17 @@ struct BusConfig {
 struct GroupChannelRef {
     std::string boardNickname;
     int channelIndex = 0;
+    std::string alias;
 };
 
 struct GroupConfig {
     std::string name;
     std::vector<GroupChannelRef> channels;
 };
+
+inline std::string defaultChannelAlias(int channelIndex) {
+    return "CH" + std::to_string(channelIndex);
+}
 
 // Supersedes ConfigManager (~/.psb_demo_app.toml, single board/bus only).
 // See docs/superpowers/specs/2026-07-20-multi-board-topology-design.md.
