@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include "../../psb_demo_app/tui/app_window_layout.h"
 #include "../../psb_demo_app/tui/channel_live_layout.h"
 #include "../../psb_demo_app/tui/group_view_selection.h"
 #include "../../psb_demo_app/tui/widgets.h"
@@ -12,6 +13,10 @@ TEST_CASE("MouseOnlyActionButton consumes Return without firing action", "[tui_w
 
     CHECK(button->OnEvent(Event::Return));
     CHECK_FALSE(fired);
+}
+
+TEST_CASE("App window has a minimum width for dense dashboard rows", "[tui_widgets]") {
+    CHECK(appWindowMinWidthColumns() >= 132);
 }
 
 TEST_CASE("Group dashboard replacement preserves current group view", "[tui_widgets]") {

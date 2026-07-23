@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app_window_layout.h"
 #include "board_session.h"
 #include "group_view_selection.h"
 #include "tool_version.h"
@@ -268,7 +269,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
                 globalMenuBarEl,
                 separatorDouble(),
                 visibleContentStack->Render() | flex,
-            });
+            }) | size(WIDTH, GREATER_THAN, appWindowMinWidthColumns());
         }
         // Title bold (not dim — a section title should stand out, the
         // opposite of Menu's own dim-when-unselected row styling) plus a
@@ -308,7 +309,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
                 separatorDouble(),
                 visibleContentStack->Render() | flex,
             }) | flex,
-        }) | flex;
+        }) | flex | size(WIDTH, GREATER_THAN, appWindowMinWidthColumns());
     });
 
     auto attachBoard = [boardNames, boardDashboardStack](const std::string& nickname, Component dashboard) {
