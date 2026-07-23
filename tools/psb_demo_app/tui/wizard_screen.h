@@ -5,6 +5,7 @@
 #include "widgets.h"
 #include "tui_policy.h"
 #include "psb_serial_bus.h"
+#include "topology_rules.h"
 #include "topology_path_picker.h"
 
 #include <ftxui/component/component.hpp>
@@ -127,9 +128,10 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
         // when the list is empty (dropdown hidden, nothing to select).
         std::string port = (*portIdx >= 0 && *portIdx < static_cast<int>(portList->size()))
             ? (*portList)[*portIdx] : *newBusPort;
-        std::string err = addBus(s, *newBusName, port, baud);
+        std::string err = psb::addBus(s.topo, *newBusName, port, baud);
         s.statusMsg = err.empty() ? "" : "Error: " + err;
         if (err.empty()) {
+            s.dirty = true;
             rebuildBusNames();
             *showAddBusPtr = false;
             newBusName->clear(); newBusPort->clear(); *newBusBaud = "115200";
@@ -220,8 +222,9 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
                                                   rebuildBoardNames, filterAlreadyAdded, &screen] {
         int slave = 1;
         try { slave = std::stoi(*newBoardSlave); } catch (...) {}
-        std::string err = addBoard(s, s.selectedBus, *newBoardNick, slave);
+        std::string err = psb::addBoard(s.topo, s.selectedBus, *newBoardNick, slave);
         if (err.empty()) {
+            s.dirty = true;
             s.statusMsg = "Added " + *newBoardNick + " (#" + std::to_string(slave) + ").";
             rebuildBoardNames();
             filterAlreadyAdded();
@@ -402,7 +405,13 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     });
     auto bRemoveBus = ActionButton("Remove Bus", [&s, rebuildBusNames, rebuildBoardNames, &screen] {
         if (s.selectedBus < 0) return;
-        s.statusMsg = removeBus(s, s.selectedBus);
+        s.statusMsg = psb::removeBus(s.topo, s.selectedBus);
+        if (s.statusMsg.empty()) {
+            if (s.selectedBus >= static_cast<int>(s.topo.buses.size()))
+                s.selectedBus = static_cast<int>(s.topo.buses.size()) - 1;
+            s.selectedBoard = -1;
+            s.dirty = true;
+        }
         rebuildBusNames(); rebuildBoardNames();
         screen.PostEvent(Event::Custom);
     });
@@ -433,7 +442,13 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     auto addBoardEnabled = Maybe(bAddBoard, busInRange);
     auto bRemoveBoard = ActionButton("Remove Board", [&s, rebuildBoardNames, &screen] {
         if (s.selectedBus < 0 || s.selectedBoard < 0) return;
-        s.statusMsg = removeBoard(s, s.selectedBus, s.selectedBoard);
+        s.statusMsg = psb::removeBoard(s.topo, s.selectedBus, s.selectedBoard);
+        if (s.statusMsg.empty()) {
+            auto& boards = s.topo.buses[s.selectedBus].boards;
+            if (s.selectedBoard >= static_cast<int>(boards.size()))
+                s.selectedBoard = static_cast<int>(boards.size()) - 1;
+            s.dirty = true;
+        }
         rebuildBoardNames();
         screen.PostEvent(Event::Custom);
     });

@@ -3,6 +3,7 @@
 #include "topology_config.h"
 
 #include <string>
+#include <vector>
 
 namespace psb {
 
@@ -16,5 +17,16 @@ int findGroupForBoardChannel(const TopologyConfig& topo,
 bool groupAliasInUse(const GroupConfig& group,
                      const std::string& alias,
                      int exceptChannelIdx = -1);
+
+std::string addBus(TopologyConfig& topo,
+                   const std::string& name,
+                   const std::string& port,
+                   int baud);
+std::string removeBus(TopologyConfig& topo, int busIdx);
+std::string addBoard(TopologyConfig& topo,
+                     int busIdx,
+                     const std::string& nickname,
+                     int slaveId);
+std::string removeBoard(TopologyConfig& topo, int busIdx, int boardIdx);
 
 } // namespace psb

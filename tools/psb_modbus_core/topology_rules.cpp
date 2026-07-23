@@ -1,5 +1,7 @@
 #include "topology_rules.h"
 
+#include <utility>
+
 namespace psb {
 
 bool boardNicknameInUse(const TopologyConfig& topo, const std::string& nickname) {
@@ -45,6 +47,58 @@ bool groupAliasInUse(const GroupConfig& group,
             return true;
     }
     return false;
+}
+
+std::string addBus(TopologyConfig& topo,
+                   const std::string& name,
+                   const std::string& port,
+                   int baud) {
+    if (port.empty()) return "port required";
+    for (const auto& bus : topo.buses)
+        if (bus.port == port) return "port already in use by bus \"" + bus.name + "\"";
+
+    BusConfig bus;
+    bus.name = name.empty() ? ("bus" + std::to_string(topo.buses.size() + 1)) : name;
+    bus.port = port;
+    bus.baudRate = baud;
+    topo.buses.push_back(std::move(bus));
+    return "";
+}
+
+std::string removeBus(TopologyConfig& topo, int busIdx) {
+    if (busIdx < 0 || busIdx >= static_cast<int>(topo.buses.size()))
+        return "invalid bus index";
+    topo.buses.erase(topo.buses.begin() + busIdx);
+    return "";
+}
+
+std::string addBoard(TopologyConfig& topo,
+                     int busIdx,
+                     const std::string& nickname,
+                     int slaveId) {
+    if (busIdx < 0 || busIdx >= static_cast<int>(topo.buses.size()))
+        return "invalid bus index";
+    if (nickname.empty()) return "nickname required";
+    if (slaveId < 0 || slaveId > 247) return "slave ID must be 0-247";
+    if (boardNicknameInUse(topo, nickname)) return "nickname \"" + nickname + "\" already in use";
+    if (slaveIdInUse(topo.buses[busIdx], slaveId))
+        return "slave ID " + std::to_string(slaveId) + " already used on this bus";
+
+    BoardConfig board;
+    board.nickname = nickname;
+    board.slaveId = slaveId;
+    topo.buses[busIdx].boards.push_back(std::move(board));
+    return "";
+}
+
+std::string removeBoard(TopologyConfig& topo, int busIdx, int boardIdx) {
+    if (busIdx < 0 || busIdx >= static_cast<int>(topo.buses.size()))
+        return "invalid bus index";
+    auto& boards = topo.buses[busIdx].boards;
+    if (boardIdx < 0 || boardIdx >= static_cast<int>(boards.size()))
+        return "invalid board index";
+    boards.erase(boards.begin() + boardIdx);
+    return "";
 }
 
 } // namespace psb

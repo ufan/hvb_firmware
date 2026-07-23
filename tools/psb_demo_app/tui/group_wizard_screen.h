@@ -129,7 +129,7 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
         for (const auto& lb : live) {
             bool hasAvailable = false;
             for (int ch = 0; ch < lb.numChannels; ++ch) {
-                if (findGroupForBoardChannel(s.topo, lb.nickname, ch) < 0) {
+                if (psb::tui::findGroupForBoardChannel(s.topo, lb.nickname, ch) < 0) {
                     hasAvailable = true;
                     break;
                 }
@@ -157,7 +157,7 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
         for (const auto& lb : live) {
             if (lb.nickname != selectedBoard) continue;
             for (int ch = 0; ch < lb.numChannels; ++ch) {
-                if (findGroupForBoardChannel(s.topo, lb.nickname, ch) >= 0) continue;
+                if (psb::tui::findGroupForBoardChannel(s.topo, lb.nickname, ch) >= 0) continue;
                 std::string alias = psb::defaultChannelAlias(ch);
                 channelPickerLabels->push_back(alias);
                 channelPickerRefs->push_back({lb.nickname, ch, alias});
