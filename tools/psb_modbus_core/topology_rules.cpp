@@ -101,4 +101,96 @@ std::string removeBoard(TopologyConfig& topo, int busIdx, int boardIdx) {
     return "";
 }
 
+std::string addGroup(TopologyConfig& topo, const std::string& name) {
+    if (name.empty()) return "group name required";
+    if (groupNameInUse(topo, name)) return "group name \"" + name + "\" already in use";
+
+    GroupConfig group;
+    group.name = name;
+    topo.groups.push_back(std::move(group));
+    return "";
+}
+
+std::string removeGroup(TopologyConfig& topo, int groupIdx) {
+    if (groupIdx < 0 || groupIdx >= static_cast<int>(topo.groups.size()))
+        return "invalid group index";
+    topo.groups.erase(topo.groups.begin() + groupIdx);
+    return "";
+}
+
+std::string addChannelToGroup(TopologyConfig& topo,
+                              int groupIdx,
+                              const std::string& boardNickname,
+                              int channelIndex,
+                              const std::string& alias) {
+    if (groupIdx < 0 || groupIdx >= static_cast<int>(topo.groups.size()))
+        return "invalid group index";
+    if (boardNickname.empty()) return "board required";
+    if (channelIndex < 0) return "invalid channel index";
+
+    std::string finalAlias = alias.empty() ? defaultChannelAlias(channelIndex) : alias;
+    int assignedGroup = findGroupForBoardChannel(topo, boardNickname, channelIndex);
+    if (assignedGroup >= 0)
+        return boardChannelId(boardNickname, channelIndex) + " already assigned to group " +
+               topo.groups[assignedGroup].name;
+
+    auto& group = topo.groups[groupIdx];
+    if (groupAliasInUse(group, finalAlias))
+        return "alias \"" + finalAlias + "\" already in use in group " + group.name;
+
+    GroupChannelRef ref;
+    ref.boardNickname = boardNickname;
+    ref.channelIndex = channelIndex;
+    ref.alias = finalAlias;
+    group.channels.push_back(std::move(ref));
+    return "";
+}
+
+std::string renameGroupChannelAlias(TopologyConfig& topo,
+                                    int groupIdx,
+                                    int channelIdx,
+                                    const std::string& alias) {
+    if (groupIdx < 0 || groupIdx >= static_cast<int>(topo.groups.size()))
+        return "invalid group index";
+
+    auto& group = topo.groups[groupIdx];
+    if (channelIdx < 0 || channelIdx >= static_cast<int>(group.channels.size()))
+        return "invalid channel index";
+
+    const auto& ref = group.channels[channelIdx];
+    std::string finalAlias = alias.empty() ? defaultChannelAlias(ref.channelIndex) : alias;
+    if (groupAliasInUse(group, finalAlias, channelIdx))
+        return "alias \"" + finalAlias + "\" already in use in group " + group.name;
+
+    group.channels[channelIdx].alias = finalAlias;
+    return "";
+}
+
+std::string renameGroupChannelAliasForBoardChannel(TopologyConfig& topo,
+                                                   const std::string& boardNickname,
+                                                   int channelIndex,
+                                                   const std::string& alias) {
+    int groupIdx = findGroupForBoardChannel(topo, boardNickname, channelIndex);
+    if (groupIdx < 0)
+        return boardChannelId(boardNickname, channelIndex) + " is not assigned to a group";
+
+    auto& group = topo.groups[groupIdx];
+    for (int channelIdx = 0; channelIdx < static_cast<int>(group.channels.size()); ++channelIdx) {
+        const auto& ref = group.channels[channelIdx];
+        if (ref.boardNickname == boardNickname && ref.channelIndex == channelIndex)
+            return renameGroupChannelAlias(topo, groupIdx, channelIdx, alias);
+    }
+    return boardChannelId(boardNickname, channelIndex) + " is not assigned to a group";
+}
+
+std::string removeChannelFromGroup(TopologyConfig& topo, int groupIdx, int channelIdx) {
+    if (groupIdx < 0 || groupIdx >= static_cast<int>(topo.groups.size()))
+        return "invalid group index";
+    auto& channels = topo.groups[groupIdx].channels;
+    if (channelIdx < 0 || channelIdx >= static_cast<int>(channels.size()))
+        return "invalid channel index";
+    channels.erase(channels.begin() + channelIdx);
+    return "";
+}
+
 } // namespace psb

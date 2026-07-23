@@ -1,6 +1,7 @@
 #pragma once
 
 #include "group_wizard_state.h"
+#include "topology_rules.h"
 #include "widgets.h"
 
 #include <ftxui/component/component.hpp>
@@ -28,7 +29,7 @@ using GetLiveBoards = std::function<LiveBoards()>;
 
 inline std::string groupChannelDisplayName(const GroupChannelRef& ref) {
     std::string alias = ref.alias.empty() ? psb::defaultChannelAlias(ref.channelIndex) : ref.alias;
-    return alias + " -> " + boardChannelId(ref.boardNickname, ref.channelIndex);
+    return alias + " -> " + psb::boardChannelId(ref.boardNickname, ref.channelIndex);
 }
 
 // Builds the Group wizard's Component — a group name list plus Add/Remove
@@ -80,9 +81,10 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
     auto showAddGroupPtr = std::make_shared<bool>(false);
     auto groupNameInp = Input(newGroupName.get(), "group name");
     auto bAddGroupConfirm = ActionButton("Add", [&s, newGroupName, rebuildGroupNames, showAddGroupPtr, &screen] {
-        std::string err = addGroup(s, *newGroupName);
+        std::string err = psb::addGroup(s.topo, *newGroupName);
         s.statusMsg = err.empty() ? "" : "Error: " + err;
         if (err.empty()) {
+            s.dirty = true;
             rebuildGroupNames();
             *showAddGroupPtr = false;
             newGroupName->clear();
@@ -129,7 +131,7 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
         for (const auto& lb : live) {
             bool hasAvailable = false;
             for (int ch = 0; ch < lb.numChannels; ++ch) {
-                if (psb::tui::findGroupForBoardChannel(s.topo, lb.nickname, ch) < 0) {
+                if (psb::findGroupForBoardChannel(s.topo, lb.nickname, ch) < 0) {
                     hasAvailable = true;
                     break;
                 }
@@ -157,7 +159,7 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
         for (const auto& lb : live) {
             if (lb.nickname != selectedBoard) continue;
             for (int ch = 0; ch < lb.numChannels; ++ch) {
-                if (psb::tui::findGroupForBoardChannel(s.topo, lb.nickname, ch) >= 0) continue;
+                if (psb::findGroupForBoardChannel(s.topo, lb.nickname, ch) >= 0) continue;
                 std::string alias = psb::defaultChannelAlias(ch);
                 channelPickerLabels->push_back(alias);
                 channelPickerRefs->push_back({lb.nickname, ch, alias});
@@ -172,7 +174,7 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
             *channelPickerIdx = previousChannelIdx;
         if (*channelPickerIdx >= 0 && *channelPickerIdx < static_cast<int>(channelPickerRefs->size())) {
             const auto& selectedRef = channelPickerRefs->at(*channelPickerIdx);
-            std::string selectedKey = boardChannelId(selectedRef.boardNickname, selectedRef.channelIndex);
+            std::string selectedKey = psb::boardChannelId(selectedRef.boardNickname, selectedRef.channelIndex);
             if (*lastAliasRefKey != selectedKey) {
                 *newChannelAlias = selectedRef.alias;
                 *lastAliasRefKey = selectedKey;
@@ -192,10 +194,11 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
         int i = *channelPickerIdx;
         if (i < 0 || i >= static_cast<int>(channelPickerRefs->size())) return;
         const auto& ref = (*channelPickerRefs)[i];
-        std::string err = addChannelToGroup(s, s.selectedGroup, ref.boardNickname, ref.channelIndex,
-                                            *newChannelAlias);
+        std::string err = psb::addChannelToGroup(s.topo, s.selectedGroup, ref.boardNickname,
+                                                 ref.channelIndex, *newChannelAlias);
         s.statusMsg = err.empty() ? "" : "Error: " + err;
         if (err.empty()) {
+            s.dirty = true;
             newChannelAlias->clear();
             rebuildChannelPicker();
             rebuildChannelLabels();
@@ -236,7 +239,13 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
     });
     auto bRemoveGroup = ActionButton("Remove Group", [&s, rebuildGroupNames, &screen] {
         if (s.selectedGroup < 0) return;
-        s.statusMsg = removeGroup(s, s.selectedGroup);
+        s.statusMsg = psb::removeGroup(s.topo, s.selectedGroup);
+        if (s.statusMsg.empty()) {
+            if (s.selectedGroup >= static_cast<int>(s.topo.groups.size()))
+                s.selectedGroup = static_cast<int>(s.topo.groups.size()) - 1;
+            s.selectedChannel = -1;
+            s.dirty = true;
+        }
         rebuildGroupNames();
         screen.PostEvent(Event::Custom);
     });
@@ -253,7 +262,13 @@ inline Component makeGroupWizardScreen(GroupWizardState& s, ScreenInteractive& s
     auto addChannelEnabled = Maybe(bAddChannel, groupInRange);
     auto bRemoveChannel = ActionButton("Remove Channel", [&s, rebuildChannelLabels, &screen] {
         if (s.selectedGroup < 0 || s.selectedChannel < 0) return;
-        s.statusMsg = removeChannelFromGroup(s, s.selectedGroup, s.selectedChannel);
+        s.statusMsg = psb::removeChannelFromGroup(s.topo, s.selectedGroup, s.selectedChannel);
+        if (s.statusMsg.empty()) {
+            auto& channels = s.topo.groups[s.selectedGroup].channels;
+            if (s.selectedChannel >= static_cast<int>(channels.size()))
+                s.selectedChannel = static_cast<int>(channels.size()) - 1;
+            s.dirty = true;
+        }
         rebuildChannelLabels();
         screen.PostEvent(Event::Custom);
     });

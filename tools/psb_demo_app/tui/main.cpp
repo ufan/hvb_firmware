@@ -1,6 +1,7 @@
 #include "psb_serial_bus.h"
 #include "psb_board_session.h"
 #include "topology_config.h"
+#include "topology_rules.h"
 #include "board_session.h"
 #include "board_dashboard.h"
 #include "board_switcher.h"
@@ -769,7 +770,7 @@ int main(int argc, char** argv) {
     auto saveGroupChannelAliasToTopology = [&rt, &topo, &currentTopologyPath, &screen]
                                            (const std::string& boardNickname, int ch,
                                             const std::string& alias) -> std::string {
-        std::string err = psb::tui::renameGroupChannelAliasForBoardChannel(topo, boardNickname, ch, alias);
+        std::string err = psb::renameGroupChannelAliasForBoardChannel(topo, boardNickname, ch, alias);
         if (!err.empty()) {
             screen.PostEvent(Event::Custom);
             return err;

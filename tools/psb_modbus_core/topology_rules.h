@@ -28,5 +28,21 @@ std::string addBoard(TopologyConfig& topo,
                      const std::string& nickname,
                      int slaveId);
 std::string removeBoard(TopologyConfig& topo, int busIdx, int boardIdx);
+std::string addGroup(TopologyConfig& topo, const std::string& name);
+std::string removeGroup(TopologyConfig& topo, int groupIdx);
+std::string addChannelToGroup(TopologyConfig& topo,
+                              int groupIdx,
+                              const std::string& boardNickname,
+                              int channelIndex,
+                              const std::string& alias);
+std::string renameGroupChannelAlias(TopologyConfig& topo,
+                                    int groupIdx,
+                                    int channelIdx,
+                                    const std::string& alias);
+std::string renameGroupChannelAliasForBoardChannel(TopologyConfig& topo,
+                                                   const std::string& boardNickname,
+                                                   int channelIndex,
+                                                   const std::string& alias);
+std::string removeChannelFromGroup(TopologyConfig& topo, int groupIdx, int channelIdx);
 
 } // namespace psb

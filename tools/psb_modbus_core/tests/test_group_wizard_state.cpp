@@ -1,159 +1,122 @@
+#include "topology_rules.h"
+
 #include <catch2/catch_test_macros.hpp>
-#include "../../psb_demo_app/tui/group_wizard_state.h"
 
-using namespace psb::tui;
-
-TEST_CASE("GroupWizardState — addGroup rejects an empty name", "[group_wizard_state]") {
-    GroupWizardState s;
-    CHECK(addGroup(s, "") == "group name required");
-    CHECK(s.topo.groups.empty());
+TEST_CASE("TopologyRules - addGroup rejects an empty name", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    CHECK(psb::addGroup(topo, "") == "group name required");
+    CHECK(topo.groups.empty());
 }
 
-TEST_CASE("GroupWizardState — addGroup rejects a duplicate name", "[group_wizard_state]") {
-    GroupWizardState s;
-    REQUIRE(addGroup(s, "Battery Bank").empty());
-    CHECK(addGroup(s, "Battery Bank") == "group name \"Battery Bank\" already in use");
-    CHECK(s.topo.groups.size() == 1);
+TEST_CASE("TopologyRules - addGroup rejects a duplicate name", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addGroup(topo, "Battery Bank").empty());
+    CHECK(psb::addGroup(topo, "Battery Bank") == "group name \"Battery Bank\" already in use");
+    CHECK(topo.groups.size() == 1);
 }
 
-TEST_CASE("GroupWizardState — successful addGroup marks the state dirty", "[group_wizard_state]") {
-    GroupWizardState s;
-    CHECK_FALSE(s.dirty);
-    addGroup(s, "Battery Bank");
-    CHECK(s.dirty);
+TEST_CASE("TopologyRules - removeGroup rejects an out-of-range index", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    CHECK(psb::removeGroup(topo, 0) == "invalid group index");
 }
 
-TEST_CASE("GroupWizardState — removeGroup rejects an out-of-range index", "[group_wizard_state]") {
-    GroupWizardState s;
-    CHECK(removeGroup(s, 0) == "invalid group index");
+TEST_CASE("TopologyRules - removeGroup drops the group", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    psb::addGroup(topo, "Battery Bank");
+    REQUIRE(psb::removeGroup(topo, 0).empty());
+    CHECK(topo.groups.empty());
 }
 
-TEST_CASE("GroupWizardState — removeGroup drops the group and clears selection past the end", "[group_wizard_state]") {
-    GroupWizardState s;
-    addGroup(s, "Battery Bank");
-    s.selectedGroup = 0;
-    REQUIRE(removeGroup(s, 0).empty());
-    CHECK(s.topo.groups.empty());
-    CHECK(s.selectedGroup == -1);
+TEST_CASE("TopologyRules - addChannelToGroup rejects an invalid group index", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    CHECK(psb::addChannelToGroup(topo, 0, "hvb-bench", 0, "CH0") == "invalid group index");
 }
 
-TEST_CASE("GroupWizardState — addChannelToGroup rejects an invalid group index", "[group_wizard_state]") {
-    GroupWizardState s;
-    CHECK(addChannelToGroup(s, 0, "hvb-bench", 0, "CH0") == "invalid group index");
+TEST_CASE("TopologyRules - addChannelToGroup rejects an empty board nickname", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    psb::addGroup(topo, "Battery Bank");
+    CHECK(psb::addChannelToGroup(topo, 0, "", 0, "CH0") == "board required");
 }
 
-TEST_CASE("GroupWizardState — addChannelToGroup rejects an empty board nickname", "[group_wizard_state]") {
-    GroupWizardState s;
-    addGroup(s, "Battery Bank");
-    CHECK(addChannelToGroup(s, 0, "", 0, "CH0") == "board required");
-}
-
-TEST_CASE("GroupWizardState — addChannelToGroup rejects a channel already in the group", "[group_wizard_state]") {
-    GroupWizardState s;
-    addGroup(s, "Battery Bank");
-    REQUIRE(addChannelToGroup(s, 0, "hvb-bench", 0, "CH0").empty());
-    CHECK(addChannelToGroup(s, 0, "hvb-bench", 0, "CH0") ==
+TEST_CASE("TopologyRules - addChannelToGroup rejects a channel already in the group", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    psb::addGroup(topo, "Battery Bank");
+    REQUIRE(psb::addChannelToGroup(topo, 0, "hvb-bench", 0, "CH0").empty());
+    CHECK(psb::addChannelToGroup(topo, 0, "hvb-bench", 0, "CH0") ==
           "hvb-bench/CH0 already assigned to group Battery Bank");
-    CHECK(s.topo.groups[0].channels.size() == 1);
+    CHECK(topo.groups[0].channels.size() == 1);
 }
 
-TEST_CASE("GroupWizardState — addChannelToGroup allows the same channel index on different boards", "[group_wizard_state]") {
-    GroupWizardState s;
-    addGroup(s, "Battery Bank");
-    REQUIRE(addChannelToGroup(s, 0, "hvb-bench", 0, "CH0").empty());
-    CHECK(addChannelToGroup(s, 0, "hvb-bench-2", 0, "CH1").empty());
-    CHECK(s.topo.groups[0].channels.size() == 2);
+TEST_CASE("TopologyRules - addChannelToGroup allows the same channel index on different boards", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    psb::addGroup(topo, "Battery Bank");
+    REQUIRE(psb::addChannelToGroup(topo, 0, "hvb-bench", 0, "CH0").empty());
+    CHECK(psb::addChannelToGroup(topo, 0, "hvb-bench-2", 0, "CH1").empty());
+    CHECK(topo.groups[0].channels.size() == 2);
 }
 
-TEST_CASE("GroupWizardState - aliases are unique only inside one group", "[group_wizard_state]") {
-    GroupWizardState s;
-    REQUIRE(addGroup(s, "detector").empty());
-    REQUIRE(addGroup(s, "supply").empty());
+TEST_CASE("TopologyRules - aliases are unique only inside one group", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addGroup(topo, "detector").empty());
+    REQUIRE(psb::addGroup(topo, "supply").empty());
 
-    CHECK(addChannelToGroup(s, 0, "hvb-left", 0, "bias").empty());
-    CHECK(addChannelToGroup(s, 0, "hvb-left", 1, "bias") ==
+    CHECK(psb::addChannelToGroup(topo, 0, "hvb-left", 0, "bias").empty());
+    CHECK(psb::addChannelToGroup(topo, 0, "hvb-left", 1, "bias") ==
           "alias \"bias\" already in use in group detector");
-    CHECK(addChannelToGroup(s, 1, "hvb-right", 0, "bias").empty());
+    CHECK(psb::addChannelToGroup(topo, 1, "hvb-right", 0, "bias").empty());
 }
 
-TEST_CASE("GroupWizardState - board channel can be assigned to only one group", "[group_wizard_state]") {
-    GroupWizardState s;
-    REQUIRE(addGroup(s, "detector").empty());
-    REQUIRE(addGroup(s, "supply").empty());
+TEST_CASE("TopologyRules - board channel can be assigned to only one group", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addGroup(topo, "detector").empty());
+    REQUIRE(psb::addGroup(topo, "supply").empty());
 
-    CHECK(addChannelToGroup(s, 0, "hvb-left", 0, "bias").empty());
-    CHECK(addChannelToGroup(s, 1, "hvb-left", 0, "bias") ==
+    CHECK(psb::addChannelToGroup(topo, 0, "hvb-left", 0, "bias").empty());
+    CHECK(psb::addChannelToGroup(topo, 1, "hvb-left", 0, "bias") ==
           "hvb-left/CH0 already assigned to group detector");
 }
 
-TEST_CASE("GroupWizardState - group channel alias can be renamed", "[group_wizard_state]") {
-    GroupWizardState s;
-    REQUIRE(addGroup(s, "detector").empty());
-    REQUIRE(addChannelToGroup(s, 0, "hvb-left", 0, "CH0").empty());
+TEST_CASE("TopologyRules - group channel alias can be renamed", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addGroup(topo, "detector").empty());
+    REQUIRE(psb::addChannelToGroup(topo, 0, "hvb-left", 0, "CH0").empty());
 
-    CHECK(renameGroupChannelAlias(s, 0, 0, "bias").empty());
-    CHECK(s.topo.groups[0].channels[0].alias == "bias");
-    CHECK(s.dirty);
+    CHECK(psb::renameGroupChannelAlias(topo, 0, 0, "bias").empty());
+    CHECK(topo.groups[0].channels[0].alias == "bias");
 }
 
-TEST_CASE("GroupWizardState - group channel alias rename rejects duplicate in the same group", "[group_wizard_state]") {
-    GroupWizardState s;
-    REQUIRE(addGroup(s, "detector").empty());
-    REQUIRE(addChannelToGroup(s, 0, "hvb-left", 0, "bias").empty());
-    REQUIRE(addChannelToGroup(s, 0, "hvb-left", 1, "guard").empty());
+TEST_CASE("TopologyRules - group channel alias rename rejects duplicate in the same group", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addGroup(topo, "detector").empty());
+    REQUIRE(psb::addChannelToGroup(topo, 0, "hvb-left", 0, "bias").empty());
+    REQUIRE(psb::addChannelToGroup(topo, 0, "hvb-left", 1, "guard").empty());
 
-    CHECK(renameGroupChannelAlias(s, 0, 1, "bias") ==
+    CHECK(psb::renameGroupChannelAlias(topo, 0, 1, "bias") ==
           "alias \"bias\" already in use in group detector");
-    CHECK(s.topo.groups[0].channels[1].alias == "guard");
+    CHECK(topo.groups[0].channels[1].alias == "guard");
 }
 
-TEST_CASE("GroupWizardState - board channel alias rename reports duplicate and leaves alias unchanged", "[group_wizard_state]") {
-    GroupWizardState s;
-    REQUIRE(addGroup(s, "detector").empty());
-    REQUIRE(addChannelToGroup(s, 0, "hvb-left", 0, "bias").empty());
-    REQUIRE(addChannelToGroup(s, 0, "hvb-left", 1, "guard").empty());
+TEST_CASE("TopologyRules - board channel alias rename reports duplicate and leaves alias unchanged", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addGroup(topo, "detector").empty());
+    REQUIRE(psb::addChannelToGroup(topo, 0, "hvb-left", 0, "bias").empty());
+    REQUIRE(psb::addChannelToGroup(topo, 0, "hvb-left", 1, "guard").empty());
 
-    CHECK(renameGroupChannelAliasForBoardChannel(s.topo, "hvb-left", 1, "bias") ==
+    CHECK(psb::renameGroupChannelAliasForBoardChannel(topo, "hvb-left", 1, "bias") ==
           "alias \"bias\" already in use in group detector");
-    CHECK(s.topo.groups[0].channels[1].alias == "guard");
+    CHECK(topo.groups[0].channels[1].alias == "guard");
 }
 
-TEST_CASE("GroupWizardState - group alias save status reports success and errors", "[group_wizard_state]") {
-    CHECK(groupAliasSaveStatus("") == "OK: group alias saved");
-    CHECK(groupAliasSaveStatus("alias \"bias\" already in use in group detector") ==
-          "Error: alias \"bias\" already in use in group detector");
+TEST_CASE("TopologyRules - removeChannelFromGroup rejects an out-of-range channel index", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    psb::addGroup(topo, "Battery Bank");
+    CHECK(psb::removeChannelFromGroup(topo, 0, 0) == "invalid channel index");
 }
 
-TEST_CASE("GroupWizardState - board channel alias input syncs external alias edits when not focused", "[group_wizard_state]") {
-    std::string inputAlias = "bias";
-    std::string lastMembershipKey = "detector/0";
-
-    syncGroupAliasInput(inputAlias, lastMembershipKey, true, "detector/0", "sense", false);
-
-    CHECK(inputAlias == "sense");
-    CHECK(lastMembershipKey == "detector/0");
-}
-
-TEST_CASE("GroupWizardState - board channel alias input keeps local edit while focused", "[group_wizard_state]") {
-    std::string inputAlias = "local-edit";
-    std::string lastMembershipKey = "detector/0";
-
-    syncGroupAliasInput(inputAlias, lastMembershipKey, true, "detector/0", "sense", true);
-
-    CHECK(inputAlias == "local-edit");
-    CHECK(lastMembershipKey == "detector/0");
-}
-
-TEST_CASE("GroupWizardState — removeChannelFromGroup rejects an out-of-range channel index", "[group_wizard_state]") {
-    GroupWizardState s;
-    addGroup(s, "Battery Bank");
-    CHECK(removeChannelFromGroup(s, 0, 0) == "invalid channel index");
-}
-
-TEST_CASE("GroupWizardState — removeChannelFromGroup drops the member channel", "[group_wizard_state]") {
-    GroupWizardState s;
-    addGroup(s, "Battery Bank");
-    addChannelToGroup(s, 0, "hvb-bench", 0, "CH0");
-    REQUIRE(removeChannelFromGroup(s, 0, 0).empty());
-    CHECK(s.topo.groups[0].channels.empty());
+TEST_CASE("TopologyRules - removeChannelFromGroup drops the member channel", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    psb::addGroup(topo, "Battery Bank");
+    psb::addChannelToGroup(topo, 0, "hvb-bench", 0, "CH0");
+    REQUIRE(psb::removeChannelFromGroup(topo, 0, 0).empty());
+    CHECK(topo.groups[0].channels.empty());
 }
