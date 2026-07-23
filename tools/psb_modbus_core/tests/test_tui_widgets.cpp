@@ -50,8 +50,13 @@ TEST_CASE("Group dashboard replacement falls back to boards when groups disappea
 TEST_CASE("Channel live row puts group alias controls at the end", "[tui_widgets]") {
     auto sections = channelLiveSections(true);
 
-    REQUIRE(sections.size() == 3);
+    REQUIRE(sections.size() == 4);
     CHECK(sections[0] == ChannelLiveSection::Title);
     CHECK(sections[1] == ChannelLiveSection::Telemetry);
-    CHECK(sections[2] == ChannelLiveSection::GroupAliasControls);
+    CHECK(sections[2] == ChannelLiveSection::Spacer);
+    CHECK(sections[3] == ChannelLiveSection::GroupNameControls);
+}
+
+TEST_CASE("Channel group alias label is named Name", "[tui_widgets]") {
+    CHECK(channelGroupAliasLabel() == " Name: ");
 }

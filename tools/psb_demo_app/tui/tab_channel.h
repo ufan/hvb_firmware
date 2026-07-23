@@ -328,9 +328,11 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
             case ChannelLiveSection::Telemetry:
                 livePanelParts.push_back(liveBar);
                 break;
-            case ChannelLiveSection::GroupAliasControls:
-                livePanelParts.push_back(separator());
-                livePanelParts.push_back(text(" Alias: ") | bold | color(Color::Cyan));
+            case ChannelLiveSection::Spacer:
+                livePanelParts.push_back(filler());
+                break;
+            case ChannelLiveSection::GroupNameControls:
+                livePanelParts.push_back(text(channelGroupAliasLabel()) | bold | color(Color::Cyan));
                 livePanelParts.push_back(aliasInp->Render() | size(WIDTH, EQUAL, 14));
                 livePanelParts.push_back(text(" "));
                 livePanelParts.push_back(groupLinkBtn->Render());

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 namespace psb::tui {
@@ -7,8 +8,13 @@ namespace psb::tui {
 enum class ChannelLiveSection {
     Title,
     Telemetry,
-    GroupAliasControls,
+    Spacer,
+    GroupNameControls,
 };
+
+inline std::string channelGroupAliasLabel() {
+    return " Name: ";
+}
 
 inline std::vector<ChannelLiveSection> channelLiveSections(bool grouped) {
     std::vector<ChannelLiveSection> sections{
@@ -16,7 +22,9 @@ inline std::vector<ChannelLiveSection> channelLiveSections(bool grouped) {
         ChannelLiveSection::Telemetry,
     };
     if (grouped)
-        sections.push_back(ChannelLiveSection::GroupAliasControls);
+        sections.push_back(ChannelLiveSection::Spacer);
+    if (grouped)
+        sections.push_back(ChannelLiveSection::GroupNameControls);
     return sections;
 }
 
