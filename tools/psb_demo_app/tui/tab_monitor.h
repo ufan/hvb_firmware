@@ -12,7 +12,6 @@ namespace psb::tui {
 struct MonitorRow {
     Component row;  // Container::Horizontal — focus chain
     Component statusBtn, vsetInp, outputEnabledCyc, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn;
-    Component aliasInp;
 };
 
 enum class MonitorIdentityMode {
@@ -123,8 +122,7 @@ inline std::vector<Element> monitorRowCells(Element identityCell, const ScannedD
 }
 
 // Build one row — creates all widgets, returns them in a MonitorRow.
-inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch,
-                                 std::function<void(int, const std::string&)> saveAlias) {
+inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
     // Narrow, action-specific refreshes — each re-reads only the Modbus
     // block the corresponding write actually touched (merging in place via
     // the reference-taking client methods, never a wholesale struct
@@ -284,16 +282,8 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch,
         saveChannelConfig(s, inputs, ch, refreshFull);
     });
 
-    // No hardware write — just a display name, so no CommitInput try/catch
-    // body needed beyond forwarding the committed string straight to the
-    // save closure. Placeholder is the canonical CHn name, per the
-    // confirmed "empty means unset, never pre-filled" design.
-    auto aliasInp = CommitInput(&inputs.chAlias[ch], "CH" + std::to_string(ch), [&inputs, ch, saveAlias] {
-        saveAlias(ch, inputs.chAlias[ch]);
-    });
-
     auto rowWidgets = Container::Horizontal({
-        aliasInp, vsetInp, outputEnabledCyc, statusBtn, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
+        vsetInp, outputEnabledCyc, statusBtn, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
     });
 
     return MonitorRow{
@@ -302,16 +292,14 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch,
             return !s.data.valid || ch >= s.data.numChannels();
         }),
         statusBtn, vsetInp, outputEnabledCyc, rampUpInp, rampDownInp, iLimitInp, clearFaultBtn, saveBtn,
-        aliasInp,
     };
 }
 
-inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs,
-                                std::function<void(int, const std::string&)> saveAlias) {
+inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
     auto rows = std::make_shared<std::vector<MonitorRow>>();
     Components rowComps;
     for (int ch = 0; ch < MAX_CHANNELS; ++ch) {
-        auto r = makeMonitorRow(s, inputs, ch, saveAlias);
+        auto r = makeMonitorRow(s, inputs, ch);
         rowComps.push_back(r.row);
         rows->push_back(std::move(r));
     }

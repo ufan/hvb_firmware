@@ -74,14 +74,6 @@ struct BoardSession {
     std::function<void()> connect;
     std::function<void()> disconnect;
 
-    // Set by makeBoardDashboard() (Task 7) to a closure bound to this
-    // board's own nickname, wrapping a single save-to-topology closure
-    // main() constructs once (it has the live TopologyConfig/path this
-    // board's alias edits need to land in) — lets the Monitor/Channel tabs'
-    // alias Input widgets (Task 5/6) commit an edit without needing to know
-    // anything about topology files themselves. Empty until the dashboard
-    // is built, same as connect/disconnect above.
-    std::function<void(int ch, const std::string& alias)> saveChannelAlias;
 };
 
 // One physical bus — owns exactly one worker thread, shared by every board

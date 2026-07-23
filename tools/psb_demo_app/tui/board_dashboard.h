@@ -39,7 +39,6 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                     Component /*globalQuit*/, Component /*globalSetup*/, Component /*globalGroup*/,
                                     Component /*globalPreferences*/,
                                     std::function<size_t()> liveBoardCount,
-                                    std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology,
                                     GetGroupMembership getGroupMembership = {},
                                     SaveGroupAlias saveGroupAlias = {},
                                     JumpToGroup jumpToGroup = {}) {
@@ -179,28 +178,6 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     // see BoardSession::connect/disconnect's own comment.
     board.connect = doConnect;
     board.disconnect = doDisconnect;
-    // Binds this board's own nickname so the Monitor/Channel tabs' alias
-    // Input widgets (below) never need to know anything about topology
-    // files — see BoardSession::saveChannelAlias's own comment. Also
-    // rebuilds this board's own tab titles immediately, since an alias
-    // edit changes what CHn's tab should be labeled but isn't itself a new
-    // scan — the pendingSync-driven rebuild further down only fires after
-    // a fresh connect/scan changes the channel count, not on every alias
-    // edit. Called directly on the UI thread (the alias Input's commit
-    // handler runs synchronously), so board.data.numChannels() is read
-    // live here rather than through the cross-thread pendingChannelCount
-    // staging that connect/scan completion uses.
-    board.saveChannelAlias = [&board, &screen, saveChannelAliasToTopology, nickname = board.nickname]
-                             (int ch, const std::string& alias) {
-        bool ok = saveChannelAliasToTopology(nickname, ch, alias);
-        rebuildChannelTitles(board.tabTitles, board.data.numChannels(), board.inputs.chAlias);
-        if (!ok) {
-            std::lock_guard<std::mutex> lk(board.statusMutex);
-            board.statusMsg = "Error: could not save alias";
-        }
-        screen.PostEvent(Event::Custom);
-    };
-
     // ---- Connect/Disconnect/Abort toggle button ----
     ButtonOption connBtnOpt{};
     connBtnOpt.transform = [&board](const EntryState& es) -> Element {
@@ -377,7 +354,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto tabBar = Menu(&board.tabTitles, &board.activeTab, tabOpt);
 
     // ---- Tab content: Monitor + CH0..CH15 ----
-    Components tabComponents = { makeMonitorTab(*board.appState, board.inputs, board.saveChannelAlias) };
+    Components tabComponents = { makeMonitorTab(*board.appState, board.inputs) };
     for (int ch = 0; ch < MAX_CHANNELS; ++ch)
         tabComponents.push_back(makeChannelTab(*board.appState, board.inputs, board.nickname, ch,
                                                getGroupMembership, saveGroupAlias, jumpToGroup));
@@ -392,7 +369,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
                 int nc = board.pendingChannelCount.load(std::memory_order_acquire);
-                rebuildChannelTitles(board.tabTitles, nc, board.inputs.chAlias);
+                rebuildChannelTitles(board.tabTitles, nc);
                 int maxTab = static_cast<int>(board.tabTitles.size()) - 1;
                 if (board.activeTab > maxTab) board.activeTab = maxTab;
                 syncDataToInputs(board.data, board.inputs);

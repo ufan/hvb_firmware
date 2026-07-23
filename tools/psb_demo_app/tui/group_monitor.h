@@ -90,7 +90,7 @@ inline Component makeGroupDashboard(const std::string& groupName,
                                   });
         rowComps.push_back(mr.aliasInp);
         if (owner) {
-            mr.row = makeMonitorRow(*owner->appState, owner->inputs, ref.channelIndex, owner->saveChannelAlias);
+            mr.row = makeMonitorRow(*owner->appState, owner->inputs, ref.channelIndex);
             ButtonOption bopt{};
             bopt.transform = [nickname = ref.boardNickname, ch = ref.channelIndex](const EntryState& es) -> Element {
                 std::string label = nickname + "/" + psb::defaultChannelAlias(ch);

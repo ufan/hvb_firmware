@@ -332,7 +332,6 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
                   std::function<void()> openSetup, Component globalQuit, Component globalSetup,
                   Component globalGroup, Component globalPreferences,
                   Component globalConnectAll, Component globalDisconnectAll,
-                  std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology,
                   psb::tui::GetGroupMembership getGroupMembership,
                   psb::tui::SaveGroupAlias saveGroupAlias,
                   psb::tui::JumpToGroup jumpToGroup) {
@@ -347,21 +346,13 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
             b->portVal = busCfg.port;
             b->baudVal = std::to_string(busCfg.baudRate);
             b->slaveVal = std::to_string(boardCfg.slaveId);
-            // Clamped to MAX_CHANNELS — chAlias is a fixed-size array, and a
-            // hand-edited topology file could otherwise supply more aliases
-            // than that and overflow it.
-            {
-                int n = std::min(static_cast<int>(boardCfg.channelAliases.size()), psb::tui::MAX_CHANNELS);
-                for (int ch = 0; ch < n; ++ch)
-                    b->inputs.chAlias[ch] = boardCfg.channelAliases[ch];
-            }
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 bw->workQueue, bw->workMutex, bw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
                 globalQuit, globalSetup, globalGroup, globalPreferences, [&rt] { return rt.boards.size(); },
-                saveChannelAliasToTopology, getGroupMembership, saveGroupAlias, jumpToGroup);
+                getGroupMembership, saveGroupAlias, jumpToGroup);
             // Same "lock even though provably safe here" reasoning as the
             // rt.boards push right below — this bw's worker thread hasn't
             // been spawned yet at this point, but locking anyway means
@@ -465,7 +456,6 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
                         int timeoutMs, std::function<void()> openSetup,
                         Component globalQuit, Component globalSetup, Component globalGroup,
                         Component globalPreferences,
-                        std::function<bool(const std::string&, int, const std::string&)> saveChannelAliasToTopology,
                         psb::tui::GetGroupMembership getGroupMembership,
                         psb::tui::SaveGroupAlias saveGroupAlias,
                         psb::tui::JumpToGroup jumpToGroup) {
@@ -503,20 +493,13 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
             b->portVal = busCfg.port;
             b->baudVal = std::to_string(busCfg.baudRate);
             b->slaveVal = std::to_string(boardCfg.slaveId);
-            // Clamped to MAX_CHANNELS — see the identical guard in
-            // buildRuntime's own board-construction loop above.
-            {
-                int n = std::min(static_cast<int>(boardCfg.channelAliases.size()), psb::tui::MAX_CHANNELS);
-                for (int ch = 0; ch < n; ++ch)
-                    b->inputs.chAlias[ch] = boardCfg.channelAliases[ch];
-            }
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
                 targetBw->workQueue, targetBw->workMutex, targetBw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *targetBw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
                 globalQuit, globalSetup, globalGroup, globalPreferences, [&rt] { return rt.boards.size(); },
-                saveChannelAliasToTopology, getGroupMembership, saveGroupAlias, jumpToGroup);
+                getGroupMembership, saveGroupAlias, jumpToGroup);
 
             // Connect + full-scan this one board right away, on its bus's
             // own worker queue — never block the UI thread, same discipline
@@ -776,39 +759,6 @@ int main(int argc, char** argv) {
         for (auto& b : rt.boards) if (b->disconnect) b->disconnect();
     });
 
-    // The one place that knows both the live topo object and where it's
-    // saved — every board's own saveChannelAlias (board_dashboard.h) is a
-    // thin per-board wrapper around this, so the Monitor/Channel tabs never
-    // need direct access to either. Looks the board up by nickname (not a
-    // cached bus/board index) since topo can be wholesale replaced by a
-    // mid-session Setup edit (onMidSessionFinish below) at any time,
-    // invalidating any index captured earlier — the same reasoning
-    // detachBoard (board_switcher.h) already applies to board lookups.
-    // Captures currentTopologyPath by reference, not topologyPath by value
-    // — topologyPath is fixed at defaultPath() for the whole session, but
-    // the user can load a completely different file (quick-connect's own
-    // lastSingleConnectPath(), or anything Browsed to inside the wizard);
-    // saving to the wrong one would silently corrupt a topology file the
-    // user isn't even using. currentTopologyPath tracks the real answer
-    // and is updated at every point topo itself is replaced.
-    // Returns whether the save actually succeeded — callers (board_dashboard.h)
-    // surface a failure via the board's own status message, matching every
-    // other save-failure path in this codebase, rather than dropping it
-    // silently.
-    auto saveChannelAliasToTopology = [&topo, &currentTopologyPath]
-                                      (const std::string& nickname, int ch, const std::string& alias) -> bool {
-        for (auto& bus : topo.buses) {
-            for (auto& brd : bus.boards) {
-                if (brd.nickname != nickname) continue;
-                if (static_cast<int>(brd.channelAliases.size()) <= ch)
-                    brd.channelAliases.resize(ch + 1);
-                brd.channelAliases[ch] = alias;
-                return topo.save(currentTopologyPath);
-            }
-        }
-        return false;
-    };
-
     auto getGroupMembership = [&topo](const std::string& boardNickname, int ch) -> psb::tui::GroupMembership {
         for (int gi = 0; gi < static_cast<int>(topo.groups.size()); ++gi) {
             const auto& group = topo.groups[gi];
@@ -850,12 +800,11 @@ int main(int argc, char** argv) {
 
     buildRuntime(rt, topo, screen, running, g_connectTimeoutMs, autoConnectAll, openSetup,
                 bGlobalQuit, bGlobalSetup, bGlobalGroup, bGlobalPreferences, bGlobalConnectAll, bGlobalDisconnectAll,
-                saveChannelAliasToTopology, getGroupMembership, saveGroupChannelAliasToTopology, jumpToGroup);
+                getGroupMembership, saveGroupChannelAliasToTopology, jumpToGroup);
 
     auto onMidSessionFinish = [showSetup, midSessionWiz, &rt, &topo, &currentTopologyPath, &screen, &running,
                                openSetup, bGlobalQuit, bGlobalSetup, bGlobalGroup, bGlobalPreferences,
-                               saveChannelAliasToTopology, getGroupMembership,
-                               saveGroupChannelAliasToTopology, jumpToGroup]
+                               getGroupMembership, saveGroupChannelAliasToTopology, jumpToGroup]
                               (psb::tui::WizardOutcome outcome) {
         if (outcome == psb::tui::WizardOutcome::ConnectNow) {
             // Tear down what's gone before attaching what's new — the two
@@ -870,8 +819,7 @@ int main(int argc, char** argv) {
             removeGoneBoardsLive(rt, midSessionWiz->topo, screen, running);
             applyNewBoardsLive(rt, midSessionWiz->topo, screen, running, g_connectTimeoutMs, openSetup,
                                bGlobalQuit, bGlobalSetup, bGlobalGroup, bGlobalPreferences,
-                               saveChannelAliasToTopology, getGroupMembership,
-                               saveGroupChannelAliasToTopology, jumpToGroup);
+                               getGroupMembership, saveGroupChannelAliasToTopology, jumpToGroup);
             topo = midSessionWiz->topo;
             currentTopologyPath = midSessionWiz->topologyPath;
             refreshGroupDashboards(rt, topo, screen);
@@ -941,11 +889,9 @@ int main(int argc, char** argv) {
 
     // Syncs main()'s live topo (and the path it's tracked against) from
     // whatever the group wizard ended up with — same "sync back on finish"
-    // pattern as onMidSessionFinish's topo = midSessionWiz->topo; without
-    // this, a later alias edit's saveChannelAliasToTopology (which also
-    // calls topo.save()) would overwrite the group wizard's own already-
-    // saved-to-disk groups with an in-memory topo that never learned about
-    // them.
+    // pattern as onMidSessionFinish's topo = midSessionWiz->topo. Without
+    // this, later group alias edits would save an in-memory topology that
+    // never learned about the wizard's already-saved changes.
     auto onGroupSetupFinish = [showGroupSetup, groupWiz, &rt, &topo, &currentTopologyPath, &screen] {
         topo = groupWiz->topo;
         currentTopologyPath = groupWiz->topologyPath;
