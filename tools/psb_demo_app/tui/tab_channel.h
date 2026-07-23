@@ -287,15 +287,10 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
         *currentMembership = membership;
         if (membership.grouped) {
             std::string membershipKey = membership.groupName + "/" + std::to_string(membership.memberIndex);
-            if (*lastMembershipKey != membershipKey) {
-                *groupAlias = membership.alias;
-                *lastMembershipKey = membershipKey;
-            } else if (groupAlias->empty()) {
-                *groupAlias = membership.alias;
-            }
+            syncGroupAliasInput(*groupAlias, *lastMembershipKey, true, membershipKey, membership.alias,
+                                aliasInp->Focused());
         } else {
-            lastMembershipKey->clear();
-            groupAlias->clear();
+            syncGroupAliasInput(*groupAlias, *lastMembershipKey, false, "", "", aliasInp->Focused());
         }
 
         // LiveStatus panel (single row)

@@ -124,6 +124,26 @@ TEST_CASE("GroupWizardState - group alias save status reports success and errors
           "Error: alias \"bias\" already in use in group detector");
 }
 
+TEST_CASE("GroupWizardState - board channel alias input syncs external alias edits when not focused", "[group_wizard_state]") {
+    std::string inputAlias = "bias";
+    std::string lastMembershipKey = "detector/0";
+
+    syncGroupAliasInput(inputAlias, lastMembershipKey, true, "detector/0", "sense", false);
+
+    CHECK(inputAlias == "sense");
+    CHECK(lastMembershipKey == "detector/0");
+}
+
+TEST_CASE("GroupWizardState - board channel alias input keeps local edit while focused", "[group_wizard_state]") {
+    std::string inputAlias = "local-edit";
+    std::string lastMembershipKey = "detector/0";
+
+    syncGroupAliasInput(inputAlias, lastMembershipKey, true, "detector/0", "sense", true);
+
+    CHECK(inputAlias == "local-edit");
+    CHECK(lastMembershipKey == "detector/0");
+}
+
 TEST_CASE("GroupWizardState — removeChannelFromGroup rejects an out-of-range channel index", "[group_wizard_state]") {
     GroupWizardState s;
     addGroup(s, "Battery Bank");
