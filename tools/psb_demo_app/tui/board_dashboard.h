@@ -26,6 +26,23 @@ inline const std::vector<std::string> kOpModes  = {"Normal", "Automatic"};
 inline const std::vector<std::string> kStartPol = {"Load NVS Config", "Factory Default"};
 inline const std::vector<std::string> kBaudNames = {"115200", "9600", "19200", "38400"};
 
+struct BoardMenuIdentityLabels {
+    std::string boardName;
+    std::string channelVariant;
+};
+
+inline BoardMenuIdentityLabels boardMenuIdentityLabels(const BoardSession& board) {
+    BoardMenuIdentityLabels labels;
+    labels.boardName = board.nickname;
+    labels.channelVariant = "-- --";
+    if (board.connected.load() && board.data.valid.load()) {
+        const auto& si = board.data.sysInfo;
+        labels.channelVariant = std::to_string(board.data.numChannels()) +
+                                " Ch @ " + catalog::variantName(si.variantId);
+    }
+    return labels;
+}
+
 // Builds one board's full dashboard: connection modal, SysConfig popup,
 // menu bar, tab bar/content (Monitor + CH0..CHn), status bar. Call once per
 // board at startup; the board switcher picks which already-built dashboard
@@ -236,7 +253,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         board.showSysCfg = !board.showSysCfg; screen.PostEvent(Event::Custom);
     });
 
-    // scOpMode shares inputs.opModeIdx with menuModeC; autoCommit=true writes on every click.
+    // Working mode is edited only in the Setting dialog. The board menu bar
+    // deliberately does not duplicate this control.
     auto scOpMode  = InlineCycler(kOpModes, &board.inputs.opModeIdx, [&board] {
         postWrite(*board.appState, board.inputs, "OpMode",
             [&board] { return board.client->writeOperatingMode(static_cast<OpMode>(board.inputs.opModeIdx)); },
@@ -331,16 +349,9 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         }) | border | size(WIDTH, EQUAL, 48);
     });
 
-    // ---- Menu bar mode cycler (shares opModeIdx with scOpMode) ----
-    auto menuModeC = InlineCycler(kOpModes, &board.inputs.opModeIdx, [&board] {
-        postWrite(*board.appState, board.inputs, "OpMode",
-            [&board] { return board.client->writeOperatingMode(static_cast<OpMode>(board.inputs.opModeIdx)); },
-            [&board] { board.data.sysCfg = board.client->readSystemConfig(); });
-    }, /*autoCommit=*/true);
-
     auto menuSave = ActionButton("Save", saveSystemConfig);
     auto connectedMenuSave = Maybe(menuSave, [&board] { return board.connected.load(); });
-    auto menuBar = Container::Horizontal({menuModeC, connectedMenuSave, bConnToggle, bRemove});
+    auto menuBar = Container::Horizontal({connectedMenuSave, bConnToggle, bRemove});
 
     // ---- Tab bar ----
     MenuOption tabOpt = MenuOption::Horizontal();
@@ -364,7 +375,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto statusBar    = Container::Horizontal({bSysCfg});
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
-    auto root = Renderer(mainContainer, [&board, &screen, menuModeC, connectedMenuSave, bConnToggle, bRemove,
+    auto root = Renderer(mainContainer, [&board, &screen, connectedMenuSave, bConnToggle, bRemove,
                                          tabBar, tabContent, bSysCfg, liveBoardCount] {
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
@@ -381,12 +392,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         std::string msg;
         { std::lock_guard<std::mutex> lk(board.statusMutex); msg = board.statusMsg; }
 
-        // --- Channel count + system telemetry ---
-        std::string chTxt = "--";
-        if (board.data.valid) chTxt = std::to_string(board.data.numChannels());
-
         std::string fwTxt = "--", protoTxt = "--";
-        std::string variantTxt = "PSB";
         std::string uptimeTxt = "--s";
         bool hasEnvSensor = false;
         char tmpS[16], humS[16];
@@ -395,7 +401,6 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             const auto& si = board.data.sysInfo;
             fwTxt    = reg::formatFwVersion(si.fwVersion);
             protoTxt = std::to_string(si.protoMajor) + "." + std::to_string(si.protoMinor);
-            variantTxt = catalog::variantName(si.variantId);
             uptimeTxt = fmtUptime(si.uptimeSec);
             hasEnvSensor = (si.sysCapFlags & SysCap::ENV_SENSOR) != 0;
             if (hasEnvSensor) {
@@ -436,9 +441,6 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         } else {
             centerGroup = text("");
         }
-        Element modeElement = isOnline || board.connecting.load()
-            ? menuModeC->Render()
-            : text("[ " + kOpModes[board.inputs.opModeIdx] + " ]") | dim;
         Element saveElement = isOnline
             ? connectedMenuSave->Render()
             : text("[ Save ]") | dim;
@@ -448,17 +450,16 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         // contains board-level controls only.
         size_t boardCount = liveBoardCount();
         Element removeElement = boardCount > 1 ? bRemove->Render() : text("");
+        auto identity = boardMenuIdentityLabels(board);
         Elements menuBarParts = {
-            text(" " + variantTxt + " ") | bold,
+            text(" " + identity.boardName + " ") | bold,
             separator(),
-            text(" " + chTxt + " Channels "),
-            separator(),
-            modeElement,
-            text(" "),
-            saveElement,
+            text(" " + identity.channelVariant + " "),
             filler(),
             centerGroup,
             filler(),
+            saveElement,
+            text(" "),
             bConnToggle->Render(),
             text(" "),
             removeElement,

@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "app_window_layout.h"
+#include "board_dashboard.h"
 #include "channel_live_layout.h"
 #include "group_view_selection.h"
 #include "widgets.h"
@@ -92,4 +93,23 @@ TEST_CASE("Channel policy box content heights align protection and setting botto
           channelPolicyBoxContentRows(ChannelPolicyBox::Setting));
     CHECK(channelProtectionLeftColumnRows() == 3);
     CHECK(channelProtectionButtonColumnRows() == 2);
+}
+
+TEST_CASE("Board menu identity shows nickname and connected channel variant summary", "[tui_widgets]") {
+    BoardSession board;
+    board.nickname = "rack-left";
+
+    auto offline = boardMenuIdentityLabels(board);
+    CHECK(offline.boardName == "rack-left");
+    CHECK(offline.channelVariant == "-- --");
+
+    board.data.valid = true;
+    board.connected = true;
+    board.data.sysInfo.supportedChannels = 10;
+    board.data.sysInfo.activeChMask = 0x03ff;
+    board.data.sysInfo.variantId = 1;
+
+    auto online = boardMenuIdentityLabels(board);
+    CHECK(online.boardName == "rack-left");
+    CHECK(online.channelVariant == "10 Ch @ jw_hvb");
 }
