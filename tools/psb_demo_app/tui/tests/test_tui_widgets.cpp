@@ -113,3 +113,14 @@ TEST_CASE("Board menu identity shows nickname and connected channel variant summ
     CHECK(online.boardName == "rack-left");
     CHECK(online.channelVariant == "10 Ch @ jw_hvb");
 }
+
+TEST_CASE("Board menu actions omit system Save", "[tui_widgets]") {
+    auto singleBoard = boardMenuActionSlots(1);
+    REQUIRE(singleBoard.size() == 1);
+    CHECK(singleBoard[0] == BoardMenuActionSlot::ConnectToggle);
+
+    auto multiBoard = boardMenuActionSlots(2);
+    REQUIRE(multiBoard.size() == 2);
+    CHECK(multiBoard[0] == BoardMenuActionSlot::ConnectToggle);
+    CHECK(multiBoard[1] == BoardMenuActionSlot::Remove);
+}

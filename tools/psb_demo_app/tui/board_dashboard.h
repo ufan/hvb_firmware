@@ -31,6 +31,11 @@ struct BoardMenuIdentityLabels {
     std::string channelVariant;
 };
 
+enum class BoardMenuActionSlot {
+    ConnectToggle,
+    Remove,
+};
+
 inline BoardMenuIdentityLabels boardMenuIdentityLabels(const BoardSession& board) {
     BoardMenuIdentityLabels labels;
     labels.boardName = board.nickname;
@@ -41,6 +46,13 @@ inline BoardMenuIdentityLabels boardMenuIdentityLabels(const BoardSession& board
                                 " Ch @ " + catalog::variantName(si.variantId);
     }
     return labels;
+}
+
+inline std::vector<BoardMenuActionSlot> boardMenuActionSlots(size_t liveBoardCount) {
+    std::vector<BoardMenuActionSlot> slots{BoardMenuActionSlot::ConnectToggle};
+    if (liveBoardCount > 1)
+        slots.push_back(BoardMenuActionSlot::Remove);
+    return slots;
 }
 
 // Builds one board's full dashboard: connection modal, SysConfig popup,
@@ -349,9 +361,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         }) | border | size(WIDTH, EQUAL, 48);
     });
 
-    auto menuSave = ActionButton("Save", saveSystemConfig);
-    auto connectedMenuSave = Maybe(menuSave, [&board] { return board.connected.load(); });
-    auto menuBar = Container::Horizontal({connectedMenuSave, bConnToggle, bRemove});
+    auto menuBar = Container::Horizontal({bConnToggle, bRemove});
 
     // ---- Tab bar ----
     MenuOption tabOpt = MenuOption::Horizontal();
@@ -375,7 +385,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto statusBar    = Container::Horizontal({bSysCfg});
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
-    auto root = Renderer(mainContainer, [&board, &screen, connectedMenuSave, bConnToggle, bRemove,
+    auto root = Renderer(mainContainer, [&board, &screen, bConnToggle, bRemove,
                                          tabBar, tabContent, bSysCfg, liveBoardCount] {
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
@@ -441,15 +451,20 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         } else {
             centerGroup = text("");
         }
-        Element saveElement = isOnline
-            ? connectedMenuSave->Render()
-            : text("[ Save ]") | dim;
         // Remove only makes sense with a sibling to remove down to — see
         // Global Constraints. App-level actions are intentionally rendered
         // only by board_switcher.h's dedicated top-level menu bar; this row
         // contains board-level controls only.
         size_t boardCount = liveBoardCount();
-        Element removeElement = boardCount > 1 ? bRemove->Render() : text("");
+        auto actionSlots = boardMenuActionSlots(boardCount);
+        Elements actionElements;
+        for (auto slot : actionSlots) {
+            if (!actionElements.empty()) actionElements.push_back(text(" "));
+            if (slot == BoardMenuActionSlot::ConnectToggle)
+                actionElements.push_back(bConnToggle->Render());
+            else if (slot == BoardMenuActionSlot::Remove)
+                actionElements.push_back(bRemove->Render());
+        }
         auto identity = boardMenuIdentityLabels(board);
         Elements menuBarParts = {
             text(" " + identity.boardName + " ") | bold,
@@ -458,12 +473,9 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             filler(),
             centerGroup,
             filler(),
-            saveElement,
-            text(" "),
-            bConnToggle->Render(),
-            text(" "),
-            removeElement,
         };
+        for (auto& action : actionElements)
+            menuBarParts.push_back(std::move(action));
         auto menuBarEl = boardMenuChrome(hbox(std::move(menuBarParts)));
 
         // --- Status bar (static colour — no breathing) ---
