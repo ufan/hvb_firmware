@@ -4,6 +4,7 @@
 #include "channel_live_layout.h"
 #include "group_monitor.h"
 #include "group_view_selection.h"
+#include "wizard_screen.h"
 #include "widgets.h"
 
 using namespace psb::tui;
@@ -130,6 +131,11 @@ TEST_CASE("Board nickname editor width adapts within menu limits", "[tui_widgets
     CHECK(boardMenuNicknameInputWidth("hvb") == kBoardMenuNicknameMinWidth);
     CHECK(boardMenuNicknameInputWidth("rack-left") == 13);
     CHECK(boardMenuNicknameInputWidth("rack-left-with-a-very-long-name") == kBoardMenuNicknameMaxWidth);
+}
+
+TEST_CASE("Topology wizard save applies changes during a running session", "[tui_widgets]") {
+    CHECK(topologyWizardSaveSuccessAction(true) == TopologyWizardSaveSuccessAction::StayOpen);
+    CHECK(topologyWizardSaveSuccessAction(false) == TopologyWizardSaveSuccessAction::ApplyAndClose);
 }
 
 TEST_CASE("Monitor channel offline state follows channel and board stale markers", "[tui_widgets]") {
