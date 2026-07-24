@@ -12,6 +12,7 @@ same commit/PR as the tag itself. Newest first.
 
 | Tag | Date | Component | Highlights |
 |---|---|---|---|
+| `psb_demo_tui-v1.2.0` | 2026-07-24 | Host tool | Core-backed topology/group rules and CLI endpoint resolution, TUI test split from core tests, architecture diagrams, board menu cleanup: nickname identity, connected channel/variant summary, and duplicate mode/save controls removed from the board menu. |
 | `psb_demo_tui-v1.1.0` | 2026-07-23 | Host tool | Topology/group workflow release: dedicated app menu bar and sidebar polish, topology switching fixes, group-channel naming rules, alias sync between board and group views, group wizard channel picker, readable uptime, minimum-width guard, updated TUI guide. |
 | `firmware-v0.92.0` | 2026-07-19 | Firmware | First release under the new scheme. Version management contract implemented: `FW_VERSION` now real SemVer (sourced from this tag family at build time), new `BOARD_HW_REVISION` register, protocol 3.2→3.3, `jw_hvb_1ch.overlay` for 1-channel BOM populations. |
 | `psb_demo_tui-v1.0.0` | 2026-07-19 | Host tool | First independently-tagged release. Variant/family/revision display, real SemVer firmware-version display, protocol compat-check (refuses to connect on mismatch, via the shared `PsbModbusClient`). |
