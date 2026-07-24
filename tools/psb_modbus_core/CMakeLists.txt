@@ -6,6 +6,7 @@ add_library(psb_modbus_core STATIC
     topology_rules.cpp
     platform_paths.cpp
     app_preferences.cpp
+    message_log.cpp
     monitor_render.cpp
 )
 target_include_directories(psb_modbus_core
