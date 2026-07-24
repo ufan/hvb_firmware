@@ -279,6 +279,13 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                         }
                                         screen.PostEvent(Event::Custom);
                                     });
+    auto boardNameBox = Renderer(boardNameInp, [boardNameInp] {
+        return hbox({
+                   filler(),
+                   boardNameInp->Render() | notflex,
+                   filler(),
+               }) | size(WIDTH, EQUAL, kBoardMenuNicknameInputWidth);
+    });
 
     // ---- SysConfig popup ----
     auto bSysCfg = ActionButton("Setting", [&board, &screen] {
@@ -382,7 +389,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         }) | border | size(WIDTH, EQUAL, 48);
     });
 
-    auto menuBar = Container::Horizontal({boardNameInp, bConnToggle, bRemove});
+    auto menuBar = Container::Horizontal({boardNameBox, bConnToggle, bRemove});
 
     // ---- Tab bar ----
     MenuOption tabOpt = MenuOption::Horizontal();
@@ -407,7 +414,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto statusBar    = Container::Horizontal({bSysCfg});
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
-    auto root = Renderer(mainContainer, [&board, &screen, boardName, boardNameInp, bConnToggle, bRemove,
+    auto root = Renderer(mainContainer, [&board, &screen, boardName, boardNameInp, boardNameBox, bConnToggle, bRemove,
                                          tabBar, tabContent, bSysCfg, liveBoardCount] {
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
@@ -491,7 +498,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         if (!boardNameInp->Focused())
             *boardName = identity.boardName;
         Elements menuBarParts = {
-            boardNameInp->Render() | bold | size(WIDTH, EQUAL, kBoardMenuNicknameInputWidth),
+            boardNameBox->Render() | bold,
             separator(),
             text(" " + identity.channelVariant + " "),
             filler(),
