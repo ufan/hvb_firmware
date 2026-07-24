@@ -506,7 +506,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         if (!boardNameInp->Focused())
             *boardName = identity.boardName;
         Elements menuBarParts = {
-            boardNameBox->Render() | bold,
+            boardNameBox->Render() | bold | color(Color::YellowLight),
             separator(),
             text(" " + identity.channelVariant + " "),
             filler(),
