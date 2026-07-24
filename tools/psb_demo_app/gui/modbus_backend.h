@@ -1,5 +1,6 @@
 #pragma once
 
+#include "message_log.h"
 #include "tool_version.h"
 
 #include <QObject>
@@ -153,6 +154,7 @@ private slots:
 
 private:
     void setStatus(const QString& msg);
+    void setStatus(psb::MessageSeverity severity, const QString& msg);
     void pollTick();
     void refreshChannels();
 
@@ -175,6 +177,7 @@ private:
     QVariantMap m_chConfig[MAX_CHANNELS];
 
     // UI state
+    psb::MessageCenter m_messages;
     QStringList m_rawLogLines;
     QString m_statusMessage;
     QTimer m_pollTimer;

@@ -246,11 +246,11 @@ void ModbusBackend::onChConfigReady(int ch, const QVariantMap& cfg)
 void ModbusBackend::onOperationComplete(bool ok, const QString& msg)
 {
     if (ok) {
-        setStatus(QString("✓ %1").arg(msg));
+        setStatus(psb::MessageSeverity::Success, QString("✓ %1").arg(msg));
         m_statusClearTimer.start(4000);
     } else {
         m_statusClearTimer.stop();
-        setStatus(QString("✗ %1").arg(msg));
+        setStatus(psb::MessageSeverity::Error, QString("✗ %1").arg(msg));
     }
 }
 
@@ -278,6 +278,29 @@ void ModbusBackend::onRawHexResult(const QString& hex)
 
 void ModbusBackend::setStatus(const QString& msg)
 {
-    m_statusMessage = msg;
+    if (msg.isEmpty()) {
+        (void)m_messages.beginAction("gui");
+        m_statusMessage.clear();
+        emit statusMessageChanged();
+        return;
+    }
+
+    auto severity = psb::MessageSeverity::Info;
+    if (msg.startsWith("Error:") || msg.startsWith("✗")) {
+        severity = psb::MessageSeverity::Error;
+    } else if (msg.startsWith("Warning:")) {
+        severity = psb::MessageSeverity::Warning;
+    } else if (msg.startsWith("✓") || msg.startsWith("Connected") || msg.startsWith("Disconnected")) {
+        severity = psb::MessageSeverity::Success;
+    }
+    setStatus(severity, msg);
+}
+
+void ModbusBackend::setStatus(psb::MessageSeverity severity, const QString& msg)
+{
+    const auto actionId = m_messages.beginAction("gui");
+    m_messages.publish(actionId, severity, "gui", msg.toStdString());
+    const auto current = m_messages.currentStatus();
+    m_statusMessage = current.has_value() ? QString::fromStdString(current->text) : QString();
     emit statusMessageChanged();
 }
