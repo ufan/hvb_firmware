@@ -25,6 +25,7 @@ using namespace ftxui;
 inline const std::vector<std::string> kOpModes  = {"Normal", "Automatic"};
 inline const std::vector<std::string> kStartPol = {"Load NVS Config", "Factory Default"};
 inline const std::vector<std::string> kBaudNames = {"115200", "9600", "19200", "38400"};
+inline constexpr int kBoardMenuNicknameInputWidth = 14;
 using SaveBoardName = std::function<std::string(const std::string&, const std::string&)>;
 
 struct BoardMenuIdentityLabels {
@@ -490,7 +491,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         if (!boardNameInp->Focused())
             *boardName = identity.boardName;
         Elements menuBarParts = {
-            boardNameInp->Render() | bold,
+            boardNameInp->Render() | bold | size(WIDTH, EQUAL, kBoardMenuNicknameInputWidth),
             separator(),
             text(" " + identity.channelVariant + " "),
             filler(),
