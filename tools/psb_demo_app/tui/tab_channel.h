@@ -79,7 +79,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, GetBoardNickn
             auto raw = reg::voltageFromV(std::stod(inputs.targetV[ch]));
             postWrite(s, inputs, "Target V",
                 [&s, ch, raw] { return s.client.writeConfiguredTargetVoltage(ch, raw); }, refreshOutput);
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
+        } catch (...) { publishActionStatus(s, psb::MessageSeverity::Error, "Error: invalid voltage"); }
     };
     auto onRampUp = [&s, &inputs, refreshOutput, ch] {
         try {
@@ -87,7 +87,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, GetBoardNickn
             auto iv = s.data.chCfg[ch].rampUpInterval;
             postWrite(s, inputs, "Ramp Up",
                 [&s, ch, stepRaw, iv] { return s.client.writeRampUp(ch, stepRaw, iv); }, refreshOutput);
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
+        } catch (...) { publishActionStatus(s, psb::MessageSeverity::Error, "Error: invalid ramp value"); }
     };
     auto onRampDown = [&s, &inputs, refreshOutput, ch] {
         try {
@@ -95,7 +95,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, GetBoardNickn
             auto iv = s.data.chCfg[ch].rampDownInterval;
             postWrite(s, inputs, "Ramp Down",
                 [&s, ch, stepRaw, iv] { return s.client.writeRampDown(ch, stepRaw, iv); }, refreshOutput);
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp value"; }
+        } catch (...) { publishActionStatus(s, psb::MessageSeverity::Error, "Error: invalid ramp value"); }
     };
 
     auto currentMembership = std::make_shared<GroupMembership>();
@@ -147,7 +147,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, GetBoardNickn
                                              s.data.sysInfo.currentUnitExp);
             postWrite(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); }, refreshProtection);
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
+        } catch (...) { publishActionStatus(s, psb::MessageSeverity::Error, "Error: invalid I-limit value"); }
     };
     auto iModeC  = InlineCycler(kProtModes, &inputs.iModeIdx[ch], onIProt);
     auto iActC   = InlineCycler(kIActNames, &inputs.iActIdx[ch], onIProt);
@@ -161,21 +161,21 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, GetBoardNickn
                 w = std::stoi(inputs.retryWindow[ch]);
             postWrite(s, inputs, "Recovery",
                 [&s, ch, pol, d, m, w] { return s.client.writeChannelRecovery(ch, pol, d, m, w); }, refreshRecovery);
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid recovery value"; }
+        } catch (...) { publishActionStatus(s, psb::MessageSeverity::Error, "Error: invalid recovery value"); }
     };
     auto onDerate = [&s, &inputs, refreshDerate, ch] {
         try {
             auto step = (uint16_t)std::stoul(inputs.derateStep[ch]);
             postWrite(s, inputs, "Derate",
                 [&s, ch, step] { return s.client.writeDerateStep(ch, step); }, refreshDerate);
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid derate step"; }
+        } catch (...) { publishActionStatus(s, psb::MessageSeverity::Error, "Error: invalid derate step"); }
     };
     auto onBand = [&s, &inputs, refreshRecovery, ch] {
         try {
             uint16_t pct = (uint16_t)std::stoul(inputs.iBand[ch]);
             postWrite(s, inputs, "SafeBand",
                 [&s, ch, pct] { return s.client.writeChannelSafeBand(ch, pct); }, refreshRecovery);
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid safe-band value"; }
+        } catch (...) { publishActionStatus(s, psb::MessageSeverity::Error, "Error: invalid safe-band value"); }
     };
     auto recovC   = InlineCycler(kRecovNames, &inputs.recovIdx[ch], onRecov);
     auto delayInp = CommitInput(&inputs.retryDelay[ch],  "0",  onRecov);

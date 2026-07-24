@@ -35,6 +35,25 @@ struct BoardMenuIdentityLabels {
     std::string channelVariant;
 };
 
+struct BoardStatusLine {
+    std::string text;
+    bool isError = false;
+};
+
+inline BoardStatusLine boardStatusLine(const psb::MessageRecord& record) {
+    return {record.text,
+            record.severity == psb::MessageSeverity::Error ||
+            record.severity == psb::MessageSeverity::Warning};
+}
+
+inline void publishBoardStatus(BoardSession& board,
+                               psb::MessageSeverity severity,
+                               const std::string& text) {
+    uint64_t action = board.messages.beginAction("board");
+    board.messages.publish(action, severity, "board", text);
+    { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg.clear(); }
+}
+
 enum class BoardMenuActionSlot {
     ConnectToggle,
     Remove,
@@ -142,7 +161,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         board.abortConnect = false;
         board.connecting = true;
         board.connectStart = std::chrono::steady_clock::now();
-        { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg = "Connecting to " + board.portVal + "..."; }
+        uint64_t connectAction = board.messages.beginAction("board", "Connecting to " + board.portVal + "...");
+        { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg.clear(); }
         screen.PostEvent(Event::Custom);
         // Enqueued on this bus's own worker queue rather than run on a
         // separate detached thread — PsbSerialBus's own contract is that
@@ -162,7 +182,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         // scan) on the one thread already responsible for this bus, no
         // second queue hop needed.
         { std::lock_guard<std::mutex> lk(busWorker.workMutex);
-          busWorker.workQueue.push([&board, &busWorker, &screen, &running, timeoutMs] {
+          busWorker.workQueue.push([&board, &busWorker, &screen, &running, timeoutMs, connectAction] {
               int baud = 115200, slave = 1;
               try { baud  = std::stoi(board.baudVal);  } catch (...) {}
               try { slave = std::stoi(board.slaveVal); } catch (...) {}
@@ -190,17 +210,18 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
               board.data.valid = board.connected.load();
               auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                   std::chrono::steady_clock::now() - board.connectStart).count();
-              { std::lock_guard<std::mutex> lk(board.statusMutex);
-                if (board.abortConnect)
-                    board.statusMsg = "Connection aborted";
-                else if (ok)
-                    board.statusMsg = "";
-                else {
-                    auto e = board.client->lastError();
-                    board.statusMsg = "Error: " + (e.empty() ? "connection failed" : e)
-                                + " (after " + std::to_string(static_cast<int>(elapsed / 1000.0)) + "s)";
-                }
+              if (board.abortConnect) {
+                  board.messages.publish(connectAction, psb::MessageSeverity::Warning,
+                                         "board", "Connection aborted");
+              } else if (ok) {
+                  board.messages.clearStatus(connectAction, "board");
+              } else {
+                  auto e = board.client->lastError();
+                  board.messages.publish(connectAction, psb::MessageSeverity::Error,
+                                         "board", "Error: " + (e.empty() ? "connection failed" : e)
+                                                  + " (after " + std::to_string(static_cast<int>(elapsed / 1000.0)) + "s)");
               }
+              { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg.clear(); }
               board.connecting = false;
               screen.PostEvent(Event::Custom);
           }); }
@@ -235,7 +256,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
           }); }
         busWorker.workCv.notify_one();
         board.tabTitles = {"Monitor"}; board.activeTab = std::min(board.activeTab, 0);
-        { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg = "Disconnected"; }
+        publishBoardStatus(board, psb::MessageSeverity::Info, "Disconnected");
         screen.PostEvent(Event::Custom);
     };
 
@@ -303,10 +324,10 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                                    std::string err = saveBoardName(previous, *boardName);
                                                    if (!err.empty())
                                                        *boardName = previous;
-                                                   {
-                                                       std::lock_guard<std::mutex> lk(board.statusMutex);
-                                                       board.statusMsg = boardNameSaveStatus(err);
-                                                   }
+                                                   publishBoardStatus(board,
+                                                                      err.empty() ? psb::MessageSeverity::Success
+                                                                                  : psb::MessageSeverity::Error,
+                                                                      boardNameSaveStatus(err));
                                                    screen.PostEvent(Event::Custom);
                                                });
     auto boardNameBox = Renderer(boardNameInp, [boardName, boardNameInp] {
@@ -341,12 +362,12 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto scSaveModbus = ActionButton("Save Modbus", [&board, &busWorker, &screen] {
         uint16_t slaveAddress = 0;
         if (!parseModbusSlaveAddress(board.inputs.slaveAddr, slaveAddress)) {
-            { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg = "Error: slave address must be 1-247"; }
+            publishBoardStatus(board, psb::MessageSeverity::Error, "Error: slave address must be 1-247");
             screen.PostEvent(Event::Custom);
             return;
         }
         if (board.inputs.baudIdx < 0 || board.inputs.baudIdx >= static_cast<int>(kBaudNames.size())) {
-            { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg = "Error: invalid baud rate"; }
+            publishBoardStatus(board, psb::MessageSeverity::Error, "Error: invalid baud rate");
             screen.PostEvent(Event::Custom);
             return;
         }
@@ -354,10 +375,11 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         const std::string stagedSlave = board.inputs.slaveAddr;
         const int stagedBaud = board.inputs.baudIdx;
         const SystemConfig current = board.data.sysCfg;
-        { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg = "Writing Modbus config..."; }
+        uint64_t modbusAction = board.messages.beginAction("board", "Writing Modbus config...");
+        { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg.clear(); }
         screen.PostEvent(Event::Custom);
 
-        std::function<void()> item = [&board, &screen, stagedSlave, stagedBaud, current] {
+        std::function<void()> item = [&board, &screen, stagedSlave, stagedBaud, current, modbusAction] {
             auto result = saveModbusSettings(
                 stagedSlave, stagedBaud, current,
                 [&board](uint16_t value) { return board.client->writeSlaveAddress(value); },
@@ -368,7 +390,12 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                 syncDataToInputs(board.data, board.inputs);
             }
             std::string resultMessage = modbusSettingsStatusMessage(result, board.client->lastError());
-            { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg = std::move(resultMessage); }
+            board.messages.publish(modbusAction,
+                                   result == ModbusSettingsSaveResult::Success
+                                       ? psb::MessageSeverity::Success
+                                       : psb::MessageSeverity::Error,
+                                   "board", resultMessage);
+            { std::lock_guard<std::mutex> lk(board.statusMutex); board.statusMsg.clear(); }
             screen.PostEvent(Event::Custom);
         };
 
@@ -459,7 +486,15 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             board.connected.load() && board.data.valid, board.tabTitles, board.activeTab);
 
         std::string msg;
-        { std::lock_guard<std::mutex> lk(board.statusMutex); msg = board.statusMsg; }
+        bool isErr = false;
+        if (auto current = board.messages.currentStatus(); current.has_value()) {
+            auto line = boardStatusLine(*current);
+            msg = std::move(line.text);
+            isErr = line.isError;
+        } else {
+            { std::lock_guard<std::mutex> lk(board.statusMutex); msg = board.statusMsg; }
+            isErr = msg.find("Error") != std::string::npos;
+        }
 
         std::string fwTxt = "--", protoTxt = "--";
         std::string uptimeTxt = "--s";
@@ -552,7 +587,6 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
             connTextEl = text(" offline ") | color(Color::GrayDark);
         }
 
-        bool isErr = msg.find("Error") != std::string::npos;
         auto statusBarEl = hbox({
             text(" " + msg + " ") | (isErr ? color(Color::Red) : color(Color::Green))
                                   | size(WIDTH, GREATER_THAN, 30),

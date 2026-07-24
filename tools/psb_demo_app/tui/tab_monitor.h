@@ -168,7 +168,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             postWrite(s, inputs, "Target V",
                 [&s, ch, raw] { return s.client.writeConfiguredTargetVoltage(ch, raw); },
                 refreshOutput);
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid voltage"; }
+        } catch (...) { publishActionStatus(s, psb::MessageSeverity::Error, "Error: invalid voltage"); }
     });
 
     // ---- Output Enabled cycler (fixed-voltage channels — CH_CAP_OUTPUT_ENABLE
@@ -235,7 +235,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             postWrite(s, inputs, "Ramp Up",
                 [&s, ch, stepRaw] { return s.client.writeRampUp(ch, stepRaw, s.data.chCfg[ch].rampUpInterval); },
                 refreshOutput);
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-up value"; }
+        } catch (...) { publishActionStatus(s, psb::MessageSeverity::Error, "Error: invalid ramp-up value"); }
     });
 
     // ---- Ramp Down Input ----
@@ -245,7 +245,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             postWrite(s, inputs, "Ramp Down",
                 [&s, ch, stepRaw] { return s.client.writeRampDown(ch, stepRaw, s.data.chCfg[ch].rampDownInterval); },
                 refreshOutput);
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid ramp-down value"; }
+        } catch (...) { publishActionStatus(s, psb::MessageSeverity::Error, "Error: invalid ramp-down value"); }
     });
 
     // ---- I-limit Input ----
@@ -267,7 +267,7 @@ inline MonitorRow makeMonitorRow(AppState& s, ConfigInputs& inputs, int ch) {
             postWrite(s, inputs, "I Limit",
                 [&s, ch, mode, action, raw] { return s.client.writeCurrentProtection(ch, mode, action, raw); },
                 refreshProtection);
-        } catch (...) { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Error: invalid I-limit value"; }
+        } catch (...) { publishActionStatus(s, psb::MessageSeverity::Error, "Error: invalid I-limit value"); }
     });
 
     // ---- Clear Fault button ----

@@ -345,7 +345,7 @@ void buildRuntime(Runtime& rt, const psb::TopologyConfig& topo, ScreenInteractiv
             b->slaveVal = std::to_string(boardCfg.slaveId);
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
-                bw->workQueue, bw->workMutex, bw->workCv, screen});
+                b->messages, bw->workQueue, bw->workMutex, bw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *bw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
                 globalQuit, globalSetup, globalGroup, globalPreferences, [&rt] { return rt.boards.size(); },
@@ -493,7 +493,7 @@ void applyNewBoardsLive(Runtime& rt, const psb::TopologyConfig& newTopo,
             b->slaveVal = std::to_string(boardCfg.slaveId);
             b->appState = std::unique_ptr<psb::tui::AppState>(new psb::tui::AppState{
                 *b->client, b->connected, b->data, b->statusMsg, b->statusMutex,
-                targetBw->workQueue, targetBw->workMutex, targetBw->workCv, screen});
+                b->messages, targetBw->workQueue, targetBw->workMutex, targetBw->workCv, screen});
             b->dashboard = psb::tui::makeBoardDashboard(*b, *targetBw, screen, running, timeoutMs, openSetup,
                 [&rt, &screen, &running, bPtr = b.get()] { removeBoardLive(rt, screen, running, bPtr); },
                 globalQuit, globalSetup, globalGroup, globalPreferences, [&rt] { return rt.boards.size(); },

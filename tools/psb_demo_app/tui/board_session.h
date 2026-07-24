@@ -48,6 +48,7 @@ struct BoardSession {
     ConfigInputs inputs;
     std::string statusMsg;
     std::mutex statusMutex;
+    psb::MessageCenter messages;
 
     std::unique_ptr<AppState> appState;
 

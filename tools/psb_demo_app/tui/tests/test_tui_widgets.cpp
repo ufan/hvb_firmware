@@ -132,6 +132,18 @@ TEST_CASE("Board nickname editor width adapts within menu limits", "[tui_widgets
     CHECK(boardMenuNicknameInputWidth("rack-left-with-a-very-long-name") == kBoardMenuNicknameMaxWidth);
 }
 
+TEST_CASE("TUI status derives text and error flag from message severity", "[tui_widgets]") {
+    psb::MessageRecord ok{1, 1, psb::MessageSeverity::Success, "board1", "OK: Save", {}};
+    auto okStatus = boardStatusLine(ok);
+    CHECK(okStatus.text == "OK: Save");
+    CHECK_FALSE(okStatus.isError);
+
+    psb::MessageRecord err{2, 2, psb::MessageSeverity::Error, "board1", "Error: timeout", {}};
+    auto errStatus = boardStatusLine(err);
+    CHECK(errStatus.text == "Error: timeout");
+    CHECK(errStatus.isError);
+}
+
 TEST_CASE("Monitor channel offline state follows channel and board stale markers", "[tui_widgets]") {
     ScannedData data;
     data.sysInfo.supportedChannels = 2;

@@ -1,4 +1,5 @@
 #pragma once
+#include "message_log.h"
 #include "tui_format.h"
 #include "psb_modbus_client.h"
 #include "psb_board_session.h"
@@ -26,6 +27,7 @@ struct AppState {
     ScannedData&                             data;
     std::string&                             statusMsg;
     std::mutex&                              statusMutex;  // guards statusMsg
+    psb::MessageCenter&                      messages;
     std::queue<std::function<void()>>&       workQueue;    // Modbus worker queue
     std::mutex&                              workMutex;    // guards workQueue
     std::condition_variable&                 workCv;       // wakes modbusWorker
@@ -144,24 +146,34 @@ inline void postWrite(AppState& s, ConfigInputs& inputs,
                       std::function<bool()> writeFn,
                       std::function<void()> refreshFn) {
     // Show "Writing..." before the worker starts — UI thread is free to render it.
-    { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "Writing " + label + "..."; }
+    uint64_t action = s.messages.beginAction("board", "Writing " + label + "...");
+    { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg.clear(); }
     s.screen.PostEvent(Event::Custom);
 
-    std::function<void()> item = [&s, &inputs, label, writeFn, refreshFn] {
+    std::function<void()> item = [&s, &inputs, label, writeFn, refreshFn, action] {
         bool ok = writeFn();
         if (ok) refreshFn();
         if (ok) {
             syncDataToInputs(s.data, inputs);
-            { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg = "OK: " + label; }
+            s.messages.publish(action, psb::MessageSeverity::Success, "board", "OK: " + label);
         } else {
-            { std::lock_guard<std::mutex> lk(s.statusMutex);
-              s.statusMsg = "Error: " + s.client.lastError(); }
+            s.messages.publish(action, psb::MessageSeverity::Error, "board",
+                               "Error: " + s.client.lastError());
         }
         s.screen.PostEvent(Event::Custom);
     };
 
     { std::lock_guard<std::mutex> lk(s.workMutex); s.workQueue.push(std::move(item)); }
     s.workCv.notify_one();
+}
+
+inline void publishActionStatus(AppState& s,
+                                psb::MessageSeverity severity,
+                                const std::string& text) {
+    uint64_t action = s.messages.beginAction("board");
+    s.messages.publish(action, severity, "board", text);
+    { std::lock_guard<std::mutex> lk(s.statusMutex); s.statusMsg.clear(); }
+    s.screen.PostEvent(Event::Custom);
 }
 
 inline void saveChannelConfig(AppState& s, ConfigInputs& inputs, int ch,
