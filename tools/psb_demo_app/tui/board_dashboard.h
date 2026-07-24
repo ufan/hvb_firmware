@@ -62,6 +62,28 @@ inline int boardMenuNicknameInputWidth(const std::string& name) {
                       kBoardMenuNicknameMaxWidth);
 }
 
+inline Component BoardMenuNicknameInput(std::string* value,
+                                        const std::string& placeholder,
+                                        std::function<void()> onCommit) {
+    InputOption option;
+    option.transform = [](InputState state) {
+        state.element |= color(Color::YellowLight);
+        if (state.is_placeholder)
+            state.element |= dim;
+        if (state.focused || state.hovered)
+            state.element |= bgcolor(Color::GrayDark);
+        return state.element;
+    };
+    auto input = Input(value, placeholder, option);
+    return CatchEvent(input, [onCommit](Event e) {
+        if (e == Event::Return) {
+            onCommit();
+            return true;
+        }
+        return false;
+    });
+}
+
 inline std::vector<BoardMenuActionSlot> boardMenuActionSlots(size_t liveBoardCount) {
     std::vector<BoardMenuActionSlot> slots{BoardMenuActionSlot::ConnectToggle};
     if (liveBoardCount > 1)
@@ -274,19 +296,19 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     // (Global Constraints) — reversible via Add.
     auto bRemove = ActionButton("Remove", [requestRemove] { requestRemove(); });
     auto boardName = std::make_shared<std::string>(board.nickname);
-    auto boardNameInp = CommitInput(boardName.get(), "nickname",
-                                    [&board, boardName, saveBoardName, &screen] {
-                                        if (!saveBoardName) return;
-                                        std::string previous = board.nickname;
-                                        std::string err = saveBoardName(previous, *boardName);
-                                        if (!err.empty())
-                                            *boardName = previous;
-                                        {
-                                            std::lock_guard<std::mutex> lk(board.statusMutex);
-                                            board.statusMsg = boardNameSaveStatus(err);
-                                        }
-                                        screen.PostEvent(Event::Custom);
-                                    });
+    auto boardNameInp = BoardMenuNicknameInput(boardName.get(), "nickname",
+                                               [&board, boardName, saveBoardName, &screen] {
+                                                   if (!saveBoardName) return;
+                                                   std::string previous = board.nickname;
+                                                   std::string err = saveBoardName(previous, *boardName);
+                                                   if (!err.empty())
+                                                       *boardName = previous;
+                                                   {
+                                                       std::lock_guard<std::mutex> lk(board.statusMutex);
+                                                       board.statusMsg = boardNameSaveStatus(err);
+                                                   }
+                                                   screen.PostEvent(Event::Custom);
+                                               });
     auto boardNameBox = Renderer(boardNameInp, [boardName, boardNameInp] {
         return hbox({
                    filler(),
