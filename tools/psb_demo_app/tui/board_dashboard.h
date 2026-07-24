@@ -12,6 +12,7 @@
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <chrono>
 #include <functional>
@@ -25,7 +26,8 @@ using namespace ftxui;
 inline const std::vector<std::string> kOpModes  = {"Normal", "Automatic"};
 inline const std::vector<std::string> kStartPol = {"Load NVS Config", "Factory Default"};
 inline const std::vector<std::string> kBaudNames = {"115200", "9600", "19200", "38400"};
-inline constexpr int kBoardMenuNicknameInputWidth = 14;
+inline constexpr int kBoardMenuNicknameMinWidth = 10;
+inline constexpr int kBoardMenuNicknameMaxWidth = 24;
 using SaveBoardName = std::function<std::string(const std::string&, const std::string&)>;
 
 struct BoardMenuIdentityLabels {
@@ -52,6 +54,12 @@ inline BoardMenuIdentityLabels boardMenuIdentityLabels(const BoardSession& board
 
 inline std::string boardNameSaveStatus(const std::string& err) {
     return err.empty() ? "OK: board renamed" : "Error: " + err;
+}
+
+inline int boardMenuNicknameInputWidth(const std::string& name) {
+    return std::clamp(static_cast<int>(name.size()) + 4,
+                      kBoardMenuNicknameMinWidth,
+                      kBoardMenuNicknameMaxWidth);
 }
 
 inline std::vector<BoardMenuActionSlot> boardMenuActionSlots(size_t liveBoardCount) {
@@ -279,12 +287,12 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                         }
                                         screen.PostEvent(Event::Custom);
                                     });
-    auto boardNameBox = Renderer(boardNameInp, [boardNameInp] {
+    auto boardNameBox = Renderer(boardNameInp, [boardName, boardNameInp] {
         return hbox({
                    filler(),
                    boardNameInp->Render() | notflex,
                    filler(),
-               }) | size(WIDTH, EQUAL, kBoardMenuNicknameInputWidth);
+               }) | size(WIDTH, EQUAL, boardMenuNicknameInputWidth(*boardName));
     });
 
     // ---- SysConfig popup ----

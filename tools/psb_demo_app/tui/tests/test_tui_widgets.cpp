@@ -126,6 +126,12 @@ TEST_CASE("Board menu actions omit system Save", "[tui_widgets]") {
     CHECK(multiBoard[1] == BoardMenuActionSlot::Remove);
 }
 
+TEST_CASE("Board nickname editor width adapts within menu limits", "[tui_widgets]") {
+    CHECK(boardMenuNicknameInputWidth("hvb") == kBoardMenuNicknameMinWidth);
+    CHECK(boardMenuNicknameInputWidth("rack-left") == 13);
+    CHECK(boardMenuNicknameInputWidth("rack-left-with-a-very-long-name") == kBoardMenuNicknameMaxWidth);
+}
+
 TEST_CASE("Board name save status mirrors group rename feedback", "[tui_widgets]") {
     CHECK(boardNameSaveStatus("") == "OK: board renamed");
     CHECK(boardNameSaveStatus("nickname \"rack\" already in use") ==
