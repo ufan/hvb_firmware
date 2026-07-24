@@ -41,6 +41,7 @@ std::string addBoard(TopologyConfig& topo,
                      int slaveId);
 std::string removeBoard(TopologyConfig& topo, int busIdx, int boardIdx);
 std::string addGroup(TopologyConfig& topo, const std::string& name);
+std::string renameGroup(TopologyConfig& topo, int groupIdx, const std::string& name);
 std::string removeGroup(TopologyConfig& topo, int groupIdx);
 std::string addChannelToGroup(TopologyConfig& topo,
                               int groupIdx,

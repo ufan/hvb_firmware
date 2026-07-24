@@ -27,6 +27,32 @@ TEST_CASE("TopologyRules - removeGroup drops the group", "[topology_rules]") {
     CHECK(topo.groups.empty());
 }
 
+TEST_CASE("TopologyRules - group can be renamed", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addGroup(topo, "detector").empty());
+
+    CHECK(psb::renameGroup(topo, 0, "bias-bank").empty());
+    CHECK(topo.groups[0].name == "bias-bank");
+}
+
+TEST_CASE("TopologyRules - renameGroup rejects empty and invalid group names", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addGroup(topo, "detector").empty());
+
+    CHECK(psb::renameGroup(topo, 0, "") == "group name required");
+    CHECK(psb::renameGroup(topo, 1, "supply") == "invalid group index");
+    CHECK(topo.groups[0].name == "detector");
+}
+
+TEST_CASE("TopologyRules - renameGroup rejects duplicate names", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addGroup(topo, "detector").empty());
+    REQUIRE(psb::addGroup(topo, "supply").empty());
+
+    CHECK(psb::renameGroup(topo, 1, "detector") == "group name \"detector\" already in use");
+    CHECK(topo.groups[1].name == "supply");
+}
+
 TEST_CASE("TopologyRules - addChannelToGroup rejects an invalid group index", "[topology_rules]") {
     psb::TopologyConfig topo;
     CHECK(psb::addChannelToGroup(topo, 0, "hvb-bench", 0, "CH0") == "invalid group index");

@@ -2,6 +2,7 @@
 #include "app_window_layout.h"
 #include "board_dashboard.h"
 #include "channel_live_layout.h"
+#include "group_monitor.h"
 #include "group_view_selection.h"
 #include "widgets.h"
 
@@ -123,4 +124,10 @@ TEST_CASE("Board menu actions omit system Save", "[tui_widgets]") {
     REQUIRE(multiBoard.size() == 2);
     CHECK(multiBoard[0] == BoardMenuActionSlot::ConnectToggle);
     CHECK(multiBoard[1] == BoardMenuActionSlot::Remove);
+}
+
+TEST_CASE("Group name save status mirrors alias save feedback", "[tui_widgets]") {
+    CHECK(groupNameSaveStatus("") == "OK: group renamed");
+    CHECK(groupNameSaveStatus("group name \"bias\" already in use") ==
+          "Error: group name \"bias\" already in use");
 }

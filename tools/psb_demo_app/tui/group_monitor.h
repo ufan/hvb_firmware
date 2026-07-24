@@ -18,6 +18,12 @@ namespace psb::tui {
 
 using namespace ftxui;
 
+using SaveGroupName = std::function<std::string(const std::string&, const std::string&)>;
+
+inline std::string groupNameSaveStatus(const std::string& err) {
+    return err.empty() ? "OK: group renamed" : "Error: " + err;
+}
+
 // Builds one group's aggregating Monitor-style table — one row per member
 // channel, each built via the same makeMonitorRow() a board's own Monitor
 // tab uses, bound to that member's real owning BoardSession's AppState/
@@ -57,7 +63,8 @@ inline Component makeGroupDashboard(const std::string& groupName,
                                     const std::vector<psb::GroupChannelRef>& members,
                                     std::vector<std::unique_ptr<BoardSession>>& boards,
                                     std::function<void(const std::string&, int)> jumpToBoard,
-                                    std::function<std::string(const std::string&, int, const std::string&)> saveGroupAlias = {}) {
+                                    std::function<std::string(const std::string&, int, const std::string&)> saveGroupAlias = {},
+                                    SaveGroupName saveGroupName = {}) {
     struct MemberRow {
         psb::GroupChannelRef ref;
         BoardSession* board = nullptr;  // nullptr if the board doesn't exist at all
@@ -69,6 +76,16 @@ inline Component makeGroupDashboard(const std::string& groupName,
     auto memberRows = std::make_shared<std::vector<MemberRow>>();
     auto localStatusMsg = std::make_shared<std::string>();
     Components rowComps;
+    auto titleName = std::make_shared<std::string>(groupName);
+    auto titleInp = CommitInput(titleName.get(), "group name",
+                                [saveGroupName, titleName, localStatusMsg, previousName = groupName] {
+                                    if (!saveGroupName) return;
+                                    std::string err = saveGroupName(previousName, *titleName);
+                                    if (!err.empty())
+                                        *titleName = previousName;
+                                    *localStatusMsg = groupNameSaveStatus(err);
+                                });
+    rowComps.push_back(titleInp);
 
     // Safe without a lock on rt.boardsMutex — this scan, like board_switcher.h's
     // own by-nickname status-dot lookup, only ever runs on the UI thread, and
@@ -110,13 +127,6 @@ inline Component makeGroupDashboard(const std::string& groupName,
     auto tableContainer = Container::Vertical(rowComps);
 
     return Renderer(tableContainer, [=] {
-        if (members.empty()) {
-            return vbox({
-                text(" No channels in this group yet \xe2\x80\x94 use the Group wizard to add some ") | center | dim,
-                filler(),
-            });
-        }
-
         // Header labels are capability-derived (see monitorHeaderLabels) —
         // use whichever member's board happens to be connected first as the
         // source; if none are connected right now, the generic "Vset/En"
@@ -203,7 +213,7 @@ inline Component makeGroupDashboard(const std::string& groupName,
             table.SelectColumn(static_cast<int>(c)).Decorate(flex);
 
         return vbox({
-            text(" " + groupName + " ") | bold | center,
+            titleInp->Render() | bold | center,
             table.Render(),
             filler(),
             separator(),

@@ -111,6 +111,19 @@ std::string addGroup(TopologyConfig& topo, const std::string& name) {
     return "";
 }
 
+std::string renameGroup(TopologyConfig& topo, int groupIdx, const std::string& name) {
+    if (groupIdx < 0 || groupIdx >= static_cast<int>(topo.groups.size()))
+        return "invalid group index";
+    if (name.empty()) return "group name required";
+    for (int i = 0; i < static_cast<int>(topo.groups.size()); ++i) {
+        if (i != groupIdx && topo.groups[i].name == name)
+            return "group name \"" + name + "\" already in use";
+    }
+
+    topo.groups[groupIdx].name = name;
+    return "";
+}
+
 std::string removeGroup(TopologyConfig& topo, int groupIdx) {
     if (groupIdx < 0 || groupIdx >= static_cast<int>(topo.groups.size()))
         return "invalid group index";

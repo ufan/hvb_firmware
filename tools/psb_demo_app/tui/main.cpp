@@ -67,6 +67,7 @@ struct Runtime {
     std::thread animThread;
     std::vector<PendingRemoval> pendingRemovals;
     std::function<std::string(const std::string&, int, const std::string&)> saveGroupAlias;
+    psb::tui::SaveGroupName saveGroupName;
 };
 
 // The single reconciliation point for group dashboards — called any time
@@ -86,7 +87,7 @@ void refreshGroupDashboards(Runtime& rt, const psb::TopologyConfig& topo, Screen
     std::vector<std::pair<std::string, Component>> groupDashboards;
     for (const auto& g : topo.groups) {
         auto dash = psb::tui::makeGroupDashboard(g.name, g.channels, rt.boards, rt.switcher.jumpToBoard,
-                                                 rt.saveGroupAlias);
+                                                 rt.saveGroupAlias, rt.saveGroupName);
         groupDashboards.emplace_back(g.name, std::move(dash));
     }
     rt.switcher.replaceGroups(std::move(groupDashboards));
@@ -783,6 +784,30 @@ int main(int argc, char** argv) {
         return "";
     };
     rt.saveGroupAlias = saveGroupChannelAliasToTopology;
+
+    auto saveGroupNameToTopology = [&rt, &topo, &currentTopologyPath, &screen]
+                                   (const std::string& previousName,
+                                    const std::string& name) -> std::string {
+        int groupIdx = -1;
+        for (int i = 0; i < static_cast<int>(topo.groups.size()); ++i) {
+            if (topo.groups[i].name == previousName) {
+                groupIdx = i;
+                break;
+            }
+        }
+        std::string err = psb::renameGroup(topo, groupIdx, name);
+        if (!err.empty()) {
+            screen.PostEvent(Event::Custom);
+            return err;
+        }
+        if (!topo.save(currentTopologyPath)) {
+            screen.PostEvent(Event::Custom);
+            return "could not save group name";
+        }
+        refreshGroupDashboards(rt, topo, screen);
+        return "";
+    };
+    rt.saveGroupName = saveGroupNameToTopology;
 
     auto jumpToGroup = [&rt](const std::string& groupName, int memberIndex) {
         if (rt.switcher.jumpToGroup)
