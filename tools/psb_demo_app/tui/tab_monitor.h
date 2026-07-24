@@ -65,6 +65,12 @@ inline std::vector<Element> monitorOfflineRowCells(Element identityCell,
     return cells;
 }
 
+inline bool monitorChannelOffline(const ScannedData& data, int ch) {
+    return ch < 0 || ch >= data.numChannels() ||
+           data.sysStale(kSysStaleThreshold) ||
+           data.chOffline[ch];
+}
+
 // One channel's live cell values — capability-conditional per column
 // (hasVolt/hasCurr/hasDrive/hasOut), reused verbatim by both a board's own
 // Monitor table and a group's aggregating table (group_monitor.h), so a
@@ -346,11 +352,11 @@ inline Component makeMonitorTab(AppState& s, ConfigInputs& inputs) {
             char chLabel[8];
             snprintf(chLabel, sizeof(chLabel), "CH%-2d", ch);
 
-            // Channel has failed enough consecutive status polls in a row
-            // (see kChannelOfflineThreshold in tui/main.cpp) to be considered
-            // genuinely unresponsive — show it as an error, not silently
-            // continuing to display its last-known (now stale) values.
-            if (s.data.chOffline[ch]) {
+            // Use the same row-offline predicate as group dashboards: a
+            // row is offline when either its own status polls have failed
+            // enough times or the owning board has stopped responding at
+            // the shared board stale timeout.
+            if (monitorChannelOffline(s.data, ch)) {
                 grid.push_back(monitorOfflineRowCells(text(chLabel), headerLabels.size()));
                 continue;
             }

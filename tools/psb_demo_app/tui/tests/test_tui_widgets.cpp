@@ -132,6 +132,21 @@ TEST_CASE("Board nickname editor width adapts within menu limits", "[tui_widgets
     CHECK(boardMenuNicknameInputWidth("rack-left-with-a-very-long-name") == kBoardMenuNicknameMaxWidth);
 }
 
+TEST_CASE("Monitor channel offline state follows channel and board stale markers", "[tui_widgets]") {
+    ScannedData data;
+    data.sysInfo.supportedChannels = 2;
+    data.lastSysUpdate = std::chrono::steady_clock::now();
+
+    CHECK_FALSE(monitorChannelOffline(data, 0));
+
+    data.chOffline[0] = true;
+    CHECK(monitorChannelOffline(data, 0));
+
+    data.chOffline[0] = false;
+    data.lastSysUpdate = std::chrono::steady_clock::now() - kSysStaleThreshold - std::chrono::milliseconds(1);
+    CHECK(monitorChannelOffline(data, 0));
+}
+
 TEST_CASE("Board name save status mirrors group rename feedback", "[tui_widgets]") {
     CHECK(boardNameSaveStatus("") == "OK: board renamed");
     CHECK(boardNameSaveStatus("nickname \"rack\" already in use") ==

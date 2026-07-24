@@ -152,8 +152,8 @@ inline Component makeGroupDashboard(const std::string& groupName,
         }
 
         for (const auto& mr : *memberRows) {
-            bool online = mr.board && mr.board->connected.load() && mr.board->data.valid
-                        && mr.ref.channelIndex < mr.board->data.numChannels();
+            bool online = mr.board && mr.board->connected.load() && mr.board->data.valid &&
+                          !monitorChannelOffline(mr.board->data, mr.ref.channelIndex);
             Element identity = mr.aliasInp->Render();
             if (!online) {
                 auto cells = monitorOfflineRowCells(identity, headerLabels.size() - 1);
@@ -169,8 +169,8 @@ inline Component makeGroupDashboard(const std::string& groupName,
         int onlineCount = 0;
         std::string statusMsg;
         for (const auto& mr : *memberRows) {
-            bool online = mr.board && mr.board->connected.load() && mr.board->data.valid
-                        && mr.ref.channelIndex < mr.board->data.numChannels();
+            bool online = mr.board && mr.board->connected.load() && mr.board->data.valid &&
+                          !monitorChannelOffline(mr.board->data, mr.ref.channelIndex);
             if (online) ++onlineCount;
 
             if (!mr.board) {
