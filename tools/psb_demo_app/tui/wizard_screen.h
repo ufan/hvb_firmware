@@ -23,12 +23,6 @@ namespace psb::tui {
 using namespace ftxui;
 
 enum class WizardOutcome { Cancelled, ConnectNow, Back };
-enum class TopologyWizardSaveSuccessAction { StayOpen, ApplyAndClose };
-
-inline TopologyWizardSaveSuccessAction topologyWizardSaveSuccessAction(bool isLaunchFlow) {
-    return isLaunchFlow ? TopologyWizardSaveSuccessAction::StayOpen
-                        : TopologyWizardSaveSuccessAction::ApplyAndClose;
-}
 
 // Hand-off payload for the scan thread → UI thread transition. The scan
 // thread never writes scanResults/scanResultLabels/scanStatus directly —
@@ -481,15 +475,10 @@ inline Component makeWizardScreen(WizardState& s, ScreenInteractive& screen,
     auto showPathPicker = std::make_shared<bool>(false);
     auto pathPicker = makePathPicker(screen, showPathPicker, s.topologyPath);
     auto bBrowsePath = ActionButton("Browse...", pathPicker.open);
-    auto bSave = ActionButton("Save", [&s, onFinish, &screen, isLaunchFlow] {
+    auto bSave = ActionButton("Save", [&s, onFinish, &screen] {
         if (s.topo.save(s.topologyPath)) {
             s.dirty = false;
             s.statusMsg = "Saved to " + s.topologyPath;
-            if (topologyWizardSaveSuccessAction(isLaunchFlow) ==
-                TopologyWizardSaveSuccessAction::ApplyAndClose) {
-                onFinish(WizardOutcome::ConnectNow);
-                return;
-            }
         } else {
             s.statusMsg = "Error: could not save to " + s.topologyPath;
         }
