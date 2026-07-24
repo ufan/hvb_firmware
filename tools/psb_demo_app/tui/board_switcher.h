@@ -35,6 +35,7 @@ struct BoardSwitcher {
     Component root;
     std::function<void(const std::string& nickname, Component dashboard)> attachBoard;
     std::function<void(const std::string& nickname)> detachBoard;
+    std::function<void(const std::string& previousNickname, const std::string& nickname)> renameBoard;
     std::function<void(const std::string& name, Component dashboard)> attachGroup;
     std::function<void(const std::string& name)> detachGroup;
     std::function<void(std::vector<std::pair<std::string, Component>> groups)> replaceGroups;
@@ -340,6 +341,15 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         }
     };
 
+    auto renameBoard = [boardNames](const std::string& previousNickname, const std::string& nickname) {
+        for (auto& name : *boardNames) {
+            if (name == previousNickname) {
+                name = nickname;
+                return;
+            }
+        }
+    };
+
     auto attachGroup = [groupNames, groupDashboardStack](const std::string& name, Component dashboard) {
         groupNames->push_back(name);
         groupDashboardStack->Add(std::move(dashboard));
@@ -442,7 +452,7 @@ inline BoardSwitcher makeBoardSwitcher(std::vector<std::unique_ptr<BoardSession>
         screen.PostEvent(Event::Custom);
     };
 
-    return BoardSwitcher{root, attachBoard, detachBoard, attachGroup, detachGroup, replaceGroups,
+    return BoardSwitcher{root, attachBoard, detachBoard, renameBoard, attachGroup, detachGroup, replaceGroups,
                          jumpToBoard, jumpToGroup};
 }
 

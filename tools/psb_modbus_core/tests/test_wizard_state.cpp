@@ -69,6 +69,39 @@ TEST_CASE("TopologyRules - addBoard allows the same slave ID on different buses"
     CHECK(psb::addBoard(topo, 1, "board2", 1).empty());
 }
 
+TEST_CASE("TopologyRules - renameBoard updates board nickname and group references", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addBus(topo, "bus1", "/dev/ttyUSB0", 115200).empty());
+    REQUIRE(psb::addBoard(topo, 0, "hvb-left", 1).empty());
+    REQUIRE(psb::addGroup(topo, "detector").empty());
+    REQUIRE(psb::addChannelToGroup(topo, 0, "hvb-left", 0, "bias").empty());
+
+    CHECK(psb::renameBoard(topo, "hvb-left", "hvb-main").empty());
+    CHECK(topo.buses[0].boards[0].nickname == "hvb-main");
+    CHECK(topo.groups[0].channels[0].boardNickname == "hvb-main");
+}
+
+TEST_CASE("TopologyRules - renameBoard rejects empty and missing nicknames", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addBus(topo, "bus1", "/dev/ttyUSB0", 115200).empty());
+    REQUIRE(psb::addBoard(topo, 0, "hvb-left", 1).empty());
+
+    CHECK(psb::renameBoard(topo, "hvb-left", "") == "nickname required");
+    CHECK(psb::renameBoard(topo, "missing", "hvb-main") == "board \"missing\" not found");
+    CHECK(topo.buses[0].boards[0].nickname == "hvb-left");
+}
+
+TEST_CASE("TopologyRules - renameBoard rejects duplicate nicknames", "[topology_rules]") {
+    psb::TopologyConfig topo;
+    REQUIRE(psb::addBus(topo, "bus1", "/dev/ttyUSB0", 115200).empty());
+    REQUIRE(psb::addBoard(topo, 0, "hvb-left", 1).empty());
+    REQUIRE(psb::addBoard(topo, 0, "hvb-right", 2).empty());
+
+    CHECK(psb::renameBoard(topo, "hvb-left", "hvb-right") ==
+          "nickname \"hvb-right\" already in use");
+    CHECK(topo.buses[0].boards[0].nickname == "hvb-left");
+}
+
 TEST_CASE("TopologyRules - removeBoard drops the board", "[topology_rules]") {
     psb::TopologyConfig topo;
     psb::addBus(topo, "bus1", "/dev/ttyUSB0", 115200);

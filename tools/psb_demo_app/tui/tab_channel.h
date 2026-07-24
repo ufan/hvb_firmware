@@ -20,8 +20,9 @@ struct GroupMembership {
 using GetGroupMembership = std::function<GroupMembership(const std::string&, int)>;
 using SaveGroupAlias = std::function<std::string(const std::string&, int, const std::string&)>;
 using JumpToGroup = std::function<void(const std::string&, int)>;
+using GetBoardNickname = std::function<std::string()>;
 
-inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::string& boardNickname,
+inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, GetBoardNickname getBoardNickname,
                                 int ch, GetGroupMembership getGroupMembership,
                                 SaveGroupAlias saveGroupAlias, JumpToGroup jumpToGroup) {
     static const std::vector<std::string> kProtModes  = {"Disabled","FlagOnly","Apply-Action"};
@@ -101,9 +102,9 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
     auto groupAlias = std::make_shared<std::string>();
     auto lastMembershipKey = std::make_shared<std::string>();
     auto aliasInp = CommitInput(groupAlias.get(), "CH" + std::to_string(ch),
-                                [&s, boardNickname, ch, groupAlias, currentMembership, saveGroupAlias] {
+                                [&s, getBoardNickname, ch, groupAlias, currentMembership, saveGroupAlias] {
                                     if (!saveGroupAlias) return;
-                                    std::string err = saveGroupAlias(boardNickname, ch, *groupAlias);
+                                    std::string err = saveGroupAlias(getBoardNickname(), ch, *groupAlias);
                                     {
                                         std::lock_guard<std::mutex> lk(s.statusMutex);
                                         s.statusMsg = groupAliasSaveStatus(err);
@@ -284,7 +285,7 @@ inline Component makeChannelTab(AppState& s, ConfigInputs& inputs, const std::st
         const bool hasVolts = (caps & CH_CAP_VOLTAGE_MEASUREMENT) != 0;
         const bool hasCurr  = (caps & CH_CAP_CURRENT_MEASUREMENT) != 0;
 
-        GroupMembership membership = getGroupMembership ? getGroupMembership(boardNickname, ch)
+        GroupMembership membership = getGroupMembership ? getGroupMembership(getBoardNickname(), ch)
                                                         : GroupMembership{};
         *currentMembership = membership;
         if (membership.grouped) {

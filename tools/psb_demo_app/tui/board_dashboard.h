@@ -25,6 +25,7 @@ using namespace ftxui;
 inline const std::vector<std::string> kOpModes  = {"Normal", "Automatic"};
 inline const std::vector<std::string> kStartPol = {"Load NVS Config", "Factory Default"};
 inline const std::vector<std::string> kBaudNames = {"115200", "9600", "19200", "38400"};
+using SaveBoardName = std::function<std::string(const std::string&, const std::string&)>;
 
 struct BoardMenuIdentityLabels {
     std::string boardName;
@@ -46,6 +47,10 @@ inline BoardMenuIdentityLabels boardMenuIdentityLabels(const BoardSession& board
                                 " Ch @ " + catalog::variantName(si.variantId);
     }
     return labels;
+}
+
+inline std::string boardNameSaveStatus(const std::string& err) {
+    return err.empty() ? "OK: board renamed" : "Error: " + err;
 }
 
 inline std::vector<BoardMenuActionSlot> boardMenuActionSlots(size_t liveBoardCount) {
@@ -70,7 +75,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                                     std::function<size_t()> liveBoardCount,
                                     GetGroupMembership getGroupMembership = {},
                                     SaveGroupAlias saveGroupAlias = {},
-                                    JumpToGroup jumpToGroup = {}) {
+                                    JumpToGroup jumpToGroup = {},
+                                    SaveBoardName saveBoardName = {}) {
     // ---- Connection inputs (live in the connection modal) ----
     auto baudInp  = Input(&board.baudVal,  "baud");
     auto slaveInp = Input(&board.slaveVal, "id");
@@ -258,6 +264,20 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     // confirmation prompt, matching Remove Bus/Remove Board in the wizard
     // (Global Constraints) — reversible via Add.
     auto bRemove = ActionButton("Remove", [requestRemove] { requestRemove(); });
+    auto boardName = std::make_shared<std::string>(board.nickname);
+    auto boardNameInp = CommitInput(boardName.get(), "nickname",
+                                    [&board, boardName, saveBoardName, &screen] {
+                                        if (!saveBoardName) return;
+                                        std::string previous = board.nickname;
+                                        std::string err = saveBoardName(previous, *boardName);
+                                        if (!err.empty())
+                                            *boardName = previous;
+                                        {
+                                            std::lock_guard<std::mutex> lk(board.statusMutex);
+                                            board.statusMsg = boardNameSaveStatus(err);
+                                        }
+                                        screen.PostEvent(Event::Custom);
+                                    });
 
     // ---- SysConfig popup ----
     auto bSysCfg = ActionButton("Setting", [&board, &screen] {
@@ -361,7 +381,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
         }) | border | size(WIDTH, EQUAL, 48);
     });
 
-    auto menuBar = Container::Horizontal({bConnToggle, bRemove});
+    auto menuBar = Container::Horizontal({boardNameInp, bConnToggle, bRemove});
 
     // ---- Tab bar ----
     MenuOption tabOpt = MenuOption::Horizontal();
@@ -377,7 +397,8 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     // ---- Tab content: Monitor + CH0..CH15 ----
     Components tabComponents = { makeMonitorTab(*board.appState, board.inputs) };
     for (int ch = 0; ch < MAX_CHANNELS; ++ch)
-        tabComponents.push_back(makeChannelTab(*board.appState, board.inputs, board.nickname, ch,
+        tabComponents.push_back(makeChannelTab(*board.appState, board.inputs,
+                                               [&board] { return board.nickname; }, ch,
                                                getGroupMembership, saveGroupAlias, jumpToGroup));
     auto tabContent = Container::Tab(tabComponents, &board.activeTab);
 
@@ -385,7 +406,7 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
     auto statusBar    = Container::Horizontal({bSysCfg});
     auto mainContainer = Container::Vertical({menuBar, tabBar, tabContent, statusBar});
 
-    auto root = Renderer(mainContainer, [&board, &screen, bConnToggle, bRemove,
+    auto root = Renderer(mainContainer, [&board, &screen, boardName, boardNameInp, bConnToggle, bRemove,
                                          tabBar, tabContent, bSysCfg, liveBoardCount] {
         if (board.pendingSync.exchange(false, std::memory_order_acq_rel)) {
             if (board.connected.load() && board.data.valid) {
@@ -466,8 +487,10 @@ inline Component makeBoardDashboard(BoardSession& board, BusWorker& busWorker,
                 actionElements.push_back(bRemove->Render());
         }
         auto identity = boardMenuIdentityLabels(board);
+        if (!boardNameInp->Focused())
+            *boardName = identity.boardName;
         Elements menuBarParts = {
-            text(" " + identity.boardName + " ") | bold,
+            boardNameInp->Render() | bold,
             separator(),
             text(" " + identity.channelVariant + " "),
             filler(),

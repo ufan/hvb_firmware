@@ -91,6 +91,30 @@ std::string addBoard(TopologyConfig& topo,
     return "";
 }
 
+std::string renameBoard(TopologyConfig& topo,
+                        const std::string& previousNickname,
+                        const std::string& nickname) {
+    if (nickname.empty()) return "nickname required";
+    BoardConfig* foundBoard = nullptr;
+    for (auto& bus : topo.buses) {
+        for (auto& board : bus.boards) {
+            if (board.nickname == previousNickname) {
+                foundBoard = &board;
+            } else if (board.nickname == nickname) {
+                return "nickname \"" + nickname + "\" already in use";
+            }
+        }
+    }
+    if (!foundBoard) return "board \"" + previousNickname + "\" not found";
+
+    foundBoard->nickname = nickname;
+    for (auto& group : topo.groups)
+        for (auto& ref : group.channels)
+            if (ref.boardNickname == previousNickname)
+                ref.boardNickname = nickname;
+    return "";
+}
+
 std::string removeBoard(TopologyConfig& topo, int busIdx, int boardIdx) {
     if (busIdx < 0 || busIdx >= static_cast<int>(topo.buses.size()))
         return "invalid bus index";

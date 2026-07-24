@@ -126,6 +126,12 @@ TEST_CASE("Board menu actions omit system Save", "[tui_widgets]") {
     CHECK(multiBoard[1] == BoardMenuActionSlot::Remove);
 }
 
+TEST_CASE("Board name save status mirrors group rename feedback", "[tui_widgets]") {
+    CHECK(boardNameSaveStatus("") == "OK: board renamed");
+    CHECK(boardNameSaveStatus("nickname \"rack\" already in use") ==
+          "Error: nickname \"rack\" already in use");
+}
+
 TEST_CASE("Group name save status mirrors alias save feedback", "[tui_widgets]") {
     CHECK(groupNameSaveStatus("") == "OK: group renamed");
     CHECK(groupNameSaveStatus("group name \"bias\" already in use") ==

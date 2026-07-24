@@ -39,6 +39,9 @@ std::string addBoard(TopologyConfig& topo,
                      int busIdx,
                      const std::string& nickname,
                      int slaveId);
+std::string renameBoard(TopologyConfig& topo,
+                        const std::string& previousNickname,
+                        const std::string& nickname);
 std::string removeBoard(TopologyConfig& topo, int busIdx, int boardIdx);
 std::string addGroup(TopologyConfig& topo, const std::string& name);
 std::string renameGroup(TopologyConfig& topo, int groupIdx, const std::string& name);
