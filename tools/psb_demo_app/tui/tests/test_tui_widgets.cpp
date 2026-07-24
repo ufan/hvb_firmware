@@ -144,6 +144,21 @@ TEST_CASE("TUI status derives text and error flag from message severity", "[tui_
     CHECK(errStatus.isError);
 }
 
+TEST_CASE("Group status prefers local action message over stale member error", "[tui_widgets]") {
+    psb::MessageCenter memberMessages;
+    auto old = memberMessages.beginAction("board1", "Connecting...");
+    memberMessages.publish(old, psb::MessageSeverity::Error, "board1", "Error: timeout");
+
+    psb::MessageCenter groupMessages;
+    auto action = groupMessages.beginAction("group", "Renaming group...");
+    groupMessages.publish(action, psb::MessageSeverity::Success, "group", "OK: group renamed");
+
+    auto selected = selectGroupStatus(groupMessages.currentStatus(),
+                                      {memberMessages.currentStatus()});
+    REQUIRE(selected.has_value());
+    CHECK(selected->text == "OK: group renamed");
+}
+
 TEST_CASE("Monitor channel offline state follows channel and board stale markers", "[tui_widgets]") {
     ScannedData data;
     data.sysInfo.supportedChannels = 2;

@@ -246,7 +246,8 @@ inline constexpr int kPollTimeoutMs = 300;
 inline void doPollScan(PsbBoardSession& client, ScannedData& data, ftxui::ScreenInteractive& screen,
                        std::atomic<bool>& running,
                        const std::function<bool()>& hasPendingWork,
-                       std::string& statusMsg, std::mutex& statusMutex) {
+                       std::string& statusMsg, std::mutex& statusMutex,
+                       psb::MessageCenter& messages) {
     int n = data.numChannels();
 
     if (client.readSystemStatus(data.sysInfo, kPollTimeoutMs))
@@ -290,8 +291,12 @@ inline void doPollScan(PsbBoardSession& client, ScannedData& data, ftxui::Screen
     for (int ch = 0; ch < n; ++ch) data.chInfo[ch] = chStaging[ch];
 
     if (!newlyOffline.empty()) {
+        uint64_t action = messages.beginAction("board");
+        messages.publish(action, psb::MessageSeverity::Error, "board",
+                         "Error: CH" + std::to_string(newlyOffline.front()) +
+                         " not responding - marked offline");
         std::lock_guard<std::mutex> lk(statusMutex);
-        statusMsg = "Error: CH" + std::to_string(newlyOffline.front()) + " not responding — marked offline";
+        statusMsg.clear();
     }
     if (running) screen.PostEvent(ftxui::Event::Custom);
 }

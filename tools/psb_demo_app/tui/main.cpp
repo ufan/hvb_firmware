@@ -149,7 +149,8 @@ void runBusWorkerLoop(psb::tui::BusWorker& bw, ScreenInteractive& screen, std::a
                     std::lock_guard<std::mutex> lk(bw.workMutex);
                     return !bw.workQueue.empty();
                 };
-                psb::tui::doPollScan(*b->client, b->data, screen, running, hasPendingWork, b->statusMsg, b->statusMutex);
+                psb::tui::doPollScan(*b->client, b->data, screen, running, hasPendingWork,
+                                      b->statusMsg, b->statusMutex, b->messages);
                 b->data.valid = b->connected.load() && b->client->isConnected();
             }
         }

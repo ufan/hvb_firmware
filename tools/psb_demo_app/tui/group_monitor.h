@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,25 @@ using SaveGroupName = std::function<std::string(const std::string&, const std::s
 
 inline std::string groupNameSaveStatus(const std::string& err) {
     return err.empty() ? "OK: group renamed" : "Error: " + err;
+}
+
+inline bool groupStatusIsWarningOrError(const psb::MessageRecord& record) {
+    return record.severity == psb::MessageSeverity::Warning ||
+           record.severity == psb::MessageSeverity::Error;
+}
+
+inline std::optional<psb::MessageRecord>
+selectGroupStatus(const std::optional<psb::MessageRecord>& localStatus,
+                  const std::vector<std::optional<psb::MessageRecord>>& memberStatuses) {
+    if (localStatus)
+        return localStatus;
+    for (const auto& status : memberStatuses)
+        if (status && groupStatusIsWarningOrError(*status))
+            return status;
+    for (const auto& status : memberStatuses)
+        if (status)
+            return status;
+    return std::nullopt;
 }
 
 // Builds one group's aggregating Monitor-style table — one row per member
@@ -74,16 +94,20 @@ inline Component makeGroupDashboard(const std::string& groupName,
         Component jumpBtn;              // only meaningful when board != nullptr
     };
     auto memberRows = std::make_shared<std::vector<MemberRow>>();
-    auto localStatusMsg = std::make_shared<std::string>();
+    auto messages = std::make_shared<psb::MessageCenter>();
     Components rowComps;
     auto titleName = std::make_shared<std::string>(groupName);
     auto titleInp = CommitInput(titleName.get(), "group name",
-                                [saveGroupName, titleName, localStatusMsg, previousName = groupName] {
+                                [saveGroupName, titleName, messages, previousName = groupName] {
                                     if (!saveGroupName) return;
                                     std::string err = saveGroupName(previousName, *titleName);
                                     if (!err.empty())
                                         *titleName = previousName;
-                                    *localStatusMsg = groupNameSaveStatus(err);
+                                    auto action = messages->beginAction("group");
+                                    messages->publish(action,
+                                                      err.empty() ? psb::MessageSeverity::Success
+                                                                  : psb::MessageSeverity::Error,
+                                                      "group", groupNameSaveStatus(err));
                                 });
     rowComps.push_back(titleInp);
 
@@ -102,14 +126,18 @@ inline Component makeGroupDashboard(const std::string& groupName,
         mr.alias = std::make_shared<std::string>(
             ref.alias.empty() ? psb::defaultChannelAlias(ref.channelIndex) : ref.alias);
         mr.aliasInp = CommitInput(mr.alias.get(), psb::defaultChannelAlias(ref.channelIndex),
-                                  [saveGroupAlias, alias = mr.alias, localStatusMsg,
+                                  [saveGroupAlias, alias = mr.alias, messages,
                                    nickname = ref.boardNickname, ch = ref.channelIndex,
                                    previousAlias = *mr.alias] {
                                       if (!saveGroupAlias) return;
                                       std::string err = saveGroupAlias(nickname, ch, *alias);
                                       if (!err.empty())
                                           *alias = previousAlias;
-                                      *localStatusMsg = groupAliasSaveStatus(err);
+                                      auto action = messages->beginAction("group");
+                                      messages->publish(action,
+                                                        err.empty() ? psb::MessageSeverity::Success
+                                                                    : psb::MessageSeverity::Error,
+                                                        "group", groupAliasSaveStatus(err));
                                   });
         rowComps.push_back(mr.aliasInp);
         if (owner) {
@@ -167,14 +195,24 @@ inline Component makeGroupDashboard(const std::string& groupName,
         }
 
         int onlineCount = 0;
-        std::string statusMsg;
+        std::vector<std::optional<psb::MessageRecord>> memberStatuses;
+        std::string fallbackStatusMsg;
         for (const auto& mr : *memberRows) {
             bool online = mr.board && mr.board->connected.load() && mr.board->data.valid &&
                           !monitorChannelOffline(mr.board->data, mr.ref.channelIndex);
             if (online) ++onlineCount;
 
             if (!mr.board) {
-                if (statusMsg.empty()) statusMsg = "Error: board " + mr.ref.boardNickname + " not attached";
+                psb::MessageRecord missing;
+                missing.severity = psb::MessageSeverity::Error;
+                missing.source = "group";
+                missing.text = "Error: board " + mr.ref.boardNickname + " not attached";
+                memberStatuses.push_back(missing);
+                continue;
+            }
+
+            if (auto boardStatus = mr.board->messages.currentStatus(); boardStatus.has_value()) {
+                memberStatuses.push_back(boardStatus);
                 continue;
             }
 
@@ -184,19 +222,27 @@ inline Component makeGroupDashboard(const std::string& groupName,
                 boardMsg = mr.board->statusMsg;
             }
             if (boardMsg.rfind("Error", 0) == 0) {
-                statusMsg = mr.ref.boardNickname + ": " + boardMsg;
-                break;
+                psb::MessageRecord legacy;
+                legacy.severity = psb::MessageSeverity::Error;
+                legacy.source = mr.ref.boardNickname;
+                legacy.text = mr.ref.boardNickname + ": " + boardMsg;
+                memberStatuses.push_back(legacy);
+                continue;
             }
-            if (statusMsg.empty() && !boardMsg.empty())
-                statusMsg = mr.ref.boardNickname + ": " + boardMsg;
+            if (fallbackStatusMsg.empty() && !boardMsg.empty())
+                fallbackStatusMsg = mr.ref.boardNickname + ": " + boardMsg;
         }
-        if (!localStatusMsg->empty())
-            statusMsg = *localStatusMsg;
+        std::string statusMsg;
+        bool isErr = false;
+        if (auto selected = selectGroupStatus(messages->currentStatus(), memberStatuses); selected.has_value()) {
+            statusMsg = selected->text;
+            isErr = groupStatusIsWarningOrError(*selected);
+        }
+        if (statusMsg.empty())
+            statusMsg = fallbackStatusMsg;
         if (statusMsg.empty())
             statusMsg = members.empty() ? "No channels in this group" : "Group ready";
 
-        bool isErr = statusMsg.rfind("Error", 0) == 0
-                  || statusMsg.find(": Error") != std::string::npos;
         auto statusBarEl = hbox({
             text(" " + statusMsg + " ") | (isErr ? color(Color::Red) : color(Color::Green))
                                        | size(WIDTH, GREATER_THAN, 30),
